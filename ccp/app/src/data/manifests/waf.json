@@ -1,0 +1,1344 @@
+{
+  "service": "waf",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_wafv2_web_acl",
+    "aws_wafv2_ip_set"
+  ],
+  "summary": "Tune the WAF layer: add a managed rule group in count mode, retune the rate limit, add or remove an IP-set CIDR, remove a rule, or reorder rule priority — each guardrailed with a second approver. Flipping a rule to active block mode stays engineer-only: it can reject live traffic immediately.",
+  "operations": [
+    {
+      "id": "waf-add-managed-rule-group",
+      "service": "waf",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add an AWS managed rule group (count mode)",
+      "summary": "Add an AWS managed rule group in watch-only mode, so it observes traffic without blocking anything yet.",
+      "description": "Attach an additional AWS-vendored managed rule group to the Web ACL at a new evaluation priority, with override_action set to count so it observes traffic and cannot block it. The safest way to add coverage before deciding whether to enforce it.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "block": "rule",
+        "emptyBlocks": [
+          [
+            "override_action",
+            "count"
+          ]
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing WAFv2 Web ACL to extend, chosen from the estate inventory so only a real, Terraform-managed ACL can be targeted; the new managed rule group is attached in count mode, so it observes traffic but cannot block it.",
+          "enumSource": "inventory://aws_wafv2_web_acl/address",
+          "required": true
+        },
+        {
+          "name": "rule_name",
+          "label": "New rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+          },
+          "help": "Identifies the new rule within the Web ACL; later ops (priority, action, deletion) select an existing rule by this name.",
+          "role": "key",
+          "attr": "name"
+        },
+        {
+          "name": "priority",
+          "label": "Priority",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 100
+          },
+          "help": "Evaluation order \u2014 lower runs first. Must not collide with an existing rule's priority."
+        },
+        {
+          "name": "managed_rule_group_name",
+          "label": "Managed rule group",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "AWSManagedRulesSQLiRuleSet",
+              "AWSManagedRulesLinuxRuleSet",
+              "AWSManagedRulesUnixRuleSet",
+              "AWSManagedRulesAnonymousIpList",
+              "AWSManagedRulesBotControlRuleSet"
+            ]
+          },
+          "help": "Only AWS-published groups not already attached to this ACL are offered.",
+          "attr": "name",
+          "path": [
+            "statement",
+            "managed_rule_group_statement"
+          ]
+        },
+        {
+          "name": "vendor_name",
+          "label": "Vendor name",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "help": "Always \"AWS\" \u2014 this op only attaches AWS-vendored managed rule groups.",
+          "role": "const",
+          "const": "AWS",
+          "path": [
+            "statement",
+            "managed_rule_group_statement"
+          ]
+        },
+        {
+          "name": "metric_name",
+          "label": "CloudWatch metric name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+          },
+          "help": "CloudWatch metric name for this rule's visibility config; required (no automatic default \u2014 there is no templating engine to derive AWS-<group name> at request time).",
+          "path": [
+            "visibility_config"
+          ]
+        },
+        {
+          "name": "cloudwatch_metrics_enabled",
+          "label": "CloudWatch metrics enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "help": "Always enabled so the new rule's traffic is observable in CloudWatch.",
+          "role": "const",
+          "const": true,
+          "path": [
+            "visibility_config"
+          ]
+        },
+        {
+          "name": "sampled_requests_enabled",
+          "label": "Sampled requests enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "help": "Always enabled so request samples are available for this rule in CloudWatch.",
+          "role": "const",
+          "const": true,
+          "path": [
+            "visibility_config"
+          ]
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (append rule block, override_action count)",
+      "group": "create"
+    },
+    {
+      "id": "waf-change-rule-group-action",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "swap_child_block",
+      "title": "Swap a rule group's override action (count / none)",
+      "summary": "Turn a rule group's blocking on or off. Turning it on can reject live traffic immediately, so an engineer reviews it first.",
+      "description": "Replace whichever empty override_action child (count/none) the selected rule or managed rule group holds with the requested one. The rule is chosen by the rule_name selector; the desired choice comes from the override_action discriminator's segments map. Refuses CHOICE_NOT_EMPTY if the existing child carries config (e.g. custom_request_handling), CHOICE_AMBIGUOUS if the rule's override_action block is malformed. Moving to NONE lets the rule's own block/allow decision take effect and can reject live application traffic immediately, so this is authored and applied by an engineer.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": [
+          "rule",
+          "override_action"
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing WAFv2 Web ACL containing the rule whose override_action is changing, chosen from the estate inventory so only a real, Terraform-managed ACL can be targeted; because a switch to NONE can let the rule's own block decision reject live application traffic immediately, this operation is engineer-only.",
+          "enumSource": "inventory://aws_wafv2_web_acl/address",
+          "required": true
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule to change",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+          },
+          "help": "Name of the existing rule or managed rule group, exactly as it appears in the ACL. Selects which rule's override_action block is swapped.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "override_action",
+          "label": "New override action",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "COUNT",
+              "NONE"
+            ]
+          },
+          "help": "COUNT observes only. NONE lets the rule's own block/allow decision take effect and can reject real traffic. Replaces whichever empty override_action child (count/none) the rule currently holds.",
+          "role": "discriminator",
+          "segments": {
+            "COUNT": "count",
+            "NONE": "none"
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (override_action / action)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "waf-change-rate-limit-threshold",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Retune the rate-based rule threshold",
+      "summary": "Raise or lower the request threshold that triggers the rate limit, without touching any other rule.",
+      "description": "Adjust the request-per-5-minute limit on the existing rate-based rule that protects the fronted web application. Raising it reduces false-positive blocks under load spikes; lowering it tightens abuse protection. In-place update, no rule reordering.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": [
+          "rule",
+          "statement",
+          "rate_based_statement"
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing WAFv2 Web ACL containing the rate-based rule to retune, chosen from the estate inventory so only a real, Terraform-managed ACL can be targeted; only the numeric request threshold changes \u2014 no rules are added, removed, or reordered.",
+          "enumSource": "inventory://aws_wafv2_web_acl/address",
+          "required": true
+        },
+        {
+          "name": "rule_name",
+          "label": "Rate-based rule",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "default": "erp-portal-rate-limit",
+          "help": "Name of the existing rate-based rule to retune.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "new_rate_limit",
+          "label": "New rate limit",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 100,
+            "max": 2000000000
+          },
+          "help": "Requests per 5-minute window per aggregation key (usually source IP) before the rule engages.",
+          "attr": "limit"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (rate_based_statement.limit)",
+      "group": "protection-backup",
+      "pinned": 2
+    },
+    {
+      "id": "waf-add-ip-set-entry",
+      "service": "waf",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a CIDR to an IP set",
+      "summary": "Add one IP address or range to an allow or block list. Only that list's membership changes.",
+      "description": "Append one CIDR to an existing IP set's address list (a partner egress allowlist, office allowlist, or abuse blocklist). Does not change which rule references the set, only its membership.",
+      "target": {
+        "resourceType": "aws_wafv2_ip_set",
+        "block": "addresses"
+      },
+      "params": [
+        {
+          "name": "ip_set",
+          "label": "IP set",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing WAFv2 IP set to append the CIDR to, chosen from the estate inventory so only a real, Terraform-managed set can be targeted; only the set's address membership changes, not which ACL rules reference it.",
+          "enumSource": "inventory://aws_wafv2_ip_set/address",
+          "required": true
+        },
+        {
+          "name": "new_cidr",
+          "label": "CIDR to add",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$",
+            "semantic": "no 0.0.0.0/0; reject IPv4 prefixes shorter than /16 unless engineer override",
+            "maxPrefixLen": 16
+          },
+          "help": "e.g. 203.0.113.12/32 \u2014 a single partner egress IP or a tight range."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (append entry to addresses set)",
+      "group": "create"
+    },
+    {
+      "id": "waf-remove-ip-set-entry",
+      "service": "waf",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a CIDR from an IP set",
+      "summary": "Remove one IP or range from a list. This can cut off that source's access, or un-block it, depending on how the list is used.",
+      "description": "Remove one CIDR from an existing IP set's address list. If the set backs an allow rule, removing an entry withdraws that source's access; if it backs a blocklist, removing an entry un-blocks that source.",
+      "target": {
+        "resourceType": "aws_wafv2_ip_set",
+        "block": "addresses"
+      },
+      "params": [
+        {
+          "name": "ip_set",
+          "label": "IP set",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing WAFv2 IP set to remove the CIDR from, chosen from the estate inventory so only a real, Terraform-managed set can be targeted; removing an entry withdraws that source's access if the set backs an allow rule, or un-blocks it if the set backs a blocklist.",
+          "enumSource": "inventory://aws_wafv2_ip_set/address",
+          "required": true
+        },
+        {
+          "name": "cidr_to_remove",
+          "label": "CIDR to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$"
+          },
+          "help": "Must exactly match an existing entry in the set."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (remove entry from addresses set)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "waf-delete-rule",
+      "service": "waf",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Remove a rule from the Web ACL",
+      "summary": "Remove one rule from the firewall's rule list. If it was a protection rule, this lowers your security coverage.",
+      "description": "Decommission a single rule block \u2014 a managed rule group, IP-set reference, or rate-based rule \u2014 from the ACL. In-place update; the ACL itself is untouched. Removing a managed protection group lowers the estate's security posture.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": [
+          "rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing WAFv2 Web ACL to remove a rule from, chosen from the estate inventory so only a real, Terraform-managed ACL can be targeted; the ACL itself stays in place and only the named rule block is decommissioned, in place and reversibly.",
+          "enumSource": "inventory://aws_wafv2_web_acl/address",
+          "required": true
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Name of the rule as it appears in the ACL.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "confirm_rule_name",
+          "label": "Confirm rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Type the rule name again to confirm removal."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (remove rule block)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "waf-move-rule-priority",
+      "service": "waf",
+      "macd": "Move",
+      "codemodOp": "set_attribute",
+      "title": "Reorder a rule's evaluation priority",
+      "summary": "Move a rule earlier or later in the evaluation order; no rule is added or removed.",
+      "description": "Relocate an existing rule to a different evaluation position by changing its priority (WAF evaluates rules low-to-high). Common when an allow rule needs to run ahead of, or a noisy rule needs to run behind, the managed groups. In-place update, no destroy.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": [
+          "rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing WAFv2 Web ACL whose rule is being reordered, chosen from the estate inventory so only a real, Terraform-managed ACL can be targeted; only a rule's priority number changes (WAF evaluates low-to-high), with no rule added or removed.",
+          "enumSource": "inventory://aws_wafv2_web_acl/address",
+          "required": true
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule to move",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Name of the rule whose priority changes.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "new_priority",
+          "label": "New priority",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 100
+          },
+          "help": "Must not collide with another rule's priority; the codemod shows the resulting evaluation order for review."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (rule priority, in-place)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "waf-set-default-action",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "swap_child_block",
+      "title": "Swap the Web ACL default action (allow / block)",
+      "summary": "Set the firewall's default to allow or block unmatched traffic. Blocking can reject live traffic immediately, so an engineer reviews it.",
+      "description": "Replace whichever empty default_action child (allow/block) the ACL holds with the requested one — a singleton target, no rule selector needed. Refuses CHOICE_NOT_EMPTY if the existing child carries config, CHOICE_AMBIGUOUS if default_action is malformed. This is the estate-wide fallback decision for the whole Web ACL, so an engineer authors and reviews it; switching to BLOCK can immediately reject live application traffic that previously fell through to allow.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": [
+          "default_action"
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_wafv2_web_acl/address",
+          "required": true,
+          "help": "The web ACL to change, chosen from live inventory."
+        },
+        {
+          "name": "default_action",
+          "label": "New default action",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ALLOW",
+              "BLOCK"
+            ]
+          },
+          "help": "ALLOW passes unmatched requests; BLOCK rejects them. Replaces whichever empty default_action child (allow/block) the ACL currently holds.",
+          "role": "discriminator",
+          "segments": {
+            "ALLOW": "allow",
+            "BLOCK": "block"
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_action)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "waf-change-scope",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change the Web ACL scope (CLOUDFRONT / REGIONAL)",
+      "summary": "Switch the firewall between global and regional scope. This REPLACES it: new identity, and protection briefly drops while it's rebuilt.",
+      "description": "Change the Web ACL scope between CLOUDFRONT and REGIONAL. This argument is ForceNew: Terraform destroys and recreates the ACL, momentarily removing protection from every associated resource, and CLOUDFRONT additionally requires the provider region us-east-1. Engineer-authored and reviewed; not reversible without a second replacement.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl"
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_wafv2_web_acl/address",
+          "required": true,
+          "help": "The web ACL to change, chosen from live inventory."
+        },
+        {
+          "name": "new_scope",
+          "label": "New scope",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "CLOUDFRONT",
+              "REGIONAL"
+            ]
+          },
+          "help": "CLOUDFRONT (requires provider region us-east-1) or REGIONAL. Changing scope recreates the ACL."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (scope, resource replacement)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "waf-set-rule-action",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "swap_child_block",
+      "title": "Swap a rule's own action block (allow / block / captcha / challenge / count)",
+      "summary": "Change what a rule does on a match: allow, block, count, or challenge. Blocking can reject live requests right away; an engineer reviews it.",
+      "description": "Replace whichever empty action child (allow/block/captcha/challenge/count) the selected rule holds with the requested one: the rule's OWN statement action, distinct from waf-change-rule-group-action, which swaps override_action on managed/rule-group rules. The rule is chosen by the rule_name selector; the desired choice comes from the action discriminator's segments map. Refuses CHOICE_NOT_EMPTY if the existing child carries config, CHOICE_AMBIGUOUS if the rule's action block is malformed. Moving a rule to BLOCK (or off COUNT) can reject live requests immediately, so an engineer authors and reviews it.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": [
+          "rule",
+          "action"
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_wafv2_web_acl/address",
+          "required": true,
+          "help": "The web ACL to change, chosen from live inventory."
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule to change",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Name of the existing rule that uses its own action{} block (not override_action) whose action changes. Selects which rule's action block is swapped.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "action",
+          "label": "New action",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ALLOW",
+              "BLOCK",
+              "CAPTCHA",
+              "CHALLENGE",
+              "COUNT"
+            ]
+          },
+          "help": "Replaces whichever empty action child (allow/block/captcha/challenge/count) the rule currently holds.",
+          "role": "discriminator",
+          "segments": {
+            "ALLOW": "allow",
+            "BLOCK": "block",
+            "COUNT": "count",
+            "CAPTCHA": "captcha",
+            "CHALLENGE": "challenge"
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (rule.action)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "waf-set-rate-aggregate-key-type",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a rate-based rule's aggregation key type",
+      "summary": "Change how the rate limit groups requests together, such as by IP or a custom key. This changes who gets rate-limited and when.",
+      "description": "Set rate_based_statement.aggregate_key_type on an existing rate-based rule \u2014 one of IP, FORWARDED_IP, CONSTANT, or CUSTOM_KEYS \u2014 which changes how request counts are aggregated and therefore the rule's effective rate-limiting behavior. FORWARDED_IP also needs forwarded_ip_config, CUSTOM_KEYS a custom_key, and CONSTANT a scope_down_statement, so an engineer authors and reviews it.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": [
+          "rule",
+          "statement",
+          "rate_based_statement"
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_wafv2_web_acl/address",
+          "required": true,
+          "help": "The web ACL to change, chosen from live inventory."
+        },
+        {
+          "name": "rule_name",
+          "label": "Rate-based rule",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Name of the existing rate-based rule to retune.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "new_aggregate_key_type",
+          "label": "New aggregate key type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "IP",
+              "FORWARDED_IP",
+              "CONSTANT",
+              "CUSTOM_KEYS"
+            ]
+          },
+          "help": "How request counts are aggregated; default IP."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (rate_based_statement.aggregate_key_type)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "waf-set-rate-evaluation-window",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a rate-based rule's evaluation window",
+      "summary": "Change the time window the rate limit uses to count requests. A shorter window reacts faster; a longer one tolerates bursts better.",
+      "description": "Set rate_based_statement.evaluation_window_sec on an existing rate-based rule \u2014 the lookback window in seconds used to count requests \u2014 to one of 60, 120, 300, or 600. A shorter or longer window retunes the rule's effective sensitivity, so an engineer authors and reviews it.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": [
+          "rule",
+          "statement",
+          "rate_based_statement"
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_wafv2_web_acl/address",
+          "required": true,
+          "help": "The web ACL to change, chosen from live inventory."
+        },
+        {
+          "name": "rule_name",
+          "label": "Rate-based rule",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Name of the existing rate-based rule to retune.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "new_evaluation_window_sec",
+          "label": "New evaluation window (seconds)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              60,
+              120,
+              300,
+              600
+            ]
+          },
+          "help": "Lookback window in seconds; one of 60, 120, 300, 600 (default 300)."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (rate_based_statement.evaluation_window_sec)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "waf-set-association-body-inspection-limit",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a protected resource's request-body inspection size limit",
+      "summary": "Change the largest request size the firewall inspects for a resource. A smaller limit lets large malicious payloads slip through unchecked.",
+      "description": "Set association_config.request_body.<resource_type>.default_size_inspection_limit \u2014 the maximum request-body size AWS WAF inspects for a given protected-resource type \u2014 to KB_16, KB_32, KB_48, or KB_64. The limit is written inside the selected resource type's request_body sub-block; an ACL that declares no association_config yet is refused rather than guessed at. Shrinking the limit lets payloads beyond the cutoff bypass rule inspection (a security regression across every association it configures), so an engineer authors and reviews it.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": ["association_config", "request_body", "{param:protected_resource_type}"]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_wafv2_web_acl/address",
+          "required": true,
+          "help": "The web ACL to change, chosen from live inventory."
+        },
+        {
+          "name": "protected_resource_type",
+          "label": "Protected resource type",
+          "type": "string",
+          "source": "allowlist",
+          "role": "discriminator",
+          "segments": {
+            "api_gateway": "api_gateway",
+            "app_runner_service": "app_runner_service",
+            "cloudfront": "cloudfront",
+            "cognito_user_pool": "cognito_user_pool",
+            "verified_access_instance": "verified_access_instance"
+          },
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "api_gateway",
+              "app_runner_service",
+              "cloudfront",
+              "cognito_user_pool",
+              "verified_access_instance"
+            ]
+          },
+          "help": "Which request_body sub-block to configure."
+        },
+        {
+          "name": "default_size_inspection_limit",
+          "label": "Body inspection size limit",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "KB_16",
+              "KB_32",
+              "KB_48",
+              "KB_64"
+            ]
+          },
+          "help": "Maximum request-body size AWS WAF inspects for the selected resource type."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (association_config.request_body.*.default_size_inspection_limit)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "waf-set-cloudwatch-metrics-enabled",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable CloudWatch metrics for the Web ACL",
+      "summary": "Turn CloudWatch metrics for the firewall on or off. Monitoring only — it doesn't change which traffic is allowed or blocked.",
+      "description": "Toggle the ACL-level visibility_config.cloudwatch_metrics_enabled flag, which controls whether the Web ACL emits metrics to CloudWatch. Observability-only change; it does not alter any rule's match statement or block/allow decision. Guardrailed.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": [
+          "visibility_config"
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_wafv2_web_acl/address",
+          "required": true,
+          "help": "The web ACL to change, chosen from live inventory."
+        },
+        {
+          "name": "cloudwatch_metrics_enabled",
+          "label": "CloudWatch metrics enabled",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true emits ACL metrics to CloudWatch; false disables them."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (visibility_config.cloudwatch_metrics_enabled)",
+      "group": "protection-backup",
+      "pinned": 3
+    },
+    {
+      "id": "waf-set-sampled-requests-enabled",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable request sampling for the Web ACL",
+      "summary": "Turn on or off sampling of matching requests for review in the console. Monitoring only — no effect on allow or block decisions.",
+      "description": "Toggle the ACL-level visibility_config.sampled_requests_enabled flag, which controls whether AWS WAF stores a sample of matching requests for review in the console. Observability-only change; it does not alter any rule's match statement or block/allow decision. Guardrailed.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": [
+          "visibility_config"
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_wafv2_web_acl/address",
+          "required": true,
+          "help": "The web ACL to change, chosen from live inventory."
+        },
+        {
+          "name": "sampled_requests_enabled",
+          "label": "Sampled requests enabled",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true stores a sample of matching requests for console review; false disables sampling."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (visibility_config.sampled_requests_enabled)",
+      "group": "protection-backup",
+      "pinned": 4
+    },
+    {
+      "id": "waf-set-visibility-metric-name",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Rename the Web ACL CloudWatch metric",
+      "summary": "Rename the firewall's CloudWatch metric label. Cosmetic only — no effect on which traffic is allowed or blocked.",
+      "description": "Set the ACL-level visibility_config.metric_name \u2014 the friendly CloudWatch metric name for the Web ACL. Cosmetic label with no effect on rule matching or block/allow decisions. Must be 1-128 characters of A-Z, a-z, 0-9, hyphen or underscore with no whitespace, and cannot be a name reserved by AWS WAF (All, Default_Action).",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": [
+          "visibility_config"
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_wafv2_web_acl/address",
+          "required": true,
+          "help": "The web ACL to change, chosen from live inventory."
+        },
+        {
+          "name": "metric_name",
+          "label": "CloudWatch metric name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+          },
+          "help": "1-128 chars of A-Z, a-z, 0-9, hyphen, underscore; no whitespace; cannot be 'All' or 'Default_Action'."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (visibility_config.metric_name)",
+      "group": "tags-naming",
+      "pinned": 1
+    },
+    {
+      "id": "waf-change-ip-set-scope",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change an IP set's scope (CloudFront / Regional)",
+      "summary": "Move an IP list between global and regional scope. This REPLACES it — new identity, and it briefly drops out of every rule using it.",
+      "description": "Change an existing IP set's `scope` between CLOUDFRONT and REGIONAL. This is a ForceNew argument: Terraform destroys and recreates the aws_wafv2_ip_set, changing its ARN and momentarily removing it from every rule that references it, and CLOUDFRONT scope requires the provider region to be us-east-1. Engineer-authored and reviewed.",
+      "target": {
+        "resourceType": "aws_wafv2_ip_set"
+      },
+      "params": [
+        {
+          "name": "ip_set",
+          "label": "IP set",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_wafv2_ip_set/address",
+          "required": true,
+          "help": "The IP set to change, chosen from live inventory."
+        },
+        {
+          "name": "new_scope",
+          "label": "New scope",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "CLOUDFRONT",
+              "REGIONAL"
+            ]
+          },
+          "help": "CLOUDFRONT (requires the provider region to be us-east-1) or REGIONAL. Changing scope replaces the IP set and breaks references to its old ARN."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (scope, resource replacement)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "waf-change-ip-set-address-version",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change an IP set's IP address version (IPv4 / IPv6)",
+      "summary": "Switch an IP list between IPv4 and IPv6. This REPLACES it — new identity, and matching briefly drops out of every rule using it.",
+      "description": "Change an existing IP set's `ip_address_version` between IPV4 and IPV6. This is a ForceNew argument: Terraform destroys and recreates the aws_wafv2_ip_set, changing its ARN and momentarily removing IP-based matching from every rule that references it, and all `addresses` must be re-expressed in the chosen version. Engineer-authored and reviewed.",
+      "target": {
+        "resourceType": "aws_wafv2_ip_set"
+      },
+      "params": [
+        {
+          "name": "ip_set",
+          "label": "IP set",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_wafv2_ip_set/address",
+          "required": true,
+          "help": "The IP set to change, chosen from live inventory."
+        },
+        {
+          "name": "new_ip_address_version",
+          "label": "New IP address version",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "IPV4",
+              "IPV6"
+            ]
+          },
+          "help": "IPV4 or IPV6. Changing the version replaces the IP set and requires all addresses to match the new version."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (ip_address_version, resource replacement)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "waf-provision-web-acl",
+      "service": "waf",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a Web ACL",
+      "summary": "Create a WAFv2 Web ACL shell with a bounded default action and metrics on. Protection rules are added one at a time.",
+      "consoleLabel": "Web ACLs",
+      "description": "Create an aws_wafv2_web_acl with a bounded scope and default action and its visibility metrics on. The protection rules are NOT authored here: they are added ONE at a time as reviewed follow-up, so this provisions the shell an engineer completes. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl"
+      },
+      "params": [
+        {
+          "name": "acl_name",
+          "label": "Web ACL name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "The name of the Web ACL (written to the name attribute).",
+          "attr": "name",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+          }
+        },
+        {
+          "name": "scope",
+          "label": "Scope",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "scope",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "REGIONAL",
+              "CLOUDFRONT"
+            ]
+          },
+          "default": "REGIONAL",
+          "help": "REGIONAL protects regional resources (ALB, API Gateway); CLOUDFRONT protects a CloudFront distribution."
+        },
+        {
+          "name": "default_action",
+          "label": "Default action",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "default_action",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "allow",
+              "block"
+            ]
+          },
+          "default": "allow",
+          "help": "What happens to a request no rule matches. The engineer expands this into its default_action block form at review."
+        },
+        {
+          "name": "visibility_metric_name",
+          "label": "Metric name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "metric_name",
+          "group": "visibility",
+          "help": "The CloudWatch metric name for this Web ACL.",
+          "bounds": {
+            "maxLength": 255
+          },
+          "path": [
+            "visibility_config"
+          ]
+        },
+        {
+          "name": "cloudwatch_metrics_enabled",
+          "label": "Cloudwatch metrics enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "attr": "cloudwatch_metrics_enabled",
+          "const": true,
+          "group": "visibility",
+          "help": "Emit CloudWatch metrics for the Web ACL; written into the draft's visibility_config.",
+          "path": [
+            "visibility_config"
+          ]
+        },
+        {
+          "name": "sampled_requests_enabled",
+          "label": "Sampled requests enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "attr": "sampled_requests_enabled",
+          "const": true,
+          "group": "visibility",
+          "help": "Store sampled requests for the Web ACL; written into the draft's visibility_config.",
+          "path": [
+            "visibility_config"
+          ]
+        },
+        {
+          "name": "description_tag",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "help": "A short description recorded as the resource's Description tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "help": "The team or person accountable for this resource, recorded as its PIC tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "web acl",
+        "waf acl",
+        "create web acl",
+        "wafv2"
+      ],
+      "decisions": [
+        "The default action (allow or block) sets what happens to every request no rule matches; confirm it, and expand it into its default_action block form during review.",
+        "This provisions the Web ACL shell with its metrics on. The protection rules are added ONE at a time as reviewed follow-up, never bulk self-service."
+      ]
+    },
+    {
+      "id": "waf-provision-ip-set",
+      "service": "waf",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision an IP set",
+      "summary": "Create a WAFv2 IP set of CIDRs. An IP set feeds allow or deny rules, so a wrong or broad range shifts access.",
+      "consoleLabel": "IP sets",
+      "description": "Create an aws_wafv2_ip_set: a named list of CIDRs a Web ACL rule can allow or deny. The scope and IP version are bounded; the addresses are confirmed at review because they directly widen or narrow what a rule matches. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_wafv2_ip_set"
+      },
+      "params": [
+        {
+          "name": "ip_set_name",
+          "label": "IP set name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "The name of the IP set (written to the name attribute).",
+          "attr": "name",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+          }
+        },
+        {
+          "name": "scope",
+          "label": "Scope",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "scope",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "REGIONAL",
+              "CLOUDFRONT"
+            ]
+          },
+          "default": "REGIONAL",
+          "help": "REGIONAL for regional resources; CLOUDFRONT for a CloudFront distribution."
+        },
+        {
+          "name": "ip_address_version",
+          "label": "IP version",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "ip_address_version",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "IPV4",
+              "IPV6"
+            ]
+          },
+          "default": "IPV4",
+          "help": "Whether the addresses are IPv4 or IPv6 CIDRs."
+        },
+        {
+          "name": "addresses",
+          "label": "Addresses (CIDR)",
+          "type": "list",
+          "source": "user_input",
+          "required": true,
+          "attr": "addresses",
+          "group": "settings",
+          "help": "The CIDR ranges in the set, for example 203.0.113.0/24. Each range widens or narrows what a rule using this set matches."
+        },
+        {
+          "name": "description_tag",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "help": "A short description recorded as the resource's Description tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "help": "The team or person accountable for this resource, recorded as its PIC tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "ip set",
+        "waf ip set",
+        "cidr allowlist",
+        "cidr blocklist"
+      ],
+      "decisions": [
+        "Confirm each CIDR is correct and intended: an IP set feeds allow or deny rules, so a wrong or overly-broad range silently widens or blocks access."
+      ]
+    }
+  ]
+}

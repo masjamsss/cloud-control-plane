@@ -1,0 +1,9 @@
+# Keep the app build context lean and free of host artifacts / stray env files.
+node_modules
+dist
+.env
+.env.*
+*.log
+.vite
+coverage
+.DS_Store

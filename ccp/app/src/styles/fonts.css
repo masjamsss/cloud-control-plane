@@ -1,0 +1,26 @@
+/* ============================================================================
+   Self-hosted type. Geist (Sans + Mono), variable weight axis 100–900, one
+   woff2 each — covers every weight the app uses (400/500/600/650/700) with no
+   network dependency (the control plane runs offline; see docs/adr/0007-gerbang-no-ai.md).
+   Vendored from the `geist` npm package v1.7.2 into public/fonts/. Licensed
+   under the SIL Open Font License 1.1 (public/fonts/Geist-OFL-LICENSE.txt).
+   Neutral, technical typeface — stays within the "clean neutral, no branding
+   yet" stance (CONCEPT.md); the family is swapped by editing tokens.css only.
+   `font-display: swap` renders the system fallback immediately, then swaps —
+   no invisible-text flash, no layout shift (fallback stack is metrically close).
+   ============================================================================ */
+@font-face {
+  font-family: 'Geist';
+  src: url('/fonts/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/fonts/GeistMono-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}

@@ -1,0 +1,49 @@
+{
+  "schema": "ccp.drift/v1",
+  "projectId": "sample",
+  "environment": "prod",
+  "capturedAt": "2026-07-20T03:17:04Z",
+  "runId": "16234567898",
+  "commit": "1370355333333333333333333333333333333333",
+  "cadenceHours": 6,
+  "planExitCode": 2,
+  "report": {
+    "meta": { "format_version": "1.2", "terraform_version": "1.9.0", "provider_tag": "aws-v6.53.0" },
+    "counts": { "benign_inplace": 1 },
+    "absorbed": [],
+    "invisible_to_plan": "out-of-band CREATED resources — detection is the importer-kit account sweep (resourcegroupstaggingapi), disposition import-and-adopt or delete-in-AWS (human)",
+    "verdicts": [
+      {
+        "address": "aws_instance.dottedbox01",
+        "type": "aws_instance",
+        "actions": ["update"],
+        "actionReason": null,
+        "driftEvidence": true,
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "recommendation": "NOTE (fixture intent): spec F8 — a dotted/slashed tag key (kubernetes.io/role/elb) carried as ONE structured pathSegments element, never re-split by the legacy display-path dot-counter. The legacy string alone ('tags.kubernetes.io/role/elb') would mis-split into 3 dot-parts and be refused; pathSegments unlocks it.",
+        "neverDo": "Never adopt values you have not read.",
+        "executor": "Claude-preparable PR",
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "computedUnknown": [],
+        "notes": [],
+        "changedAttrs": [
+          {
+            "path": "tags.kubernetes.io/role/elb",
+            "live": "\"owned\"",
+            "code": "\"shared\"",
+            "forceNew": "in_place",
+            "forceNewWhy": "tags are provider-wide in-place (dedicated update path)",
+            "noiseEqual": false,
+            "churn": "",
+            "sensitive": false,
+            "liveJson": "owned",
+            "codeJson": "shared",
+            "pathSegments": ["tags", "kubernetes.io/role/elb"]
+          }
+        ]
+      }
+    ]
+  }
+}

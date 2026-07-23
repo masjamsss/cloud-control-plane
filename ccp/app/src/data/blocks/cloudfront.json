@@ -1,0 +1,7 @@
+{
+ "aws_cloudfront_distribution.cdn": {
+  "file": "ccp/app/fixtures-estate/cloudfront.tf",
+  "line": 3,
+  "source": "resource \"aws_cloudfront_distribution\" \"cdn\" {\n  enabled         = true\n  price_class     = \"PriceClass_100\"\n  comment         = \"Static assets for the checkout app\"\n  is_ipv6_enabled = true\n\n  origin {\n    domain_name = aws_s3_bucket.app_data.bucket_regional_domain_name\n    origin_id   = \"app-data-origin\"\n\n    s3_origin_config {\n      origin_access_identity = \"\"\n    }\n  }\n\n  default_cache_behavior {\n    allowed_methods        = [\"GET\", \"HEAD\"]\n    cached_methods          = [\"GET\", \"HEAD\"]\n    target_origin_id        = \"app-data-origin\"\n    viewer_protocol_policy  = \"redirect-to-https\"\n    compress                = true\n\n    forwarded_values {\n      query_string = false\n      cookies {\n        forward = \"none\"\n      }\n    }\n  }\n\n  restrictions {\n    geo_restriction {\n      restriction_type = \"none\"\n    }\n  }\n\n  viewer_certificate {\n    cloudfront_default_certificate = true\n  }\n\n  tags = {\n    Name = \"app-cdn\"\n    PIC  = \"user01@example.com\"\n  }\n}"
+ }
+}

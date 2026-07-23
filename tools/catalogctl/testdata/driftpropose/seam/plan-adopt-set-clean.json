@@ -1,0 +1,21 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_instance.sample01",
+      "change": {
+        "actions": ["no-op"],
+        "before": { "tags": { "Owner": "bi-team", "Env": "prod" } },
+        "after": { "tags": { "Owner": "bi-team", "Env": "prod" } }
+      }
+    },
+    {
+      "address": "aws_instance.dottedbox01",
+      "change": {
+        "actions": ["no-op"],
+        "before": { "tags": { "kubernetes.io/role/elb": "owned", "Owner": "platform" } },
+        "after": { "tags": { "kubernetes.io/role/elb": "owned", "Owner": "platform" } }
+      }
+    }
+  ]
+}

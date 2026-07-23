@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "doctrine": "Test-local fixture — one rule of each kind statediff.py supports, matched against importer/kit/tests/fixtures/sweep-happy. Not the production scripts/drift/sweep-ignore.json.",
+  "rules": [
+    {
+      "kind": "id",
+      "type": "aws_instance",
+      "id": "i-happy0000000000005",
+      "reason": "fixture: exact (type, id) ignore rule"
+    },
+    {
+      "kind": "idPrefix",
+      "type": "aws_instance",
+      "idPrefix": "i-happyPFX",
+      "reason": "fixture: type + idPrefix ignore rule"
+    },
+    {
+      "kind": "tagKey",
+      "type": "aws_instance",
+      "tagKey": "aws:autoscaling:groupName",
+      "reason": "fixture: ASG-owned instances are the ASG's business, not unmanaged"
+    },
+    {
+      "kind": "arn",
+      "arn": "arn:aws:iam::333333333333:policy/legacy-ignored-policy",
+      "reason": "fixture: exact arn ignore rule"
+    }
+  ]
+}

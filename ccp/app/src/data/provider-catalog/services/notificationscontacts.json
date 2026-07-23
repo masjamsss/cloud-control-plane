@@ -1,0 +1,1 @@
+{"service":"notificationscontacts","types":{"aws_notificationscontacts_email_contact":{"attrs":[{"n":"email_address","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"tags","t":"map"}],"blocks":[]}}}

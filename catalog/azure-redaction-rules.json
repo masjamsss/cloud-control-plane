@@ -1,0 +1,33 @@
+{
+  "$comment": [
+    "Azure secret-redaction rules for the importer/kit-azure kit's normalize.py `check`.",
+    "DELIBERATELY SEPARATE from catalog/redaction-rules.json: that file is vendored",
+    "byte-identical in THREE places (catalog/, tools/catalogctl/internal/hclops/,",
+    "ccp/app/src/data/) per AGENTS.md Rule 6 and is AWS/control-plane-scoped. Adding",
+    "Azure secret attribute names there would force all three copies to change in lockstep;",
+    "keeping Azure rules here sidesteps that invariant entirely. This file is consumed ONLY",
+    "by importer/kit-azure/normalize.py `check` (its --rules default), never by the SPA or",
+    "catalogctl. Same schema as catalog/redaction-rules.json so the check code is a faithful",
+    "port. secretAttributeNames matching is fail-closed (an empty list REFUSES).",
+    "",
+    "KNOWN LIMIT (documented, not a silent gap): the check is line-oriented and matches an",
+    "attribute NAME against secretAttributeNames. It does NOT yet honor maskAllValuesInBlocks",
+    "(secrets under arbitrary keys inside app_settings / Key Vault body blocks) — that needs",
+    "block-aware scanning and is a named follow-up before importing Function Apps / Key Vaults",
+    "(see docs/proposals/0039-azure-second-provider-concept.md 'Honest limits')."
+  ],
+  "secretAttributeNames": [
+    "password", "passwd", "administrator_login_password", "admin_password",
+    "secret", "client_secret", "certificate_password", "value",
+    "primary_access_key", "secondary_access_key", "access_key", "secret_key",
+    "primary_key", "secondary_key", "shared_access_key",
+    "primary_connection_string", "secondary_connection_string",
+    "primary_blob_connection_string", "connection_string",
+    "sas_token", "sas", "sas_url", "token", "api_key", "apikey",
+    "private_key", "search_service_key", "instrumentation_key"
+  ],
+  "maskAllValuesInBlocks": ["app_settings", "connection_string", "secret", "sensitive_body", "site_config"],
+  "valueAllowlistPrefixes": [
+    "/subscriptions/", "http://", "https://"
+  ]
+}

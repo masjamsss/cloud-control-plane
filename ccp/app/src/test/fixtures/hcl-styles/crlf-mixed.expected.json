@@ -1,0 +1,17 @@
+{
+  "blockCount": 2,
+  "addresses": [
+    "aws_instance.windows_style",
+    "aws_ebs_volume.unix_after_crlf"
+  ],
+  "probes": [
+    {
+      "address": "aws_instance.windows_style",
+      "exactSource": "resource \"aws_instance\" \"windows_style\" {\r\n  instance_type = \"t3.large\"\r\n  tags = {\r\n    OS = \"windows\"\r\n  }\r\n}"
+    },
+    {
+      "address": "aws_ebs_volume.unix_after_crlf",
+      "exactSource": "resource \"aws_ebs_volume\" \"unix_after_crlf\" {\n  size = 50\n}"
+    }
+  ]
+}

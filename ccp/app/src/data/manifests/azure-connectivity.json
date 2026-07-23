@@ -1,0 +1,895 @@
+{
+  "service": "azure-connectivity",
+  "scope": "expansion",
+  "resourceTypes": [
+    "azurerm_virtual_hub",
+    "azurerm_virtual_wan",
+    "azurerm_firewall",
+    "azurerm_firewall_policy",
+    "azurerm_virtual_network_gateway",
+    "azurerm_vpn_gateway",
+    "azurerm_express_route_circuit",
+    "azurerm_express_route_gateway",
+    "azurerm_private_dns_zone",
+    "azurerm_private_dns_zone_virtual_network_link",
+    "azurerm_network_ddos_protection_plan",
+    "azurerm_bastion_host",
+    "azurerm_network_manager"
+  ],
+  "summary": "Operate Azure Cloud Adoption Framework hub and connectivity constructs — virtual hubs and WANs, firewalls and firewall policies, network, VPN, and ExpressRoute gateways, private DNS zones and links, DDoS protection plans, bastion hosts, and the network manager. Tag hygiene on these is self-service; provisioning a firewall policy, firewall, network gateway, or private DNS network link is an engineer-authored bounded form, since each sits on the estate's reachability path.",
+  "operations": [
+    {
+      "id": "azure-connectivity-tag-firewall",
+      "service": "azure-connectivity",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update firewall tags",
+      "summary": "Set or update this firewall's tags. Only the tags you list change; others are left alone. No effect on connectivity.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this firewall (azurerm_firewall). In-place, takes effect immediately, and has no effect on the firewall's rules, policy, routing, or reachability.",
+      "target": {
+        "resourceType": "azurerm_firewall",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "firewall",
+          "label": "Firewall",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_firewall/address",
+          "help": "The firewall to change, chosen from live inventory."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "decisions": [
+        "Tags are metadata only — they do not change the firewall's configuration or what traffic it carries, so tag hygiene is safe self-service."
+      ]
+    },
+    {
+      "id": "azure-connectivity-tag-virtual-network-gateway",
+      "service": "azure-connectivity",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update network gateway tags",
+      "summary": "Set or update this network gateway's tags. Only the tags you list change; others are left alone. No effect on connectivity.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this network gateway (azurerm_virtual_network_gateway). In-place, takes effect immediately, and has no effect on the gateway's tunnels, routing, or reachability.",
+      "target": {
+        "resourceType": "azurerm_virtual_network_gateway",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "gateway",
+          "label": "Network gateway",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_virtual_network_gateway/address",
+          "help": "The network gateway to change, chosen from live inventory."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "decisions": [
+        "Tags are metadata only — they do not change the network gateway's configuration or what traffic it carries, so tag hygiene is safe self-service."
+      ]
+    },
+    {
+      "id": "azure-connectivity-tag-bastion-host",
+      "service": "azure-connectivity",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update bastion host tags",
+      "summary": "Set or update this bastion host's tags. Only the tags you list change; others are left alone. No effect on connectivity.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this bastion host (azurerm_bastion_host). In-place, takes effect immediately, and has no effect on the host's connectivity or the sessions it brokers.",
+      "target": {
+        "resourceType": "azurerm_bastion_host",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "bastion",
+          "label": "Bastion host",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_bastion_host/address",
+          "help": "The bastion host to change, chosen from live inventory."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "decisions": [
+        "Tags are metadata only — they do not change the bastion host's configuration or what traffic it carries, so tag hygiene is safe self-service."
+      ]
+    },
+    {
+      "id": "azure-connectivity-tag-ddos-protection-plan",
+      "service": "azure-connectivity",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update DDoS protection plan tags",
+      "summary": "Set or update this DDoS protection plan's tags. Only the tags you list change; others are left alone. No effect on connectivity.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this DDoS protection plan (azurerm_network_ddos_protection_plan). In-place, takes effect immediately, and has no effect on the protection it provides or the networks it covers.",
+      "target": {
+        "resourceType": "azurerm_network_ddos_protection_plan",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "DDoS protection plan",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_network_ddos_protection_plan/address",
+          "help": "The DDoS protection plan to change, chosen from live inventory."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "decisions": [
+        "Tags are metadata only — they do not change the DDoS protection plan's configuration or what traffic it carries, so tag hygiene is safe self-service."
+      ]
+    },
+    {
+      "id": "azure-connectivity-firewall-policy-provision",
+      "service": "azure-connectivity",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new firewall policy",
+      "summary": "Request a new Azure Firewall policy — pricing tier and threat-intelligence mode. An engineer authors and reviews the Terraform.",
+      "description": "Create an Azure Firewall policy (azurerm_firewall_policy) — the object that holds the rule collection groups, threat_intelligence_mode, DNS, and intrusion-detection settings a firewall enforces. Submitting routes the complete specification to an engineer with a draft resource to review and finish. Rule collection groups, DNS proxy, and TLS inspection are separate, engineer-authored follow-ups once the policy exists.",
+      "target": {
+        "resourceType": "azurerm_firewall_policy"
+      },
+      "params": [
+        {
+          "name": "firewall_policy_name",
+          "label": "Firewall policy name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{1,62}[a-zA-Z0-9_]$"
+          },
+          "help": "2-64 characters; letters, numbers, periods, underscores and hyphens. Names the firewall policy in the generated draft."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group this firewall policy is created in."
+        },
+        {
+          "name": "location",
+          "label": "Region",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "location",
+          "group": "identity",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The Azure region this firewall policy lives in — it must match the region of the firewalls that consume it. The engineer sets the region during review."
+        },
+        {
+          "name": "sku",
+          "label": "Pricing tier",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku",
+          "group": "policy",
+          "bounds": {
+            "allowlist": ["Standard", "Premium"]
+          },
+          "default": "Standard",
+          "help": "Standard covers rule collections and threat intelligence; Premium adds TLS inspection, an intrusion-detection system, and URL filtering at a higher cost."
+        },
+        {
+          "name": "threat_intelligence_mode",
+          "label": "Threat intelligence mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "threat_intelligence_mode",
+          "group": "policy",
+          "bounds": {
+            "allowlist": ["Alert", "Deny", "Off"]
+          },
+          "default": "Alert",
+          "help": "How Microsoft's threat-intelligence feed is applied: Alert logs known-malicious traffic, Deny blocks it, Off disables the feed. Alert is the safe starting default."
+        },
+        {
+          "name": "resource_name",
+          "label": "Firewall policy name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this firewall policy is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this firewall policy."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new firewall policy", "provision firewall policy", "azure firewall policy"],
+      "decisions": [
+        "Engineer-authored: a firewall policy decides what traffic is allowed and inspected across the estate — a wrong change can open or sever reachability, so it is never self-service.",
+        "Rule collection groups, DNS proxy, and TLS inspection are added as separate engineer-authored follow-ups once the policy exists.",
+        "Confirm the region during review — a firewall policy is consumed by firewalls in its own region."
+      ]
+    },
+    {
+      "id": "azure-connectivity-firewall-provision",
+      "service": "azure-connectivity",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new firewall",
+      "summary": "Request a new Azure Firewall — its SKU, policy binding, and IP configuration. An engineer authors and reviews the Terraform.",
+      "description": "Create an Azure Firewall (azurerm_firewall) with its SKU (sku_name and sku_tier), an engineer-set firewall_policy_id binding, and an ip_configuration wiring a subnet and a public IP. The firewall sits on the reachability path for every flow it inspects, so the complete specification routes to an engineer with a draft resource to review and finish.",
+      "target": {
+        "resourceType": "azurerm_firewall"
+      },
+      "params": [
+        {
+          "name": "firewall_name",
+          "label": "Firewall name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{1,62}[a-zA-Z0-9_]$"
+          },
+          "help": "2-64 characters; letters, numbers, periods, underscores and hyphens. Names the firewall in the generated draft."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group this firewall is created in."
+        },
+        {
+          "name": "location",
+          "label": "Region",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "location",
+          "group": "identity",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The Azure region this firewall lives in — it must match its subnet and public IP. The engineer sets the region during review."
+        },
+        {
+          "name": "sku_name",
+          "label": "SKU name",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku_name",
+          "group": "sku",
+          "bounds": {
+            "allowlist": ["AZFW_VNet", "AZFW_Hub"]
+          },
+          "default": "AZFW_VNet",
+          "help": "AZFW_VNet deploys the firewall into a virtual network's dedicated AzureFirewallSubnet; AZFW_Hub deploys it into a Virtual WAN secured hub."
+        },
+        {
+          "name": "sku_tier",
+          "label": "SKU tier",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku_tier",
+          "group": "sku",
+          "bounds": {
+            "allowlist": ["Standard", "Premium"]
+          },
+          "default": "Standard",
+          "help": "Standard is the general-purpose tier; Premium adds TLS inspection, an intrusion-detection system, and URL filtering at a higher cost. Must match the bound policy's tier."
+        },
+        {
+          "name": "firewall_policy_id",
+          "label": "Firewall policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "firewall_policy_id",
+          "group": "sku",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The firewall policy this firewall enforces. The engineer binds it during review, to an existing or co-authored azurerm_firewall_policy in the same region and tier."
+        },
+        {
+          "name": "ip_config_name",
+          "label": "IP configuration name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "name",
+          "path": ["ip_configuration"],
+          "group": "ip-configuration",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{1,62}[a-zA-Z0-9_]$"
+          },
+          "default": "configuration",
+          "help": "Names this IP configuration inside the firewall."
+        },
+        {
+          "name": "firewall_subnet",
+          "label": "Firewall subnet",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_id",
+          "path": ["ip_configuration"],
+          "group": "ip-configuration",
+          "help": "The dedicated AzureFirewallSubnet this firewall attaches to. Azure requires that subnet to be named AzureFirewallSubnet; the engineer confirms it during review."
+        },
+        {
+          "name": "firewall_public_ip",
+          "label": "Public IP address",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_public_ip/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "public_ip_address_id",
+          "path": ["ip_configuration"],
+          "group": "ip-configuration",
+          "help": "The Standard-SKU static public IP this firewall uses. Its region must match the firewall's own."
+        },
+        {
+          "name": "resource_name",
+          "label": "Firewall name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this firewall is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this firewall."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new firewall", "provision firewall", "azure firewall"],
+      "decisions": [
+        "Engineer-authored: a firewall is on the path of every flow it protects — a mis-change can black-hole or expose traffic, so it is never self-service.",
+        "The ip_configuration subnet must be the dedicated AzureFirewallSubnet in the chosen virtual network — the engineer confirms the subnet before applying.",
+        "SKU tier changes can force the firewall to be rebuilt and interrupt traffic — the engineer confirms the plan before it runs.",
+        "The firewall policy binding is set by the engineer during review, to an existing or co-authored firewall policy."
+      ]
+    },
+    {
+      "id": "azure-connectivity-gateway-provision",
+      "service": "azure-connectivity",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new network gateway",
+      "summary": "Request a new virtual network gateway — VPN or ExpressRoute, its SKU and IP configuration. An engineer authors the Terraform.",
+      "description": "Create a virtual network gateway (azurerm_virtual_network_gateway) — a VPN or ExpressRoute gateway with its type, sku, and the required ip_configuration wiring the GatewaySubnet and a public IP. The gateway terminates the tunnels carrying cross-site connectivity, so the complete specification routes to an engineer with a draft resource to review and finish.",
+      "target": {
+        "resourceType": "azurerm_virtual_network_gateway"
+      },
+      "params": [
+        {
+          "name": "gateway_name",
+          "label": "Network gateway name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{1,62}[a-zA-Z0-9_]$"
+          },
+          "help": "2-64 characters; letters, numbers, periods, underscores and hyphens. Names the network gateway in the generated draft."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group this network gateway is created in."
+        },
+        {
+          "name": "location",
+          "label": "Region",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "location",
+          "group": "identity",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The Azure region this gateway lives in — it must match its GatewaySubnet and public IP. The engineer sets the region during review."
+        },
+        {
+          "name": "type",
+          "label": "Gateway type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "type",
+          "group": "gateway",
+          "bounds": {
+            "allowlist": ["Vpn", "ExpressRoute"]
+          },
+          "default": "Vpn",
+          "help": "Vpn terminates IPsec site-to-site and point-to-site tunnels over the internet; ExpressRoute terminates a private ExpressRoute circuit."
+        },
+        {
+          "name": "vpn_type",
+          "label": "VPN type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "vpn_type",
+          "group": "gateway",
+          "bounds": {
+            "allowlist": ["RouteBased", "PolicyBased"]
+          },
+          "default": "RouteBased",
+          "help": "Applies to a Vpn gateway: RouteBased supports most modern connectivity (point-to-site, coexistence, active-active); PolicyBased is legacy, single-tunnel, Basic-SKU only. Ignored for an ExpressRoute gateway."
+        },
+        {
+          "name": "sku",
+          "label": "Gateway SKU",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku",
+          "group": "gateway",
+          "bounds": {
+            "allowlist": ["VpnGw1", "VpnGw2", "VpnGw3", "VpnGw1AZ", "VpnGw2AZ", "VpnGw3AZ", "ErGw1AZ", "ErGw2AZ", "ErGw3AZ"]
+          },
+          "default": "VpnGw1",
+          "help": "Throughput and feature tier. VpnGw* SKUs are for a VPN gateway (the AZ variants are zone-redundant); ErGw* SKUs are for an ExpressRoute gateway. Must match the chosen gateway type."
+        },
+        {
+          "name": "ip_config_name",
+          "label": "IP configuration name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "name",
+          "path": ["ip_configuration"],
+          "group": "ip-configuration",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{1,62}[a-zA-Z0-9_]$"
+          },
+          "default": "vnetGatewayConfig",
+          "help": "Names this IP configuration inside the gateway."
+        },
+        {
+          "name": "gateway_subnet",
+          "label": "Gateway subnet",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_id",
+          "path": ["ip_configuration"],
+          "group": "ip-configuration",
+          "help": "The dedicated GatewaySubnet this gateway attaches to. Azure requires that subnet to be named GatewaySubnet; the engineer confirms it during review."
+        },
+        {
+          "name": "gateway_public_ip",
+          "label": "Gateway public IP",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_public_ip/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "public_ip_address_id",
+          "path": ["ip_configuration"],
+          "group": "ip-configuration",
+          "help": "The public IP this gateway's tunnels terminate on. An AZ-variant SKU needs a zone-redundant Standard public IP; the engineer confirms the pairing."
+        },
+        {
+          "name": "private_ip_allocation",
+          "label": "Private IP allocation",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "private_ip_address_allocation",
+          "path": ["ip_configuration"],
+          "group": "ip-configuration",
+          "bounds": {
+            "allowlist": ["Dynamic"]
+          },
+          "default": "Dynamic",
+          "help": "How the gateway's private IP inside the GatewaySubnet is assigned. Azure allocates gateway addresses dynamically, so this is always Dynamic."
+        },
+        {
+          "name": "resource_name",
+          "label": "Network gateway name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this network gateway is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this network gateway."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new network gateway", "provision vpn gateway", "expressroute gateway"],
+      "decisions": [
+        "Engineer-authored: a gateway terminates the tunnels that carry cross-site connectivity — a wrong change can drop every connection through it, so it is never self-service.",
+        "The ip_configuration subnet must be the dedicated GatewaySubnet in the chosen virtual network — the engineer confirms it before applying.",
+        "Confirm the chosen SKU matches the gateway type — VpnGw* for a VPN gateway, ErGw* for an ExpressRoute gateway.",
+        "Gateway creation can take up to 45 minutes, and SKU or type changes rebuild it — the engineer schedules the change."
+      ]
+    },
+    {
+      "id": "azure-connectivity-private-dns-link-provision",
+      "service": "azure-connectivity",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new private DNS network link",
+      "summary": "Request a new link from a private DNS zone to a virtual network, with optional auto-registration. An engineer authors it.",
+      "description": "Create a private DNS zone virtual-network link (azurerm_private_dns_zone_virtual_network_link) joining a private_dns_zone_name to a virtual_network_id, with optional registration_enabled auto-registration. The link decides which networks resolve the zone's private records, so the complete specification routes to an engineer with a draft resource to review and finish.",
+      "target": {
+        "resourceType": "azurerm_private_dns_zone_virtual_network_link"
+      },
+      "params": [
+        {
+          "name": "link_name",
+          "label": "Private DNS network link name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{1,62}[a-zA-Z0-9_]$"
+          },
+          "help": "2-64 characters; letters, numbers, periods, underscores and hyphens. Names the link in the generated draft."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group this link is created in — Azure requires it to match the private DNS zone's own resource group."
+        },
+        {
+          "name": "private_dns_zone",
+          "label": "Private DNS zone",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_private_dns_zone/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "private_dns_zone_name",
+          "group": "link",
+          "help": "The private DNS zone this link attaches a network to, chosen from live inventory."
+        },
+        {
+          "name": "virtual_network",
+          "label": "Virtual network",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_virtual_network/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "virtual_network_id",
+          "group": "link",
+          "help": "The virtual network that will resolve this zone's private records, chosen from live inventory."
+        },
+        {
+          "name": "registration_enabled",
+          "label": "Register VMs automatically",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "registration_enabled",
+          "group": "link",
+          "bounds": {
+            "allowlist": [true, false]
+          },
+          "default": false,
+          "help": "When on, Azure auto-registers a DNS record for every virtual machine on the linked network. Off is the safe default — a zone may have at most one registration link per network."
+        },
+        {
+          "name": "resource_name",
+          "label": "Private DNS link name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this link is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this private DNS network link."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new private dns link", "provision dns network link", "private dns zone link"],
+      "decisions": [
+        "Engineer-authored: a virtual-network link decides which networks can resolve a private zone — a wrong link can break or wrongly expose name resolution, so it is never self-service.",
+        "Auto-registration writes DNS records for every virtual machine on the linked network — confirm that is intended before enabling it.",
+        "The link's resource group must match the private DNS zone's own resource group — the engineer confirms the pairing."
+      ]
+    }
+  ]
+}

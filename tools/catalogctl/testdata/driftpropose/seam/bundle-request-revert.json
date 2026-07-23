@@ -1,0 +1,50 @@
+{
+  "id": "REQ-01ARZ3NDEKTSV4RRFFQ69G5FC3",
+  "projectId": "sample",
+  "operationId": "system-drift-revert",
+  "targetAddress": "aws_security_group.sg1",
+  "status": "APPROVED",
+  "approvals": [
+    { "approver": "alice", "approved_at": "2026-07-20T04:00:00Z", "policy_version": "1", "decision": "approve" },
+    { "approver": "bob", "approved_at": "2026-07-20T04:05:00Z", "policy_version": "1", "decision": "approve" }
+  ],
+  "params": {
+    "attrs": [
+      {
+        "address": "aws_security_group.sg1",
+        "path": "ingress[0].cidr_blocks",
+        "pathSegments": ["ingress", 0, "cidr_blocks"],
+        "liveJson": ["0.0.0.0/0"],
+        "codeJson": ["10.0.0.0/16"]
+      }
+    ],
+    "verdicts": [
+      {
+        "address": "aws_security_group.sg1",
+        "type": "aws_security_group",
+        "actions": ["update"],
+        "driftEvidence": true,
+        "class": "security_posture",
+        "riskTier": "high",
+        "forceNewAttrs": [],
+        "securityHits": [
+          { "path": "ingress[0].cidr_blocks", "why": "network reachability" }
+        ],
+        "changedAttrs": [
+          {
+            "path": "ingress[0].cidr_blocks",
+            "live": "[\"0.0.0.0/0\"]",
+            "code": "[\"10.0.0.0/16\"]",
+            "sensitive": false,
+            "liveJson": ["0.0.0.0/0"],
+            "codeJson": ["10.0.0.0/16"],
+            "pathSegments": ["ingress", 0, "cidr_blocks"]
+          }
+        ]
+      }
+    ],
+    "diff": null,
+    "proposalDigest": "3731130012c5f737816373164277522ae6b6206fda50ea538f4fa52bb332655f",
+    "reportVersion": 12
+  }
+}

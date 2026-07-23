@@ -1,0 +1,71 @@
+{
+  "service": "sagemaker",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_sagemaker_domain"
+  ],
+  "summary": "SageMaker domain app-settings editing via 0013b M0/M1 dynamic PATH resolution (app_type discriminator) + ensurePath.",
+  "operations": [
+    {
+      "id": "sagemaker-attach-domain-lifecycle-config",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Attach a Studio lifecycle config to a domain app family",
+      "description": "Set lifecycle_config_arns inside the app-settings block chosen by app_type (jupyter_server_app_settings / kernel_gateway_app_settings). The path segment is resolved from the app_type discriminator's segments map; ensurePath creates the app-settings wrapper when the estate has not materialized it yet.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "{param:app_type}"
+        ],
+        "ensurePath": true
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "SageMaker domain",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "app_type",
+          "label": "App family",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "role": "discriminator",
+          "bounds": {
+            "allowlist": [
+              "JupyterServer",
+              "KernelGateway"
+            ]
+          },
+          "segments": {
+            "JupyterServer": "jupyter_server_app_settings",
+            "KernelGateway": "kernel_gateway_app_settings"
+          }
+        },
+        {
+          "name": "lifecycle_config_arn",
+          "label": "Studio lifecycle config ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "lifecycle_config_arns",
+          "wrap": "list",
+          "bounds": {
+            "pattern": "^arn:aws:sagemaker:ap-southeast-5:123456789012:studio-lifecycle-config/.+$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "terraformCapability": "~ update (default_user_settings.{app_type}.lifecycle_config_arns)"
+    }
+  ]
+}

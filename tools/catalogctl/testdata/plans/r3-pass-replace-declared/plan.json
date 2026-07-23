@@ -1,0 +1,28 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_ebs_volume.enc_sdb",
+      "action_reasons": [
+        "replace_because_cannot_update"
+      ],
+      "change": {
+        "actions": [
+          "delete",
+          "create"
+        ],
+        "before": {
+          "encrypted": false
+        },
+        "after": {
+          "encrypted": true
+        },
+        "replace_paths": [
+          [
+            "encrypted"
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+name: release-images
+
+# Builds and publishes the container images to GitHub Container Registry (GHCR)
+# on every version tag (v*), and on demand via workflow_dispatch.
+#
+#   ghcr.io/masjamsss/cloud-control-plane/ccp-api       — the backend, fully generic
+#                                                          (all configuration is runtime env;
+#                                                          see ccp/api/README.md "Deploy").
+#   ghcr.io/masjamsss/cloud-control-plane/ccp-app-demo  — the SPA in DEMO/mock mode.
+#                                                          REAL deploys must build the app
+#                                                          themselves: VITE_API_BASE is baked
+#                                                          into the bundle at build time
+#                                                          (ccp/app/Dockerfile header), so a
+#                                                          generic prebuilt app image can only
+#                                                          ever be the demo. docker-compose.yml
+#                                                          builds the real one from source.
+#
+# Auth: the workflow's own GITHUB_TOKEN — no extra secrets. First publish creates the
+# packages as private; make them public once in each package's settings.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_BASE: ghcr.io/${{ github.repository }}
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_BASE }}/ccp-api
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+      - name: Build and push ccp-api
+        uses: docker/build-push-action@v6
+        with:
+          context: ccp
+          file: ccp/api/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=Apache-2.0
+            ${{ steps.meta.outputs.labels }}
+
+  app-demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_BASE }}/ccp-app-demo
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+      - name: Build and push ccp-app-demo (VITE_API_BASE empty => demo/mock bundle)
+        uses: docker/build-push-action@v6
+        with:
+          context: ccp/app
+          file: ccp/app/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=Apache-2.0
+            ${{ steps.meta.outputs.labels }}

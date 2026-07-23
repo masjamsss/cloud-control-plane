@@ -1,0 +1,1 @@
+{"service":"kinesis-video","types":{"aws_kinesis_video_stream":{"attrs":[{"n":"name","t":"string","r":1},{"n":"data_retention_in_hours","t":"number"},{"n":"device_name","t":"string"},{"n":"kms_key_id","t":"string"},{"n":"media_type","t":"string"},{"n":"region","t":"string"},{"n":"tags","t":"map"}],"blocks":[]}}}

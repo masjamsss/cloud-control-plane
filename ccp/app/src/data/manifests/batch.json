@@ -1,0 +1,537 @@
+{
+  "service": "batch",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_batch_compute_environment",
+    "aws_batch_job_queue",
+    "aws_batch_job_definition"
+  ],
+  "summary": "Provision new AWS Batch compute environments, job queues, and job definitions. Every stand-up routes to an engineer for review \u2014 day-2 operations on existing Batch resources land in a later wave.",
+  "operations": [
+    {
+      "id": "batch-compute-environment-create",
+      "service": "batch",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Batch compute environment",
+      "summary": "Request a brand-new AWS Batch compute environment; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new managed compute environment as a complete specification: capacity type, size bounds, and network placement. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_batch_compute_environment"
+      },
+      "params": [
+        {
+          "name": "compute_env_name",
+          "label": "Compute environment name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, like batch-fargate-env. Names the compute environment in AWS and in the generated draft."
+        },
+        {
+          "name": "env_type",
+          "label": "Environment type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "MANAGED",
+          "attr": "type",
+          "group": "identity",
+          "help": "Always MANAGED \u2014 AWS provisions and scales the underlying capacity; written into the draft, never asked."
+        },
+        {
+          "name": "compute_type",
+          "label": "Compute type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "type",
+          "path": [
+            "compute_resources"
+          ],
+          "group": "capacity",
+          "bounds": {
+            "allowlist": [
+              "FARGATE",
+              "FARGATE_SPOT",
+              "EC2",
+              "SPOT"
+            ]
+          },
+          "default": "FARGATE",
+          "help": "FARGATE and FARGATE_SPOT need no instance sizing below; EC2 and SPOT provision from the estate's own capacity."
+        },
+        {
+          "name": "max_vcpus",
+          "label": "Maximum vCPUs",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "max_vcpus",
+          "path": [
+            "compute_resources"
+          ],
+          "group": "capacity",
+          "bounds": {
+            "min": 1,
+            "max": 10000
+          },
+          "default": 16,
+          "help": "The most vCPUs this compute environment scales up to across all running jobs."
+        },
+        {
+          "name": "subnets",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnets",
+          "path": [
+            "compute_resources"
+          ],
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 16
+          },
+          "help": "Where job capacity launches. Pick subnets spanning at least two Availability Zones for resilience."
+        },
+        {
+          "name": "security_group_ids",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "security_group_ids",
+          "path": [
+            "compute_resources"
+          ],
+          "group": "network",
+          "tier": "advanced",
+          "bounds": {
+            "maxItems": 5
+          },
+          "help": "Leave blank to use the VPC default security group."
+        },
+        {
+          "name": "service_role",
+          "label": "Batch service role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "service_role",
+          "group": "identity",
+          "tier": "advanced",
+          "help": "Leave blank to use the AWS-managed Batch service-linked role."
+        },
+        {
+          "name": "state",
+          "label": "State",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "state",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "default": "ENABLED",
+          "help": "DISABLED stops the environment from accepting new job capacity until turned on."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this compute environment does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this compute environment."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new batch compute environment",
+        "provision compute environment",
+        "new fargate batch capacity"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "EC2/SPOT instance sizing (instance_type, instance_role, launch template, allocation strategy) is an engineer decision \u2014 this form covers the common Fargate case",
+        "Placement group and Spot bid percentage are engineer follow-ups when the EC2/SPOT compute type is chosen"
+      ]
+    },
+    {
+      "id": "batch-job-queue-create",
+      "service": "batch",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Batch job queue",
+      "summary": "Request a brand-new AWS Batch job queue; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new job queue as a complete specification: priority, state, and the compute environment it submits work to. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_batch_job_queue"
+      },
+      "params": [
+        {
+          "name": "queue_name",
+          "label": "Queue name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, like batch-default-queue. Names the queue in AWS and in the generated draft."
+        },
+        {
+          "name": "priority",
+          "label": "Priority",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "priority",
+          "group": "identity",
+          "bounds": {
+            "min": 1,
+            "max": 1000
+          },
+          "default": 1,
+          "help": "Higher numbers are evaluated first when multiple queues share the same compute environment."
+        },
+        {
+          "name": "state",
+          "label": "State",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "state",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "default": "ENABLED",
+          "help": "DISABLED stops the queue from accepting new job submissions until turned on."
+        },
+        {
+          "name": "compute_environment",
+          "label": "Compute environment",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_batch_compute_environment/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "compute_environment",
+          "path": [
+            "compute_environment_order"
+          ],
+          "group": "routing",
+          "help": "The compute environment this queue submits jobs to. Create the compute environment first (batch-compute-environment-create) if none exists yet."
+        },
+        {
+          "name": "order",
+          "label": "Order",
+          "type": "number",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": 1,
+          "attr": "order",
+          "group": "routing",
+          "help": "The first (and only) compute environment in this queue's order \u2014 written into the draft, never asked.",
+          "path": [
+            "compute_environment_order"
+          ]
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this job queue does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this job queue."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new batch job queue",
+        "provision job queue",
+        "new work queue"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "A multi-environment fallback order (e.g. Fargate then Fargate Spot) beyond the single environment authored here is an engineer follow-up",
+        "A fair-share scheduling policy (scheduling_policy_arn) is an engineer decision \u2014 this form uses the default FIFO queue behavior"
+      ]
+    },
+    {
+      "id": "batch-job-definition-create",
+      "service": "batch",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Batch job definition",
+      "summary": "Request a brand-new AWS Batch job definition; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new job definition as a complete specification: platform capability, retry and timeout behavior, and the container spec it runs. Submitting routes it to an engineer with a draft Terraform block \u2014 including the container spec \u2014 to review and finish. Nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_batch_job_definition"
+      },
+      "params": [
+        {
+          "name": "job_def_name",
+          "label": "Job definition name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, like nightly-report-job. Names the job definition in AWS and in the generated draft."
+        },
+        {
+          "name": "job_type",
+          "label": "Job type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "container",
+          "attr": "type",
+          "group": "identity",
+          "help": "Always container \u2014 the common case; multi-node parallel and EKS job shapes are an engineer decision."
+        },
+        {
+          "name": "container_properties",
+          "label": "Container properties",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "container_properties",
+          "group": "containers",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The JSON container spec \u2014 image, vCPUs, memory, command \u2014 an engineer authors this to match the workload's built image and resource needs."
+        },
+        {
+          "name": "platform_capability",
+          "label": "Platform capability",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "platform_capabilities",
+          "wrap": "list",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "FARGATE",
+              "EC2"
+            ]
+          },
+          "default": "FARGATE",
+          "help": "Which compute environment platform this job definition can run on."
+        },
+        {
+          "name": "retry_attempts",
+          "label": "Retry attempts",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "attempts",
+          "path": [
+            "retry_strategy"
+          ],
+          "group": "reliability",
+          "bounds": {
+            "min": 1,
+            "max": 10
+          },
+          "default": 1,
+          "help": "How many times a failed job attempt is retried before it is marked FAILED."
+        },
+        {
+          "name": "timeout_seconds",
+          "label": "Timeout (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "attempt_duration_seconds",
+          "path": [
+            "timeout"
+          ],
+          "group": "reliability",
+          "tier": "advanced",
+          "bounds": {
+            "min": 60,
+            "max": 86400
+          },
+          "default": 3600,
+          "help": "Jobs running longer than this are terminated. Leave blank for no timeout."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this job definition does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this job definition."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new batch job definition",
+        "provision job definition",
+        "new batch job"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "The container spec (image, vCPUs, memory, command) is an engineer decision, matched to the workload's built image",
+        "Multi-node parallel jobs (node_properties) and EKS jobs (eks_properties) are engineer decisions \u2014 this form covers the common single-container case",
+        "Exit-code-based retry rules (evaluate_on_exit) beyond a flat attempt count are an engineer follow-up"
+      ]
+    }
+  ]
+}

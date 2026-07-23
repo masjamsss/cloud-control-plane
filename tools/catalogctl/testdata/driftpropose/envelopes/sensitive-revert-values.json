@@ -1,0 +1,48 @@
+{
+  "schema": "ccp.drift/v1",
+  "projectId": "sample",
+  "environment": "prod",
+  "capturedAt": "2026-07-20T03:17:04Z",
+  "runId": "16234567901",
+  "commit": "1370355666666666666666666666666666666666",
+  "cadenceHours": 6,
+  "planExitCode": 2,
+  "report": {
+    "meta": { "format_version": "1.2", "terraform_version": "1.9.0", "provider_tag": "aws-v6.53.0" },
+    "counts": { "security_posture": 1 },
+    "absorbed": [],
+    "invisible_to_plan": "out-of-band CREATED resources — detection is the importer-kit account sweep (resourcegroupstaggingapi), disposition import-and-adopt or delete-in-AWS (human)",
+    "verdicts": [
+      {
+        "address": "aws_db_instance.db1",
+        "type": "aws_db_instance",
+        "actions": ["update"],
+        "actionReason": null,
+        "driftEvidence": true,
+        "class": "security_posture",
+        "riskTier": "high",
+        "recommendation": "NOTE (fixture intent): spec F5 — a HOSTILE/malformed producer that still carries liveJson/codeJson on a sensitive row despite classify.py's own §2.2 contract (machine values present only when sensitive is false). GenerateRevert must pin both nil UNCONDITIONALLY — never trusting that an honest producer would have omitted them.",
+        "neverDo": "NEVER silently adopt into code.",
+        "executor": "human (revert in AWS)",
+        "forceNewAttrs": [],
+        "securityHits": [{ "path": "master_user_password", "why": "credential posture" }],
+        "computedUnknown": [],
+        "notes": [],
+        "changedAttrs": [
+          {
+            "path": "master_user_password",
+            "live": "(sensitive)",
+            "code": "(sensitive)",
+            "forceNew": "in_place",
+            "forceNewWhy": "not a schema-ForceNew attribute",
+            "noiseEqual": false,
+            "churn": "",
+            "sensitive": true,
+            "liveJson": "hostile-leaked-live-secret",
+            "codeJson": "hostile-leaked-code-secret"
+          }
+        ]
+      }
+    ]
+  }
+}

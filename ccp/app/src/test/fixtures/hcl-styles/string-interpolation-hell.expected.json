@@ -1,0 +1,19 @@
+{
+  "blockCount": 4,
+  "addresses": [
+    "aws_instance.braces_in_strings",
+    "aws_iam_policy.json_braces",
+    "aws_instance.directives",
+    "aws_instance.after_hell"
+  ],
+  "probes": [
+    {
+      "address": "aws_instance.after_hell",
+      "exactSource": "resource \"aws_instance\" \"after_hell\" {\n  instance_type = \"t3.micro\"\n}"
+    },
+    {
+      "address": "aws_instance.directives",
+      "exactSource": "resource \"aws_instance\" \"directives\" {\n  user_data = \"%{ if var.gpu }gpu-init%{ else }cpu-init%{ endif } --flag=${join(\",\", var.flags)}\"\n}"
+    }
+  ]
+}

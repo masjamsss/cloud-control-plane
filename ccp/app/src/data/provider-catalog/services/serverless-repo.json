@@ -1,0 +1,1 @@
+{"service":"serverless-repo","types":{"aws_serverlessapplicationrepository_cloudformation_stack":{"attrs":[{"n":"application_id","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"capabilities","t":"list"},{"n":"parameters","t":"map"},{"n":"region","t":"string"},{"n":"semantic_version","t":"string"},{"n":"tags","t":"map"}],"blocks":[]}}}

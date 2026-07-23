@@ -1,0 +1,1 @@
+{"service":"blob","types":{"azurerm_storage_container":{"attrs":[{"n":"name","t":"string","r":1},{"n":"container_access_type","t":"string"},{"n":"default_encryption_scope","t":"string"},{"n":"encryption_scope_override_enabled","t":"bool"},{"n":"metadata","t":"map"},{"n":"storage_account_id","t":"string"}],"blocks":[]}}}

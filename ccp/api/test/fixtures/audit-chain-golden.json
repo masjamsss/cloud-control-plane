@@ -1,0 +1,88 @@
+[
+  {
+    "PK": "P#sample#AUDIT#202607",
+    "SK": "u0",
+    "id": "u0",
+    "projectId": "sample",
+    "at": "2026-07-11T09:00:00.000Z",
+    "action": "login-success",
+    "actor": "putra",
+    "targetType": "session",
+    "targetId": "putra",
+    "prevHash": "",
+    "hash": "f651bf37e95c7b705dfe3efd291cbe095969e6a50157e99038bf18bb7c2fd748"
+  },
+  {
+    "PK": "P#sample#AUDIT#202607",
+    "SK": "u1",
+    "id": "u1",
+    "projectId": "sample",
+    "at": "2026-07-11T09:00:01.000Z",
+    "action": "submit",
+    "actor": "sari",
+    "targetType": "request",
+    "targetId": "REQ1",
+    "after": {
+      "status": "AWAITING_CODE_REVIEW"
+    },
+    "requestId": "REQ1",
+    "prevHash": "f651bf37e95c7b705dfe3efd291cbe095969e6a50157e99038bf18bb7c2fd748",
+    "hash": "ae3d479e6b52a2244a83edc338ce02923646e38aa39038dc0471fd8fbe24b42c"
+  },
+  {
+    "PK": "P#sample#AUDIT#202607",
+    "SK": "u2",
+    "id": "u2",
+    "projectId": "sample",
+    "at": "2026-07-11T09:00:02.000Z",
+    "action": "approve",
+    "actor": "budi",
+    "targetType": "request",
+    "targetId": "REQ1",
+    "before": {
+      "approvals": 0
+    },
+    "after": {
+      "approvals": 1
+    },
+    "requestId": "REQ1",
+    "prevHash": "ae3d479e6b52a2244a83edc338ce02923646e38aa39038dc0471fd8fbe24b42c",
+    "hash": "560ea2785ce901c02084faba506fa9cf62d54cf5510676e4465a8c554e15ea1c"
+  },
+  {
+    "PK": "P#sample#AUDIT#202607",
+    "SK": "u3",
+    "id": "u3",
+    "projectId": "sample",
+    "at": "2026-07-11T09:00:03.000Z",
+    "action": "policy-change",
+    "actor": "putra",
+    "targetType": "policy",
+    "targetId": "POLICY",
+    "before": {
+      "high": 2
+    },
+    "after": {
+      "high": 1
+    },
+    "interimProfile": true,
+    "prevHash": "560ea2785ce901c02084faba506fa9cf62d54cf5510676e4465a8c554e15ea1c",
+    "hash": "c8cdca5baff2e30ee2aa27661b7661ea8b40349ff4412f0e16060ff9c31edb8a"
+  },
+  {
+    "PK": "P#sample#AUDIT#202607",
+    "SK": "u4",
+    "id": "u4",
+    "projectId": "sample",
+    "at": "2026-07-11T09:00:04.000Z",
+    "action": "role-grant",
+    "actor": "putra",
+    "targetType": "account",
+    "targetId": "sari",
+    "after": {
+      "role": "approver"
+    },
+    "prevHash": "c8cdca5baff2e30ee2aa27661b7661ea8b40349ff4412f0e16060ff9c31edb8a",
+    "hash": "4952be8cec27636ef34891026f624eeeed18560c9502d814e349dcac614f018e"
+  }
+]

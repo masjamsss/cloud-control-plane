@@ -1,0 +1,1329 @@
+{
+  "service": "cloudtrail",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_cloudtrail",
+    "aws_cloudwatch_log_group"
+  ],
+  "summary": "Operate the CloudTrail trails: toggle log-file validation, redirect the S3 delivery prefix, control multi-region coverage (engineer-only), tag trails, wire up CloudWatch Logs delivery, tune log-group retention (grow-only), and delete a trail (engineer-only, irreversible).",
+  "operations": [
+    {
+      "id": "cloudtrail-enable-log-file-validation",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable log file validation",
+      "summary": "Turn on tamper-evidence digest files for this trail's logs, or turn them off again.",
+      "description": "Turns on SHA-256 digest file delivery so CloudTrail log integrity can be verified; disabling stops digest generation for this trail's log files.",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "help": "The CloudTrail trail to update."
+        },
+        {
+          "name": "new_enable_log_file_validation",
+          "label": "Enable log file validation",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "default": true,
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "help": "true enables SHA-256 digest files for tamper detection; false stops generating them."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup",
+      "pinned": 1
+    },
+    {
+      "id": "cloudtrail-change-s3-key-prefix",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change the S3 delivery key prefix",
+      "summary": "Change the folder path new logs are saved under in S3 — anything still watching the old path stops seeing new files.",
+      "description": "Changes the object-key prefix CloudTrail writes new log files under in the destination bucket; existing delivered logs stay under the old prefix so downstream readers of the old path will stop seeing new files.",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "help": "The CloudTrail trail to update."
+        },
+        {
+          "name": "new_s3_key_prefix",
+          "label": "New S3 key prefix",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9!_.*'()/-]{0,200}$"
+          },
+          "help": "Path within the destination bucket new log files are written under, e.g. cloudtrail/prod-logs. Leave blank for bucket root."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup",
+      "pinned": 2
+    },
+    {
+      "id": "cloudtrail-toggle-multi-region-trail",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle multi-region trail coverage",
+      "summary": "Switch this trail between logging only its home Region or every Region — narrowing it can hide activity elsewhere. Engineer-reviewed.",
+      "description": "Switches the trail between logging events in its home region only and logging equivalent events across all enabled regions; narrowing coverage can create audit blind spots for activity in other regions.",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "help": "The CloudTrail trail to update."
+        },
+        {
+          "name": "new_is_multi_region_trail",
+          "label": "Multi-region trail",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "help": "true logs events from all AWS regions into this trail; false restricts it to its home region only."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup"
+    },
+    {
+      "id": "cloudtrail-add-tag",
+      "service": "cloudtrail",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a trail",
+      "summary": "Add a label to this trail for cost or ownership tracking. Metadata only — no effect on logging.",
+      "description": "Adds a single key/value tag to the trail for cost allocation, ownership, or compliance tracking; has no effect on logging behaviour.",
+      "target": {
+        "resourceType": "aws_cloudtrail",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "help": "The CloudTrail trail to tag."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$"
+          },
+          "help": "Tag key, e.g. CostCentre or Owner."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{0,256}$"
+          },
+          "help": "Value for the tag key above."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "create"
+    },
+    {
+      "id": "cloudtrail-enable-cloudwatch-logs-integration",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Send trail events to CloudWatch Logs",
+      "summary": "Send this trail's events to CloudWatch Logs so they're searchable and can trigger alerts in near real time.",
+      "description": "Points the trail at an existing CloudWatch Logs log group (via a delivery role) so events are queryable and alertable in near real time; requires the referenced role to already trust cloudtrail.amazonaws.com.",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "help": "The CloudTrail trail to update."
+        },
+        {
+          "name": "new_cloud_watch_logs_group_arn",
+          "label": "CloudWatch log group ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^arn:aws:logs:[a-z0-9-]+:\\d{12}:log-group:.+$"
+          },
+          "help": "ARN of an existing CloudWatch Logs log group (with trailing :* wildcard) to receive trail events."
+        },
+        {
+          "name": "new_cloud_watch_logs_role_arn",
+          "label": "Delivery role ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^arn:aws:iam::\\d{12}:role/.+$"
+          },
+          "help": "IAM role CloudTrail assumes to write into the log group; must already trust cloudtrail.amazonaws.com."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup",
+      "pinned": 3
+    },
+    {
+      "id": "cloudtrail-change-log-retention",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change CloudWatch Logs retention for a trail's log group",
+      "summary": "Keep this trail's log group's events for longer. Retention can only be extended, never shortened, so evidence is never lost early.",
+      "description": "Adjusts how long delivered trail events are kept in the associated CloudWatch Logs log group; retention can only be increased through this operation so audit evidence windows are never shortened by a self-service change.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group"
+      },
+      "params": [
+        {
+          "name": "log_group",
+          "label": "Log group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "help": "The CloudTrail-linked CloudWatch Logs log group to update."
+        },
+        {
+          "name": "new_retention_in_days",
+          "label": "Retention (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              30,
+              60,
+              90,
+              120,
+              150,
+              180,
+              365,
+              400,
+              545,
+              731,
+              1096,
+              1827,
+              2192,
+              2557,
+              2922,
+              3288,
+              3653,
+              0
+            ],
+            "growOnly": true,
+            "semantic": "retention days; 0 = never expire; must not be lower than current value"
+          },
+          "help": "Standard CloudWatch Logs retention period; audit evidence should typically retain at least 90 days. 0 means never expire."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup",
+      "pinned": 1
+    },
+    {
+      "id": "cloudtrail-delete-trail",
+      "service": "cloudtrail",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete a CloudTrail trail",
+      "summary": "Permanently delete this trail and stop its audit logging. This can't be undone, so an engineer reviews it first.",
+      "description": "Permanently stops event logging for this trail and removes it from the account; previously delivered log files in S3 are unaffected but no new audit evidence will be produced by this trail once removed.",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "help": "The CloudTrail trail to delete."
+        },
+        {
+          "name": "confirm_deletion",
+          "label": "Confirm deletion",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "default": false,
+          "bounds": {
+            "allowlist": [
+              true
+            ]
+          },
+          "help": "Must be set to true to confirm. Deleting a trail permanently stops audit logging for its scope and cannot be undone."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "cloudtrail-toggle-logging",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Pause or resume trail logging",
+      "summary": "Pause or resume this trail's event logging. Pausing creates an audit gap until logging resumes.",
+      "description": "Toggle enable_logging on the trail. Turning it off pauses event capture and creates an audit gap, so it runs behind an approval gate. Reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudTrail trail whose event logging to pause or resume, picked from the estate inventory so only existing Terraform-managed trails can be selected.",
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Logging enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "false pauses log delivery for this trail \u2014 an audit blind spot until re-enabled."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (enable_logging)",
+      "group": "availability-lifecycle",
+      "pinned": 4
+    },
+    {
+      "id": "cloudtrail-toggle-global-service-events",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle global service event logging",
+      "summary": "Include or exclude activity from global services like IAM in this trail. Excluding narrows audit coverage.",
+      "description": "Toggle include_global_service_events on the trail, which controls whether events from global services such as IAM are captured. Reversible, no downtime; turning it off reduces audit coverage so it runs with guardrails.",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudTrail trail to update, picked from the estate inventory of Terraform-managed trails.",
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Capture global service events",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "true records events from global (non-regional) AWS services such as IAM and STS into this trail; false skips them, which narrows audit coverage \u2014 a bounded true/false toggle that is fully reversible.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (include_global_service_events)",
+      "group": "protection-backup",
+      "pinned": 5
+    },
+    {
+      "id": "cloudtrail-toggle-organization-trail",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle organization trail",
+      "summary": "Switch this trail between covering just this account or the whole organization. Broad impact, so it needs approval.",
+      "description": "Toggle is_organization_trail. Enabling makes the trail capture events across the whole AWS Organization and requires running in the management account. Broad blast radius, so it runs behind an approval gate. Reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudTrail trail to switch between account-level and organization-wide scope, picked from the estate inventory of Terraform-managed trails.",
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Organization-wide trail",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Requires the AWS Organizations management (or delegated admin) account; applies org-wide."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (is_organization_trail)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "cloudtrail-change-s3-bucket",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change log delivery S3 bucket",
+      "summary": "Redirect this trail's log delivery to a different S3 bucket. The new bucket must already allow CloudTrail to write to it.",
+      "description": "Point s3_bucket_name at a different bucket for log file delivery. The target bucket must carry a CloudTrail delivery bucket policy or apply/delivery will fail, so it runs with guardrails. Reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudTrail trail whose log delivery bucket to change, picked from the estate inventory so only existing Terraform-managed trails can be selected.",
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "required": true
+        },
+        {
+          "name": "bucket",
+          "label": "Destination bucket",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_s3_bucket/address",
+          "required": true,
+          "help": "Bucket must have a CloudTrail service bucket policy allowing log delivery.",
+          "role": "reference",
+          "refAttr": "bucket"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (s3_bucket_name)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "cloudtrail-set-kms-key",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set KMS encryption key",
+      "summary": "Encrypt this trail's delivered logs with a chosen key. The key must already allow CloudTrail to use it.",
+      "description": "Set kms_key_id to encrypt log files delivered by the trail. The key policy must grant CloudTrail encrypt permissions or delivery fails, so it runs behind an approval gate. Reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudTrail trail whose delivered log files should be KMS-encrypted, picked from the estate inventory of Terraform-managed trails.",
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "required": true
+        },
+        {
+          "name": "kms_key",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": true,
+          "help": "Key policy must allow the CloudTrail service to use the key.",
+          "role": "reference",
+          "refAttr": "arn"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (kms_key_id)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "cloudtrail-set-sns-topic",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set SNS notification topic",
+      "summary": "Send a notification each time this trail delivers a new log file. The topic must already allow CloudTrail to publish to it.",
+      "description": "Set sns_topic_name so CloudTrail publishes a notification on each log file delivery. The topic policy must allow the CloudTrail service to publish, so it runs with guardrails. Reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudTrail trail that should publish a notification on each log file delivery, picked from the estate inventory of Terraform-managed trails.",
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "required": true
+        },
+        {
+          "name": "topic",
+          "label": "SNS topic",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sns_topic/address",
+          "required": true,
+          "help": "Topic access policy must allow the CloudTrail service to publish.",
+          "role": "reference",
+          "refAttr": "name"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (sns_topic_name)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "cloudtrail-remove-tag",
+      "service": "cloudtrail",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag",
+      "summary": "Remove a label from this trail. Metadata only — no effect on logging.",
+      "description": "Remove a single tag key from the trail's tags map. Cosmetic metadata change, fully reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudtrail",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudTrail trail whose tag to remove, picked from the estate inventory; removing a tag is metadata-only and has no effect on logging.",
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w.:/+@-]{1,128}$"
+          },
+          "help": "Existing tag key to delete (1-128 chars)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "cloudtrail-cloudtrail-engineer-request",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to CloudTrail trail",
+      "summary": "Request any other change to this trail; an engineer writes and reviews the Terraform before it applies.",
+      "description": "Catch-all for any CloudTrail change not offered as a bounded form. An engineer authors the Terraform for the described intent.",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "required": true,
+          "help": "The trail to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "protection-backup"
+    },
+    {
+      "id": "cloudtrail-set-event-selector-read-write-type",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set event selector read/write type",
+      "summary": "Limit this trail to only read or only write API activity, dropping the other from the audit record. An engineer reviews this first.",
+      "description": "Sets read_write_type on the trail's basic event selector to ReadOnly, WriteOnly, or All. Narrowing away from All drops either read or write API calls from the audit trail, a deliberate audit-scope reduction, so it is engineer-only.",
+      "target": {
+        "resourceType": "aws_cloudtrail",
+        "path": [
+          "event_selector"
+        ]
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "help": "The CloudTrail trail to update."
+        },
+        {
+          "name": "new_read_write_type",
+          "label": "Read/write type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ReadOnly",
+              "WriteOnly",
+              "All"
+            ]
+          },
+          "help": "All logs both read and write API events; ReadOnly or WriteOnly narrows capture to one class and drops the other.",
+          "attr": "read_write_type"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (event_selector.read_write_type)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "cloudtrail-toggle-management-events",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle management event logging on an event selector",
+      "summary": "Include or exclude control-plane activity in this trail. Excluding it removes most security-relevant audit history. Engineer-reviewed.",
+      "description": "Toggles include_management_events on the trail's basic event selector. Disabling it stops capture of management (control-plane) API calls in that selector, removing most security-relevant audit history, so it is engineer-only.",
+      "target": {
+        "resourceType": "aws_cloudtrail",
+        "path": [
+          "event_selector"
+        ]
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "help": "The CloudTrail trail to update."
+        },
+        {
+          "name": "new_include_management_events",
+          "label": "Include management events",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "help": "true logs management (control-plane) API calls in this selector; false stops capturing them, a major audit blind spot.",
+          "attr": "include_management_events"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (event_selector.include_management_events)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "cloudtrail-set-excluded-management-event-sources",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set excluded management event sources",
+      "summary": "Exclude specific AWS services' control-plane activity from this trail's logs, narrowing audit coverage for those services.",
+      "description": "Sets exclude_management_event_sources on the trail's basic event selector, the set of AWS service sources whose management events are not logged. Only kms.amazonaws.com and rdsdata.amazonaws.com are valid, and include_management_events must be true. Adding a source narrows audit coverage, so it runs with guardrails.",
+      "target": {
+        "resourceType": "aws_cloudtrail",
+        "path": [
+          "event_selector"
+        ]
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "help": "The CloudTrail trail whose management-events selector to update."
+        },
+        {
+          "name": "new_exclude_management_event_sources",
+          "label": "Excluded management event sources",
+          "type": "list",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "kms.amazonaws.com",
+              "rdsdata.amazonaws.com"
+            ],
+            "semantic": "each entry must be one of the two documented management event sources; requires include_management_events = true"
+          },
+          "help": "Management event sources to exclude from logging. Only kms.amazonaws.com and rdsdata.amazonaws.com are valid; each excluded source removes those events from the audit trail.",
+          "attr": "exclude_management_event_sources"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (event_selector.exclude_management_event_sources)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "cloudtrail-add-insight-selector",
+      "service": "cloudtrail",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a CloudTrail Insights selector",
+      "summary": "Turn on anomaly detection for unusual API call or error rates. Monitoring only — it doesn't reduce what's logged.",
+      "description": "Adds an insight_selector block enabling anomaly detection for the chosen insight_type, either ApiCallRateInsight or ApiErrorRateInsight. A monitoring feature that does not reduce underlying audit capture; reversible by removing the selector. Runs with guardrails.",
+      "target": {
+        "resourceType": "aws_cloudtrail",
+        "block": "insight_selector"
+      },
+      "params": [
+        {
+          "name": "trail",
+          "label": "Trail",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudtrail/address",
+          "help": "The CloudTrail trail to add an Insights selector to."
+        },
+        {
+          "name": "insight_type",
+          "label": "Insight type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ApiCallRateInsight",
+              "ApiErrorRateInsight"
+            ]
+          },
+          "help": "ApiCallRateInsight detects unusual API call-rate activity; ApiErrorRateInsight detects unusual API error-rate activity."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (insight_selector)",
+      "group": "create"
+    },
+    {
+      "id": "cloudtrail-log-group-toggle-skip-destroy",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle retaining the log group on destroy",
+      "summary": "Choose whether a future teardown keeps this log group's stored audit data, or deletes it with the group. An engineer reviews this.",
+      "description": "Sets skip_destroy on the CloudTrail-linked CloudWatch Logs log group. When true, a future terraform destroy leaves the log group and any logs it contains in place and only removes it from Terraform state; when false, destroy deletes the group and its stored log events. Governs whether audit log data survives a destroy, so it runs behind engineer review.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group"
+      },
+      "params": [
+        {
+          "name": "log_group",
+          "label": "Log group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "help": "The CloudTrail-linked CloudWatch Logs log group to update."
+        },
+        {
+          "name": "new_skip_destroy",
+          "label": "Skip destroy",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "help": "true keeps the log group and its logs on terraform destroy (state removal only); false lets destroy delete the group and its stored log events."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (skip_destroy)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudtrail-log-group-toggle-deletion-protection",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle deletion protection on a log group",
+      "summary": "Protect this trail's log group from being deleted, or remove that protection. An engineer reviews this first.",
+      "description": "Sets deletion_protection_enabled on the CloudTrail-linked CloudWatch Logs log group. Enabling blocks deletion of the group; disabling removes that safety guardrail and must be specified explicitly as false rather than by removing the argument. Because it controls whether the audit log group can be deleted, it runs behind engineer review.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group"
+      },
+      "params": [
+        {
+          "name": "log_group",
+          "label": "Log group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "help": "The CloudTrail-linked CloudWatch Logs log group to update."
+        },
+        {
+          "name": "new_deletion_protection_enabled",
+          "label": "Deletion protection enabled",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "help": "true prevents the log group from being deleted; false removes that guardrail (must be set explicitly to false)."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (deletion_protection_enabled)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "cloudtrail-set-log-group-class",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set the log group class",
+      "summary": "Change this log group's storage class. Applying REPLACES it, losing its history; the delivery class also caps retention at 2 days.",
+      "description": "Sets log_group_class on the CloudTrail-linked CloudWatch Logs log group to STANDARD, INFREQUENT_ACCESS, or DELIVERY. Selecting DELIVERY causes retention_in_days to be ignored and forcibly set to 2 days regardless of the current retention, expiring older audit evidence, and changes which logging features are available, so it runs behind engineer review.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group"
+      },
+      "params": [
+        {
+          "name": "log_group",
+          "label": "Log group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "help": "The CloudTrail-linked CloudWatch Logs log group to update."
+        },
+        {
+          "name": "new_log_group_class",
+          "label": "Log group class",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "STANDARD",
+              "INFREQUENT_ACCESS",
+              "DELIVERY"
+            ]
+          },
+          "help": "Log class of the group. DELIVERY forces retention down to 2 days and is destructive to long-term audit evidence."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (log_group_class)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudtrail-set-log-group-kms-key",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set the KMS encryption key on a log group",
+      "summary": "Encrypt this log group's new audit data with a chosen key. The key must already let CloudWatch Logs use it. An engineer reviews this.",
+      "description": "Sets kms_key_id on the CloudTrail-linked CloudWatch Logs log group to an existing estate KMS key so newly ingested log data is encrypted with it. The key policy must allow the CloudWatch Logs service to use the key or ingestion breaks; previously ingested data keeps its prior encryption state. Changes the encryption boundary of audit data, so it runs behind engineer review.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group"
+      },
+      "params": [
+        {
+          "name": "log_group",
+          "label": "Log group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "help": "The CloudTrail-linked CloudWatch Logs log group to update."
+        },
+        {
+          "name": "kms_key",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_kms_key/address",
+          "help": "Existing estate KMS key ARN used to encrypt log data; the key policy must allow the CloudWatch Logs service to use it.",
+          "role": "reference",
+          "refAttr": "arn"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (kms_key_id)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "cloudtrail-add-log-group-tag",
+      "service": "cloudtrail",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a log group",
+      "summary": "Add a label to this trail's log group for cost or ownership tracking. Metadata only — no effect on logging.",
+      "description": "Adds a single key/value tag to the CloudTrail-linked CloudWatch Logs log group for cost allocation, ownership, or compliance tracking. Has no effect on log ingestion, retention, or encryption behaviour.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "log_group",
+          "label": "Log group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "help": "The CloudTrail-linked CloudWatch Logs log group to tag."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$"
+          },
+          "help": "Tag key, e.g. CostCentre or Owner (1-128 chars; AWS tag key charset)."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{0,256}$"
+          },
+          "help": "Value for the tag key above (0-256 chars; AWS tag value charset)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "create"
+    },
+    {
+      "id": "cloudtrail-remove-log-group-tag",
+      "service": "cloudtrail",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag from a log group",
+      "summary": "Remove a label from this trail's log group. Metadata only — no effect on logging.",
+      "description": "Removes a single tag key from the CloudTrail-linked CloudWatch Logs log group's tags map. Cosmetic metadata change, fully reversible, with no effect on logging, retention, or encryption.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "log_group",
+          "label": "Log group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "help": "The CloudTrail-linked CloudWatch Logs log group to update."
+        },
+        {
+          "name": "key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w.:/+@-]{1,128}$"
+          },
+          "help": "Existing tag key to delete (1-128 chars)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "cloudtrail-provision-trail",
+      "service": "cloudtrail",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a CloudTrail trail",
+      "summary": "Create a multi-region, log-file-validated trail delivering to a chosen S3 bucket. Redirecting delivery blinds audit.",
+      "consoleLabel": "Trails",
+      "description": "Create an aws_cloudtrail trail delivering to an S3 bucket chosen from inventory, with multi-region coverage, global-service events, and log-file validation on by default. Because a trail is the account's audit record, the delivery destinations are inventory pickers and confirmed at review. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "params": [
+        {
+          "name": "trail_name",
+          "label": "Trail name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "The name of the trail (written to the name attribute).",
+          "attr": "name",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._-]{3,128}$"
+          }
+        },
+        {
+          "name": "s3_bucket_name",
+          "label": "Delivery bucket",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "s3_bucket_name",
+          "enumSource": "inventory://aws_s3_bucket/address",
+          "group": "destination",
+          "help": "The S3 bucket the trail delivers logs to (the aws_s3_bucket.id, i.e. bucket name, it references). Must be an access-controlled bucket."
+        },
+        {
+          "name": "cloud_watch_logs_group_arn",
+          "label": "CloudWatch Logs group",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "cloud_watch_logs_group_arn",
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "group": "destination",
+          "help": "An optional CloudWatch Logs group to also stream events to (the aws_cloudwatch_log_group.arn it references)."
+        },
+        {
+          "name": "kms_key_id",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key_id",
+          "enumSource": "inventory://aws_kms_key/address",
+          "group": "destination",
+          "help": "An optional customer-managed KMS key to encrypt delivered logs (the aws_kms_key.arn it references)."
+        },
+        {
+          "name": "is_multi_region_trail",
+          "label": "Is multi region trail",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "attr": "is_multi_region_trail",
+          "const": true,
+          "group": "coverage",
+          "help": "Capture events in every region by default; written into the draft, never asked."
+        },
+        {
+          "name": "include_global_service_events",
+          "label": "Include global service events",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "attr": "include_global_service_events",
+          "const": true,
+          "group": "coverage",
+          "help": "Include global-service events (such as IAM); written into the draft, never asked."
+        },
+        {
+          "name": "enable_log_file_validation",
+          "label": "Enable log file validation",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "attr": "enable_log_file_validation",
+          "const": true,
+          "group": "coverage",
+          "help": "Enable log-file integrity validation by default; written into the draft, never asked."
+        },
+        {
+          "name": "description_tag",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "help": "A short description recorded as the resource's Description tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "help": "The team or person accountable for this resource, recorded as its PIC tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "cloudtrail",
+        "audit trail",
+        "create trail",
+        "provision trail"
+      ],
+      "decisions": [
+        "Disabling logging, narrowing region coverage, or redirecting the S3 destination blinds the audit trail. The delivery bucket must be an access-controlled destination the engineer confirms, with a bucket policy that lets CloudTrail write and denies public access.",
+        "Log-file validation and multi-region coverage are on by default; confirm nothing downstream depends on the old trail configuration before this one replaces it."
+      ]
+    }
+  ]
+}

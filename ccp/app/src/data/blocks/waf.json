@@ -1,0 +1,7 @@
+{
+ "aws_wafv2_web_acl.app": {
+  "file": "ccp/app/fixtures-estate/waf.tf",
+  "line": 3,
+  "source": "resource \"aws_wafv2_web_acl\" \"app\" {\n  name        = \"app-waf\"\n  description = \"WAF for the application load balancer\"\n  scope       = \"REGIONAL\"\n\n  default_action {\n    allow {}\n  }\n\n  visibility_config {\n    cloudwatch_metrics_enabled = true\n    metric_name                = \"app-waf\"\n    sampled_requests_enabled   = true\n  }\n\n  tags = {\n    Name = \"app-waf\"\n    PIC  = \"user01@example.com\"\n  }\n}"
+ }
+}

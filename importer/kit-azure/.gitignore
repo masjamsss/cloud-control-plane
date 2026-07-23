@@ -1,0 +1,8 @@
+# Live discovery output: capture dirs hold REAL resource ids/names for the target
+# subscription. They are working evidence, not repo content — keep them here (ignored)
+# or outside the repo entirely. Mirrors importer/kit/.gitignore.
+work/
+
+# python bytecode from local test runs
+__pycache__/
+*.pyc

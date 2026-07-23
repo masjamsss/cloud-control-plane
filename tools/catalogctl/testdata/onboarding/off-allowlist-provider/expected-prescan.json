@@ -1,0 +1,18 @@
+{
+  "repo": "off-allowlist-provider",
+  "verdict": "reject",
+  "findings": [
+    {
+      "code": "PROVIDER_SOURCE",
+      "file": "main.tf",
+      "line": 4
+    }
+  ],
+  "resourceBlocks": 0,
+  "moduleBlocks": 0,
+  "tfJsonFiles": 0,
+  "fmtDirtyFiles": 0,
+  "providerPins": {
+    "aws": "1.0.0"
+  }
+}

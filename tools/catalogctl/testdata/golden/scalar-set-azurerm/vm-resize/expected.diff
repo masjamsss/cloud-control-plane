@@ -1,0 +1,11 @@
+--- a/environments/prod/compute.tf
++++ b/environments/prod/compute.tf
+@@ -2,7 +2,7 @@
+   name                  = "app01"
+   resource_group_name   = "core-rg"
+   location              = "eastus"
+-  size                  = "Standard_B2s"
++  size                  = "Standard_D4s_v5"
+   admin_username        = "azureuser"
+   network_interface_ids = [azurerm_network_interface.app01.id]
+ 

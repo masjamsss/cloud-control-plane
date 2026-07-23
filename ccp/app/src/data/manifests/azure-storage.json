@@ -1,0 +1,763 @@
+{
+  "service": "azure-storage",
+  "scope": "expansion",
+  "resourceTypes": [
+    "azurerm_netapp_account",
+    "azurerm_netapp_backup_vault",
+    "azurerm_netapp_pool",
+    "azurerm_netapp_volume",
+    "azurerm_storage_account",
+    "azurerm_storage_container",
+    "azurerm_storage_mover",
+    "azurerm_storage_share",
+    "azurerm_storage_sync"
+  ],
+  "summary": "Operate Azure Storage: tag hygiene and durability/security posture tightening on storage accounts (minimum TLS version, replication type, account-wide public blob access, blob versioning), grow-only file share quota, and public access tightening on blob containers. Provisioning a brand-new storage account also routes to an engineer.",
+  "operations": [
+    {
+      "id": "azure-storage-account-update-tags",
+      "service": "azure-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update storage account tags",
+      "summary": "Set or update this storage account's tags. Only the tags you list change; others are left alone. No effect on data or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on the storage account. Non-disruptive, takes effect immediately, and has no effect on stored data, endpoints, or access.",
+      "target": {
+        "resourceType": "azurerm_storage_account",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "storage_account",
+          "label": "Storage account",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_storage_account/address",
+          "help": "The storage account to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-storage-account-set-min-tls-version",
+      "service": "azure-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set minimum TLS version",
+      "summary": "Require a newer minimum TLS version for requests to this storage account. Tightens security; loosening it back is engineer-authored.",
+      "consoleLabel": "Minimum TLS version",
+      "description": "Sets the minimum TLS version accepted for requests to the storage account's blob, file, queue, and table endpoints. This operation only offers the modern, secure value (TLS 1.2); moving to an older, weaker minimum is not offered self-service and requires an engineer-authored change.",
+      "target": {
+        "resourceType": "azurerm_storage_account",
+        "attr": "min_tls_version"
+      },
+      "params": [
+        {
+          "name": "storage_account",
+          "label": "Storage account",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_storage_account/address",
+          "help": "The storage account whose minimum TLS version to set."
+        },
+        {
+          "name": "min_tls_version",
+          "label": "Minimum TLS version",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": ["TLS1_2"]
+          },
+          "help": "The minimum TLS version clients must use to connect. Only the modern, secure minimum (TLS 1.2) is offered here."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (min_tls_version)",
+      "group": "protection-backup",
+      "decisions": [
+        "Tighten-only: this operation offers TLS 1.2 only. Moving to an older, weaker minimum is engineer-authored, not offered here."
+      ]
+    },
+    {
+      "id": "azure-storage-account-set-replication-type",
+      "service": "azure-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change storage account replication type",
+      "summary": "Change how many copies of this account's data Azure keeps and where. Some directions cost more; others reduce redundancy.",
+      "consoleLabel": "Replication",
+      "description": "Sets the data replication strategy for the storage account. Higher redundancy (adding zone or geo replication) improves durability and disaster-recovery posture at higher cost; moving to a less redundant option lowers cost but also lowers protection against a zonal or regional failure. In-place; Azure performs the underlying data replication change asynchronously after apply, so full convergence to the new redundancy level is not instant.",
+      "target": {
+        "resourceType": "azurerm_storage_account",
+        "attr": "account_replication_type"
+      },
+      "params": [
+        {
+          "name": "storage_account",
+          "label": "Storage account",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_storage_account/address",
+          "help": "The storage account whose replication type to change."
+        },
+        {
+          "name": "account_replication_type",
+          "label": "Replication type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": ["LRS", "ZRS", "GRS", "RAGRS", "GZRS", "RAGZRS"]
+          },
+          "help": "LRS: three copies in one datacenter. ZRS: three copies across availability zones in the region. GRS/RAGRS: LRS plus an asynchronous copy in a paired region (RA also allows reads from that secondary copy). GZRS/RAGZRS: ZRS plus that same paired-region copy."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (account_replication_type)",
+      "group": "protection-backup",
+      "decisions": [
+        "Moving to a less redundant option (for example GRS to LRS) reduces disaster-recovery protection — confirm nothing depends on the account's current geo-redundancy before narrowing it.",
+        "Azure applies the new redundancy level asynchronously; the account keeps operating normally while it converges."
+      ]
+    },
+    {
+      "id": "azure-storage-account-block-public-blob-access",
+      "service": "azure-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Block public access to blob containers",
+      "summary": "Stop this account from ever allowing an anonymous, public container or blob. Tightens only; loosening it back is engineer-authored.",
+      "consoleLabel": "Allow Blob public access",
+      "description": "Sets allow_nested_items_to_be_public to false on the storage account — the account-wide master switch for anonymous public read access to blob containers and blobs. Once false, no container or blob under this account can be made publicly readable, regardless of any individual container's own access-level setting. This operation only offers false (the hardened value); re-enabling public access account-wide is not offered self-service and requires an engineer-authored change.",
+      "target": {
+        "resourceType": "azurerm_storage_account",
+        "attr": "allow_nested_items_to_be_public"
+      },
+      "params": [
+        {
+          "name": "storage_account",
+          "label": "Storage account",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_storage_account/address",
+          "help": "The storage account whose account-wide public blob access setting to change."
+        },
+        {
+          "name": "allow_nested_items_to_be_public",
+          "label": "Allow Blob public access",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [false]
+          },
+          "help": "Whether anonymous public read access to any blob container in this account is permitted at all. This operation only offers false (blocked); turning it back on is engineer-authored."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (allow_nested_items_to_be_public)",
+      "group": "protection-backup",
+      "decisions": [
+        "Tighten-only: this operation offers false only. Re-enabling public blob access account-wide is engineer-authored.",
+        "Confirm no container or application in this account currently depends on public (anonymous) blob access before applying — blocking it can break public content delivery that relies on it."
+      ]
+    },
+    {
+      "id": "azure-storage-share-grow-quota",
+      "service": "azure-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Grow a file share's quota",
+      "summary": "Increase this file share's maximum size. This operation only grows the quota, never shrinks it.",
+      "consoleLabel": "Quota (GiB)",
+      "description": "Increases the quota (maximum size, in GiB) of an existing file share. This self-service operation only offers growing the quota — Azure does support shrinking a share's quota down to its current usage, but that direction is not offered here; request an engineer-authored change to reduce it. No downtime; existing files and active connections are unaffected.",
+      "target": {
+        "resourceType": "azurerm_storage_share",
+        "attr": "quota"
+      },
+      "params": [
+        {
+          "name": "share",
+          "label": "File share",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_storage_share/address",
+          "help": "The file share to grow."
+        },
+        {
+          "name": "quota",
+          "label": "New quota (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 102400,
+            "growOnly": true
+          },
+          "help": "New quota in GiB. Must exceed the share's current quota. Standard file shares typically top out at 5120 GiB (5 TiB) unless the storage account has large file shares enabled, which raises the ceiling to 102400 GiB (100 TiB)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (grow-only)",
+      "group": "scale-performance",
+      "keywords": ["file share full", "extend share", "out of space"]
+    },
+    {
+      "id": "azure-storage-container-set-private-access",
+      "service": "azure-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set blob container access to private",
+      "summary": "Make this container private, blocking anonymous reads of it and its blobs. Tightens only; loosening it back is engineer-authored.",
+      "consoleLabel": "Public access level",
+      "description": "Sets container_access_type to private, disabling anonymous public read access to the container and the blobs inside it. This operation only offers the private value; allowing public read access (to blobs only, or to the whole container including its blob list) is not offered self-service and requires an engineer-authored change. Note that if the storage account's own allow_nested_items_to_be_public switch is false, public access is already blocked account-wide regardless of this per-container setting.",
+      "target": {
+        "resourceType": "azurerm_storage_container",
+        "attr": "container_access_type"
+      },
+      "params": [
+        {
+          "name": "container",
+          "label": "Blob container",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_storage_container/address",
+          "help": "The blob container whose public access level to set."
+        },
+        {
+          "name": "container_access_type",
+          "label": "Container public access level",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": ["private"]
+          },
+          "help": "The container's public access level. This operation only offers private (no anonymous access); a public level is engineer-authored."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (container_access_type)",
+      "group": "protection-backup",
+      "decisions": [
+        "Tighten-only: this operation offers private only. Allowing blob or container public access is engineer-authored.",
+        "Confirm no application depends on this container's current public read access before applying."
+      ]
+    },
+    {
+      "id": "azure-tag-netapp-account",
+      "service": "azure-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Netapp Account tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Netapp Account (azurerm_netapp_account). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_netapp_account",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Netapp Account",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_netapp_account/address",
+          "help": "The Netapp Account to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-netapp-backup-vault",
+      "service": "azure-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Netapp Backup Vault tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Netapp Backup Vault (azurerm_netapp_backup_vault). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_netapp_backup_vault",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Netapp Backup Vault",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_netapp_backup_vault/address",
+          "help": "The Netapp Backup Vault to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-netapp-pool",
+      "service": "azure-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Netapp Pool tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Netapp Pool (azurerm_netapp_pool). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_netapp_pool",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Netapp Pool",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_netapp_pool/address",
+          "help": "The Netapp Pool to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-netapp-volume",
+      "service": "azure-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Netapp Volume tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Netapp Volume (azurerm_netapp_volume). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_netapp_volume",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Netapp Volume",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_netapp_volume/address",
+          "help": "The Netapp Volume to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-storage-mover",
+      "service": "azure-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Storage Mover tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Storage Mover (azurerm_storage_mover). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_storage_mover",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Storage Mover",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_storage_mover/address",
+          "help": "The Storage Mover to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-storage-sync",
+      "service": "azure-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Storage Sync tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Storage Sync (azurerm_storage_sync). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_storage_sync",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Storage Sync",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_storage_sync/address",
+          "help": "The Storage Sync to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-storage-account-provision",
+      "service": "azure-storage",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new storage account",
+      "summary": "Request a new storage account with public access blocked, modern TLS, and shared-key auth off. An engineer reviews it first.",
+      "description": "Create a storage account the way this estate builds every one: public network access blocked, only the modern TLS minimum accepted, anonymous blob access blocked, and shared-key authentication off in favor of Azure AD/RBAC. Submitting routes the complete specification to an engineer with a draft of the resource to review and finish.",
+      "target": {
+        "resourceType": "azurerm_storage_account"
+      },
+      "params": [
+        {
+          "name": "storage_account_name",
+          "label": "Storage account name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z0-9]{3,24}$"
+          },
+          "help": "Lower-case letters and numbers only, 3 to 24 characters. Storage account names are globally unique across Azure."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group this storage account belongs to."
+        },
+        {
+          "name": "account_tier",
+          "label": "Performance tier",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "account_tier",
+          "group": "storage",
+          "bounds": {
+            "allowlist": ["Standard", "Premium"]
+          },
+          "default": "Standard",
+          "help": "Standard covers most workloads at the usual price point; Premium uses solid-state storage for lower, more consistent latency at a higher cost."
+        },
+        {
+          "name": "account_replication_type",
+          "label": "Replication type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "account_replication_type",
+          "group": "storage",
+          "bounds": {
+            "allowlist": ["LRS", "ZRS", "GRS", "RAGRS", "GZRS", "RAGZRS"]
+          },
+          "default": "GRS",
+          "help": "LRS keeps three copies in one datacenter. ZRS spreads them across availability zones. GRS, RAGRS, GZRS and RAGZRS add an asynchronous copy in a paired region for disaster recovery, at extra cost."
+        },
+        {
+          "name": "min_tls_version",
+          "label": "Minimum TLS version",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "TLS1_2",
+          "attr": "min_tls_version",
+          "group": "protection",
+          "help": "Always the modern, secure minimum (TLS 1.2) — written into the draft, never asked."
+        },
+        {
+          "name": "public_network_access_enabled",
+          "label": "Public network access",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "public_network_access_enabled",
+          "group": "protection",
+          "bounds": {
+            "allowlist": [true, false]
+          },
+          "default": false,
+          "help": "Off by default so the account has no public endpoint — reach it over a private endpoint or VNet service endpoint. Choosing On exposes it to the public internet; pick On only with a reason a reviewer will read, and expect to add network rules during review."
+        },
+        {
+          "name": "allow_nested_items_to_be_public",
+          "label": "Allow anonymous blob access",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": false,
+          "attr": "allow_nested_items_to_be_public",
+          "group": "protection",
+          "help": "Always off for a new account — written into the draft, never asked. No container or blob under this account can ever be made anonymously public."
+        },
+        {
+          "name": "shared_access_key_enabled",
+          "label": "Shared key authentication",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": false,
+          "attr": "shared_access_key_enabled",
+          "group": "protection",
+          "help": "Always off for a new account — written into the draft, never asked. Data access must authenticate through Azure AD/RBAC instead of an account key or connection string."
+        },
+        {
+          "name": "https_traffic_only_enabled",
+          "label": "HTTPS-only traffic",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "https_traffic_only_enabled",
+          "group": "protection",
+          "help": "Always on for a new account — written into the draft, never asked. Plain HTTP requests to any endpoint are rejected."
+        },
+        {
+          "name": "resource_name",
+          "label": "Storage account name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this storage account holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this storage account."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new storage account", "new blob storage", "provision storage account"],
+      "decisions": [
+        "Public network access and shared-key authentication are off by default — confirm a private endpoint or VNet service endpoint reaches this account and that the workload can authenticate via Azure AD/RBAC, or the engineer relaxes the relevant setting consciously during review.",
+        "Confirm the chosen region matches where the rest of the workload runs.",
+        "Customer-managed encryption keys, network firewall rules, and blob versioning/soft-delete are not captured here — request them as a separate engineer-authored change if needed."
+      ]
+    }
+  ]
+}

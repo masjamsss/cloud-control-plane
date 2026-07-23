@@ -1,0 +1,88 @@
+/* ============================================================================
+   Admin / governance hub (/admin, Lead only) — Users · Teams · Approval policy.
+   Ledger: display header + firm rule, same page-header treatment as
+   catalog.css's .catalog__head / approvals.css's .apv__head.
+   ============================================================================ */
+
+.admin {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* Display title + firm rule (Ledger contract #1). No header meta here — the
+   admin hub spans eight unrelated sub-pages with no single shared count to
+   put on the right (contract: omit an element the page doesn't have data
+   for), so this is a one-column header rather than catalog/console's
+   title+meta grid. */
+.admin__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  border-bottom: 2px solid var(--text-primary);
+  padding-bottom: var(--space-7);
+}
+.admin__title {
+  margin: 0;
+  font-size: clamp(32px, 4vw, 46px);
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+.admin__sub {
+  margin: 0;
+  max-width: 68ch;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* ── Tab bar ────────────────────────────────────────────────────────────────── */
+.admin__tabs {
+  display: flex;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--border-default);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.admin__tabs::-webkit-scrollbar {
+  display: none;
+}
+.admin__tab {
+  position: relative;
+  padding: var(--space-4) var(--space-5);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color var(--dur-base) var(--ease-standard), border-color var(--dur-base) var(--ease-standard);
+}
+.admin__tab:hover {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+/* Active-nav underline, not a filled/colored label (Ledger contract #5: the
+   accent is the underline, not the tab's own text color) — same treatment
+   as AppShell.css's .shell__link--active. */
+.admin__tab--active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+.admin__tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-1);
+}
+
+.admin__panel {
+  padding-top: var(--space-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin__tab {
+    transition: none;
+  }
+}

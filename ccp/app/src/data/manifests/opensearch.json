@@ -1,0 +1,346 @@
+{
+  "service": "opensearch",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_opensearch_domain"
+  ],
+  "summary": "Provision a brand-new OpenSearch search/log-analytics domain. No OpenSearch estate exists yet, so this is a first stand-up an engineer reviews before it applies.",
+  "operations": [
+    {
+      "id": "opensearch-domain-create",
+      "service": "opensearch",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new OpenSearch domain",
+      "summary": "Request a brand-new OpenSearch domain inside the VPC; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a search/log-analytics domain as a complete specification: engine version, instance count and size, storage, network placement, and the estate's encryption baseline. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_opensearch_domain"
+      },
+      "params": [
+        {
+          "name": "domain_name",
+          "label": "Domain name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "domain_name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,27}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, 3-28 characters. Names the domain's endpoint."
+        },
+        {
+          "name": "engine_version",
+          "label": "Engine version",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "engine_version",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "OpenSearch_2.15",
+              "OpenSearch_2.11",
+              "OpenSearch_2.3",
+              "Elasticsearch_7.10",
+              "engineer-decides"
+            ]
+          },
+          "default": "OpenSearch_2.15",
+          "help": "The current recommended OpenSearch version is the default; pick engineer-decides for a legacy Elasticsearch compatibility mode."
+        },
+        {
+          "name": "instance_type",
+          "label": "Data node instance type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "instance_type",
+          "path": [
+            "cluster_config"
+          ],
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "t3.small.search",
+              "t3.medium.search",
+              "m5.large.search",
+              "m5.xlarge.search",
+              "r5.large.search",
+              "r5.xlarge.search"
+            ]
+          },
+          "default": "m5.large.search",
+          "help": "Size class for processor and memory on every data node."
+        },
+        {
+          "name": "instance_count",
+          "label": "Data node count",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "instance_count",
+          "path": [
+            "cluster_config"
+          ],
+          "group": "engine",
+          "bounds": {
+            "min": 1,
+            "max": 20
+          },
+          "default": 2,
+          "help": "Two or more spread across zones keeps the domain up through a single node loss."
+        },
+        {
+          "name": "zone_awareness_enabled",
+          "label": "Zone awareness",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "attr": "zone_awareness_enabled",
+          "path": [
+            "cluster_config"
+          ],
+          "group": "availability",
+          "default": true,
+          "help": "Spreads data nodes across Availability Zones. Requires an even node count."
+        },
+        {
+          "name": "ebs_enabled",
+          "label": "EBS-backed storage",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "ebs_enabled",
+          "path": [
+            "ebs_options"
+          ],
+          "group": "storage",
+          "help": "Always on — this baseline only offers EBS-backed domains, never instance store."
+        },
+        {
+          "name": "volume_size",
+          "label": "Volume size per node (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "volume_size",
+          "path": [
+            "ebs_options"
+          ],
+          "group": "storage",
+          "bounds": {
+            "min": 10,
+            "max": 1000
+          },
+          "default": 100,
+          "help": "EBS volume size attached to each data node."
+        },
+        {
+          "name": "volume_type",
+          "label": "Volume type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "volume_type",
+          "path": [
+            "ebs_options"
+          ],
+          "group": "storage",
+          "bounds": {
+            "allowlist": [
+              "gp3"
+            ]
+          },
+          "default": "gp3",
+          "help": "New domains start on gp3."
+        },
+        {
+          "name": "encrypt_at_rest",
+          "label": "Encryption at rest",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "enabled",
+          "path": [
+            "encrypt_at_rest"
+          ],
+          "group": "security",
+          "help": "Always on from birth — written into the draft, never asked."
+        },
+        {
+          "name": "node_to_node_encryption",
+          "label": "Node-to-node encryption",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "enabled",
+          "path": [
+            "node_to_node_encryption"
+          ],
+          "group": "security",
+          "help": "Always on from birth — written into the draft, never asked."
+        },
+        {
+          "name": "enforce_https",
+          "label": "Enforce HTTPS",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "enforce_https",
+          "path": [
+            "domain_endpoint_options"
+          ],
+          "group": "security",
+          "help": "Always on from birth — written into the draft, never asked."
+        },
+        {
+          "name": "tls_security_policy",
+          "label": "Minimum TLS policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "tls_security_policy",
+          "path": [
+            "domain_endpoint_options"
+          ],
+          "group": "security",
+          "bounds": {
+            "allowlist": [
+              "Policy-Min-TLS-1-2-PFS-2023-10",
+              "Policy-Min-TLS-1-2-2019-07"
+            ]
+          },
+          "default": "Policy-Min-TLS-1-2-PFS-2023-10",
+          "help": "Which TLS versions and ciphers clients may use. The 2023 forward-secrecy policy is the current recommended default."
+        },
+        {
+          "name": "access_policies",
+          "label": "Access policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "access_policies",
+          "group": "security",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The IAM resource-policy JSON controlling who can call this domain — an engineer fills this in from the estate's standard domain-access policy during review."
+        },
+        {
+          "name": "subnets",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_ids",
+          "path": [
+            "vpc_options"
+          ],
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 3
+          },
+          "help": "Where the domain's data nodes live. Pick as many subnets as Availability Zones the domain spans."
+        },
+        {
+          "name": "security_groups",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "security_group_ids",
+          "path": [
+            "vpc_options"
+          ],
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "help": "Who can reach the domain's endpoint."
+        },
+        {
+          "name": "resource_name",
+          "label": "Domain name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this domain serves",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this domain."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new opensearch domain",
+        "new elasticsearch domain",
+        "provision search cluster"
+      ],
+      "decisions": [
+        "Fine-grained access control (advanced_security_options) and its master user credentials are engineer decisions",
+        "Dedicated master nodes and UltraWarm/cold-storage tiers for larger domains are engineer decisions",
+        "Snapshot, auto-tune, and off-peak maintenance window schedules are engineer follow-ups after creation",
+        "The access policy JSON is filled in by the engineer from the estate's standard domain-access policy"
+      ]
+    }
+  ]
+}

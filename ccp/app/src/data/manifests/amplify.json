@@ -1,0 +1,300 @@
+{
+  "service": "amplify",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_amplify_app",
+    "aws_amplify_branch"
+  ],
+  "summary": "Provision AWS Amplify Hosting for a new frontend: the app container that owns a repository and build settings, and a branch that deploys from it. Both are engineer-gated creates — repository access credentials are never captured here, and Amplify's own IAM/build behavior needs a review before it goes live.",
+  "operations": [
+    {
+      "id": "amplify-app-create",
+      "service": "amplify",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a new Amplify app",
+      "summary": "Request a new Amplify Hosting app for a frontend repository. An engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Specify a new aws_amplify_app: its name, the repository it deploys from, and the hosting platform. The repository access credential (access_token or oauth_token) is never captured here — the engineer connects it out of band, the same way any other CI integration credential is handled. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_amplify_app"
+      },
+      "params": [
+        {
+          "name": "app_name",
+          "label": "App name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9-_. ]{1,255}$"
+          },
+          "help": "The app's name in the Amplify console."
+        },
+        {
+          "name": "repository",
+          "label": "Repository URL",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "repository",
+          "group": "source",
+          "bounds": {
+            "pattern": "^https://[^\\s]{1,500}$"
+          },
+          "help": "The Git repository URL (GitHub, GitLab, Bitbucket, or CodeCommit). Leave blank to connect a repository later from the console."
+        },
+        {
+          "name": "platform",
+          "label": "Platform",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "platform",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "WEB",
+              "WEB_COMPUTE",
+              "WEB_DYNAMIC"
+            ]
+          },
+          "default": "WEB",
+          "help": "WEB is a static site; WEB_COMPUTE adds server-side rendering (e.g. Next.js); WEB_DYNAMIC is the newer dynamic-rendering platform."
+        },
+        {
+          "name": "enable_branch_auto_build",
+          "label": "Auto-build new commits",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "enable_branch_auto_build",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Automatically starts a build whenever a connected branch receives a new commit."
+        },
+        {
+          "name": "enable_branch_auto_deletion",
+          "label": "Auto-delete backend on branch delete",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "enable_branch_auto_deletion",
+          "group": "settings",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": false,
+          "help": "Deletes the deployed backend environment automatically when its branch is deleted from the repository."
+        },
+        {
+          "name": "resource_name",
+          "label": "App name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this app is",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this app."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new amplify app",
+        "static site",
+        "frontend hosting",
+        "ci/cd for frontend"
+      ],
+      "decisions": [
+        "The repository access token (access_token for GitHub, or oauth_token for other providers) is never captured here — the engineer connects the repository out of band, exactly like any other CI integration credential",
+        "A custom build_spec (amplify.yml), environment variables, and a service role for server-side rendering are engineer follow-ups after creation",
+        "Custom domains (the companion aws_amplify_domain_association) and auto-branch-creation patterns are engineer decisions"
+      ]
+    },
+    {
+      "id": "amplify-branch-create",
+      "service": "amplify",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a new Amplify branch",
+      "summary": "Request a new deploy branch for an existing Amplify app. An engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Specify a new aws_amplify_branch bound to an existing app: which Git branch it tracks, its deploy stage, and whether commits auto-build. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_amplify_branch"
+      },
+      "params": [
+        {
+          "name": "app",
+          "label": "Amplify app",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_amplify_app/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "app_id",
+          "group": "identity",
+          "help": "The Amplify app this branch deploys into. Create the app first (amplify-app-create) if the list is empty."
+        },
+        {
+          "name": "branch_name",
+          "label": "Branch name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "branch_name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9/_.-]{1,255}$"
+          },
+          "help": "Must match the Git branch name exactly."
+        },
+        {
+          "name": "stage",
+          "label": "Stage",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "stage",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "PRODUCTION",
+              "BETA",
+              "DEVELOPMENT",
+              "EXPERIMENTAL",
+              "PULL_REQUEST"
+            ]
+          },
+          "default": "PRODUCTION",
+          "help": "Amplify's deploy-stage label for this branch. Shown in the console and affects default performance/PR-preview behavior."
+        },
+        {
+          "name": "enable_auto_build",
+          "label": "Auto-build new commits",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "enable_auto_build",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Automatically starts a build whenever this branch receives a new commit."
+        },
+        {
+          "name": "resource_name",
+          "label": "Branch name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this branch deploys",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this branch."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new amplify branch",
+        "deploy a branch",
+        "amplify environment"
+      ],
+      "decisions": [
+        "Environment variables that differ from the app-level defaults are an engineer follow-up",
+        "A custom domain / subdomain mapping (the companion aws_amplify_domain_association) is an engineer decision",
+        "Framework auto-detection is left to Amplify; overriding it is an engineer follow-up if detection misfires"
+      ]
+    }
+  ]
+}

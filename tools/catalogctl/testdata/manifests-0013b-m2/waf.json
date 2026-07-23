@@ -1,0 +1,177 @@
+{
+  "service": "waf",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_wafv2_web_acl"
+  ],
+  "summary": "WAFv2 rule/override/default action swaps via 0013b M2 swap_child_block — a parent block holding exactly one child from a closed choice set of empty block types.",
+  "operations": [
+    {
+      "id": "waf-set-rule-action",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "swap_child_block",
+      "title": "Swap a WAFv2 rule's action block",
+      "description": "Replace whichever empty action child (allow/block/captcha/challenge/count) the selected rule holds with the requested one. The rule is chosen by the rule_name selector; the desired choice comes from the action discriminator's segments map. Refuses CHOICE_NOT_EMPTY if the existing child carries config, CHOICE_AMBIGUOUS if the rule's action block is malformed (0 or >1 choice children, or a foreign sibling).",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": [
+          "rule",
+          "action"
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "action",
+          "label": "Action",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "role": "discriminator",
+          "bounds": {
+            "allowlist": [
+              "ALLOW",
+              "BLOCK",
+              "COUNT",
+              "CAPTCHA",
+              "CHALLENGE"
+            ]
+          },
+          "segments": {
+            "ALLOW": "allow",
+            "BLOCK": "block",
+            "COUNT": "count",
+            "CAPTCHA": "captcha",
+            "CHALLENGE": "challenge"
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "terraformCapability": "~ rule[selected].action"
+    },
+    {
+      "id": "waf-change-rule-group-action",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "swap_child_block",
+      "title": "Swap a WAFv2 rule's override_action block",
+      "description": "Replace whichever empty override_action child (count/none) the selected rule holds with the requested one. The rule is chosen by the rule_name selector; the desired choice comes from the override_action discriminator's segments map. Refuses CHOICE_NOT_EMPTY if the existing child carries config, CHOICE_AMBIGUOUS if the rule's override_action block is malformed.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": [
+          "rule",
+          "override_action"
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "override_action",
+          "label": "Override action",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "role": "discriminator",
+          "bounds": {
+            "allowlist": [
+              "COUNT",
+              "NONE"
+            ]
+          },
+          "segments": {
+            "COUNT": "count",
+            "NONE": "none"
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "terraformCapability": "~ rule[selected].override_action"
+    },
+    {
+      "id": "waf-set-default-action",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "swap_child_block",
+      "title": "Swap a WAFv2 web ACL's default_action block",
+      "description": "Replace whichever empty default_action child (allow/block) the ACL holds with the requested one — a singleton target, no selector needed. Refuses CHOICE_NOT_EMPTY if the existing child carries config, CHOICE_AMBIGUOUS if default_action is malformed.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": [
+          "default_action"
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "default_action",
+          "label": "Default action",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "role": "discriminator",
+          "bounds": {
+            "allowlist": [
+              "ALLOW",
+              "BLOCK"
+            ]
+          },
+          "segments": {
+            "ALLOW": "allow",
+            "BLOCK": "block"
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "terraformCapability": "~ default_action"
+    }
+  ]
+}

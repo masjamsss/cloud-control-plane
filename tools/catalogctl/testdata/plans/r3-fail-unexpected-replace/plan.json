@@ -1,0 +1,28 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_instance.sample02",
+      "action_reasons": [
+        "replace_because_cannot_update"
+      ],
+      "change": {
+        "actions": [
+          "delete",
+          "create"
+        ],
+        "before": {
+          "instance_type": "c5.large"
+        },
+        "after": {
+          "instance_type": "c6i.2xlarge"
+        },
+        "replace_paths": [
+          [
+            "instance_type"
+          ]
+        ]
+      }
+    }
+  ]
+}

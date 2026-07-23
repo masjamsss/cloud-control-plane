@@ -1,0 +1,16 @@
+{
+  "repo": "malicious-provisioner",
+  "verdict": "reject",
+  "findings": [
+    {
+      "code": "PROVISIONER",
+      "file": "main.tf",
+      "line": 2
+    }
+  ],
+  "resourceBlocks": 1,
+  "moduleBlocks": 0,
+  "tfJsonFiles": 0,
+  "fmtDirtyFiles": 0,
+  "providerPins": {}
+}

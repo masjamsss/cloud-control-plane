@@ -1,0 +1,39 @@
+name: ccp-smoke
+
+# The install-journey smoke: proves a fresh checkout still comes up as the REAL
+# portal. run-local.sh --smoke builds the SPA in api-mode (VITE_API_BASE baked),
+# boots ccp-api in PRODUCTION posture on a throwaway store (the fail-closed
+# preflight runs for real), bootstraps the first admin, asserts /readyz == 200 and
+# that the served bundle is not the mock build, then tears down. Guards the whole
+# setup/run-local/install script surface, which no other workflow watches — installer
+# bit-rot is how "easy installs" die. Local mirror: ./scripts/gate.sh smoke (or full).
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ccp/**'
+      - '.github/workflows/ccp-smoke.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ccp/**'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22' # api engines >=22; the app (>=20) builds fine on 22
+          cache: npm
+          cache-dependency-path: |
+            ccp/api/package-lock.json
+            ccp/app/package-lock.json
+      - name: Install smoke (build + boot + /readyz + teardown)
+        run: ccp/scripts/run-local.sh --smoke

@@ -1,0 +1,47 @@
+/* ============================================================================
+   PendingChangesBanner — the dual-control queue's app-wide (admin-area) count.
+   Ledger: a hairline chip, mono count, accent as the one interactive hue
+   (this is a queue-depth link, not a risk classification — risk-med was
+   borrowed here before only as a generic "attention" tint; the actual Risk
+   axis stays untouched everywhere it means something).
+   ============================================================================ */
+.pending-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: none;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+  text-decoration: none;
+  transition: border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
+}
+.pending-banner:hover {
+  border-color: var(--accent);
+  background: var(--surface-2);
+  text-decoration: none;
+}
+.pending-banner:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pending-banner__dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.pending-banner__count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pending-banner {
+    transition: none;
+  }
+}

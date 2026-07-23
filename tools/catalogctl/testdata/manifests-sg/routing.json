@@ -1,0 +1,94 @@
+{
+  "service": "routing",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_route_table",
+    "aws_route",
+    "aws_route_table_association"
+  ],
+  "summary": "Fixture copy of the estate routing manifest, trimmed to routing-add-route, which carries the machine-enforceable cidrPolicy:no-public the real manifest migration will add (kept alongside the existing pattern + human semantic text).",
+  "operations": [
+    {
+      "id": "routing-add-route",
+      "service": "routing",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a route to a route table",
+      "description": "Appends a new route {} block to an existing route table.",
+      "target": {
+        "resourceType": "aws_route_table",
+        "block": "route"
+      },
+      "params": [
+        {
+          "name": "route_table",
+          "label": "Route table",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_route_table/address"
+        },
+        {
+          "name": "destination_cidr",
+          "label": "Destination CIDR",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "cidr_block",
+          "bounds": {
+            "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$",
+            "cidrPolicy": "no-public",
+            "semantic": "non-overlapping destination CIDR, not 0.0.0.0/0 unless replacing the default route"
+          },
+          "help": "Destination network this route applies to, e.g. 10.2.0.0/16."
+        },
+        {
+          "name": "target_type",
+          "label": "Target type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "role": "discriminator",
+          "segments": {
+            "nat_gateway_id": "nat_gateway_id",
+            "internet_gateway_id": "gateway_id",
+            "transit_gateway_id": "transit_gateway_id",
+            "vpc_peering_connection_id": "vpc_peering_connection_id",
+            "network_interface_id": "network_interface_id"
+          },
+          "bounds": {
+            "allowlist": [
+              "nat_gateway_id",
+              "internet_gateway_id",
+              "transit_gateway_id",
+              "vpc_peering_connection_id",
+              "network_interface_id"
+            ]
+          }
+        },
+        {
+          "name": "target_id",
+          "label": "Target resource ID",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "{param:target_type}",
+          "bounds": {
+            "pattern": "^(igw-|nat-|tgw-|pcx-|eni-|vgw-)[0-9a-f]{8,17}$",
+            "semantic": "must be a live resource matching the chosen target type"
+          },
+          "help": "ID of the gateway, NAT, TGW, peering connection, or ENI to route to."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    }
+  ]
+}

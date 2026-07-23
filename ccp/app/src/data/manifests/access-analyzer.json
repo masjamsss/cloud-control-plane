@@ -1,0 +1,101 @@
+{
+  "service": "access-analyzer",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_accessanalyzer_analyzer"
+  ],
+  "summary": "Provision IAM Access Analyzer. Creating an analyzer is an engineer-gated form; an organization-scoped analyzer reads across every account, so its scope is reviewed, never blind self-service.",
+  "operations": [
+    {
+      "id": "accessanalyzer-provision-analyzer",
+      "service": "access-analyzer",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision an access analyzer",
+      "summary": "Create an IAM Access Analyzer. An organization-scoped analyzer reads across every account in the org.",
+      "consoleLabel": "Analyzers",
+      "description": "Create an aws_accessanalyzer_analyzer that reports resources shared outside a zone of trust. The analyzer type (account vs organization, access vs unused-access) sets how far it reads, so it is bounded to an allowlist. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_accessanalyzer_analyzer"
+      },
+      "params": [
+        {
+          "name": "analyzer_name",
+          "label": "Analyzer name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "The name of the analyzer (written to the analyzer_name attribute).",
+          "attr": "analyzer_name",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_.-]{1,255}$"
+          }
+        },
+        {
+          "name": "analyzer_type",
+          "label": "Analyzer type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "type",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "ACCOUNT",
+              "ORGANIZATION",
+              "ACCOUNT_UNUSED_ACCESS",
+              "ORGANIZATION_UNUSED_ACCESS"
+            ]
+          },
+          "default": "ACCOUNT",
+          "help": "ACCOUNT analyzes this account; ORGANIZATION analyzes the whole org; the UNUSED_ACCESS variants find unused permissions."
+        },
+        {
+          "name": "description_tag",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "help": "A short description recorded as the resource's Description tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "help": "The team or person accountable for this resource, recorded as its PIC tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "access analyzer",
+        "iam access analyzer",
+        "external access"
+      ],
+      "decisions": [
+        "An organization-scoped analyzer reads across every account in the org; confirm the scope (account vs organization) matches the reviewing team's authority."
+      ]
+    }
+  ]
+}

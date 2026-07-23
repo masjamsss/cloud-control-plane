@@ -1,0 +1,9 @@
+schema: ccp.request/v1
+id: REQ-01JZTC4QWERTY0123456789AZ5
+item: azure-storage-account-set-min-tls-version
+created_at: "2026-07-17T00:00:00Z"
+requester_login: fixture-l1
+params:
+  storage_account: azurerm_storage_account.appdata001
+  min_tls_version: TLS1_2
+justification: "verify lane — scalar set_attribute tightens min_tls_version in place (azurerm)"

@@ -1,0 +1,18 @@
+{
+  "blockCount": 3,
+  "addresses": [
+    "aws_instance.real_one",
+    "aws_s3_bucket.kebab-and_mix3d",
+    "aws_instance.final"
+  ],
+  "probes": [
+    {
+      "address": "aws_instance.real_one",
+      "exactSource": "resource \"aws_instance\" \"real_one\" { // trailing line comment style\n  instance_type = \"r6i.xlarge\"       # hash comment with { brace\n}"
+    },
+    {
+      "address": "aws_s3_bucket.kebab-and_mix3d",
+      "exactSource": "resource \"aws_s3_bucket\" \"kebab-and_mix3d\" {\n  bucket = \"labels-with-dashes-underscores-digits\"\n}"
+    }
+  ]
+}

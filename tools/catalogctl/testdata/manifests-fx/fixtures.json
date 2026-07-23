@@ -1,0 +1,386 @@
+{
+  "service": "fx",
+  "operations": [
+    {
+      "service": "fx",
+      "macd": "Add",
+      "title": "fx-append-foreach",
+      "target": {},
+      "forcesReplace": false,
+      "terraformCapability": "~ update",
+      "id": "fx-append-foreach",
+      "codemodOp": "append_foreach_entry",
+      "params": [
+        {
+          "name": "target",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "key",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "value",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "service": "fx",
+      "macd": "Change",
+      "title": "fx-remove-foreach",
+      "target": {},
+      "forcesReplace": false,
+      "terraformCapability": "~ update",
+      "id": "fx-remove-foreach",
+      "codemodOp": "remove_foreach_entry",
+      "params": [
+        {
+          "name": "target",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "key",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "service": "fx",
+      "macd": "Add",
+      "title": "fx-append-foreach-nested",
+      "target": {
+        "resourceType": "aws_instance",
+        "block": "tags",
+        "path": [
+          "root_block_device"
+        ]
+      },
+      "forcesReplace": false,
+      "terraformCapability": "~ update",
+      "id": "fx-append-foreach-nested",
+      "codemodOp": "append_foreach_entry",
+      "params": [
+        {
+          "name": "target",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "key",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "value",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "service": "fx",
+      "macd": "Change",
+      "title": "fx-remove-foreach-nested",
+      "target": {
+        "resourceType": "aws_instance",
+        "block": "tags",
+        "path": [
+          "root_block_device"
+        ]
+      },
+      "forcesReplace": false,
+      "terraformCapability": "~ update",
+      "id": "fx-remove-foreach-nested",
+      "codemodOp": "remove_foreach_entry",
+      "params": [
+        {
+          "name": "target",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "key",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "service": "fx",
+      "macd": "Add",
+      "title": "fx-append-foreach-nested-selector",
+      "target": {
+        "resourceType": "aws_instance",
+        "block": "tags",
+        "path": [
+          "ebs_block_device"
+        ]
+      },
+      "forcesReplace": false,
+      "terraformCapability": "~ update",
+      "id": "fx-append-foreach-nested-selector",
+      "codemodOp": "append_foreach_entry",
+      "params": [
+        {
+          "name": "target",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "device",
+          "source": "user_input",
+          "type": "string",
+          "required": true,
+          "role": "selector",
+          "matchAttr": "device_name"
+        },
+        {
+          "name": "key",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "value",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "fx-append-block",
+      "service": "fx",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Append an ingress rule",
+      "target": {
+        "resourceType": "aws_security_group",
+        "block": "ingress"
+      },
+      "params": [
+        {
+          "name": "sg",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "from_port",
+          "source": "user_input",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "to_port",
+          "source": "user_input",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "protocol",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "forcesReplace": false,
+      "terraformCapability": "+ create (ingress)"
+    },
+    {
+      "id": "fx-remove-block",
+      "service": "fx",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Remove a resource block",
+      "target": {
+        "resourceType": "aws_ebs_volume"
+      },
+      "params": [
+        {
+          "name": "target",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "forcesReplace": false,
+      "terraformCapability": "- destroy"
+    },
+    {
+      "service": "fx",
+      "macd": "Change",
+      "codemodOp": "set_association_attribute",
+      "title": "Attach certificate",
+      "target": {
+        "resourceType": "aws_lb_listener"
+      },
+      "params": [
+        {
+          "name": "listener",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "certificate_arn",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "forcesReplace": false,
+      "terraformCapability": "~ update",
+      "id": "fx-assoc"
+    },
+    {
+      "service": "fx",
+      "macd": "Change",
+      "codemodOp": "set_association_attribute",
+      "title": "Attach certificate (forces replace)",
+      "target": {
+        "resourceType": "aws_lb_listener"
+      },
+      "params": [
+        {
+          "name": "listener",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "certificate_arn",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "forcesReplace": true,
+      "terraformCapability": "~ update",
+      "id": "fx-assoc-fr"
+    },
+    {
+      "service": "fx",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Resize an instance (forces replace)",
+      "target": {
+        "resourceType": "aws_instance",
+        "attr": "instance_type"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "new_instance_type",
+          "source": "allowlist",
+          "type": "string",
+          "required": true,
+          "attr": "instance_type"
+        }
+      ],
+      "forcesReplace": true,
+      "terraformCapability": "~ update (instance_type)",
+      "id": "fx-set-attr-fr"
+    },
+    {
+      "service": "fx",
+      "macd": "Change",
+      "codemodOp": "moved_block",
+      "title": "Move (rename) a resource",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "resource",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "new_name",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "forcesReplace": false,
+      "terraformCapability": "~ moved",
+      "id": "fx-moved"
+    },
+    {
+      "service": "fx",
+      "macd": "Change",
+      "codemodOp": "moved_block",
+      "title": "Move (forces replace)",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "resource",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "new_name",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "forcesReplace": true,
+      "terraformCapability": "~ moved",
+      "id": "fx-moved-fr"
+    },
+    {
+      "id": "fx-instantiate",
+      "service": "fx",
+      "macd": "Add",
+      "codemodOp": "instantiate_module",
+      "title": "Instantiate a module",
+      "target": {
+        "resourceType": "aws_iam_role"
+      },
+      "params": [
+        {
+          "name": "proposed_name",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "purpose",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "forcesReplace": false,
+      "terraformCapability": "+ create (new module)"
+    }
+  ]
+}

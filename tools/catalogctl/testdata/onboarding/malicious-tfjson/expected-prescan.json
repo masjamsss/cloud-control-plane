@@ -1,0 +1,16 @@
+{
+  "repo": "malicious-tfjson",
+  "verdict": "reject",
+  "findings": [
+    {
+      "code": "PROVISIONER",
+      "file": "main.tf.json",
+      "line": 6
+    }
+  ],
+  "resourceBlocks": 1,
+  "moduleBlocks": 0,
+  "tfJsonFiles": 1,
+  "fmtDirtyFiles": 0,
+  "providerPins": {}
+}

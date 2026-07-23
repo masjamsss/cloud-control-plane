@@ -1,0 +1,1372 @@
+{
+  "service": "aws-storage",
+  "scope": "expansion",
+  "resourceTypes": [
+    "aws_backup_framework",
+    "aws_backup_report_plan",
+    "aws_ebs_snapshot",
+    "aws_ebs_snapshot_copy",
+    "aws_ebs_snapshot_import",
+    "aws_efs_access_point",
+    "aws_fsx_backup",
+    "aws_fsx_file_cache",
+    "aws_fsx_lustre_file_system",
+    "aws_fsx_ontap_file_system",
+    "aws_fsx_ontap_storage_virtual_machine",
+    "aws_fsx_ontap_volume",
+    "aws_fsx_openzfs_file_system",
+    "aws_fsx_openzfs_snapshot",
+    "aws_fsx_openzfs_volume",
+    "aws_fsx_windows_file_system",
+    "aws_glacier_vault",
+    "aws_s3_access_point",
+    "aws_s3_bucket_object",
+    "aws_s3_object",
+    "aws_s3_object_copy",
+    "aws_s3control_bucket",
+    "aws_s3control_storage_lens_configuration",
+    "aws_storagegateway_cached_iscsi_volume",
+    "aws_storagegateway_gateway",
+    "aws_storagegateway_nfs_file_share",
+    "aws_storagegateway_smb_file_share",
+    "aws_storagegateway_stored_iscsi_volume",
+    "aws_storagegateway_tape_pool"
+  ],
+  "summary": "Tag management across Storage AWS resources (auto-generated comprehensive tag surface — 29 resource types).",
+  "operations": [
+    {
+      "id": "aws-tag-backup-framework",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Backup Framework tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Backup Framework (aws_backup_framework). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_backup_framework",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Backup Framework",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_backup_framework/address",
+          "help": "The Backup Framework to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-backup-report-plan",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Backup Report Plan tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Backup Report Plan (aws_backup_report_plan). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_backup_report_plan",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Backup Report Plan",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_backup_report_plan/address",
+          "help": "The Backup Report Plan to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-ebs-snapshot",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Ebs Snapshot tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Ebs Snapshot (aws_ebs_snapshot). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_ebs_snapshot",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Ebs Snapshot",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_ebs_snapshot/address",
+          "help": "The Ebs Snapshot to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-ebs-snapshot-copy",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Ebs Snapshot Copy tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Ebs Snapshot Copy (aws_ebs_snapshot_copy). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_ebs_snapshot_copy",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Ebs Snapshot Copy",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_ebs_snapshot_copy/address",
+          "help": "The Ebs Snapshot Copy to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-ebs-snapshot-import",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Ebs Snapshot Import tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Ebs Snapshot Import (aws_ebs_snapshot_import). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_ebs_snapshot_import",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Ebs Snapshot Import",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_ebs_snapshot_import/address",
+          "help": "The Ebs Snapshot Import to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-efs-access-point",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Efs Access Point tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Efs Access Point (aws_efs_access_point). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_efs_access_point",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Efs Access Point",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_efs_access_point/address",
+          "help": "The Efs Access Point to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-fsx-backup",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Fsx Backup tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Fsx Backup (aws_fsx_backup). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_fsx_backup",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Fsx Backup",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_fsx_backup/address",
+          "help": "The Fsx Backup to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-fsx-file-cache",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Fsx File Cache tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Fsx File Cache (aws_fsx_file_cache). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_fsx_file_cache",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Fsx File Cache",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_fsx_file_cache/address",
+          "help": "The Fsx File Cache to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-fsx-lustre-file-system",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Fsx Lustre File System tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Fsx Lustre File System (aws_fsx_lustre_file_system). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_fsx_lustre_file_system",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Fsx Lustre File System",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_fsx_lustre_file_system/address",
+          "help": "The Fsx Lustre File System to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-fsx-ontap-file-system",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Fsx Ontap File System tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Fsx Ontap File System (aws_fsx_ontap_file_system). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_fsx_ontap_file_system",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Fsx Ontap File System",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_fsx_ontap_file_system/address",
+          "help": "The Fsx Ontap File System to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-fsx-ontap-storage-virtual-machine",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Fsx Ontap Storage Virtual Machine tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Fsx Ontap Storage Virtual Machine (aws_fsx_ontap_storage_virtual_machine). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_fsx_ontap_storage_virtual_machine",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Fsx Ontap Storage Virtual Machine",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_fsx_ontap_storage_virtual_machine/address",
+          "help": "The Fsx Ontap Storage Virtual Machine to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-fsx-ontap-volume",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Fsx Ontap Volume tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Fsx Ontap Volume (aws_fsx_ontap_volume). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_fsx_ontap_volume",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Fsx Ontap Volume",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_fsx_ontap_volume/address",
+          "help": "The Fsx Ontap Volume to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-fsx-openzfs-file-system",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Fsx Openzfs File System tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Fsx Openzfs File System (aws_fsx_openzfs_file_system). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_fsx_openzfs_file_system",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Fsx Openzfs File System",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_fsx_openzfs_file_system/address",
+          "help": "The Fsx Openzfs File System to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-fsx-openzfs-snapshot",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Fsx Openzfs Snapshot tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Fsx Openzfs Snapshot (aws_fsx_openzfs_snapshot). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_fsx_openzfs_snapshot",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Fsx Openzfs Snapshot",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_fsx_openzfs_snapshot/address",
+          "help": "The Fsx Openzfs Snapshot to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-fsx-openzfs-volume",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Fsx Openzfs Volume tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Fsx Openzfs Volume (aws_fsx_openzfs_volume). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_fsx_openzfs_volume",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Fsx Openzfs Volume",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_fsx_openzfs_volume/address",
+          "help": "The Fsx Openzfs Volume to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-fsx-windows-file-system",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Fsx Windows File System tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Fsx Windows File System (aws_fsx_windows_file_system). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_fsx_windows_file_system",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Fsx Windows File System",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_fsx_windows_file_system/address",
+          "help": "The Fsx Windows File System to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-glacier-vault",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Glacier Vault tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Glacier Vault (aws_glacier_vault). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_glacier_vault",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Glacier Vault",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_glacier_vault/address",
+          "help": "The Glacier Vault to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-s3-access-point",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update S3 Access Point tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this S3 Access Point (aws_s3_access_point). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_s3_access_point",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "S3 Access Point",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_access_point/address",
+          "help": "The S3 Access Point to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-s3-bucket-object",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update S3 Bucket Object tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this S3 Bucket Object (aws_s3_bucket_object). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_s3_bucket_object",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "S3 Bucket Object",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket_object/address",
+          "help": "The S3 Bucket Object to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-s3-object",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update S3 Object tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this S3 Object (aws_s3_object). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_s3_object",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "S3 Object",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_object/address",
+          "help": "The S3 Object to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-s3-object-copy",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update S3 Object Copy tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this S3 Object Copy (aws_s3_object_copy). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_s3_object_copy",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "S3 Object Copy",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_object_copy/address",
+          "help": "The S3 Object Copy to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-s3control-bucket",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update S3control Bucket tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this S3control Bucket (aws_s3control_bucket). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_s3control_bucket",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "S3control Bucket",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3control_bucket/address",
+          "help": "The S3control Bucket to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-s3control-storage-lens-configuration",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update S3control Storage Lens Configuration tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this S3control Storage Lens Configuration (aws_s3control_storage_lens_configuration). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_s3control_storage_lens_configuration",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "S3control Storage Lens Configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3control_storage_lens_configuration/address",
+          "help": "The S3control Storage Lens Configuration to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-storagegateway-cached-iscsi-volume",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Storagegateway Cached Iscsi Volume tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Storagegateway Cached Iscsi Volume (aws_storagegateway_cached_iscsi_volume). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_storagegateway_cached_iscsi_volume",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Storagegateway Cached Iscsi Volume",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_storagegateway_cached_iscsi_volume/address",
+          "help": "The Storagegateway Cached Iscsi Volume to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-storagegateway-gateway",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Storagegateway Gateway tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Storagegateway Gateway (aws_storagegateway_gateway). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_storagegateway_gateway",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Storagegateway Gateway",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_storagegateway_gateway/address",
+          "help": "The Storagegateway Gateway to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-storagegateway-nfs-file-share",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Storagegateway Nfs File Share tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Storagegateway Nfs File Share (aws_storagegateway_nfs_file_share). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_storagegateway_nfs_file_share",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Storagegateway Nfs File Share",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_storagegateway_nfs_file_share/address",
+          "help": "The Storagegateway Nfs File Share to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-storagegateway-smb-file-share",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Storagegateway Smb File Share tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Storagegateway Smb File Share (aws_storagegateway_smb_file_share). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_storagegateway_smb_file_share",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Storagegateway Smb File Share",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_storagegateway_smb_file_share/address",
+          "help": "The Storagegateway Smb File Share to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-storagegateway-stored-iscsi-volume",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Storagegateway Stored Iscsi Volume tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Storagegateway Stored Iscsi Volume (aws_storagegateway_stored_iscsi_volume). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_storagegateway_stored_iscsi_volume",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Storagegateway Stored Iscsi Volume",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_storagegateway_stored_iscsi_volume/address",
+          "help": "The Storagegateway Stored Iscsi Volume to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-storagegateway-tape-pool",
+      "service": "aws-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Storagegateway Tape Pool tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Storagegateway Tape Pool (aws_storagegateway_tape_pool). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_storagegateway_tape_pool",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Storagegateway Tape Pool",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_storagegateway_tape_pool/address",
+          "help": "The Storagegateway Tape Pool to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    }
+  ]
+}

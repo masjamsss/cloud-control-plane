@@ -1,0 +1,1 @@
+{"service":"restore-point","types":{"azurerm_restore_point_collection":{"attrs":[{"n":"location","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"source_virtual_machine_id","t":"string","r":1},{"n":"tags","t":"map"}],"blocks":[]}}}

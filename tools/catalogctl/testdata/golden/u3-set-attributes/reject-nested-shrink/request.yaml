@@ -1,0 +1,10 @@
+schema: ccp.request/v1
+id: REQ-01JZTC4QWERTY0123456789M09
+item: lb-grow-hc-interval
+created_at: "2026-07-11T00:00:00Z"
+requester_login: fixture-l1
+params:
+  target_group: aws_lb_target_group.app
+  interval: 10
+  timeout: 10
+justification: "U3-nested refusal - grow-only interval read from nested block shrinks; whole edit refuses"

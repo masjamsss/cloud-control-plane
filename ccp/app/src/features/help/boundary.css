@@ -1,0 +1,113 @@
+/* ============================================================================
+   The out-of-tool boundary page (/not-in-control-plane) — quiet, factual, small.
+   Same clean-neutral language as the console: one accent, no status colors.
+   ============================================================================ */
+
+.boundary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  max-width: 760px;
+}
+
+.boundary__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.boundary__title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.boundary__sub {
+  margin: 0;
+  max-width: 74ch;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.boundary__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+.boundary__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  border-top: 1px solid var(--border-hairline);
+}
+.boundary__item:first-child {
+  border-top: none;
+}
+.boundary__item-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+.boundary__item-why {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.boundary__item-where {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.boundary__item-nearest {
+  align-self: flex-start;
+  margin-top: var(--space-2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.boundary__item-nearest:hover {
+  color: var(--accent-hover);
+}
+.boundary__item-nearest:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-1);
+}
+
+.boundary__foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.boundary__foot-note {
+  margin: 0;
+  max-width: 74ch;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.boundary__foot-link {
+  align-self: flex-start;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.boundary__foot-link:hover {
+  color: var(--accent-hover);
+}
+.boundary__foot-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-1);
+}

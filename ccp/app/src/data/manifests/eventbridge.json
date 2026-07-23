@@ -1,0 +1,1467 @@
+{
+  "service": "eventbridge",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_cloudwatch_event_rule",
+    "aws_cloudwatch_event_target",
+    "aws_scheduler_schedule"
+  ],
+  "summary": "EventBridge rules and targets on the default bus, plus EventBridge Scheduler schedules. Toggling state, retuning schedules/retry policy and tagging are common day-2 asks; a brand-new rule needs an allowlisted target and a second approver; deleting a rule is engineer-only and permanent.",
+  "operations": [
+    {
+      "id": "eventbridge-set-rule-state",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable a rule",
+      "summary": "Turn a rule on or off. Off stops it firing immediately without deleting it, and you can switch it back on anytime.",
+      "description": "Toggle a rule's state between ENABLED and DISABLED. A disabled rule stops invoking its targets immediately on the next event/tick; its pattern, schedule and targets are left untouched and it can be re-enabled at any time.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_rule"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_rule/address",
+          "required": true,
+          "help": "Which EventBridge rule to change."
+        },
+        {
+          "name": "new_state",
+          "label": "New state",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "help": "DISABLED stops the rule firing without deleting it or its targets."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "monitoring-alarms",
+      "pinned": 1
+    },
+    {
+      "id": "eventbridge-change-schedule",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a rule's schedule expression",
+      "summary": "Change when a scheduled rule fires next by updating its timer expression. The target it triggers stays the same.",
+      "description": "Update the cron() or rate() expression driving a scheduled rule's timer. Only applies to schedule-based rules (not event-pattern rules such as AccountHealthNotification); does not change which target is invoked.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_rule"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_rule/address",
+          "required": true,
+          "help": "Must be a schedule-driven rule (has an existing schedule_expression)."
+        },
+        {
+          "name": "new_schedule_expression",
+          "label": "New schedule expression",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(cron\\(.+\\)|rate\\(\\d+ (minute|minutes|hour|hours|day|days)\\))$",
+            "semantic": "UTC; confirm the resolved local fire time for your account's timezone"
+          },
+          "help": "e.g. rate(15 minutes) or cron(0 19 * * ? *), expressed in UTC."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "monitoring-alarms",
+      "pinned": 4
+    },
+    {
+      "id": "eventbridge-set-target-retry-policy",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Adjust a target's retry policy",
+      "summary": "Set how long and how many times a failed target invocation is retried before it's given up on.",
+      "description": "Set maximum_event_age_in_seconds and maximum_retry_attempts on an existing rule target, controlling how long and how many times EventBridge retries a failed invocation before giving up and (if configured) sending to a DLQ.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_target",
+        "path": [
+          "retry_policy"
+        ]
+      },
+      "params": [
+        {
+          "name": "event_target",
+          "label": "Target",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_target/address",
+          "required": true,
+          "help": "Which rule target to retune."
+        },
+        {
+          "name": "new_maximum_event_age_in_seconds",
+          "label": "Max event age (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 60,
+            "max": 86400
+          },
+          "help": "How long a failed event is retried before being dropped."
+        },
+        {
+          "name": "new_maximum_retry_attempts",
+          "label": "Max retry attempts",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 185
+          },
+          "help": "0 disables retries entirely (first failure is terminal)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "monitoring-alarms",
+      "pinned": 1
+    },
+    {
+      "id": "eventbridge-add-rule-tag",
+      "service": "eventbridge",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a rule",
+      "summary": "Add a metadata tag to a rule. Metadata only, with no effect on how or when it runs.",
+      "description": "Add one metadata tag key/value to an EventBridge rule. Purely additive, reversible, and has no effect on matching, schedule or targets.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_rule",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_rule/address",
+          "required": true,
+          "help": "Which rule to tag."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{1,64}$"
+          },
+          "help": "Letters/digits/_/- , 2-65 chars. Governance keys are engineer-owned."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^.{1,128}$"
+          },
+          "help": "1-128 characters."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (tag add)",
+      "group": "create"
+    },
+    {
+      "id": "eventbridge-add-schedule-rule",
+      "service": "eventbridge",
+      "macd": "Add",
+      "codemodOp": "instantiate_module",
+      "title": "Add a new scheduled rule targeting an existing Lambda/SNS",
+      "summary": "Create a new rule that fires on a schedule you set and invokes an approved, existing Lambda or SNS target.",
+      "description": "Create a new schedule-driven rule (cron/rate) on the default bus and wire a single target to an already-existing Lambda function or SNS topic picked from the account inventory. Fires purely on a timer; no event pattern is involved. Also co-creates the aws_lambda_permission invoke grant when the target is a Lambda function.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_rule"
+      },
+      "params": [
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          },
+          "help": "Must be unique on the default bus; no collision with existing rule names."
+        },
+        {
+          "name": "schedule_expression",
+          "label": "Schedule expression",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(cron\\(.+\\)|rate\\(\\d+ (minute|minutes|hour|hours|day|days)\\))$"
+          },
+          "help": "cron() or rate() in UTC."
+        },
+        {
+          "name": "target_type",
+          "label": "Target type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "Lambda function",
+              "SNS topic"
+            ]
+          },
+          "help": "What the rule invokes on schedule: a Lambda function or an SNS topic."
+        },
+        {
+          "name": "target_lambda",
+          "label": "Target Lambda function",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lambda_function/address",
+          "required": true,
+          "help": "The existing Lambda function the rule invokes, picked from the account inventory; free-form ARNs are rejected.",
+          "role": "reference",
+          "refAttr": "arn",
+          "dependsOn": {
+            "param": "target_type",
+            "equals": "Lambda function"
+          }
+        },
+        {
+          "name": "target_topic",
+          "label": "Target SNS topic",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sns_topic/address",
+          "required": true,
+          "help": "The existing SNS topic the rule publishes to, picked from the account inventory; free-form ARNs are rejected.",
+          "role": "reference",
+          "refAttr": "arn",
+          "dependsOn": {
+            "param": "target_type",
+            "equals": "SNS topic"
+          }
+        },
+        {
+          "name": "state",
+          "label": "Initial state",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "default": "ENABLED",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "help": "DISABLED is recommended for a dry-run creation."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "eventbridge-delete-rule",
+      "service": "eventbridge",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete a rule and its targets",
+      "summary": "Permanently delete a rule and its targets so the automation they drive stops for good. This can't be undone; an engineer reviews it first.",
+      "description": "Remove an EventBridge rule along with all of its targets. The automation it drives (alarm creation, tag sync, disk-metric conversion, notifications, etc.) stops permanently; recreating it means re-authoring the rule, targets and any invoke permissions from scratch.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_rule"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_rule/address",
+          "required": true,
+          "help": "Which rule to permanently remove."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "eventbridge-toggle-force-destroy",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle forced destroy of AWS-managed rules",
+      "summary": "Allow or block Terraform from deleting AWS-managed rules later. No effect now; it only matters if the rule is ever destroyed.",
+      "description": "Enable/disable force_destroy, which permits Terraform to delete AWS-managed rules on destroy. Bounded true/false, reversible, no live-infra effect until a separate destroy.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_rule"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_rule/address",
+          "required": true,
+          "help": "The EventBridge rule to update."
+        },
+        {
+          "name": "enabled",
+          "label": "Force destroy",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true allows Terraform to delete AWS-managed rules; false is the safe default."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (force_destroy)",
+      "group": "monitoring-alarms",
+      "pinned": 2
+    },
+    {
+      "id": "eventbridge-remove-rule-tag",
+      "service": "eventbridge",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag from EventBridge rule",
+      "summary": "Remove one tag from a rule. Metadata only, with no effect on how it runs, and you can re-add it later.",
+      "description": "Remove a single tag entry from the rule's tags map by key. In-place, reversible (re-add via add-tag), cosmetic with no effect on rule behavior.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_rule",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_rule/address",
+          "required": true,
+          "help": "The EventBridge rule to update."
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "maxLength": 128
+          },
+          "help": "Exact key of the tag to remove (max 128 chars)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "eventbridge-cloudwatch-event-rule-engineer-request",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to EventBridge rule",
+      "summary": "Request any other change to a rule, such as its matching pattern or role, for an engineer to write and review.",
+      "description": "Catch-all for changes not offered as a bounded self-service form (e.g. event_pattern JSON, role_arn, event_bus_name/name replacement, or the ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS state). An engineer authors the Terraform.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_rule"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_rule/address",
+          "required": true,
+          "help": "The rule to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "eventbridge-set-target-force-destroy",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle force-destroy on an EventBridge target",
+      "summary": "Allow or block Terraform from deleting AWS-managed rules when this target is removed later. No live effect right now.",
+      "description": "Enable or disable force_destroy on an aws_cloudwatch_event_target. Controls whether Terraform is permitted to delete AWS-managed rules when the target is destroyed. Bounded boolean toggle, reversible, no effect on live event delivery and no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_target"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Event target",
+          "type": "string",
+          "source": "inventory",
+          "help": "The EventBridge rule target to update, picked from the estate inventory so only existing Terraform-managed targets can be selected.",
+          "enumSource": "inventory://aws_cloudwatch_event_target/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Force destroy",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "true permits Terraform to delete AWS-managed rules when this target is destroyed; false is the safe default \u2014 a bounded true/false toggle with no effect on live event delivery until a destroy actually runs.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (force_destroy)",
+      "group": "monitoring-alarms",
+      "pinned": 2
+    },
+    {
+      "id": "eventbridge-set-target-dead-letter-queue",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "append_block",
+      "title": "Set the dead-letter queue (DLQ) for an EventBridge target",
+      "summary": "Send this target's failed deliveries to an existing queue instead of losing them.",
+      "description": "Attach a dead_letter_config block pointing at an existing SQS queue so failed event deliveries are captured instead of dropped. The DLQ is chosen from inventory (existing SQS queues only). Reversible by removing the block; no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_target"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Event target",
+          "type": "string",
+          "source": "inventory",
+          "help": "The EventBridge rule target that should route failed deliveries to a dead-letter queue, picked from the estate inventory of Terraform-managed targets.",
+          "enumSource": "inventory://aws_cloudwatch_event_target/address",
+          "required": true
+        },
+        {
+          "name": "dlq_arn",
+          "label": "Dead-letter SQS queue",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sqs_queue/arn",
+          "required": true,
+          "help": "Existing SQS queue that will receive events that fail delivery to this target."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (dead_letter_config)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "eventbridge-remove-target-dead-letter-queue",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "remove_block",
+      "title": "Remove the dead-letter queue (DLQ) from an EventBridge target",
+      "summary": "Stop routing this target's failed deliveries to its backup queue; failures will be dropped instead of saved.",
+      "description": "Delete the dead_letter_config block so the target no longer routes failed deliveries to an SQS DLQ (failed events will be dropped). Only the dead_letter_config sub-block is removed; the target itself and its other settings are untouched, and a target with no DLQ configured is refused rather than edited. Reversible by re-adding the block; no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_target",
+        "path": ["dead_letter_config"]
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Event target",
+          "type": "string",
+          "source": "inventory",
+          "help": "The EventBridge rule target whose dead-letter queue configuration to remove, picked from the estate inventory; after removal, events that fail delivery are dropped instead of captured in SQS.",
+          "enumSource": "inventory://aws_cloudwatch_event_target/address",
+          "required": true
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (dead_letter_config removed)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "eventbridge-set-target-role",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change the IAM role for an EventBridge target",
+      "summary": "Change which existing IAM role this target uses to deliver events. Only already-approved roles can be chosen.",
+      "description": "Set role_arn to an existing IAM role that EventBridge assumes to invoke the target (required for ECS, EC2 Run Command, Kinesis, Step Functions, or cross-account buses). Role chosen from inventory (existing roles only), so no new privileges can be minted here; the change is reviewed under guardrails. Reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_target"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Event target",
+          "type": "string",
+          "source": "inventory",
+          "help": "The EventBridge rule target whose delivery IAM role to change, picked from the estate inventory so only existing Terraform-managed targets can be selected.",
+          "enumSource": "inventory://aws_cloudwatch_event_target/address",
+          "required": true
+        },
+        {
+          "name": "role_arn",
+          "label": "IAM role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "help": "Existing IAM role EventBridge will assume to deliver events to this target.",
+          "role": "reference",
+          "refAttr": "arn"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (role_arn)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "eventbridge-cloudwatch-event-target-engineer-request",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to EventBridge target",
+      "summary": "Request any other change to a target, such as its input data or service integration, for an engineer to write.",
+      "description": "Catch-all for any change to an aws_cloudwatch_event_target not offered as a bounded form above \u2014 e.g. editing static input JSON, input_path, input_transformer, retry_policy internals, or the target integration blocks (ecs_target, batch_target, http_target, kinesis_target, redshift_target, sqs_target, run_command_targets, appsync_target, sagemaker_pipeline_target). An engineer authors and reviews the Terraform.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_target"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Target",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_target/address",
+          "required": true,
+          "help": "The target to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "eventbridge-set-rule-description",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a rule's description",
+      "summary": "Update a rule's description text. Cosmetic only; it doesn't change what the rule matches or does.",
+      "description": "Set the description metadata on an EventBridge rule. Cosmetic only: has no effect on the rule's event pattern, schedule, state or targets. Bounded to 1-512 characters (the AWS PutRule Description limit, which the provider enforces via StringLenBetween(0,512)). In-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_rule"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_rule/address",
+          "required": true,
+          "help": "Which EventBridge rule to update."
+        },
+        {
+          "name": "new_description",
+          "label": "New description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^.{1,512}$",
+            "maxLength": 512
+          },
+          "help": "1-512 characters (AWS PutRule Description max length is 512). Cosmetic metadata only; does not affect matching, schedule or targets."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (description)",
+      "group": "tags-naming",
+      "pinned": 3
+    },
+    {
+      "id": "eventbridge-set-rule-cloudtrail-capture",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set a rule's CloudTrail management-event capture",
+      "summary": "Widen a rule to also match AWS account management events, which can increase how often its target is invoked.",
+      "description": "Toggle the rule's state between ENABLED (matches all events except AWS management events delivered via CloudTrail) and ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS (also matches those CloudTrail-delivered management events). Broadening to the CloudTrail variant increases invocation volume and target load. This op never disables the rule -- DISABLED is intentionally excluded; use eventbridge-set-rule-state for the enable/disable lifecycle. Only valid on event-pattern rules: per the provider doc the CloudTrail state cannot be combined with a schedule_expression. In-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_rule"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_rule/address",
+          "required": true,
+          "help": "Must be an event-pattern rule (not schedule-driven); the CloudTrail state cannot be combined with a schedule_expression."
+        },
+        {
+          "name": "new_state",
+          "label": "New state",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS"
+            ]
+          },
+          "help": "ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS adds AWS CloudTrail management events to what the rule matches; ENABLED reverts to the default (excludes them). DISABLED is not offered here -- this op cannot disable the rule."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (state)",
+      "group": "monitoring-alarms",
+      "pinned": 5
+    },
+    {
+      "id": "eventbridge-set-target-batch-array-size",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set a Batch target's array size",
+      "summary": "Set how many child jobs an AWS Batch target launches per run. Only affects jobs launched after this change.",
+      "description": "Set batch_target.array_size on an EventBridge target that invokes an AWS Batch job \u2014 the number of child jobs launched for an array batch job. The provider constrains this to an integer between 2 and 10,000. In-place and reversible; affects only subsequently launched Batch jobs, with no event-delivery downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_target",
+        "path": [
+          "batch_target"
+        ]
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Event target",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_target/address",
+          "required": true,
+          "help": "Which EventBridge target (one with a batch_target block) to retune."
+        },
+        {
+          "name": "array_size",
+          "label": "Array size",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 2,
+            "max": 10000
+          },
+          "help": "Integer 2\u201310,000 per the provider doc."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (batch_target.array_size)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "eventbridge-set-target-batch-job-attempts",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set a Batch target's retry attempts",
+      "summary": "Set how many times a failed AWS Batch job from this target is retried before giving up.",
+      "description": "Set batch_target.job_attempts on an EventBridge target that invokes an AWS Batch job \u2014 how many times a failed Batch job is retried. The provider constrains this to an integer between 1 and 10. In-place, reversible, with no event-delivery downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_target",
+        "path": [
+          "batch_target"
+        ]
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Event target",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_target/address",
+          "required": true,
+          "help": "Which EventBridge target (one with a batch_target block) to retune."
+        },
+        {
+          "name": "job_attempts",
+          "label": "Job attempts",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 10
+          },
+          "help": "Integer 1\u201310 per the provider doc."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (batch_target.job_attempts)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "eventbridge-set-target-ecs-launch-type",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change an ECS target's launch type",
+      "summary": "Change how an ECS target launches its task, on EC2, external capacity, or Fargate. Applies to future runs only.",
+      "description": "Set ecs_target.launch_type on an EventBridge target that launches an ECS task. The provider restricts this to EC2, EXTERNAL, or FARGATE. In-place and reversible; affects only subsequently launched tasks, with no event-delivery downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_target",
+        "path": [
+          "ecs_target"
+        ]
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Event target",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_target/address",
+          "required": true,
+          "help": "Which EventBridge target (one with an ecs_target block) to change."
+        },
+        {
+          "name": "launch_type",
+          "label": "Launch type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "EC2",
+              "EXTERNAL",
+              "FARGATE"
+            ]
+          },
+          "help": "One of the three provider-accepted launch types."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (ecs_target.launch_type)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "eventbridge-set-target-ecs-managed-tags",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle ECS managed tags on an ECS target",
+      "summary": "Turn automatic AWS resource tags on or off for tasks an ECS target launches. Cosmetic only, no effect on how tasks run.",
+      "description": "Set ecs_target.enable_ecs_managed_tags (true/false) \u2014 whether Amazon ECS managed tags are enabled on the launched task. Cosmetic tagging behavior with no effect on task execution; in-place, reversible via the same toggle, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_target",
+        "path": [
+          "ecs_target"
+        ]
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Event target",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_target/address",
+          "required": true,
+          "help": "Which EventBridge target (one with an ecs_target block) to change."
+        },
+        {
+          "name": "enable_ecs_managed_tags",
+          "label": "Enable ECS managed tags",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true enables ECS-managed tags on the launched task; false disables them."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (ecs_target.enable_ecs_managed_tags)",
+      "group": "tags-naming",
+      "pinned": 3
+    },
+    {
+      "id": "eventbridge-set-target-ecs-propagate-tags",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable task-definition tag propagation on an ECS target",
+      "summary": "Make tags from the task definition carry over to tasks an ECS target launches. Cosmetic only, no effect on execution.",
+      "description": "Set ecs_target.propagate_tags to TASK_DEFINITION so tags from the ECS task definition propagate to the launched task. TASK_DEFINITION is the only value the provider accepts. Cosmetic tagging behavior; in-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_target",
+        "path": [
+          "ecs_target"
+        ]
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Event target",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_target/address",
+          "required": true,
+          "help": "Which EventBridge target (one with an ecs_target block) to change."
+        },
+        {
+          "name": "propagate_tags",
+          "label": "Propagate tags",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "TASK_DEFINITION"
+            ]
+          },
+          "help": "TASK_DEFINITION is the only provider-accepted value."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (ecs_target.propagate_tags)",
+      "group": "tags-naming",
+      "pinned": 4
+    },
+    {
+      "id": "eventbridge-set-target-ecs-group",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set an ECS target's task group label",
+      "summary": "Set a group label for tasks an ECS target launches. Cosmetic only, for organizing tasks, not how they run.",
+      "description": "Set ecs_target.group \u2014 the ECS task group name applied to the launched task. The provider limits this to a maximum length of 255 characters. Cosmetic label with no effect on task execution; in-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_target",
+        "path": [
+          "ecs_target"
+        ]
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Event target",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_target/address",
+          "required": true,
+          "help": "Which EventBridge target (one with an ecs_target block) to change."
+        },
+        {
+          "name": "group",
+          "label": "ECS task group",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^.{1,255}$",
+            "maxLength": 255
+          },
+          "help": "1\u2013255 characters (provider max length is 255)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (ecs_target.group)",
+      "group": "monitoring-alarms",
+      "pinned": 5
+    },
+    {
+      "id": "eventbridge-set-target-ecs-platform-version",
+      "service": "eventbridge",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set an ECS target's Fargate platform version",
+      "summary": "Pin the Fargate platform version an ECS target's tasks launch on. Applies to future runs only, not tasks already running.",
+      "description": "Set ecs_target.platform_version on an EventBridge ECS target \u2014 the provider requires the numeric portion of the Fargate platform version only, such as 1.1.0 (Fargate launch type). In-place and reversible; affects only subsequently launched tasks, with no event-delivery downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_target",
+        "path": [
+          "ecs_target"
+        ]
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Event target",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_event_target/address",
+          "required": true,
+          "help": "Which EventBridge target (one with a Fargate ecs_target block) to change."
+        },
+        {
+          "name": "platform_version",
+          "label": "Fargate platform version",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+          },
+          "help": "Numeric portion only, e.g. 1.1.0 \u2014 'LATEST' is not accepted by this form."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (ecs_target.platform_version)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "eventbridge-rule-create",
+      "service": "eventbridge",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new EventBridge rule",
+      "summary": "Request a brand-new rule shell on the default bus; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up an EventBridge rule as a complete specification: a schedule expression (the common case) or an engineer-authored event pattern, plus initial state. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_cloudwatch_event_rule"
+      },
+      "params": [
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          },
+          "help": "Must be unique on the default bus. Names the rule in the generated draft."
+        },
+        {
+          "name": "event_bus_name",
+          "label": "Event bus",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "event_bus_name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._/-]{1,256}$"
+          },
+          "help": "Leave blank for the account's default bus."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 512
+          },
+          "help": "What this rule matches and why."
+        },
+        {
+          "name": "schedule_expression",
+          "label": "Schedule expression",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "schedule_expression",
+          "group": "matching",
+          "bounds": {
+            "pattern": "^(cron\\(.+\\)|rate\\(\\d+ (minute|minutes|hour|hours|day|days)\\))$"
+          },
+          "help": "cron() or rate() in UTC — the common case for a timer-driven rule. Leave blank for an event-pattern rule instead."
+        },
+        {
+          "name": "event_pattern",
+          "label": "Event pattern (JSON)",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "event_pattern",
+          "group": "matching",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "Event-matching JSON is authored and reviewed by an engineer, never typed into this form. Leave the schedule expression above blank to signal a pattern-based rule."
+        },
+        {
+          "name": "role_arn",
+          "label": "IAM role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "role_arn",
+          "group": "matching",
+          "help": "Only needed when the rule targets certain integrations (ECS, Kinesis, cross-account buses); leave blank otherwise."
+        },
+        {
+          "name": "state",
+          "label": "Initial state",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "state",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "default": "ENABLED",
+          "help": "DISABLED is recommended for a dry-run creation."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this rule automates",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this rule."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new eventbridge rule",
+        "provision rule",
+        "new scheduled rule",
+        "new event rule"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Rule targets (Lambda, SNS, SQS, Step Functions, etc.) are wired as an engineer follow-up once this rule exists — see eventbridge-add-schedule-rule for the combined schedule+target pattern.",
+        "An event_pattern JSON is engineer-authored; this form's bounded path is a schedule-driven rule."
+      ]
+    },
+    {
+      "id": "eventbridge-schedule-create",
+      "service": "eventbridge",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new EventBridge schedule",
+      "summary": "Request a brand-new schedule invoking an existing Lambda function; an engineer reviews the Terraform before it applies.",
+      "description": "Stand up a schedule as a complete specification: its expression, flexible time window, and a Lambda target. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_scheduler_schedule"
+      },
+      "params": [
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          },
+          "help": "Names the schedule in the EventBridge Scheduler console and the generated draft. Created in the default schedule group."
+        },
+        {
+          "name": "schedule_expression",
+          "label": "Schedule expression",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "schedule_expression",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^(at\\(.+\\)|rate\\(\\d+ (minute|minutes|hour|hours|day|days)\\)|cron\\(.+\\))$"
+          },
+          "help": "rate()/cron() for a recurring schedule, or at() for a one-time fire, e.g. at(2026-08-01T00:00:00)."
+        },
+        {
+          "name": "schedule_expression_timezone",
+          "label": "Timezone",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "schedule_expression_timezone",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z]+(/[A-Za-z_]+)*$"
+          },
+          "default": "UTC",
+          "help": "IANA timezone the expression is evaluated in, e.g. UTC or Asia/Singapore."
+        },
+        {
+          "name": "state",
+          "label": "Initial state",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "state",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "default": "ENABLED",
+          "help": "DISABLED is recommended for a dry-run creation."
+        },
+        {
+          "name": "flexible_time_window_mode",
+          "label": "Flexible time window",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "mode",
+          "path": [
+            "flexible_time_window"
+          ],
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "OFF",
+              "FLEXIBLE"
+            ]
+          },
+          "default": "OFF",
+          "help": "FLEXIBLE spreads the actual invocation across a window to smooth invocation bursts."
+        },
+        {
+          "name": "flexible_time_window_max_minutes",
+          "label": "Flexible window (minutes)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "maximum_window_in_minutes",
+          "path": [
+            "flexible_time_window"
+          ],
+          "group": "identity",
+          "bounds": {
+            "min": 1,
+            "max": 1440
+          },
+          "dependsOn": {
+            "param": "flexible_time_window_mode",
+            "equals": "FLEXIBLE"
+          },
+          "help": "Required once the flexible time window is turned on."
+        },
+        {
+          "name": "target_lambda",
+          "label": "Target Lambda function",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lambda_function/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "arn",
+          "path": [
+            "target"
+          ],
+          "group": "target",
+          "help": "The existing Lambda function this schedule invokes."
+        },
+        {
+          "name": "target_role_arn",
+          "label": "Target IAM role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "role_arn",
+          "path": [
+            "target"
+          ],
+          "group": "target",
+          "help": "The IAM role EventBridge Scheduler assumes to invoke the target."
+        },
+        {
+          "name": "target_input",
+          "label": "Target input (JSON)",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "input",
+          "path": [
+            "target"
+          ],
+          "group": "target",
+          "bounds": {
+            "maxLength": 8192
+          },
+          "help": "Payload passed to the Lambda function. Leave blank to pass the schedule's own metadata."
+        },
+        {
+          "name": "action_after_completion",
+          "label": "After a one-time fire",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "action_after_completion",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "NONE",
+              "DELETE"
+            ]
+          },
+          "default": "NONE",
+          "help": "DELETE removes the schedule automatically once an at() expression has fired."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new eventbridge schedule",
+        "provision scheduler",
+        "scheduled lambda invoke",
+        "eventbridge scheduler"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "This form targets a Lambda function (the common case); SNS, SQS, Step Functions, ECS and other target types are an engineer follow-up (swap target_arn and add the matching *_parameters sub-block).",
+        "A custom schedule group (default group is used here), dead-letter queue routing, and retry policy tuning are engineer follow-ups after creation.",
+        "aws_scheduler_schedule carries no tags argument in the provider schema, so no Name/Description/PIC tags are captured here."
+      ]
+    }
+  ]
+}

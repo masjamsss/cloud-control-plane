@@ -1,0 +1,1 @@
+{"service":"nat","types":{"azurerm_nat_gateway_public_ip_association":{"attrs":[{"n":"nat_gateway_id","t":"string","r":1},{"n":"public_ip_address_id","t":"string","r":1}],"blocks":[]},"azurerm_nat_gateway_public_ip_prefix_association":{"attrs":[{"n":"nat_gateway_id","t":"string","r":1},{"n":"public_ip_prefix_id","t":"string","r":1}],"blocks":[]}}}

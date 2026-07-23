@@ -1,0 +1,160 @@
+/* ============================================================================
+   Pending changes — the dual-control queue tab (§1.2).
+   ============================================================================ */
+.pending-changes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.pending-changes__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.pending-changes__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+.pending-changes__note {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.pending-changes__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.pending-changes__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  background: var(--surface-1);
+}
+.pending-changes__item--acked,
+.pending-changes__item--applied,
+.pending-changes__item--expired,
+.pending-changes__item--superseded {
+  opacity: 0.7;
+}
+.pending-changes__item--rejected {
+  opacity: 0.7;
+}
+.pending-changes__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4);
+}
+.pending-changes__kind {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-primary);
+  text-transform: capitalize;
+}
+.pending-changes__by,
+.pending-changes__when {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.pending-changes__status {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+}
+.pending-changes__item--pending .pending-changes__status {
+  color: var(--risk-med);
+}
+.pending-changes__item--rejected .pending-changes__status {
+  color: var(--risk-high);
+}
+.pending-changes__item--acked .pending-changes__status,
+.pending-changes__item--applied .pending-changes__status {
+  color: var(--risk-low);
+}
+.pending-changes__diff {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border-radius: var(--radius-2);
+  padding: var(--space-3) var(--space-4);
+  overflow-x: auto;
+}
+.pending-changes__actions {
+  display: flex;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.pending-changes__ack,
+.pending-changes__reject {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+}
+.pending-changes__ack {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+}
+.pending-changes__ack:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.pending-changes__reject {
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-hover);
+}
+.pending-changes__reject:hover {
+  border-color: var(--risk-high);
+  color: var(--risk-high);
+}
+.pending-changes__ack:focus-visible,
+.pending-changes__reject:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pending-changes__hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* Decision outcome / server-refusal lines (the §8 reason, verbatim). */
+.pending-changes__msg {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-2);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.pending-changes__msg--ok {
+  border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--border-default));
+  background: color-mix(in srgb, var(--ok) 8%, var(--surface-1));
+}
+.pending-changes__msg--error {
+  border: 1px solid color-mix(in srgb, var(--crit) 35%, var(--border-default));
+  background: color-mix(in srgb, var(--crit) 8%, var(--surface-1));
+}

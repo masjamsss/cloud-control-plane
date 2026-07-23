@@ -1,0 +1,32 @@
+{
+ "aws_lb.app": {
+  "file": "ccp/app/fixtures-estate/alb.tf",
+  "line": 3,
+  "source": "resource \"aws_lb\" \"app\" {\n  name               = \"app-alb\"\n  internal           = false\n  load_balancer_type = \"application\"\n  security_groups    = [aws_security_group.app.id]\n  subnets            = [aws_subnet.public_a.id, aws_subnet.public_b.id]\n\n  tags = {\n    Name = \"app-alb\"\n    PIC  = \"user01@example.com\"\n  }\n}"
+ },
+ "aws_lb_target_group.app": {
+  "file": "ccp/app/fixtures-estate/alb.tf",
+  "line": 16,
+  "source": "resource \"aws_lb_target_group\" \"app\" {\n  name        = \"app-tg\"\n  port        = 443\n  protocol    = \"HTTPS\"\n  target_type = \"instance\"\n  vpc_id      = aws_vpc.main.id\n\n  health_check {\n    path     = \"/health\"\n    protocol = \"HTTPS\"\n  }\n\n  tags = {\n    Name = \"app-tg\"\n    PIC  = \"user01@example.com\"\n  }\n}"
+ },
+ "aws_lb_listener.https": {
+  "file": "ccp/app/fixtures-estate/alb.tf",
+  "line": 34,
+  "source": "resource \"aws_lb_listener\" \"https\" {\n  load_balancer_arn = aws_lb.app.arn\n  port              = 443\n  protocol          = \"HTTPS\"\n  ssl_policy        = \"ELBSecurityPolicy-TLS13-1-2-2021-06\"\n  certificate_arn   = aws_acm_certificate.wildcard.arn\n\n  default_action {\n    type             = \"forward\"\n    target_group_arn = aws_lb_target_group.app.arn\n  }\n}"
+ },
+ "aws_lb_listener.https_legacy": {
+  "file": "ccp/app/fixtures-estate/alb.tf",
+  "line": 49,
+  "source": "resource \"aws_lb_listener\" \"https_legacy\" {\n  load_balancer_arn = aws_lb.app.arn\n  port              = 8443\n  protocol          = \"HTTPS\"\n  ssl_policy        = \"ELBSecurityPolicy-2016-08\"\n  certificate_arn   = aws_acm_certificate.wildcard.arn\n\n  default_action {\n    type             = \"forward\"\n    target_group_arn = aws_lb_target_group.app.arn\n  }\n}"
+ },
+ "aws_lb_target_group_attachment.app01": {
+  "file": "ccp/app/fixtures-estate/alb.tf",
+  "line": 62,
+  "source": "resource \"aws_lb_target_group_attachment\" \"app01\" {\n  target_group_arn = aws_lb_target_group.app.arn\n  target_id        = aws_instance.app01.id\n  port             = 443\n}"
+ },
+ "aws_lb_target_group_attachment.app02": {
+  "file": "ccp/app/fixtures-estate/alb.tf",
+  "line": 68,
+  "source": "resource \"aws_lb_target_group_attachment\" \"app02\" {\n  target_group_arn = aws_lb_target_group.app.arn\n  target_id        = aws_instance.app02.id\n  port             = 443\n}"
+ }
+}

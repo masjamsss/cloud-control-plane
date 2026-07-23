@@ -1,0 +1,782 @@
+{
+  "service": "kms",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_kms_key",
+    "aws_kms_alias"
+  ],
+  "summary": "Manage the customer-managed KMS keys. Day-to-day work is low-risk metadata — rotation toggle, description, tags — plus alias add/remove, which are bounded pointer operations. Key-policy edits, new key provisioning, and scheduling a key deletion are architectural or destructive, so they stay engineer-only or guardrailed; nothing here auto-applies.",
+  "operations": [
+    {
+      "id": "kms-enable-key-rotation",
+      "service": "kms",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable automatic key rotation",
+      "summary": "Turn on yearly automatic rotation of this key's material. Safe — older encrypted data stays fully decryptable.",
+      "description": "Turns on annual automatic rotation of the CMK's backing key material (AWS keeps prior material to decrypt old ciphertext). Purely additive, no impact on existing ciphertext or callers.",
+      "target": {
+        "resourceType": "aws_kms_key"
+      },
+      "params": [
+        {
+          "name": "key",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "Existing customer-managed key (CMK) to modify.",
+          "bounds": {
+            "semantic": "existing aws_kms_key in the estate"
+          }
+        },
+        {
+          "name": "enable_key_rotation",
+          "label": "Enable automatic rotation",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "default": true,
+          "help": "true turns on yearly automatic rotation of key material; false turns it off. Does not trigger an immediate on-demand rotation.",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup",
+      "pinned": 1
+    },
+    {
+      "id": "kms-set-key-description",
+      "service": "kms",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update the key's description",
+      "summary": "Update this key's description. Cosmetic only — no effect on its policy or any encrypted data.",
+      "description": "Changes the free-text description shown against the CMK in the console and in DescribeKey output. Cosmetic only \u2014 no effect on the key policy, grants, or any ciphertext.",
+      "target": {
+        "resourceType": "aws_kms_key"
+      },
+      "params": [
+        {
+          "name": "key",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "Existing customer-managed key (CMK) to modify.",
+          "bounds": {
+            "semantic": "existing aws_kms_key in the estate"
+          }
+        },
+        {
+          "name": "description",
+          "label": "New description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Human-readable description of what the key is for.",
+          "bounds": {
+            "min": 0,
+            "max": 8192,
+            "pattern": "^.{0,8192}$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "pinned": 2
+    },
+    {
+      "id": "kms-tag-key",
+      "service": "kms",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add or update a governance tag on a key",
+      "summary": "Add or update a governance tag on this key, like an owner or cost center. Metadata only.",
+      "description": "Adds a single tag key/value pair (e.g. PIC, CostCentre) to an existing CMK, or overwrites the value if the tag key already exists.",
+      "target": {
+        "resourceType": "aws_kms_key",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "key",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "Existing customer-managed key (CMK) to tag.",
+          "bounds": {
+            "semantic": "existing aws_kms_key in the estate"
+          }
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Governance tag name; must match the estate's approved tag keys.",
+          "bounds": {
+            "allowlist": [
+              "PIC",
+              "Description",
+              "CostCentre",
+              "Environment",
+              "CreatedBy"
+            ]
+          }
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Value for the tag, e.g. an owner's name or a cost centre code.",
+          "bounds": {
+            "min": 1,
+            "max": 256
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "create"
+    },
+    {
+      "id": "kms-toggle-key-enabled",
+      "service": "kms",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable a key",
+      "summary": "Enable or disable this key. Disabling it immediately breaks every app or service that uses it to encrypt or decrypt, until re-enabled.",
+      "description": "Toggles is_enabled on the CMK. Disabling immediately blocks every Encrypt/Decrypt/GenerateDataKey/Grant call against the key, breaking any application, S3 bucket, RDS instance or SNS topic that relies on it until it is re-enabled.",
+      "target": {
+        "resourceType": "aws_kms_key"
+      },
+      "params": [
+        {
+          "name": "key",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "Existing customer-managed key (CMK) to enable or disable.",
+          "bounds": {
+            "semantic": "existing aws_kms_key in the estate"
+          }
+        },
+        {
+          "name": "is_enabled",
+          "label": "Key enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "default": true,
+          "help": "false disables the key (blocks all crypto operations immediately); true re-enables it.",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup",
+      "pinned": 3
+    },
+    {
+      "id": "kms-add-alias",
+      "service": "kms",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a new alias for an existing key",
+      "summary": "Add another friendly name pointing to this key. The name must be unique across the whole account.",
+      "description": "Creates an additional alias/<name> pointer at an existing CMK. Aliases carry no key material and no cost, so a second alias on an existing key is low-impact, but the name is a shared namespace other configs may resolve by string, so it must be unique estate-wide and cannot use the AWS-reserved alias/aws/ prefix.",
+      "target": {
+        "resourceType": "aws_kms_alias"
+      },
+      "params": [
+        {
+          "name": "key",
+          "label": "Target CMK",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "Existing customer-managed key the new alias will point to.",
+          "bounds": {
+            "semantic": "existing aws_kms_key in the estate"
+          }
+        },
+        {
+          "name": "alias_name",
+          "label": "Alias name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "New alias, e.g. alias/app-archive-key. Must be unique across the estate and must not start with the reserved alias/aws/ prefix.",
+          "bounds": {
+            "pattern": "^alias/(?!aws/)[A-Za-z0-9/_-]{1,250}$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "kms-remove-alias",
+      "service": "kms",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Remove an existing key alias",
+      "summary": "Remove a friendly name pointing to this key. Anything that looks the key up by that name breaks immediately.",
+      "description": "Deletes an alias/<name> pointer. The underlying CMK and all ciphertext are unaffected, but any application or IAM policy that resolves the key by this alias name (rather than key ID/ARN) will break immediately. The alias can be recreated pointing at the same key if removed in error, but any gap in resolution is felt straight away.",
+      "target": {
+        "resourceType": "aws_kms_alias"
+      },
+      "params": [
+        {
+          "name": "alias",
+          "label": "Alias to remove",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "Existing alias/<name> pointer to delete.",
+          "bounds": {
+            "semantic": "existing aws_kms_alias in the estate"
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "kms-schedule-key-deletion",
+      "service": "kms",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Schedule a CMK for deletion",
+      "summary": "Schedule this key for deletion. You can cancel during the waiting period, but once it passes, encrypted data is unrecoverable forever.",
+      "description": "Removes the aws_kms_key resource (and its lifecycle.prevent_destroy guard), which schedules the key for deletion after a waiting period; AWS holds the key in a pending-deletion state and it can be cancelled via kms:CancelKeyDeletion until the window elapses. Once the window passes, the key material and every ciphertext blob encrypted under it become permanently unrecoverable \u2014 estate keys carry prevent_destroy = true precisely to block this.",
+      "target": {
+        "resourceType": "aws_kms_key"
+      },
+      "params": [
+        {
+          "name": "key",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "Existing customer-managed key (CMK) to schedule for deletion.",
+          "bounds": {
+            "semantic": "existing aws_kms_key in the estate"
+          }
+        },
+        {
+          "name": "deletion_window_in_days",
+          "label": "Waiting period (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "default": 30,
+          "help": "Days before key material is permanently destroyed; cancellable any time before the window elapses.",
+          "bounds": {
+            "min": 7,
+            "max": 30
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy (deletion_window_in_days grace period)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "kms-set-key-usage",
+      "service": "kms",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change the key's cryptographic usage",
+      "summary": "Change what this key can be used for. Applying REPLACES it with a new identity — old encrypted data becomes unrecoverable.",
+      "description": "Sets key_usage on an existing CMK to ENCRYPT_DECRYPT, SIGN_VERIFY, or GENERATE_VERIFY_MAC. In the AWS provider schema key_usage is ForceNew: changing it on a live key does NOT update in place \u2014 Terraform destroys and recreates the key (new key material, new ARN/key-id), which schedules the old key for deletion, renders all ciphertext encrypted under it permanently unrecoverable, and breaks every caller that references it. On the four estate keys (all lifecycle.prevent_destroy = true) the apply is blocked and fails. Engineer-authored and reviewed.",
+      "target": {
+        "resourceType": "aws_kms_key"
+      },
+      "params": [
+        {
+          "name": "key",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "Existing customer-managed key (CMK) to modify.",
+          "enumSource": "inventory://aws_kms_key/address"
+        },
+        {
+          "name": "key_usage",
+          "label": "Key usage",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Intended cryptographic use of the key. Default is ENCRYPT_DECRYPT.",
+          "bounds": {
+            "allowlist": [
+              "ENCRYPT_DECRYPT",
+              "SIGN_VERIFY",
+              "GENERATE_VERIFY_MAC"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "key replacement destroys the old key and all ciphertext under it (apply blocked by prevent_destroy on the estate keys)",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (key_usage forces new resource)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "kms-set-customer-master-key-spec",
+      "service": "kms",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change the key spec",
+      "summary": "Change this key's cryptographic type. Applying REPLACES it with a new identity — all data encrypted under it becomes unrecoverable.",
+      "description": "Sets customer_master_key_spec on an existing CMK \u2014 the symmetric/asymmetric key type and supported algorithms (e.g. SYMMETRIC_DEFAULT, RSA_2048, ECC_NIST_P256, HMAC_256). In the AWS provider schema customer_master_key_spec is ForceNew: changing it on a live key does NOT update in place \u2014 Terraform destroys and recreates the key, scheduling the old key for deletion, rendering all ciphertext under it permanently unrecoverable, and breaking every caller relying on the prior spec. On the four estate keys (all lifecycle.prevent_destroy = true) the apply is blocked and fails. Engineer-authored and reviewed.",
+      "target": {
+        "resourceType": "aws_kms_key"
+      },
+      "params": [
+        {
+          "name": "key",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "Existing customer-managed key (CMK) to modify.",
+          "enumSource": "inventory://aws_kms_key/address"
+        },
+        {
+          "name": "customer_master_key_spec",
+          "label": "Key spec",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Symmetric/asymmetric key type and supported algorithms. Default is SYMMETRIC_DEFAULT.",
+          "bounds": {
+            "allowlist": [
+              "SYMMETRIC_DEFAULT",
+              "RSA_2048",
+              "RSA_3072",
+              "RSA_4096",
+              "HMAC_224",
+              "HMAC_256",
+              "HMAC_384",
+              "HMAC_512",
+              "ECC_NIST_P256",
+              "ECC_NIST_P384",
+              "ECC_NIST_P521",
+              "ECC_SECG_P256K1",
+              "ML_DSA_44",
+              "ML_DSA_65",
+              "ML_DSA_87",
+              "SM2",
+              "ECC_NIST_EDWARDS25519"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "key replacement destroys the old key and all ciphertext under it (apply blocked by prevent_destroy on the estate keys)",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (customer_master_key_spec forces new resource)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "kms-set-bypass-policy-lockout-safety-check",
+      "service": "kms",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle the key-policy lockout safety check",
+      "summary": "Turn off the safety check that stops a key policy from locking everyone out of the key. Risky — the key could become unmanageable.",
+      "description": "Sets bypass_policy_lockout_safety_check on an existing CMK. When true, KMS skips the safety check that stops a key policy from locking the account out of the key; the provider doc warns that setting it true 'increases the risk that the KMS key becomes unmanageable'. This is an in-place change (the provider schema does not mark this argument ForceNew), but it removes a safety guardrail, so it is engineer-authored and reviewed.",
+      "target": {
+        "resourceType": "aws_kms_key"
+      },
+      "params": [
+        {
+          "name": "key",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "Existing customer-managed key (CMK) to modify.",
+          "enumSource": "inventory://aws_kms_key/address"
+        },
+        {
+          "name": "bypass_policy_lockout_safety_check",
+          "label": "Bypass policy lockout safety check",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "help": "true skips the key-policy lockout safety check (risky \u2014 can make the key unmanageable); false keeps the check enabled. Default is false.",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (bypass_policy_lockout_safety_check)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "kms-set-multi-region",
+      "service": "kms",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set single-Region vs multi-Region",
+      "summary": "Switch this key between single-Region and multi-Region. Applying REPLACES it with a new identity — old encrypted data becomes unrecoverable.",
+      "description": "Sets multi_region on an existing CMK (true = multi-Region, false = regional). In the AWS provider schema multi_region is ForceNew: converting a live key's single-Region vs multi-Region architecture does NOT update in place \u2014 Terraform destroys and recreates the key, scheduling the old key for deletion, rendering all ciphertext under it permanently unrecoverable, and breaking every caller. On the four estate keys (all lifecycle.prevent_destroy = true) the apply is blocked and fails. Engineer-authored and reviewed.",
+      "target": {
+        "resourceType": "aws_kms_key"
+      },
+      "params": [
+        {
+          "name": "key",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "Existing customer-managed key (CMK) to modify.",
+          "enumSource": "inventory://aws_kms_key/address"
+        },
+        {
+          "name": "multi_region",
+          "label": "Multi-Region",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "help": "true makes the key multi-Region; false makes it regional. Default is false.",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "key replacement destroys the old key and all ciphertext under it (apply blocked by prevent_destroy on the estate keys)",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (multi_region forces new resource)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "kms-rename-alias",
+      "service": "kms",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Rename an existing KMS alias",
+      "summary": "Rename a friendly name pointing to this key. Applying REPLACES the old name — anything still using it breaks until updated.",
+      "description": "Changes the display name of an existing alias/<name> pointer to a new explicit name (the aws_kms_alias `name` argument). The underlying CMK and all ciphertext are untouched, but because `name` forces resource replacement in the AWS provider (ForceNew), Terraform destroys the old alias and creates the new-named one pointing at the same key. Any application or IAM policy that still resolves the key by the OLD alias name breaks until it is updated to the new name. The new name must start with alias/, use only [A-Za-z0-9/_-], be unique estate-wide, and must not use the AWS-reserved alias/aws/ prefix.",
+      "target": {
+        "resourceType": "aws_kms_alias"
+      },
+      "params": [
+        {
+          "name": "alias",
+          "label": "Alias to rename",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "Existing alias/<name> pointer to rename.",
+          "bounds": {
+            "semantic": "existing aws_kms_alias in the estate"
+          }
+        },
+        {
+          "name": "new_name",
+          "label": "New alias name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "New alias display name, e.g. alias/app-archive-key. Must start with alias/, contain only [A-Za-z0-9/_-], be unique across the estate, and must not start with the reserved alias/aws/ prefix.",
+          "bounds": {
+            "pattern": "^alias/(?!aws/)[A-Za-z0-9/_-]{1,250}$"
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (name)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "kms-provision-key",
+      "service": "kms",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a KMS key",
+      "summary": "Create a customer-managed KMS key with rotation on and the default key policy. A custom key policy is out of reach here.",
+      "consoleLabel": "Customer managed keys",
+      "description": "Create an aws_kms_key with the DEFAULT key policy only: the policy attribute is never exposed on this form, so no cross-account or broad-principal grant can be authored here. Key usage and spec are bounded to allowlists, rotation is on by default, and a deletion window guards against accidental loss. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_kms_key"
+      },
+      "params": [
+        {
+          "name": "key_purpose",
+          "label": "Key purpose",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "A short purpose written to the key description and used to name the Terraform block.",
+          "attr": "description",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,100}$"
+          }
+        },
+        {
+          "name": "key_usage",
+          "label": "Key usage",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "key_usage",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "ENCRYPT_DECRYPT",
+              "SIGN_VERIFY",
+              "GENERATE_VERIFY_MAC"
+            ]
+          },
+          "default": "ENCRYPT_DECRYPT",
+          "help": "What the key can do. ENCRYPT_DECRYPT is the common symmetric use; the others create an asymmetric or MAC key."
+        },
+        {
+          "name": "customer_master_key_spec",
+          "label": "Key spec",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "customer_master_key_spec",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "SYMMETRIC_DEFAULT",
+              "RSA_2048",
+              "RSA_4096",
+              "ECC_NIST_P256"
+            ]
+          },
+          "default": "SYMMETRIC_DEFAULT",
+          "help": "The cryptographic spec. SYMMETRIC_DEFAULT is the standard symmetric key; the others create asymmetric keys."
+        },
+        {
+          "name": "enable_key_rotation",
+          "label": "Enable key rotation",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "attr": "enable_key_rotation",
+          "const": true,
+          "group": "settings",
+          "help": "Yearly automatic key rotation is on by default and written into the draft, never asked."
+        },
+        {
+          "name": "deletion_window_in_days",
+          "label": "Deletion window (days)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "attr": "deletion_window_in_days",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              7,
+              14,
+              30
+            ]
+          },
+          "default": 30,
+          "help": "How many days the key stays in pending-deletion (recoverable) before it is destroyed. A longer window protects against accidental loss."
+        },
+        {
+          "name": "description_tag",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "help": "A short description recorded as the resource's Description tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "help": "The team or person accountable for this resource, recorded as its PIC tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "kms key",
+        "create cmk",
+        "customer managed key",
+        "encryption key"
+      ],
+      "decisions": [
+        "The key uses the DEFAULT KMS key policy (root-account administration). A custom key policy that grants cross-account access or broad principal access is an engineer decision and is deliberately not exposed on this form.",
+        "Key rotation is enabled and the deletion window guards against accidental loss; confirm the window fits the recovery requirement, since a destroyed key renders every ciphertext under it permanently unrecoverable."
+      ]
+    },
+    {
+      "id": "kms-provision-alias",
+      "service": "kms",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a KMS alias",
+      "summary": "Create an alias pointing at a chosen key. Retargeting an alias redirects every encryptor that uses it by name.",
+      "consoleLabel": "Aliases",
+      "description": "Create an aws_kms_alias, a friendly name pointing at a KMS key chosen from inventory. Because callers encrypt by alias name, the target key it points to is a security-relevant choice. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_kms_alias"
+      },
+      "params": [
+        {
+          "name": "alias_name",
+          "label": "Alias name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "The alias, which must start with alias/ (for example alias/app-data).",
+          "attr": "name",
+          "bounds": {
+            "pattern": "^alias/[A-Za-z0-9/_-]{1,250}$"
+          }
+        },
+        {
+          "name": "target_key_id",
+          "label": "Target key",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "target_key_id",
+          "enumSource": "inventory://aws_kms_key/address",
+          "group": "settings",
+          "help": "The KMS key this alias points at (the aws_kms_key.id it references)."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "kms alias",
+        "create alias",
+        "key alias"
+      ],
+      "decisions": [
+        "Retargeting or deleting an alias redirects every encryptor that references it by name to a different key, or breaks them. Confirm the target key is correct, and treat any later retarget as its own reviewed change."
+      ]
+    }
+  ]
+}

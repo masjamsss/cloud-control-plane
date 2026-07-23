@@ -1,0 +1,120 @@
+/* Command palette (cmdk) — token-driven, matches the calm base + dark theme. */
+[cmdk-overlay] {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--text-primary) 30%, transparent);
+  z-index: 40;
+}
+.cmdp {
+  position: fixed;
+  top: 14vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px));
+  max-height: 62vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong, var(--border-hover));
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-3);
+  z-index: 41;
+}
+.cmdp__input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-6);
+  font: inherit;
+  font-size: 15px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-default);
+  outline: none;
+}
+.cmdp__input::placeholder {
+  color: var(--text-faint);
+}
+.cmdp__list {
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+.cmdp__empty {
+  padding: var(--space-7);
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.cmdp__group [cmdk-group-heading] {
+  padding: var(--space-4) var(--space-4) var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+/* The virtualized global palette's section headers are plain rows (not real
+   Command.Group headings — those can't be windowed safely), styled
+   identically to .cmdp__group [cmdk-group-heading] above. */
+.cmdp__row-header {
+  padding: var(--space-4) var(--space-4) var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.cmdp__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-4);
+  font-size: 14px;
+  color: var(--text-secondary);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+}
+.cmdp__item[data-selected='true'] {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.cmdp__item-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmdp__mono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-radius: var(--radius-1);
+}
+.cmdp__hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* Subtle stale hint while the deferred filter catches up (0025 RX-1) — same
+   affordance/values as ServiceConsole's .console__groups--stale. */
+.cmdp__list--stale {
+  opacity: 0.6;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cmdp__list--stale {
+    transition: none;
+  }
+}

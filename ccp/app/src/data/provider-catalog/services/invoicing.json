@@ -1,0 +1,1 @@
+{"service":"invoicing","types":{"aws_invoicing_invoice_unit":{"attrs":[{"n":"invoice_receiver","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"description","t":"string"},{"n":"tags","t":"map"},{"n":"tax_inheritance_disabled","t":"bool"}],"blocks":[{"n":"rule","m":"list","attrs":[{"n":"linked_accounts","t":"list","r":1}],"blocks":[]}]}}}

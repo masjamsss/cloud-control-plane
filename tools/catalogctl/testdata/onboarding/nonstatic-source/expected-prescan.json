@@ -1,0 +1,16 @@
+{
+  "repo": "nonstatic-source",
+  "verdict": "reject",
+  "findings": [
+    {
+      "code": "NONSTATIC_SOURCE",
+      "file": "main.tf",
+      "line": 6
+    }
+  ],
+  "resourceBlocks": 0,
+  "moduleBlocks": 1,
+  "tfJsonFiles": 0,
+  "fmtDirtyFiles": 0,
+  "providerPins": {}
+}

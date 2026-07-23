@@ -1,0 +1,111 @@
+/* ============================================================================
+   Demoted operation explanation (components/OpDescription.tsx).
+
+   The HEADLINE is the AWS-console field NAME, rendered by each surface's own
+   title element (.rq-title / .console__add-title / .ap__detail-title), so this
+   file styles only what sits BENEATH it: a single "What this does" disclosure
+   that folds the plain summary + the raw technical description into one toggle.
+   Every colour is an existing, contrast-gated text token (tokens.css /
+   check-contrast.mjs), so no new WCAG pair is introduced.
+   ============================================================================ */
+
+/* The collapse toggle: a subtle section label that opens/closes the technical
+   detail on the roomy surfaces — mirrors the existing .ap__detail-params-label
+   treatment, plus the affordances a clickable <summary> needs (pointer cursor,
+   a disclosure caret). The native marker is replaced by a caret drawn in the
+   label's own faint colour (currentColor → no new token, so the WCAG gate keeps
+   covering it). */
+.op-tech__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  cursor: pointer;
+  list-style: none; /* drop the default disclosure triangle; the caret below replaces it */
+  user-select: none;
+}
+/* WebKit/Blink still paint a marker on <summary> unless this is removed. */
+.op-tech__label::-webkit-details-marker {
+  display: none;
+}
+/* Caret: a small right-pointing triangle in currentColor (the faint label
+   colour), rotated to point down when the <details> is open. */
+.op-tech__label::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 3px 0 3px 4px;
+  border-color: transparent transparent transparent currentColor;
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+details[open] > .op-tech__label::before {
+  transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .op-tech__label::before {
+    transition: none;
+  }
+}
+
+/* The revealed disclosure body. Two stacked lines: the plain "what this does"
+   summary first (a touch more legible), then the raw technical description
+   beneath it. Both spaced a step below the label; the font-size and base faint
+   colour come from the surface's own tech class (.rq-tech / .ap__detail-tech). */
+.op-tech__body {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+}
+/* The raw technical description, folded into the SAME disclosure beneath the
+   plain summary — a step fainter than it, with a small gap, so the plain line
+   reads first. Colour/size inherit the surface's tech class (--text-faint). */
+.op-tech__detail {
+  display: block;
+  margin-top: var(--space-2);
+}
+
+/* ── Request/elaboration form header (variant="form") ─────────────────────── */
+/* The blurb owns the spacing the lone .rq-desc used to carry, and stacks the
+   headline + technical detail as one unit. */
+.rq-blurb {
+  margin: 0 0 var(--space-5);
+  max-width: 68ch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.rq-blurb .rq-desc {
+  margin: 0; /* the blurb, not the headline, owns the outer margin here */
+}
+.rq-tech {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+/* ── Action-picker detail pane (variant="detail") ─────────────────────────── */
+/* .ap__detail is a flex column with a space-4 gap; the blurb keeps the two
+   layers tighter than that surrounding rhythm. */
+.ap__detail-blurb {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ap__detail-tech {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+/* ── Compact "Add new" resource card (variant="card") ─────────────────────── */
+/* The card shows the plain operator headline ONLY — no technical-detail line and
+   no collapse toggle (that lives on the operation's own page). It therefore needs
+   no extra class here: the headline reuses the card's existing .console__add-desc. */

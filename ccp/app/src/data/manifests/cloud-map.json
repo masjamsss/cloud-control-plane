@@ -1,0 +1,121 @@
+{
+  "service": "cloud-map",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_service_discovery_private_dns_namespace"
+  ],
+  "summary": "Provision a new Cloud Map private DNS namespace for service discovery. Greenfield today (none exists yet in this estate) \u2014 the create stands up the empty namespace, resolvable only inside its VPC; registering services under it is an engineer follow-up.",
+  "operations": [
+    {
+      "id": "cloud-map-create-private-dns-namespace",
+      "service": "cloud-map",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new private DNS namespace",
+      "summary": "Request a brand-new Cloud Map private DNS namespace; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new aws_service_discovery_private_dns_namespace as a complete specification: its domain name and VPC. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review. Services and instances registered under it are separate follow-up steps.",
+      "target": {
+        "resourceType": "aws_service_discovery_private_dns_namespace"
+      },
+      "params": [
+        {
+          "name": "namespace_name",
+          "label": "Namespace name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$"
+          },
+          "help": "Domain-shaped namespace, e.g. internal.svc \u2014 services register under it as name.internal.svc."
+        },
+        {
+          "name": "vpc",
+          "label": "VPC",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_vpc/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc",
+          "group": "network",
+          "help": "The namespace resolves only inside this VPC (and any VPC peered or associated for DNS resolution)."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 256
+          },
+          "help": "Shown in the console next to the namespace's name."
+        },
+        {
+          "name": "resource_name",
+          "label": "Namespace name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this namespace is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this namespace."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new service discovery namespace",
+        "provision cloud map",
+        "private dns namespace"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "This namespace is resolvable only from inside the chosen VPC (and any VPC peered or DNS-associated with it) \u2014 confirm that matches the intended reachability before registering services under it",
+        "Services and instances registered under this namespace are engineer follow-ups \u2014 this form provisions the empty namespace"
+      ]
+    }
+  ]
+}

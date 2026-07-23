@@ -1,0 +1,24 @@
+# publish-gate-allowlist.txt — reviewed exceptions (scripts/publish-gate.sh, §8.2).
+#
+# Primarily for PG-3 (word-bounded, case-insensitive estate vocabulary sourced from the
+# untracked denylist — the committed script names no estate word). Word-boundary matching
+# already exempts vendor tokens with no boundary inside them — those need NO entry here.
+# This file is for the rare case where a genuine word-bounded hit is nonetheless reviewed
+# and accepted as safe to ship public: cloud-provider API surface that legitimately
+# contains a word the denylist also bans.
+#
+# Expected to stay near-empty. Every entry needs a human-reviewed reason — this is not a
+# bulk-suppress list.
+#
+# Format: three tab-separated fields per line, blank lines and full-line `#` comments
+# ignored:
+#
+#   <file-path-or-glob>\t<exact-substring-that-must-appear-on-the-flagged-line>\t<reason>
+#
+# A hit is suppressed only when BOTH the file matches the first field AND the flagged
+# line contains the literal substring in the second field — matching is deliberately
+# file+substring scoped, never a bare word, so approving one occurrence in one file never
+# blanket-exempts the word everywhere else it might leak.
+
+ccp/app/src/data/provider-catalog-azure/index.json	azurerm_workloads_sap	Azure provider vendor resource type labels (azurerm_workloads_sap_*, azurerm_netapp_volume_group_sap_hana) humanize to bare vendor words — public HashiCorp azurerm API surface, not estate vocabulary
+ccp/api/src/routes/projects.ts	ap-southeast-3	complete AWS commercial-region enumeration — AWS vocabulary, not estate config; removing it breaks fail-closed project registration for real operators in that region

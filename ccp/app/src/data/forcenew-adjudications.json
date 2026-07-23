@@ -1,0 +1,164 @@
+{
+  "aws_customer_gateway.device_name": {
+    "forceNew": true,
+    "verifiedBy": "0006 §2.2 audit — provider Go source (EC2 has no modify API; only tags update)",
+    "date": "2026-07-11",
+    "evidence": "internal/service/ec2/vpnsite_customer_gateway.go — ForceNew: true; op re-tiered in a54a0a7"
+  },
+  "aws_backup_plan.name": {
+    "forceNew": true,
+    "verifiedBy": "0006 §2.2 audit — provider Go source",
+    "date": "2026-07-11",
+    "evidence": "internal/service/backup/plan.go — name ForceNew: true; UpdateBackupPlan updates rules only; op re-tiered in a54a0a7"
+  },
+  "aws_backup_plan.rule.rule_name": {
+    "forceNew": false,
+    "verifiedBy": "0006 §2.2 audit",
+    "date": "2026-07-11",
+    "evidence": "internal/service/backup/plan.go — rule_name has no ForceNew; UpdateBackupPlan path"
+  },
+  "aws_iam_group.path": {
+    "forceNew": false,
+    "verifiedBy": "wf_531864f4 audit wave + memory gerbang-forcenew-audit",
+    "date": "2026-07-11",
+    "evidence": "IAM UpdateGroup takes NewPath — in-place"
+  },
+  "aws_sns_topic.display_name": {
+    "forceNew": false,
+    "verifiedBy": "0006 §2.2 audit",
+    "date": "2026-07-11",
+    "evidence": "SetTopicAttributes — in-place"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.action.name": {
+    "forceNew": false,
+    "verifiedBy": "0006 §2.2 audit",
+    "date": "2026-07-11",
+    "evidence": "internal/service/dlm/lifecycle_policy.go — no ForceNew on action name; UpdateLifecyclePolicy"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.copy_tags": {
+    "forceNew": false,
+    "verifiedBy": "0006 §2.2 audit",
+    "date": "2026-07-11",
+    "evidence": "distinct from schedule.copy_tags (which IS ForceNew); UpdateLifecyclePolicy handles default-policy copy_tags"
+  },
+  "aws_wafv2_web_acl.visibility_config.metric_name": {
+    "forceNew": false,
+    "verifiedBy": "0006 §2.2 audit",
+    "date": "2026-07-11",
+    "evidence": "internal/service/wafv2/schemas.go visibilityConfigSchema() — no ForceNew; UpdateWebACL path"
+  },
+  "aws_cloudfront_distribution.viewer_mtls_config.trust_store_config.advertise_trust_store_ca_names": {
+    "forceNew": false,
+    "verifiedBy": "0006 §2.2 audit",
+    "date": "2026-07-11",
+    "evidence": "internal/service/cloudfront/distribution.go — attr present in 6.x, no ForceNew"
+  },
+  "aws_ebs_volume.target_type": {
+    "forceNew": false,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "synthetic-param: ebs-gp2-to-gp3's target_type is the codemod input; the written schema attribute is aws_ebs_volume.type — schemadump resources.aws_ebs_volume.attributes.type force_new=false (ModifyVolume, in place). target_type itself is not a schema attribute (verified absent from the reflected tree), so it cannot force replacement."
+  },
+  "aws_eip.detach_target": {
+    "forceNew": false,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "synthetic-param: detach_target selects WHICH association attribute is nulled. Written attributes: aws_eip.instance (force_new=false) or aws_eip.network_interface (force_new=false) per schemadump resources.aws_eip.attributes — both in place (disassociate API). detach_target is not a schema attribute."
+  },
+  "aws_lambda_function.env_key": {
+    "forceNew": false,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "synthetic-param: lambda-add-env-var inserts/updates one key of the environment-variables map. Written attribute: aws_lambda_function.environment.variables — schemadump chain environment(force_new=false) > variables(force_new=false), in place. env_key is the map KEY, not a schema attribute."
+  },
+  "aws_lambda_function.env_value": {
+    "forceNew": false,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "synthetic-param: the VALUE side of lambda-add-env-var's map insert. Written attribute: aws_lambda_function.environment.variables — schemadump chain environment(force_new=false) > variables(force_new=false), in place. env_value is not a schema attribute."
+  },
+  "aws_lambda_function.use_resource_timeout_for_propagation": {
+    "forceNew": true,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "FAIL-CLOSED (unknown, not proven ForceNew): use_resource_timeout_for_propagation appears NOWHERE in the reflected schema of ANY of the 85 dumped types — lambda-set-propagation-timeout-behavior (l1_self_service) is authored against an attribute the pinned provider does not have. No in-place claim can be verified for it; treated AS ForceNew per the 0010 §3 unresolved rule until the manifest lane fixes or retires the op."
+  },
+  "aws_lb.idle_timeout_seconds": {
+    "forceNew": false,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "synthetic-param: alb-set-idle-timeout's UX param carries a _seconds unit suffix; the written schema attribute is aws_lb.idle_timeout — schemadump resources.aws_lb.attributes.idle_timeout force_new=false (ModifyLoadBalancerAttributes, in place). idle_timeout_seconds is not a schema attribute. Manifest lane: an explicit attr:\"idle_timeout\" on the param would retire this row."
+  },
+  "aws_lb_listener.certificate": {
+    "forceNew": false,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "synthetic-param: acm-swap-default-certificate re-points the listener's default certificate; written schema attribute is aws_lb_listener.certificate_arn — schemadump resources.aws_lb_listener.attributes.certificate_arn force_new=false (ModifyListener, in place). certificate (the new_-stripped param name) is not a schema attribute. Manifest lane: attr:\"certificate_arn\" on the param would retire this row."
+  },
+  "aws_sns_topic.delivery_policy_max_delay_target": {
+    "forceNew": false,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "synthetic-param: sns-set-delivery-retry-policy composes both params into the delivery_policy JSON document. Written attribute: aws_sns_topic.delivery_policy — schemadump resources.aws_sns_topic.attributes.delivery_policy force_new=false (SetTopicAttributes, in place)."
+  },
+  "aws_sns_topic.delivery_policy_num_retries": {
+    "forceNew": false,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "synthetic-param: sns-set-delivery-retry-policy composes both params into the delivery_policy JSON document. Written attribute: aws_sns_topic.delivery_policy — schemadump resources.aws_sns_topic.attributes.delivery_policy force_new=false (SetTopicAttributes, in place)."
+  },
+  "aws_ssm_parameter.value_reference": {
+    "forceNew": false,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "synthetic-param: ssm-parameter-update-value-by-reference writes a reference EXPRESSION into the parameter's value. Written attributes: aws_ssm_parameter.value (force_new=false) / insecure_value (force_new=false) per schemadump — PutParameter overwrite, in place. value_reference is not a schema attribute."
+  },
+  "aws_s3_bucket_lifecycle_configuration.days_after_initiation": {
+    "forceNew": true,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "FAIL-CLOSED (unknown, not proven ForceNew): aws_s3_bucket_lifecycle_configuration is terraform-plugin-framework and framework_unreflected in the dump — RequiresReplace plan modifiers are invisible to reflection (0013d §6.4). The pre-0020 in_place verdict came from TEXT-GREP of the framework Go file, exactly the evidence class 0013d rejects. s3-set-abort-incomplete-multipart-upload-days (l1_self_service) keeps a hard review gate until the dump can reflect framework resources."
+  },
+  "aws_s3_bucket_lifecycle_configuration.expiration_date": {
+    "forceNew": true,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "FAIL-CLOSED (unknown, not proven ForceNew): framework_unreflected resource — ForceNew/RequiresReplace is UNKNOWN offline (0013d §6.4); treated AS ForceNew per 0010 §3. Op s3-set-expiration-date (engineer_only)."
+  },
+  "aws_s3_bucket_lifecycle_configuration.expired_object_delete_marker": {
+    "forceNew": true,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "FAIL-CLOSED (unknown, not proven ForceNew): framework_unreflected resource — the pre-0020 in_place row was TEXT-GREP evidence over framework source, rejected by 0013d. Op s3-set-expired-object-delete-marker (l1_self_service) keeps a hard review gate until framework reflection lands."
+  },
+  "aws_s3_bucket_lifecycle_configuration.transition_date": {
+    "forceNew": true,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "FAIL-CLOSED (unknown, not proven ForceNew): framework_unreflected resource — ForceNew/RequiresReplace is UNKNOWN offline (0013d §6.4); treated AS ForceNew per 0010 §3. Op s3-set-transition-date (l1_with_guardrails)."
+  },
+  "aws_vpn_connection.psk_secret_name": {
+    "forceNew": false,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "synthetic-param: vpn-rotate-tunnel-psk resolves the named secret and writes the selected tunnel's PSK. Written attributes: aws_vpn_connection.tunnel1_preshared_key (force_new=false) / tunnel2_preshared_key (force_new=false) per schemadump — ModifyVpnTunnelOptions, in place (tunnel renegotiates, no resource replacement). psk_secret_name is not a schema attribute."
+  },
+  "aws_vpn_connection.tunnel_number": {
+    "forceNew": false,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "synthetic-param: tunnel_number selects WHICH tunnel's PSK is written. Written attributes: aws_vpn_connection.tunnel1_preshared_key (force_new=false) / tunnel2_preshared_key (force_new=false) per schemadump — in place. tunnel_number is not a schema attribute."
+  },
+  "aws_wafv2_web_acl.default_size_inspection_limit": {
+    "forceNew": false,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "synthetic-param: waf-set-association-body-inspection-limit writes association_config.request_body.<protected_resource_type>.default_size_inspection_limit. All five schemadump chains (api_gateway, app_runner_service, cloudfront, cognito_user_pool, verified_access_instance) have force_new=false end-to-end — UpdateWebACL, in place. The bare leaf name at resource root is not a schema attribute."
+  },
+  "aws_wafv2_web_acl.protected_resource_type": {
+    "forceNew": false,
+    "verifiedBy": "0020 §B3 forcenew-map completion — schemadump aws-v6.53.0 (provider commit a0c8167)",
+    "date": "2026-07-12",
+    "evidence": "synthetic-param: protected_resource_type selects WHICH association_config.request_body.<type> block receives default_size_inspection_limit. All five schemadump chains have force_new=false end-to-end — in place. protected_resource_type is not a schema attribute."
+  }
+}

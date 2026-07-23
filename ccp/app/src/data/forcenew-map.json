@@ -1,0 +1,4964 @@
+{
+  "aws_acm_certificate.early_renewal_duration": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: early_renewal_duration"
+  },
+  "aws_acm_certificate.options.certificate_transparency_logging_preference": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: options.certificate_transparency_logging_preference"
+  },
+  "aws_acm_certificate.options.export": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: options.export"
+  },
+  "aws_alb.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_alb_listener.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_alb_target_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ami.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ami_copy.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ami_from_instance.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_amplify_app.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_amplify_branch.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_api_gateway_api_key.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_api_gateway_domain_name.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_api_gateway_rest_api.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_api_gateway_stage.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_api_gateway_usage_plan.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_api_gateway_vpc_link.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_apigatewayv2_api.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_apigatewayv2_domain_name.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_apigatewayv2_stage.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_apigatewayv2_vpc_link.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appautoscaling_target.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appconfig_application.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appconfig_configuration_profile.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appconfig_deployment.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appconfig_deployment_strategy.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appconfig_extension.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appflow_flow.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appintegrations_data_integration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appintegrations_event_integration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_applicationinsights_application.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appmesh_mesh.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appmesh_virtual_gateway.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appmesh_virtual_node.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appmesh_virtual_router.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appmesh_virtual_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_apprunner_auto_scaling_configuration_version.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_apprunner_connection.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_apprunner_observability_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_apprunner_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_apprunner_vpc_connector.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_apprunner_vpc_ingress_connection.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appstream_fleet.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appstream_image_builder.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appstream_stack.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_appsync_graphql_api.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_athena_data_catalog.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_athena_workgroup.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_autoscaling_group.availability_zone_distribution.capacity_distribution_strategy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: availability_zone_distribution.capacity_distribution_strategy"
+  },
+  "aws_autoscaling_group.capacity_rebalance": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: capacity_rebalance"
+  },
+  "aws_autoscaling_group.capacity_reservation_specification.capacity_reservation_preference": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: capacity_reservation_specification.capacity_reservation_preference"
+  },
+  "aws_autoscaling_group.default_cooldown": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_cooldown"
+  },
+  "aws_autoscaling_group.default_instance_warmup": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_instance_warmup"
+  },
+  "aws_autoscaling_group.desired_capacity_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: desired_capacity_type"
+  },
+  "aws_autoscaling_group.enabled_metrics": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enabled_metrics"
+  },
+  "aws_autoscaling_group.force_delete": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: force_delete"
+  },
+  "aws_autoscaling_group.force_delete_warm_pool": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: force_delete_warm_pool"
+  },
+  "aws_autoscaling_group.health_check_grace_period": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: health_check_grace_period"
+  },
+  "aws_autoscaling_group.health_check_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: health_check_type"
+  },
+  "aws_autoscaling_group.ignore_failed_scaling_activities": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: ignore_failed_scaling_activities"
+  },
+  "aws_autoscaling_group.launch_template.version": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: launch_template.version"
+  },
+  "aws_autoscaling_group.max_instance_lifetime": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: max_instance_lifetime"
+  },
+  "aws_autoscaling_group.metrics_granularity": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: metrics_granularity"
+  },
+  "aws_autoscaling_group.protect_from_scale_in": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: protect_from_scale_in"
+  },
+  "aws_autoscaling_group.suspended_processes": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: suspended_processes"
+  },
+  "aws_autoscaling_group.termination_policies": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: termination_policies"
+  },
+  "aws_autoscaling_group.wait_for_capacity_timeout": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: wait_for_capacity_timeout"
+  },
+  "aws_autoscaling_policy.adjustment_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: adjustment_type"
+  },
+  "aws_autoscaling_policy.cooldown": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: cooldown"
+  },
+  "aws_autoscaling_policy.disable_scale_in": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: target_tracking_configuration.disable_scale_in"
+  },
+  "aws_autoscaling_policy.enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enabled"
+  },
+  "aws_autoscaling_policy.estimated_instance_warmup": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: estimated_instance_warmup"
+  },
+  "aws_autoscaling_policy.metric_aggregation_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: metric_aggregation_type"
+  },
+  "aws_autoscaling_policy.min_adjustment_magnitude": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: min_adjustment_magnitude"
+  },
+  "aws_autoscaling_policy.scaling_adjustment": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: scaling_adjustment"
+  },
+  "aws_backup_framework.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_backup_plan.rule.completion_window": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: rule.completion_window"
+  },
+  "aws_backup_plan.rule.enable_continuous_backup": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: rule.enable_continuous_backup"
+  },
+  "aws_backup_plan.rule.lifecycle.delete_after": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: rule.lifecycle.delete_after"
+  },
+  "aws_backup_plan.rule.lifecycle.opt_in_to_archive_for_supported_resources": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: rule.lifecycle.opt_in_to_archive_for_supported_resources"
+  },
+  "aws_backup_plan.rule.rule_name": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: rule.rule_name"
+  },
+  "aws_backup_plan.rule.schedule": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: rule.schedule"
+  },
+  "aws_backup_plan.rule.schedule_expression_timezone": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: rule.schedule_expression_timezone"
+  },
+  "aws_backup_plan.rule.start_window": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: rule.start_window"
+  },
+  "aws_backup_plan.rule.target_vault_name": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: rule.target_vault_name"
+  },
+  "aws_backup_report_plan.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_backup_vault.force_destroy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: force_destroy"
+  },
+  "aws_batch_compute_environment.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_batch_job_definition.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_budgets_budget.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_budgets_budget_action.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ce_anomaly_monitor.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ce_anomaly_subscription.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ce_cost_category.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_chime_voice_connector.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_chimesdkmediapipelines_media_insights_pipeline_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_chimesdkvoice_sip_media_application.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_chimesdkvoice_voice_profile_domain.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_cleanrooms_collaboration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_cleanrooms_configured_table.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_cloud9_environment_ec2.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_cloudformation_stack.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_cloudformation_stack_set.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_cloudfront_distribution.comment": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: comment"
+  },
+  "aws_cloudfront_distribution.default_cache_behavior.compress": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_cache_behavior.compress"
+  },
+  "aws_cloudfront_distribution.default_cache_behavior.default_ttl": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_cache_behavior.default_ttl"
+  },
+  "aws_cloudfront_distribution.default_cache_behavior.max_ttl": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_cache_behavior.max_ttl"
+  },
+  "aws_cloudfront_distribution.default_cache_behavior.min_ttl": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_cache_behavior.min_ttl"
+  },
+  "aws_cloudfront_distribution.default_cache_behavior.smooth_streaming": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_cache_behavior.smooth_streaming"
+  },
+  "aws_cloudfront_distribution.default_cache_behavior.viewer_protocol_policy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_cache_behavior.viewer_protocol_policy"
+  },
+  "aws_cloudfront_distribution.default_root_object": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_root_object"
+  },
+  "aws_cloudfront_distribution.enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enabled"
+  },
+  "aws_cloudfront_distribution.http_version": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: http_version"
+  },
+  "aws_cloudfront_distribution.is_ipv6_enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: is_ipv6_enabled"
+  },
+  "aws_cloudfront_distribution.logging_config.include_cookies": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: logging_config.include_cookies"
+  },
+  "aws_cloudfront_distribution.price_class": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: price_class"
+  },
+  "aws_cloudfront_distribution.retain_on_delete": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: retain_on_delete"
+  },
+  "aws_cloudfront_distribution.viewer_certificate.ssl_support_method": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: viewer_certificate.ssl_support_method"
+  },
+  "aws_cloudfront_distribution.viewer_mtls_config.trust_store_config.advertise_trust_store_ca_names": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: viewer_mtls_config.trust_store_config.advertise_trust_store_ca_names"
+  },
+  "aws_cloudfront_distribution.wait_for_deployment": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: wait_for_deployment"
+  },
+  "aws_cloudfront_distribution.web_acl_id": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: web_acl_id"
+  },
+  "aws_cloudfront_function.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_cloudtrail.enable_log_file_validation": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enable_log_file_validation"
+  },
+  "aws_cloudtrail.enable_logging": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enable_logging"
+  },
+  "aws_cloudtrail.event_selector.exclude_management_event_sources": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: event_selector.exclude_management_event_sources"
+  },
+  "aws_cloudtrail.event_selector.include_management_events": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: event_selector.include_management_events"
+  },
+  "aws_cloudtrail.event_selector.read_write_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: event_selector.read_write_type"
+  },
+  "aws_cloudtrail.include_global_service_events": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: include_global_service_events"
+  },
+  "aws_cloudtrail.is_multi_region_trail": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: is_multi_region_trail"
+  },
+  "aws_cloudtrail.is_organization_trail": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: is_organization_trail"
+  },
+  "aws_cloudtrail.kms_key_id": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: kms_key_id"
+  },
+  "aws_cloudtrail.s3_bucket_name": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: s3_bucket_name"
+  },
+  "aws_cloudtrail.s3_key_prefix": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: s3_key_prefix"
+  },
+  "aws_cloudtrail.sns_topic_name": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: sns_topic_name"
+  },
+  "aws_cloudwatch_composite_alarm.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_cloudwatch_dashboard.dashboard_body": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: dashboard_body"
+  },
+  "aws_cloudwatch_event_bus.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_cloudwatch_event_rule.description": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: description"
+  },
+  "aws_cloudwatch_event_rule.force_destroy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: force_destroy"
+  },
+  "aws_cloudwatch_event_rule.schedule_expression": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: schedule_expression"
+  },
+  "aws_cloudwatch_event_rule.state": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: state"
+  },
+  "aws_cloudwatch_event_target.batch_target.array_size": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: batch_target.array_size"
+  },
+  "aws_cloudwatch_event_target.batch_target.job_attempts": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: batch_target.job_attempts"
+  },
+  "aws_cloudwatch_event_target.ecs_target.enable_ecs_managed_tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: ecs_target.enable_ecs_managed_tags"
+  },
+  "aws_cloudwatch_event_target.ecs_target.group": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: ecs_target.group"
+  },
+  "aws_cloudwatch_event_target.ecs_target.launch_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: ecs_target.launch_type"
+  },
+  "aws_cloudwatch_event_target.ecs_target.platform_version": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: ecs_target.platform_version"
+  },
+  "aws_cloudwatch_event_target.ecs_target.propagate_tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: ecs_target.propagate_tags"
+  },
+  "aws_cloudwatch_event_target.force_destroy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: force_destroy"
+  },
+  "aws_cloudwatch_event_target.role_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: role_arn"
+  },
+  "aws_cloudwatch_log_destination.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_cloudwatch_log_group.deletion_protection_enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: deletion_protection_enabled"
+  },
+  "aws_cloudwatch_log_group.kms_key_id": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: kms_key_id"
+  },
+  "aws_cloudwatch_log_group.retention_in_days": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: retention_in_days"
+  },
+  "aws_cloudwatch_log_group.skip_destroy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: skip_destroy"
+  },
+  "aws_cloudwatch_metric_alarm.actions_enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: actions_enabled"
+  },
+  "aws_cloudwatch_metric_alarm.alarm_description": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: alarm_description"
+  },
+  "aws_cloudwatch_metric_alarm.comparison_operator": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: comparison_operator"
+  },
+  "aws_cloudwatch_metric_alarm.datapoints_to_alarm": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: datapoints_to_alarm"
+  },
+  "aws_cloudwatch_metric_alarm.evaluate_low_sample_count_percentiles": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: evaluate_low_sample_count_percentiles"
+  },
+  "aws_cloudwatch_metric_alarm.evaluation_interval": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: evaluation_interval"
+  },
+  "aws_cloudwatch_metric_alarm.evaluation_periods": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: evaluation_periods"
+  },
+  "aws_cloudwatch_metric_alarm.extended_statistic": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: extended_statistic"
+  },
+  "aws_cloudwatch_metric_alarm.metric_query.account_id": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: metric_query.account_id"
+  },
+  "aws_cloudwatch_metric_alarm.metric_query.metric.period": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: metric_query.metric.period"
+  },
+  "aws_cloudwatch_metric_alarm.metric_query.period": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: metric_query.period"
+  },
+  "aws_cloudwatch_metric_alarm.pending_period": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: evaluation_criteria.promql_criteria.pending_period"
+  },
+  "aws_cloudwatch_metric_alarm.period": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: period"
+  },
+  "aws_cloudwatch_metric_alarm.recovery_period": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: evaluation_criteria.promql_criteria.recovery_period"
+  },
+  "aws_cloudwatch_metric_alarm.statistic": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: statistic"
+  },
+  "aws_cloudwatch_metric_alarm.threshold": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: threshold"
+  },
+  "aws_cloudwatch_metric_alarm.threshold_metric_id": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: threshold_metric_id"
+  },
+  "aws_cloudwatch_metric_alarm.treat_missing_data": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: treat_missing_data"
+  },
+  "aws_cloudwatch_metric_stream.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_codeartifact_domain.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_codeartifact_repository.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_codebuild_fleet.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_codebuild_project.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_codebuild_report_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_codecommit_repository.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_codedeploy_app.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_codedeploy_deployment_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_codepipeline.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_codepipeline_custom_action_type.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_codepipeline_webhook.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_codestarconnections_connection.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_comprehend_document_classifier.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_comprehend_entity_recognizer.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_config_config_rule.description": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: description"
+  },
+  "aws_config_config_rule.input_parameters": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: input_parameters"
+  },
+  "aws_config_config_rule.maximum_execution_frequency": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: maximum_execution_frequency"
+  },
+  "aws_config_config_rule.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_config_configuration_recorder.recording_group.all_supported": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: recording_group.all_supported"
+  },
+  "aws_config_configuration_recorder.recording_group.include_global_resource_types": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: recording_group.include_global_resource_types"
+  },
+  "aws_config_configuration_recorder.recording_mode.recording_frequency": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: recording_mode.recording_frequency"
+  },
+  "aws_config_configuration_recorder.role_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: role_arn"
+  },
+  "aws_config_delivery_channel.s3_bucket_name": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: s3_bucket_name"
+  },
+  "aws_config_delivery_channel.s3_key_prefix": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: s3_key_prefix"
+  },
+  "aws_config_delivery_channel.snapshot_delivery_properties.delivery_frequency": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: snapshot_delivery_properties.delivery_frequency"
+  },
+  "aws_config_delivery_channel.sns_topic_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: sns_topic_arn"
+  },
+  "aws_connect_contact_flow.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_connect_contact_flow_module.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_connect_hours_of_operation.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_connect_instance.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_connect_phone_number.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_connect_queue.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_connect_quick_connect.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_connect_routing_profile.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_connect_security_profile.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_connect_user.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_connect_user_hierarchy_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_connect_vocabulary.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_cur_report_definition.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_customerprofiles_domain.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_dataexchange_data_set.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_dataexchange_revision.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_datapipeline_pipeline.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_datasync_agent.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_datasync_location_azure_blob.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_datasync_location_efs.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_datasync_location_fsx_lustre_file_system.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_datasync_location_fsx_ontap_file_system.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_datasync_location_fsx_openzfs_file_system.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_datasync_location_fsx_windows_file_system.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_datasync_location_hdfs.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_datasync_location_nfs.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_datasync_location_object_storage.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_datasync_location_s3.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_datasync_location_smb.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_datasync_task.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_dax_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_db_cluster_snapshot.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_db_event_subscription.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_db_instance.allocated_storage": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: allocated_storage"
+  },
+  "aws_db_instance.allow_major_version_upgrade": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: allow_major_version_upgrade"
+  },
+  "aws_db_instance.auto_minor_version_upgrade": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: auto_minor_version_upgrade"
+  },
+  "aws_db_instance.backup_retention_period": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: backup_retention_period"
+  },
+  "aws_db_instance.backup_window": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: backup_window"
+  },
+  "aws_db_instance.blue_green_update.enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: blue_green_update.enabled"
+  },
+  "aws_db_instance.copy_tags_to_snapshot": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: copy_tags_to_snapshot"
+  },
+  "aws_db_instance.database_insights_mode": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: database_insights_mode"
+  },
+  "aws_db_instance.dedicated_log_volume": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: dedicated_log_volume"
+  },
+  "aws_db_instance.deletion_protection": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: deletion_protection"
+  },
+  "aws_db_instance.engine_lifecycle_support": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: engine_lifecycle_support"
+  },
+  "aws_db_instance.license_model": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: license_model"
+  },
+  "aws_db_instance.maintenance_window": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: maintenance_window"
+  },
+  "aws_db_instance.max_allocated_storage": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: max_allocated_storage"
+  },
+  "aws_db_instance.monitoring_interval": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: monitoring_interval"
+  },
+  "aws_db_instance.multi_az": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: multi_az"
+  },
+  "aws_db_instance.network_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: network_type"
+  },
+  "aws_db_instance.performance_insights_enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: performance_insights_enabled"
+  },
+  "aws_db_instance.performance_insights_retention_period": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: performance_insights_retention_period"
+  },
+  "aws_db_instance.replica_mode": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: replica_mode"
+  },
+  "aws_db_instance.storage_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: storage_type"
+  },
+  "aws_db_instance.upgrade_storage_config": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: upgrade_storage_config"
+  },
+  "aws_db_option_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_db_parameter_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_db_proxy.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_db_proxy_endpoint.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_db_snapshot.shared_accounts": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: shared_accounts"
+  },
+  "aws_db_snapshot_copy.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_db_subnet_group.description": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: description"
+  },
+  "aws_db_subnet_group.subnet_ids": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: subnet_ids"
+  },
+  "aws_default_subnet.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_default_vpc.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_devicefarm_device_pool.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_devicefarm_instance_profile.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_devicefarm_network_profile.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_devicefarm_project.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_devicefarm_test_grid_project.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_dlm_lifecycle_policy.action.cross_region_copy.encryption_configuration.cmk_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: policy_details.action.cross_region_copy.encryption_configuration.cmk_arn"
+  },
+  "aws_dlm_lifecycle_policy.action.cross_region_copy.encryption_configuration.encrypted": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: policy_details.action.cross_region_copy.encryption_configuration.encrypted"
+  },
+  "aws_dlm_lifecycle_policy.cross_region_copy_rule.cmk_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: policy_details.schedule.cross_region_copy_rule.cmk_arn"
+  },
+  "aws_dlm_lifecycle_policy.cross_region_copy_rule.encrypted": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: policy_details.schedule.cross_region_copy_rule.encrypted"
+  },
+  "aws_dlm_lifecycle_policy.default_policy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_policy"
+  },
+  "aws_dlm_lifecycle_policy.description": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: description"
+  },
+  "aws_dlm_lifecycle_policy.execution_role_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: execution_role_arn"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.action.name": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.action.name"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.copy_tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.copy_tags"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.create_interval": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.create_interval"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.event_source.parameters.snapshot_owner": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.event_source.parameters.snapshot_owner"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.exclusions.exclude_boot_volumes": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.exclusions.exclude_boot_volumes"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.extend_deletion": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.extend_deletion"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.parameters.exclude_boot_volume": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.parameters.exclude_boot_volume"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.parameters.no_reboot": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.parameters.no_reboot"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.policy_language": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.policy_language"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.policy_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.policy_type"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.resource_locations": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.resource_locations"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.resource_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.resource_type"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.resource_types": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.resource_types"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.retain_interval": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.retain_interval"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.schedule.create_rule.location": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.schedule.create_rule.location"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.schedule.deprecate_rule.count": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.schedule.deprecate_rule.count"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.schedule.fast_restore_rule.count": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.schedule.fast_restore_rule.count"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.schedule.retain_rule.count": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.schedule.retain_rule.count"
+  },
+  "aws_dlm_lifecycle_policy.policy_details.schedule.share_rule.target_accounts": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy_details.schedule.share_rule.target_accounts"
+  },
+  "aws_dlm_lifecycle_policy.retention_archive_tier.count": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: policy_details.schedule.archive_rule.archive_retain_rule.retention_archive_tier.count"
+  },
+  "aws_dlm_lifecycle_policy.scripts.execute_operation_on_script_failure": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: policy_details.schedule.create_rule.scripts.execute_operation_on_script_failure"
+  },
+  "aws_dlm_lifecycle_policy.scripts.execution_handler": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: policy_details.schedule.create_rule.scripts.execution_handler"
+  },
+  "aws_dlm_lifecycle_policy.scripts.maximum_retry_count": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: policy_details.schedule.create_rule.scripts.maximum_retry_count"
+  },
+  "aws_dlm_lifecycle_policy.scripts.stages": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: policy_details.schedule.create_rule.scripts.stages"
+  },
+  "aws_dlm_lifecycle_policy.state": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: state"
+  },
+  "aws_dms_endpoint.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_dms_event_subscription.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_dms_replication_config.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_dms_replication_instance.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_dms_replication_subnet_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_dms_replication_task.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_dms_s3_endpoint.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_docdb_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_docdb_cluster_instance.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_docdb_cluster_parameter_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_docdb_event_subscription.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_docdb_subnet_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_dynamodb_table.billing_mode": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: billing_mode"
+  },
+  "aws_dynamodb_table.deletion_protection_enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: deletion_protection_enabled"
+  },
+  "aws_dynamodb_table.point_in_time_recovery.enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: point_in_time_recovery.enabled"
+  },
+  "aws_dynamodb_table.point_in_time_recovery.recovery_period_in_days": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: point_in_time_recovery.recovery_period_in_days"
+  },
+  "aws_dynamodb_table.server_side_encryption.enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: server_side_encryption.enabled"
+  },
+  "aws_dynamodb_table.table_class": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: table_class"
+  },
+  "aws_dynamodb_table_replica.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ebs_snapshot.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ebs_snapshot_copy.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ebs_snapshot_import.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ebs_volume.final_snapshot": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: final_snapshot"
+  },
+  "aws_ebs_volume.iops": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: iops"
+  },
+  "aws_ebs_volume.size": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: size"
+  },
+  "aws_ebs_volume.throughput": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: throughput"
+  },
+  "aws_ebs_volume.type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: type"
+  },
+  "aws_ec2_capacity_reservation.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ec2_fleet.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ec2_host.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ecr_repository.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ecrpublic_repository.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ecs_capacity_provider.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ecs_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ecs_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ecs_task_definition.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ecs_task_set.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_efs_access_point.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_efs_backup_policy.backup_policy.status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: backup_policy.status"
+  },
+  "aws_efs_file_system.lifecycle_policy.transition_to_archive": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: lifecycle_policy.transition_to_archive"
+  },
+  "aws_efs_file_system.lifecycle_policy.transition_to_ia": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: lifecycle_policy.transition_to_ia"
+  },
+  "aws_efs_file_system.lifecycle_policy.transition_to_primary_storage_class": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: lifecycle_policy.transition_to_primary_storage_class"
+  },
+  "aws_efs_file_system.protection.replication_overwrite": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: protection.replication_overwrite"
+  },
+  "aws_efs_file_system.provisioned_throughput_in_mibps": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: provisioned_throughput_in_mibps"
+  },
+  "aws_efs_mount_target.security_groups": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: security_groups"
+  },
+  "aws_eip.detach_target": {
+    "verdict": "unresolved",
+    "file": "",
+    "tag": "v6.53.0",
+    "note": "not_in_reflected_schema (resource has CustomizeDiff) — synthetic param or manifest gap; adjudicate"
+  },
+  "aws_eip.instance": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: instance"
+  },
+  "aws_eip.network_interface": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: network_interface"
+  },
+  "aws_eks_access_entry.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_eks_addon.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_eks_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_eks_fargate_profile.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_eks_identity_provider_config.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_eks_node_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_elastic_beanstalk_application.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_elastic_beanstalk_application_version.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_elastic_beanstalk_environment.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_elasticache_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_elasticache_parameter_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_elasticache_replication_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_elasticache_subnet_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_elasticache_user.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_elasticache_user_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_elasticsearch_domain.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_elb.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_emr_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_emr_studio.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_emrcontainers_virtual_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_emrserverless_application.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_evidently_feature.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_evidently_launch.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_evidently_project.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_evidently_segment.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_finspace_kx_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_finspace_kx_database.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_finspace_kx_dataview.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_finspace_kx_environment.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_finspace_kx_scaling_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_finspace_kx_user.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_finspace_kx_volume.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_fsx_backup.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_fsx_file_cache.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_fsx_lustre_file_system.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_fsx_ontap_file_system.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_fsx_ontap_storage_virtual_machine.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_fsx_ontap_volume.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_fsx_openzfs_file_system.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_fsx_openzfs_snapshot.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_fsx_openzfs_volume.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_fsx_windows_file_system.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_gamelift_alias.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_gamelift_build.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_gamelift_fleet.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_gamelift_game_server_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_gamelift_game_session_queue.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_gamelift_script.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_glacier_vault.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_globalaccelerator_accelerator.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_globalaccelerator_custom_routing_accelerator.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_glue_catalog_database.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_glue_connection.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_glue_crawler.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_glue_data_quality_ruleset.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_glue_dev_endpoint.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_glue_job.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_glue_ml_transform.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_glue_registry.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_glue_schema.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_glue_trigger.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_glue_workflow.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_grafana_workspace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_iam_access_key.status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: status"
+  },
+  "aws_iam_group.name": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: name"
+  },
+  "aws_iam_group.path": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: path"
+  },
+  "aws_iam_role.force_detach_policies": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: force_detach_policies"
+  },
+  "aws_iam_user.force_destroy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: force_destroy"
+  },
+  "aws_iam_user.name": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: name"
+  },
+  "aws_imagebuilder_component.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_imagebuilder_container_recipe.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_imagebuilder_distribution_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_imagebuilder_image.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_imagebuilder_image_pipeline.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_imagebuilder_image_recipe.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_imagebuilder_infrastructure_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_imagebuilder_workflow.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_instance.capacity_reservation_preference": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: capacity_reservation_specification.capacity_reservation_preference"
+  },
+  "aws_instance.cpu_options.nested_virtualization": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: cpu_options.nested_virtualization"
+  },
+  "aws_instance.credit_specification.cpu_credits": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: credit_specification.cpu_credits"
+  },
+  "aws_instance.disable_api_stop": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: disable_api_stop"
+  },
+  "aws_instance.disable_api_termination": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: disable_api_termination"
+  },
+  "aws_instance.enable_primary_ipv6": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enable_primary_ipv6"
+  },
+  "aws_instance.force_destroy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: force_destroy"
+  },
+  "aws_instance.get_password_data": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: get_password_data"
+  },
+  "aws_instance.instance_initiated_shutdown_behavior": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: instance_initiated_shutdown_behavior"
+  },
+  "aws_instance.instance_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: instance_type"
+  },
+  "aws_instance.maintenance_options.auto_recovery": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: maintenance_options.auto_recovery"
+  },
+  "aws_instance.metadata_options.http_endpoint": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: metadata_options.http_endpoint"
+  },
+  "aws_instance.metadata_options.http_protocol_ipv6": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: metadata_options.http_protocol_ipv6"
+  },
+  "aws_instance.metadata_options.http_put_response_hop_limit": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: metadata_options.http_put_response_hop_limit"
+  },
+  "aws_instance.metadata_options.http_tokens": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: metadata_options.http_tokens"
+  },
+  "aws_instance.metadata_options.instance_metadata_tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: metadata_options.instance_metadata_tags"
+  },
+  "aws_instance.monitoring": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: monitoring"
+  },
+  "aws_instance.root_block_device.delete_on_termination": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: root_block_device.delete_on_termination"
+  },
+  "aws_instance.root_block_device.volume_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: root_block_device.volume_type"
+  },
+  "aws_instance.source_dest_check": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: source_dest_check"
+  },
+  "aws_instance.user_data_replace_on_change": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: user_data_replace_on_change"
+  },
+  "aws_internetmonitor_monitor.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_iot_authorizer.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_iot_domain_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_iot_provisioning_template.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_iot_role_alias.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_iot_thing_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_iot_thing_type.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ivs_channel.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ivschat_logging_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ivschat_room.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_kendra_data_source.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_kendra_faq.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_kendra_index.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_kendra_query_suggestions_block_list.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_kendra_thesaurus.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_keyspaces_keyspace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_keyspaces_table.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_kinesis_analytics_application.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_kinesis_firehose_delivery_stream.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_kinesis_stream.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_kinesis_stream_consumer.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_kinesis_video_stream.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_kinesisanalyticsv2_application.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_kms_key.bypass_policy_lockout_safety_check": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: bypass_policy_lockout_safety_check"
+  },
+  "aws_kms_key.description": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: description"
+  },
+  "aws_kms_key.enable_key_rotation": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enable_key_rotation"
+  },
+  "aws_kms_key.is_enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: is_enabled"
+  },
+  "aws_lambda_code_signing_config.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_lambda_event_source_mapping.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_lambda_function.architectures": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: architectures"
+  },
+  "aws_lambda_function.logging_config.application_log_level": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: logging_config.application_log_level"
+  },
+  "aws_lambda_function.logging_config.system_log_level": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: logging_config.system_log_level"
+  },
+  "aws_lambda_function.memory_size": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: memory_size"
+  },
+  "aws_lambda_function.publish": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: publish"
+  },
+  "aws_lambda_function.publish_to": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: publish_to"
+  },
+  "aws_lambda_function.reserved_concurrent_executions": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: reserved_concurrent_executions"
+  },
+  "aws_lambda_function.skip_destroy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: skip_destroy"
+  },
+  "aws_lambda_function.snap_start.apply_on": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: snap_start.apply_on"
+  },
+  "aws_lambda_function.timeout": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: timeout"
+  },
+  "aws_launch_template.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_lb.access_logs.enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: access_logs.enabled"
+  },
+  "aws_lb.client_keep_alive": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: client_keep_alive"
+  },
+  "aws_lb.connection_logs.enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: connection_logs.enabled"
+  },
+  "aws_lb.dns_record_client_routing_policy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: dns_record_client_routing_policy"
+  },
+  "aws_lb.drop_invalid_header_fields": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: drop_invalid_header_fields"
+  },
+  "aws_lb.enable_cross_zone_load_balancing": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enable_cross_zone_load_balancing"
+  },
+  "aws_lb.enable_deletion_protection": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enable_deletion_protection"
+  },
+  "aws_lb.enable_http2": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enable_http2"
+  },
+  "aws_lb.enable_prefix_for_ipv6_source_nat": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enable_prefix_for_ipv6_source_nat"
+  },
+  "aws_lb.enable_tls_version_and_cipher_suite_headers": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enable_tls_version_and_cipher_suite_headers"
+  },
+  "aws_lb.enable_waf_fail_open": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enable_waf_fail_open"
+  },
+  "aws_lb.enable_xff_client_port": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enable_xff_client_port"
+  },
+  "aws_lb.enable_zonal_shift": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enable_zonal_shift"
+  },
+  "aws_lb.enforce_security_group_inbound_rules_on_private_link_traffic": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enforce_security_group_inbound_rules_on_private_link_traffic"
+  },
+  "aws_lb.health_check_logs.enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: health_check_logs.enabled"
+  },
+  "aws_lb.idle_timeout_seconds": {
+    "verdict": "unresolved",
+    "file": "",
+    "tag": "v6.53.0",
+    "note": "not_in_reflected_schema (resource has CustomizeDiff) — synthetic param or manifest gap; adjudicate"
+  },
+  "aws_lb.ip_address_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: ip_address_type"
+  },
+  "aws_lb.preserve_host_header": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: preserve_host_header"
+  },
+  "aws_lb.secondary_ips_auto_assigned_per_subnet": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: secondary_ips_auto_assigned_per_subnet"
+  },
+  "aws_lb.xff_header_processing_mode": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: xff_header_processing_mode"
+  },
+  "aws_lb_listener.certificate_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: certificate_arn"
+  },
+  "aws_lb_listener.default_action.authenticate_cognito.on_unauthenticated_request": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_action.authenticate_cognito.on_unauthenticated_request"
+  },
+  "aws_lb_listener.default_action.authenticate_oidc.on_unauthenticated_request": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_action.authenticate_oidc.on_unauthenticated_request"
+  },
+  "aws_lb_listener.default_action.fixed_response.content_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_action.fixed_response.content_type"
+  },
+  "aws_lb_listener.default_action.fixed_response.status_code": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_action.fixed_response.status_code"
+  },
+  "aws_lb_listener.default_action.forward.target_group.weight": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_action.forward.target_group.weight"
+  },
+  "aws_lb_listener.default_action.order": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_action.order"
+  },
+  "aws_lb_listener.default_action.redirect.port": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_action.redirect.port"
+  },
+  "aws_lb_listener.default_action.redirect.protocol": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_action.redirect.protocol"
+  },
+  "aws_lb_listener.default_action.redirect.status_code": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_action.redirect.status_code"
+  },
+  "aws_lb_listener.mutual_authentication.advertise_trust_store_ca_names": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: mutual_authentication.advertise_trust_store_ca_names"
+  },
+  "aws_lb_listener.mutual_authentication.ignore_client_certificate_expiry": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: mutual_authentication.ignore_client_certificate_expiry"
+  },
+  "aws_lb_listener.mutual_authentication.mode": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: mutual_authentication.mode"
+  },
+  "aws_lb_listener.protocol": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: protocol"
+  },
+  "aws_lb_listener.routing_http_response_access_control_allow_credentials_header_value": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: routing_http_response_access_control_allow_credentials_header_value"
+  },
+  "aws_lb_listener.routing_http_response_access_control_allow_methods_header_value": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: routing_http_response_access_control_allow_methods_header_value"
+  },
+  "aws_lb_listener.routing_http_response_server_enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: routing_http_response_server_enabled"
+  },
+  "aws_lb_listener.ssl_policy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: ssl_policy"
+  },
+  "aws_lb_listener_rule.action.authenticate_cognito.on_unauthenticated_request": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: action.authenticate_cognito.on_unauthenticated_request"
+  },
+  "aws_lb_listener_rule.action.authenticate_oidc.on_unauthenticated_request": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: action.authenticate_oidc.on_unauthenticated_request"
+  },
+  "aws_lb_listener_rule.action.fixed_response.content_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: action.fixed_response.content_type"
+  },
+  "aws_lb_listener_rule.action.fixed_response.status_code": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: action.fixed_response.status_code"
+  },
+  "aws_lb_listener_rule.action.forward.stickiness.duration": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: action.forward.stickiness.duration"
+  },
+  "aws_lb_listener_rule.action.forward.stickiness.enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: action.forward.stickiness.enabled"
+  },
+  "aws_lb_listener_rule.action.forward.target_group.weight": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: action.forward.target_group.weight"
+  },
+  "aws_lb_listener_rule.action.redirect.port": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: action.redirect.port"
+  },
+  "aws_lb_listener_rule.action.redirect.protocol": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: action.redirect.protocol"
+  },
+  "aws_lb_listener_rule.action.redirect.status_code": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: action.redirect.status_code"
+  },
+  "aws_lb_target_group.connection_termination": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: connection_termination"
+  },
+  "aws_lb_target_group.deregistration_delay": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: deregistration_delay"
+  },
+  "aws_lb_target_group.health_check.enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: health_check.enabled"
+  },
+  "aws_lb_target_group.health_check.port": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: health_check.port"
+  },
+  "aws_lb_target_group.health_check.protocol": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: health_check.protocol"
+  },
+  "aws_lb_target_group.lambda_multi_value_headers_enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: lambda_multi_value_headers_enabled"
+  },
+  "aws_lb_target_group.load_balancing_anomaly_mitigation": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: load_balancing_anomaly_mitigation"
+  },
+  "aws_lb_target_group.preserve_client_ip": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: preserve_client_ip"
+  },
+  "aws_lb_target_group.proxy_protocol_v2": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: proxy_protocol_v2"
+  },
+  "aws_lb_target_group.slow_start": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: slow_start"
+  },
+  "aws_lb_target_group.stickiness.cookie_duration": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: stickiness.cookie_duration"
+  },
+  "aws_lb_target_group.stickiness.enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: stickiness.enabled"
+  },
+  "aws_lb_target_group.stickiness.type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: stickiness.type"
+  },
+  "aws_lb_target_group.target_group_health.dns_failover.minimum_healthy_targets_count": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: target_group_health.dns_failover.minimum_healthy_targets_count"
+  },
+  "aws_lb_target_group.target_group_health.dns_failover.minimum_healthy_targets_percentage": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: target_group_health.dns_failover.minimum_healthy_targets_percentage"
+  },
+  "aws_lb_target_group.target_group_health.unhealthy_state_routing.minimum_healthy_targets_count": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: target_group_health.unhealthy_state_routing.minimum_healthy_targets_count"
+  },
+  "aws_lb_target_group.target_group_health.unhealthy_state_routing.minimum_healthy_targets_percentage": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: target_group_health.unhealthy_state_routing.minimum_healthy_targets_percentage"
+  },
+  "aws_lb_target_group.target_health_state.enable_unhealthy_connection_termination": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: target_health_state.enable_unhealthy_connection_termination"
+  },
+  "aws_lb_target_group.target_health_state.unhealthy_draining_interval": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: target_health_state.unhealthy_draining_interval"
+  },
+  "aws_lb_trust_store.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_licensemanager_license_configuration.license_count": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: license_count"
+  },
+  "aws_licensemanager_license_configuration.license_count_hard_limit": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: license_count_hard_limit"
+  },
+  "aws_licensemanager_license_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_lightsail_bucket.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_lightsail_container_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_lightsail_database.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_lightsail_disk.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_lightsail_distribution.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_lightsail_instance.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_lightsail_key_pair.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_lightsail_lb.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_location_geofence_collection.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_location_map.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_location_place_index.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_location_route_calculator.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_location_tracker.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_media_convert_queue.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_media_package_channel.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_media_store_container.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_medialive_channel.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_medialive_input.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_medialive_multiplex.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_memorydb_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_memorydb_parameter_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_memorydb_snapshot.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_memorydb_subnet_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_memorydb_user.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_mq_broker.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_mq_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_msk_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_msk_replicator.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_msk_serverless_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_msk_vpc_connection.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_mskconnect_connector.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_mskconnect_custom_plugin.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_mskconnect_worker_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_mwaa_environment.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_neptune_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_neptune_cluster_endpoint.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_neptune_cluster_instance.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_neptune_cluster_parameter_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_neptune_event_subscription.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_neptune_parameter_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_neptune_subnet_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_oam_link.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_oam_sink.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_opensearch_domain.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_pinpoint_app.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_pipes_pipe.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_placement_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_prometheus_workspace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_qldb_ledger.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_qldb_stream.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_quicksight_analysis.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_quicksight_dashboard.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_quicksight_data_set.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_quicksight_data_source.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_quicksight_folder.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_quicksight_template.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_quicksight_theme.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_rds_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_rds_cluster_endpoint.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_rds_cluster_instance.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_rds_cluster_parameter_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_rds_custom_db_engine_version.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_rds_global_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_rds_reserved_instance.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_redshift_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_redshift_cluster_snapshot.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_redshift_event_subscription.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_redshift_hsm_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_redshift_parameter_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_redshift_snapshot_schedule.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_redshift_subnet_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_redshift_usage_limit.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_redshiftserverless_namespace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_redshiftserverless_workgroup.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_resourcegroups_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_route53_health_check.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_route53_record.alias.evaluate_target_health": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: alias.evaluate_target_health"
+  },
+  "aws_route53_record.allow_overwrite": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: allow_overwrite"
+  },
+  "aws_route53_record.failover_routing_policy.type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: failover_routing_policy.type"
+  },
+  "aws_route53_record.geolocation_routing_policy.continent": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: geolocation_routing_policy.continent"
+  },
+  "aws_route53_record.geolocation_routing_policy.country": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: geolocation_routing_policy.country"
+  },
+  "aws_route53_record.geoproximity_routing_policy.aws_region": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: geoproximity_routing_policy.aws_region"
+  },
+  "aws_route53_record.geoproximity_routing_policy.bias": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: geoproximity_routing_policy.bias"
+  },
+  "aws_route53_record.latency_routing_policy.region": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: latency_routing_policy.region"
+  },
+  "aws_route53_record.multivalue_answer_routing_policy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: multivalue_answer_routing_policy"
+  },
+  "aws_route53_record.records": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: records"
+  },
+  "aws_route53_record.ttl": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: ttl"
+  },
+  "aws_route53_record.type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: type"
+  },
+  "aws_route53_record.weighted_routing_policy.weight": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: weighted_routing_policy.weight"
+  },
+  "aws_route53_resolver_endpoint.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_route53_resolver_firewall_domain_list.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_route53_resolver_query_log_config.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_route53_zone.force_destroy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: force_destroy"
+  },
+  "aws_route53domains_registered_domain.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_route53recoverycontrolconfig_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_route53recoverycontrolconfig_control_panel.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_route53recoveryreadiness_cell.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_route53recoveryreadiness_readiness_check.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_route53recoveryreadiness_recovery_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_route53recoveryreadiness_resource_set.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_route_table.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_route_table_association.route_table_id": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: route_table_id"
+  },
+  "aws_rum_app_monitor.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_s3_access_point.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_s3_bucket.acceleration_status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: acceleration_status"
+  },
+  "aws_s3_bucket.acl": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: acl"
+  },
+  "aws_s3_bucket.request_payer": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: request_payer"
+  },
+  "aws_s3_bucket.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_s3_bucket_object.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_s3_bucket_public_access_block.skip_destroy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: skip_destroy"
+  },
+  "aws_s3_bucket_versioning.versioning_configuration.status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: versioning_configuration.status"
+  },
+  "aws_s3_object.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_s3_object_copy.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_s3control_bucket.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_s3control_storage_lens_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_app.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_app_image_config.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_code_repository.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_data_quality_job_definition.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_device_fleet.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_domain.default_user_settings.auto_mount_home_efs": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_user_settings.auto_mount_home_efs"
+  },
+  "aws_sagemaker_domain.default_user_settings.canvas_app_settings.direct_deploy_settings.status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_user_settings.canvas_app_settings.direct_deploy_settings.status"
+  },
+  "aws_sagemaker_domain.default_user_settings.canvas_app_settings.emr_serverless_settings.status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_user_settings.canvas_app_settings.emr_serverless_settings.status"
+  },
+  "aws_sagemaker_domain.default_user_settings.canvas_app_settings.identity_provider_oauth_settings.data_source_name": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_user_settings.canvas_app_settings.identity_provider_oauth_settings.data_source_name"
+  },
+  "aws_sagemaker_domain.default_user_settings.canvas_app_settings.identity_provider_oauth_settings.status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_user_settings.canvas_app_settings.identity_provider_oauth_settings.status"
+  },
+  "aws_sagemaker_domain.default_user_settings.canvas_app_settings.kendra_settings.status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_user_settings.canvas_app_settings.kendra_settings.status"
+  },
+  "aws_sagemaker_domain.default_user_settings.canvas_app_settings.model_register_settings.status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_user_settings.canvas_app_settings.model_register_settings.status"
+  },
+  "aws_sagemaker_domain.default_user_settings.canvas_app_settings.time_series_forecasting_settings.status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_user_settings.canvas_app_settings.time_series_forecasting_settings.status"
+  },
+  "aws_sagemaker_domain.default_user_settings.jupyter_server_app_settings.lifecycle_config_arns": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_user_settings.jupyter_server_app_settings.lifecycle_config_arns"
+  },
+  "aws_sagemaker_domain.default_user_settings.kernel_gateway_app_settings.lifecycle_config_arns": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_user_settings.kernel_gateway_app_settings.lifecycle_config_arns"
+  },
+  "aws_sagemaker_domain.default_user_settings.r_studio_server_pro_app_settings.access_status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_user_settings.r_studio_server_pro_app_settings.access_status"
+  },
+  "aws_sagemaker_domain.default_user_settings.r_studio_server_pro_app_settings.user_group": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_user_settings.r_studio_server_pro_app_settings.user_group"
+  },
+  "aws_sagemaker_domain.default_user_settings.sharing_settings.notebook_output_option": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_user_settings.sharing_settings.notebook_output_option"
+  },
+  "aws_sagemaker_domain.default_user_settings.studio_web_portal": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: default_user_settings.studio_web_portal"
+  },
+  "aws_sagemaker_domain.domain_settings.docker_settings.enable_docker_access": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: domain_settings.docker_settings.enable_docker_access"
+  },
+  "aws_sagemaker_domain.domain_settings.execution_role_identity_config": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: domain_settings.execution_role_identity_config"
+  },
+  "aws_sagemaker_domain.domain_settings.trusted_identity_propagation_settings.status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: domain_settings.trusted_identity_propagation_settings.status"
+  },
+  "aws_sagemaker_domain.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_endpoint.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_endpoint_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_feature_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_flow_definition.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_hub.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_human_task_ui.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_image.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_mlflow_tracking_server.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_model.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_model_package_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_monitoring_schedule.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_notebook_instance.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_notebook_instance_lifecycle_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_project.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_space.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_studio_lifecycle_config.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_user_profile.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sagemaker_user_profile.user_settings.canvas_app_settings.direct_deploy_settings.status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: user_settings.canvas_app_settings.direct_deploy_settings.status"
+  },
+  "aws_sagemaker_user_profile.user_settings.canvas_app_settings.emr_serverless_settings.status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: user_settings.canvas_app_settings.emr_serverless_settings.status"
+  },
+  "aws_sagemaker_user_profile.user_settings.canvas_app_settings.kendra_settings.status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: user_settings.canvas_app_settings.kendra_settings.status"
+  },
+  "aws_sagemaker_user_profile.user_settings.canvas_app_settings.model_register_settings.status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: user_settings.canvas_app_settings.model_register_settings.status"
+  },
+  "aws_sagemaker_user_profile.user_settings.canvas_app_settings.time_series_forecasting_settings.status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: user_settings.canvas_app_settings.time_series_forecasting_settings.status"
+  },
+  "aws_sagemaker_user_profile.user_settings.jupyter_server_app_settings.default_resource_spec.instance_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: user_settings.jupyter_server_app_settings.default_resource_spec.instance_type"
+  },
+  "aws_sagemaker_user_profile.user_settings.kernel_gateway_app_settings.default_resource_spec.instance_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: user_settings.kernel_gateway_app_settings.default_resource_spec.instance_type"
+  },
+  "aws_sagemaker_user_profile.user_settings.r_studio_server_pro_app_settings.access_status": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: user_settings.r_studio_server_pro_app_settings.access_status"
+  },
+  "aws_sagemaker_user_profile.user_settings.r_studio_server_pro_app_settings.user_group": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: user_settings.r_studio_server_pro_app_settings.user_group"
+  },
+  "aws_sagemaker_workteam.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_scheduler_schedule_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_schemas_discoverer.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_schemas_registry.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_schemas_schema.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_secretsmanager_secret.description": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: description"
+  },
+  "aws_secretsmanager_secret.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_secretsmanager_secret_rotation.rotation_rules.automatically_after_days": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: rotation_rules.automatically_after_days"
+  },
+  "aws_security_group.revoke_rules_on_delete": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: revoke_rules_on_delete"
+  },
+  "aws_serverlessapplicationrepository_cloudformation_stack.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_service_discovery_http_namespace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_service_discovery_private_dns_namespace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_service_discovery_public_dns_namespace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_service_discovery_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_servicecatalog_portfolio.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_servicecatalog_product.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_servicecatalog_provisioned_product.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sesv2_configuration_set.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sesv2_contact_list.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sesv2_dedicated_ip_pool.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sesv2_email_identity.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sfn_activity.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sfn_state_machine.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sns_topic.application_failure_feedback_role_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: application_failure_feedback_role_arn"
+  },
+  "aws_sns_topic.application_success_feedback_role_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: application_success_feedback_role_arn"
+  },
+  "aws_sns_topic.application_success_feedback_sample_rate": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: application_success_feedback_sample_rate"
+  },
+  "aws_sns_topic.content_based_deduplication": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: content_based_deduplication"
+  },
+  "aws_sns_topic.delivery_policy_max_delay_target": {
+    "verdict": "unresolved",
+    "file": "",
+    "tag": "v6.53.0",
+    "note": "not_in_reflected_schema (resource has CustomizeDiff) — synthetic param or manifest gap; adjudicate"
+  },
+  "aws_sns_topic.delivery_policy_num_retries": {
+    "verdict": "unresolved",
+    "file": "",
+    "tag": "v6.53.0",
+    "note": "not_in_reflected_schema (resource has CustomizeDiff) — synthetic param or manifest gap; adjudicate"
+  },
+  "aws_sns_topic.display_name": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: display_name"
+  },
+  "aws_sns_topic.fifo_throughput_scope": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: fifo_throughput_scope"
+  },
+  "aws_sns_topic.firehose_failure_feedback_role_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: firehose_failure_feedback_role_arn"
+  },
+  "aws_sns_topic.firehose_success_feedback_role_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: firehose_success_feedback_role_arn"
+  },
+  "aws_sns_topic.firehose_success_feedback_sample_rate": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: firehose_success_feedback_sample_rate"
+  },
+  "aws_sns_topic.http_failure_feedback_role_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: http_failure_feedback_role_arn"
+  },
+  "aws_sns_topic.http_success_feedback_role_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: http_success_feedback_role_arn"
+  },
+  "aws_sns_topic.http_success_feedback_sample_rate": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: http_success_feedback_sample_rate"
+  },
+  "aws_sns_topic.lambda_success_feedback_role_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: lambda_success_feedback_role_arn"
+  },
+  "aws_sns_topic.lambda_success_feedback_sample_rate": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: lambda_success_feedback_sample_rate"
+  },
+  "aws_sns_topic.policy": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: policy"
+  },
+  "aws_sns_topic.sqs_failure_feedback_role_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: sqs_failure_feedback_role_arn"
+  },
+  "aws_sns_topic.sqs_success_feedback_role_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: sqs_success_feedback_role_arn"
+  },
+  "aws_sns_topic.sqs_success_feedback_sample_rate": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: sqs_success_feedback_sample_rate"
+  },
+  "aws_sns_topic.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sns_topic_subscription.endpoint_auto_confirms": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: endpoint_auto_confirms"
+  },
+  "aws_sns_topic_subscription.raw_message_delivery": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: raw_message_delivery"
+  },
+  "aws_sns_topic_subscription.subscription_role_arn": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: subscription_role_arn"
+  },
+  "aws_spot_fleet_request.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_spot_instance_request.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_sqs_queue.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ssm_document.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ssm_maintenance_window.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ssm_parameter.description": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: description"
+  },
+  "aws_ssm_parameter.tier": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tier"
+  },
+  "aws_ssm_parameter.value_reference": {
+    "verdict": "unresolved",
+    "file": "",
+    "tag": "v6.53.0",
+    "note": "not_in_reflected_schema (resource has CustomizeDiff) — synthetic param or manifest gap; adjudicate"
+  },
+  "aws_ssmcontacts_contact.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ssmincidents_replication_set.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_ssmincidents_response_plan.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_storagegateway_cached_iscsi_volume.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_storagegateway_gateway.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_storagegateway_nfs_file_share.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_storagegateway_smb_file_share.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_storagegateway_stored_iscsi_volume.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_storagegateway_tape_pool.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_swf_domain.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_synthetics_canary.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_synthetics_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_timestreamwrite_database.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_timestreamwrite_table.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_transcribe_language_model.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_transcribe_medical_vocabulary.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_transcribe_vocabulary.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_transcribe_vocabulary_filter.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_transfer_agreement.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_transfer_connector.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_transfer_profile.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_transfer_server.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_transfer_user.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_transfer_workflow.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_vpc.enable_dns_hostnames": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: enable_dns_hostnames"
+  },
+  "aws_vpclattice_access_log_subscription.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_vpclattice_listener.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_vpclattice_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_vpclattice_service_network.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_vpclattice_target_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_vpn_connection.psk_secret_name": {
+    "verdict": "unresolved",
+    "file": "",
+    "tag": "v6.53.0",
+    "note": "not_in_reflected_schema (resource has CustomizeDiff) — synthetic param or manifest gap; adjudicate"
+  },
+  "aws_vpn_connection.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_vpn_connection.tunnel_number": {
+    "verdict": "unresolved",
+    "file": "",
+    "tag": "v6.53.0",
+    "note": "not_in_reflected_schema (resource has CustomizeDiff) — synthetic param or manifest gap; adjudicate"
+  },
+  "aws_wafv2_web_acl.association_config.request_body.api_gateway.default_size_inspection_limit": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: association_config.request_body.api_gateway.default_size_inspection_limit"
+  },
+  "aws_wafv2_web_acl.association_config.request_body.app_runner_service.default_size_inspection_limit": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: association_config.request_body.app_runner_service.default_size_inspection_limit"
+  },
+  "aws_wafv2_web_acl.association_config.request_body.cloudfront.default_size_inspection_limit": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: association_config.request_body.cloudfront.default_size_inspection_limit"
+  },
+  "aws_wafv2_web_acl.association_config.request_body.cognito_user_pool.default_size_inspection_limit": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: association_config.request_body.cognito_user_pool.default_size_inspection_limit"
+  },
+  "aws_wafv2_web_acl.association_config.request_body.verified_access_instance.default_size_inspection_limit": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: association_config.request_body.verified_access_instance.default_size_inspection_limit"
+  },
+  "aws_wafv2_web_acl.rate_based_statement.aggregate_key_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: rule.statement.rate_based_statement.aggregate_key_type"
+  },
+  "aws_wafv2_web_acl.rate_based_statement.evaluation_window_sec": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: rule.statement.rate_based_statement.evaluation_window_sec"
+  },
+  "aws_wafv2_web_acl.rate_based_statement.limit": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "suffix-match: rule.statement.rate_based_statement.limit"
+  },
+  "aws_wafv2_web_acl.rule.priority": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: rule.priority"
+  },
+  "aws_wafv2_web_acl.visibility_config.cloudwatch_metrics_enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: visibility_config.cloudwatch_metrics_enabled"
+  },
+  "aws_wafv2_web_acl.visibility_config.metric_name": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: visibility_config.metric_name"
+  },
+  "aws_wafv2_web_acl.visibility_config.sampled_requests_enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: visibility_config.sampled_requests_enabled"
+  },
+  "aws_workspaces_directory.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_workspaces_ip_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_workspaces_workspace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  },
+  "aws_xray_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/aws-v6.53.0-schema.json",
+    "tag": "v6.53.0",
+    "path": "exact: tags"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "Aliases": [
+    {
+      "AliasName": "alias/aws/s3",
+      "AliasArn": "arn:aws:kms:ap-southeast-5:111111111111:alias/aws/s3",
+      "TargetKeyId": "11111111-aaaa-bbbb-cccc-dddddddddddd"
+    },
+    {
+      "AliasName": "alias/app-data",
+      "AliasArn": "arn:aws:kms:ap-southeast-5:111111111111:alias/app-data",
+      "TargetKeyId": "22222222-aaaa-bbbb-cccc-dddddddddddd"
+    }
+  ]
+}

@@ -1,0 +1,265 @@
+{
+  "service": "msk",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_msk_cluster"
+  ],
+  "summary": "Provision a brand-new Managed Streaming for Kafka (MSK) cluster. No MSK estate exists yet, so this is a first stand-up an engineer reviews before it applies.",
+  "operations": [
+    {
+      "id": "msk-cluster-create",
+      "service": "msk",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new MSK cluster",
+      "summary": "Request a brand-new MSK (Kafka) cluster; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a Kafka cluster as a complete specification: broker size and count, network placement, and encryption. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_msk_cluster"
+      },
+      "params": [
+        {
+          "name": "cluster_name",
+          "label": "Cluster name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "cluster_name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z][a-zA-Z0-9-]{2,62}$"
+          },
+          "help": "Names the cluster in the MSK console and the generated draft."
+        },
+        {
+          "name": "kafka_version",
+          "label": "Kafka version",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "kafka_version",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "3.9.x",
+              "3.8.x",
+              "3.7.x",
+              "3.6.x",
+              "engineer-decides"
+            ]
+          },
+          "default": "3.9.x",
+          "help": "The Kafka version every broker runs."
+        },
+        {
+          "name": "number_of_broker_nodes",
+          "label": "Number of broker nodes",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "number_of_broker_nodes",
+          "group": "engine",
+          "bounds": {
+            "min": 2,
+            "max": 15
+          },
+          "default": 3,
+          "help": "Must be a whole multiple of the number of subnets picked below."
+        },
+        {
+          "name": "instance_type",
+          "label": "Broker instance type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "instance_type",
+          "path": [
+            "broker_node_group_info"
+          ],
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "kafka.t3.small",
+              "kafka.m5.large",
+              "kafka.m5.xlarge",
+              "kafka.m5.2xlarge",
+              "kafka.m5.4xlarge"
+            ]
+          },
+          "default": "kafka.m5.large",
+          "help": "Size class for processor and memory on every broker."
+        },
+        {
+          "name": "subnets",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "client_subnets",
+          "path": [
+            "broker_node_group_info"
+          ],
+          "group": "network",
+          "bounds": {
+            "minItems": 2,
+            "maxItems": 3
+          },
+          "help": "At least two subnets, each in a different Availability Zone."
+        },
+        {
+          "name": "security_groups",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "security_groups",
+          "path": [
+            "broker_node_group_info"
+          ],
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "help": "Who can reach the brokers."
+        },
+        {
+          "name": "client_broker_encryption",
+          "label": "Client-broker encryption",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "client_broker",
+          "path": [
+            "encryption_info",
+            "encryption_in_transit"
+          ],
+          "group": "security",
+          "bounds": {
+            "allowlist": [
+              "TLS",
+              "TLS_PLAINTEXT",
+              "PLAINTEXT"
+            ]
+          },
+          "default": "TLS",
+          "help": "How producers and consumers connect to the brokers. TLS is the secure default."
+        },
+        {
+          "name": "in_cluster_encryption",
+          "label": "Broker-to-broker encryption",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "in_cluster",
+          "path": [
+            "encryption_info",
+            "encryption_in_transit"
+          ],
+          "group": "security",
+          "help": "Always on from birth — written into the draft, never asked."
+        },
+        {
+          "name": "encryption_at_rest_kms_key",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "encryption_at_rest_kms_key_arn",
+          "path": [
+            "encryption_info"
+          ],
+          "group": "security",
+          "tier": "advanced",
+          "help": "Leave blank to use the default AWS-managed key. Pick a key only for a customer-managed CMK."
+        },
+        {
+          "name": "client_auth_iam",
+          "label": "IAM client authentication",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "attr": "iam",
+          "path": [
+            "client_authentication",
+            "sasl"
+          ],
+          "group": "security",
+          "default": true,
+          "help": "Lets clients authenticate to brokers using IAM roles instead of certificates or SASL/SCRAM secrets."
+        },
+        {
+          "name": "resource_name",
+          "label": "Cluster name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this cluster carries",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this cluster."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new msk cluster",
+        "new kafka cluster",
+        "provision kafka broker"
+      ],
+      "decisions": [
+        "A custom MSK configuration (configuration_info) and broker-level parameter overrides are engineer decisions",
+        "Mutual TLS (client certificate authentication) and Kafka ACLs are engineer decisions — this form enables IAM authentication by default",
+        "Open monitoring (Prometheus/JMX) and broker logging destinations are engineer follow-ups after creation",
+        "Public access and multi-VPC connectivity are engineer decisions — brokers are VPC-internal only by default"
+      ]
+    }
+  ]
+}

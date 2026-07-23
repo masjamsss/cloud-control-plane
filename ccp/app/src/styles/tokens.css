@@ -1,0 +1,332 @@
+/* ============================================================================
+   Design tokens — LEDGER (ADR-0014): warm paper,
+   light-editorial. One interactive accent (per-user palette; bordeaux default).
+   One colored axis: Risk. Exposure = steel.
+   Built so a company brand can be swapped in later by editing this file only.
+   Existing component CSS keeps working via the token names below + aliases.
+   ============================================================================ */
+:root {
+  /* Surfaces & borders (light, neutral).
+     Canvas sits a step below the white cards, and borders are firm enough that a
+     white surface reads as a distinct panel — the earlier near-white canvas +
+     hairline borders made cards look "greyed out"/washed. Contrast gate holds
+     (scripts/check-contrast.mjs): border tokens are decorative (ungated), the
+     deeper canvas keeps text-muted/faint >= 4.5:1. */
+  --bg-canvas: #f4f1ea;
+  --surface-1: #ffffff;
+  --surface-2: #efece3;
+  --surface-3: #e6e2d6;
+  --border-hairline: #e2dccf;
+  --border-default: #d3ccbc;
+  --border-hover: #b5ad9c;
+  --field-border: #74595d; /* >= 3:1 on white — passes WCAG 1.4.11 (verified: scripts/check-contrast.mjs) */
+
+  /* Text hierarchy (dark on warm paper) — every stop >= 4.5:1 on the canvas
+     (verified per palette by scripts/check-contrast.mjs). */
+  --text-primary: #1c1a16;
+  --text-secondary: #4f4a42;
+  --text-muted: #5c574e;
+  /* F-09 (surface-2/3 pairs added to check-contrast.mjs): #6c6860 was AA on
+     canvas/surface-1/surface-2 but 4.28:1 on surface-3 — darkened just enough
+     to clear 4.5:1 there too (same family, ~4.6-6:1 on every surface step). */
+  --text-faint: #67635b;
+  --text-disabled: #a5a39e;
+
+  /* Accent — per-user selectable (ADR-0014). 'bordeaux' (warm paper + oxblood)
+     is the default palette and, like light theme, sets no attribute at all —
+     see src/lib/palettes.ts. --accent-soft is the tinted-badge background
+     (team/self tags: accent-soft bg + accent text — never used near Risk).
+     Each `[data-palette='…']` block below overrides ONLY this accent family
+     (plus the matching neutral surface/text/border set); component CSS never
+     branches on palette. */
+  --accent: #8a2f3b;
+  --accent-hover: #722630;
+  --accent-ink: #ffffff;
+  --accent-soft: #f0e2e2;
+  --brass: var(--accent); /* kept components referred to --brass */
+  --brass-hover: var(--accent-hover);
+  --brass-ink: var(--accent-ink);
+
+  /* Palette-picker swatch dots (AccountMenu) — each palette's characteristic
+     LIGHT accent, fixed regardless of which palette/theme is currently
+     active, so e.g. the "Ink navy" option always shows navy even while
+     Bordeaux is selected. Zero hex outside this file (ADR-0014 §"preserved
+     from ADR-0010"): components read these, never a literal. */
+  --palette-swatch-ink: #1d3a5f;
+  --palette-swatch-bordeaux: #8a2f3b;
+  --palette-swatch-teal: #0e7490;
+  --palette-swatch-slate: #3f5b7a;
+  --palette-swatch-mono: #2a2620;
+
+  /* Risk — the ONLY status-colored axis (muted, professional) */
+  --risk-low: #2a6e3f;
+  --risk-med: #8a5c0f;
+  --risk-high: #c0392b;
+
+  /* Service identity — muted per-category hues for the service ICONS only.
+     A separate axis from Risk: these tint a resource's identity tile, they never
+     signal status. Chosen distinct from the risk green/amber/red. */
+  --cat-compute: #b45309;
+  --cat-storage: #0e7490;
+  --cat-database: #4338ca;
+  --cat-networking: #7e22ce;
+  --cat-observability: #0f766e;
+  --cat-security: #be185d;
+  --cat-integration: #c2410c;
+  --cat-devtools: #475569;
+
+  /* Exposure / approval — neutral steel (never a risk hue) */
+  --steel: #52606d;
+  --access: var(--steel);
+  --access-strong: #3b444d;
+
+  /* Aliases of the accent — kept as var() references (not literals) so both
+     follow every palette override automatically (ADR-0014: "focus ring
+     follows the palette accent"). */
+  --info: var(--accent);
+  --focus-ring: var(--accent);
+
+  /* Type */
+  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* Spacing (4px base) */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+  --space-9: 32px;
+  --space-10: 40px;
+  --space-11: 48px;
+
+  --radius-1: 6px;
+  --radius-2: 8px;
+  --radius-3: 10px;
+  --radius-pill: 999px;
+
+  /* Motion — one ramp, theme-independent (NOT redefined in dark; dark overrides
+     color/shadow only). transform/opacity only; no ambient loops. Values chosen
+     to preserve today's feel: 120ms fast (dominant hover/focus), 150ms base
+     (menus/forms), 220ms slow (entrance). Emphasized easing is the existing
+     pop/rise curve. Shimmer is the one sanctioned perpetual (skeleton loading). */
+  --dur-fast: 120ms;
+  --dur-base: 150ms;
+  --dur-slow: 220ms;
+  --dur-shimmer: 1.4s;
+  --ease-standard: ease;
+  --ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ---- Legacy aliases (older CSS still resolves) ---- */
+  --ink: var(--bg-canvas);
+  --panel: var(--surface-1);
+  --panel-2: var(--surface-2);
+  --line: var(--border-default);
+  --text: var(--text-primary);
+  --muted: var(--text-muted);
+  --faint: var(--text-faint);
+  --ok: var(--risk-low);
+  --warn: var(--risk-med);
+  --crit: var(--risk-high);
+  --human: var(--info);
+  --mono: var(--font-mono);
+  --sans: var(--font-sans);
+  --gap: var(--space-6);
+  --radius: var(--radius-3);
+
+  /* Elevation — one depth family, tokenized so both themes share the same names.
+     A little firmer than the original so white cards lift clearly off the canvas. */
+  --shadow-1: 0 1px 2px rgba(20, 28, 38, 0.08), 0 1px 1px rgba(20, 28, 38, 0.05);
+  --shadow-2: 0 2px 8px rgba(20, 28, 38, 0.10), 0 1px 3px rgba(20, 28, 38, 0.07);
+  --shadow-3: 0 8px 28px rgba(20, 28, 38, 0.14), 0 2px 8px rgba(20, 28, 38, 0.10);
+
+  color-scheme: light;
+}
+
+/* ============================================================================
+   Palettes (ADR-0014) — each block below is a VALUE-SET LAYER over `:root`:
+   it redefines only the accent family + the matching neutral surface/text/
+   border set, nothing else (spacing/motion/risk/shadow are untouched).
+   `--surface-1` stays #ffffff in every light palette (unchanged from :root).
+   'bordeaux' is the default and has no block here — see :root above. Gated in
+   full by scripts/check-contrast.mjs (every pair, per palette).
+   ============================================================================ */
+:root[data-palette='ink'] {
+  --bg-canvas: #eef1f5;
+  --surface-2: #f1f3f5;
+  --surface-3: #e6e9ee;
+  --border-hairline: #dfe4e9;
+  --border-default: #ccd3db;
+  --border-hover: #aeb8c2;
+  --field-border: #647a99;
+
+  --text-primary: #1a1f24;
+  --text-secondary: #333b44;
+  --text-muted: #515b67;
+  --text-faint: #5a636e;
+  --text-disabled: #98a2ad;
+
+  --accent: #1d3a5f;
+  --accent-hover: #152c49;
+  --accent-ink: #ffffff;
+  --accent-soft: #dfe7f0;
+}
+
+:root[data-palette='teal'] {
+  --bg-canvas: #eef2f1;
+  --surface-2: #e9eeec;
+  --surface-3: #dfe6e3;
+  --border-hairline: #dae2df;
+  --border-default: #c6d1cd;
+  --border-hover: #a7b5b0;
+  --field-border: #4f6e76;
+
+  --text-primary: #17201e;
+  --text-secondary: #42504c;
+  --text-muted: #4f5a57;
+  /* F-09: same surface-3 gap as the default palette — darkened to clear
+     4.5:1 there (was 4.35:1). */
+  --text-faint: #5d6764;
+  --text-disabled: #9ea4a3;
+
+  --accent: #0e7490;
+  --accent-hover: #0b5d74;
+  --accent-ink: #ffffff;
+  /* Tuned from the plan draft (#d9edf1 → 4.42:1, just under AA) — lightened
+     minimally to clear 4.5:1 for accent-text-on-accent-soft. */
+  --accent-soft: #dcf1f4;
+}
+
+:root[data-palette='slate'] {
+  --bg-canvas: #f0f1f3;
+  --surface-2: #ebedf0;
+  --surface-3: #e2e5e9;
+  --border-hairline: #dfe1e6;
+  --border-default: #ccd0d6;
+  --border-hover: #aeb4bc;
+  --field-border: #5e6670;
+
+  --text-primary: #1a1d22;
+  --text-secondary: #454b53;
+  --text-muted: #52585f;
+  /* F-09: same surface-3 gap as the default palette — darkened to clear
+     4.5:1 there (was 4.40:1). */
+  --text-faint: #60666c;
+  --text-disabled: #a0a3a7;
+
+  --accent: #3f5b7a;
+  --accent-hover: #324a64;
+  --accent-ink: #ffffff;
+  --accent-soft: #e3e8f0;
+}
+
+:root[data-palette='mono'] {
+  --bg-canvas: #f2efe9;
+  --surface-2: #edeae2;
+  --surface-3: #e4e0d5;
+  --border-hairline: #e0dacd;
+  --border-default: #d0c9ba;
+  --border-hover: #b1a996;
+  --field-border: #575654;
+
+  --text-primary: #201d18;
+  --text-secondary: #4a453d;
+  --text-muted: #57524a;
+  --text-faint: #68635c;
+  --text-disabled: #a3a09b;
+
+  --accent: #2a2620;
+  --accent-hover: #171410;
+  --accent-ink: #ffffff;
+  --accent-soft: #e6e1d6;
+}
+
+/* ============================================================================
+   Dark theme — redefines ONLY the token names above (zero component-CSS change).
+   Opt-in via <html data-theme="dark">. One accent, Risk the only saturated axis;
+   hues lightened for AA on dark surfaces (verified: scripts/check-contrast.mjs).
+   ============================================================================ */
+:root[data-theme='dark'] {
+  --bg-canvas: #15181c;
+  --surface-1: #1e2228;
+  --surface-2: #262b31;
+  --surface-3: #30363d;
+  --border-hairline: #262b31;
+  --border-default: #333a42;
+  --border-hover: #454d57;
+  --field-border: #8a95a1;
+
+  --text-primary: #eceff2;
+  --text-secondary: #c3cad1;
+  --text-muted: #9aa4ae;
+  /* F-09: the old #838d97 was AA only against canvas/surface-1 (4.23:1 on
+     surface-2, 3.62:1 on surface-3) — table heads, chips and code panes on
+     surface-2/3 silently failed. Raised so text-faint clears 4.5:1 on every
+     surface step (surface-1 through surface-3), not just the two the gate
+     used to check (see check-contrast.mjs's *-on-surface-2/3 pairs). */
+  --text-faint: #98a5b0;
+  --text-disabled: #5f6a74;
+
+  --accent: #e08e98;
+  --accent-hover: #e6a2ab;
+  --accent-ink: #2a0f14;
+  --accent-soft: #3a2226;
+  --brass: var(--accent);
+  --brass-hover: var(--accent-hover);
+  --brass-ink: var(--accent-ink);
+
+  --risk-low: #57b877;
+  --risk-med: #e0a53a;
+  --risk-high: #f0857a;
+
+  --steel: #9aa5b2;
+  --access: var(--steel);
+  --access-strong: #c3cad1;
+
+  --info: var(--accent);
+  --focus-ring: var(--accent);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 1px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 2px 10px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-3: 0 10px 34px rgba(0, 0, 0, 0.55), 0 3px 10px rgba(0, 0, 0, 0.4);
+
+  color-scheme: dark;
+}
+
+/* ============================================================================
+   Dark + palette (ADR-0014) — overrides ONLY the accent family on top of the
+   single dark canvas above; dark neutrals never change per palette ("dark
+   stays ONE canvas"). 'bordeaux' dark needs no block — it IS the accent family
+   declared in :root[data-theme='dark'] above. Gated by
+   scripts/check-contrast.mjs (accent-ink-on-accent + accent-on-accent-soft).
+   ============================================================================ */
+:root[data-theme='dark'][data-palette='ink'] {
+  --accent: #6b9bff;
+  --accent-hover: #86adff;
+  --accent-ink: #0b1220;
+  --accent-soft: #1c2a3d;
+}
+
+:root[data-theme='dark'][data-palette='teal'] {
+  --accent: #4fc3dd;
+  --accent-hover: #6fcee3;
+  --accent-ink: #062a33;
+  --accent-soft: #0e2a30;
+}
+
+:root[data-theme='dark'][data-palette='slate'] {
+  --accent: #93b0cf;
+  --accent-hover: #a6bed8;
+  --accent-ink: #101a26;
+  --accent-soft: #1c2733;
+}
+
+:root[data-theme='dark'][data-palette='mono'] {
+  --accent: #d8d2c6;
+  --accent-hover: #dfdad0;
+  --accent-ink: #17140f;
+  --accent-soft: #2a251d;
+}

@@ -1,0 +1,209 @@
+{
+  "service": "storage-gateway",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_storagegateway_gateway"
+  ],
+  "summary": "Provision new Storage Gateway registrations \u2014 file (S3-backed NFS/SMB), volume (CACHED/STORED iSCSI), or tape (VTL). Greenfield today (no gateway exists yet in this estate) \u2014 the create registers an already-deployed gateway host; file shares/volumes/tape pools are provisioned as engineer follow-ups on top of it.",
+  "operations": [
+    {
+      "id": "storage-gateway-create",
+      "service": "storage-gateway",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Storage Gateway",
+      "summary": "Request a brand-new gateway registration; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Register a Storage Gateway appliance as a complete specification: gateway type, timezone, and activation. The gateway host (EC2 AMI, on-premises VM, or hardware appliance) must already be deployed and running so its activation key is available. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_storagegateway_gateway"
+      },
+      "params": [
+        {
+          "name": "gateway_name",
+          "label": "Gateway name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "gateway_name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9. _-]{2,255}$"
+          },
+          "help": "Names the gateway in the Storage Gateway console and the generated draft."
+        },
+        {
+          "name": "gateway_timezone",
+          "label": "Gateway timezone",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "gateway_timezone",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "GMT",
+              "GMT-8",
+              "GMT-5",
+              "GMT-4",
+              "GMT+1",
+              "GMT+2",
+              "GMT+3",
+              "GMT+5:30",
+              "GMT+9",
+              "GMT+8",
+              "GMT+9",
+              "GMT+10"
+            ]
+          },
+          "default": "GMT",
+          "help": "The gateway appliance's local timezone, used for its maintenance schedule."
+        },
+        {
+          "name": "gateway_type",
+          "label": "Gateway type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "gateway_type",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "FILE_S3",
+              "FILE_FSX_SMB",
+              "CACHED",
+              "STORED",
+              "VTL"
+            ]
+          },
+          "default": "FILE_S3",
+          "help": "FILE_S3 presents an NFS/SMB file share backed by S3; CACHED/STORED are iSCSI block volumes; VTL is a virtual tape library for backup software."
+        },
+        {
+          "name": "activation_key",
+          "label": "Activation key",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "activation_key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Z0-9-]{1,64}$"
+          },
+          "help": "Obtained from the gateway appliance's local console/API after it is deployed and can reach the internet. Leave blank if the host isn't activated yet \u2014 an engineer completes this at review."
+        },
+        {
+          "name": "medium_changer_type",
+          "label": "Medium changer type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "medium_changer_type",
+          "group": "tape",
+          "bounds": {
+            "allowlist": [
+              "STK-L700",
+              "AWS-Gateway-VTL",
+              "IBM-03584L32-0402"
+            ]
+          },
+          "dependsOn": {
+            "param": "gateway_type",
+            "equals": "VTL"
+          },
+          "help": "VTL gateways only."
+        },
+        {
+          "name": "tape_drive_type",
+          "label": "Tape drive type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "tape_drive_type",
+          "group": "tape",
+          "bounds": {
+            "allowlist": [
+              "IBM-ULT3580-TD5"
+            ]
+          },
+          "dependsOn": {
+            "param": "gateway_type",
+            "equals": "VTL"
+          },
+          "help": "VTL gateways only."
+        },
+        {
+          "name": "cloudwatch_log_group_arn",
+          "label": "CloudWatch log group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "cloudwatch_log_group_arn",
+          "group": "identity",
+          "help": "Destination for the gateway's health/upload notification logs."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this gateway serves",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this gateway."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new storage gateway",
+        "provision gateway",
+        "hybrid storage",
+        "on-prem file share"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "The gateway host (EC2 instance, on-premises VM, or hardware appliance) must be deployed and running before its activation_key is available; this form provisions the aws_storagegateway_gateway resource that registers it.",
+        "SMB Active Directory join, bandwidth rate limits, and a private VPC endpoint are engineer follow-ups after creation."
+      ]
+    }
+  ]
+}

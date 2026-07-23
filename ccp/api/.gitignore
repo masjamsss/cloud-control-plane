@@ -1,0 +1,5 @@
+node_modules/
+coverage/
+*.log
+# Runtime datastore (server + test residue) — never tracked.
+.ccp-data/

@@ -1,0 +1,113 @@
+{
+  "service": "guardduty",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_guardduty_detector"
+  ],
+  "summary": "Provision and operate Amazon GuardDuty. Enabling the account detector is an engineer-gated create form; disabling detection or its data sources is a security-posture change that never auto-applies.",
+  "operations": [
+    {
+      "id": "guardduty-enable-detector",
+      "service": "guardduty",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Enable GuardDuty",
+      "summary": "Create the account GuardDuty detector, enabled. Disabling it or its data sources blinds threat detection.",
+      "consoleLabel": "Detectors",
+      "description": "Create an aws_guardduty_detector, enabled, for the account. Data sources (S3 protection, malware scanning, Kubernetes audit logs) are enabled as a reviewed follow-up; this turns detection on. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_guardduty_detector"
+      },
+      "params": [
+        {
+          "name": "detector_label",
+          "label": "Detector label",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "A short label naming the Terraform block only; the detector has no name attribute in AWS.",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          }
+        },
+        {
+          "name": "enable",
+          "label": "Enable",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "attr": "enable",
+          "const": true,
+          "group": "settings",
+          "help": "The detector is created enabled; written into the draft, never asked."
+        },
+        {
+          "name": "finding_publishing_frequency",
+          "label": "Finding frequency",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "finding_publishing_frequency",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "FIFTEEN_MINUTES",
+              "ONE_HOUR",
+              "SIX_HOURS"
+            ]
+          },
+          "default": "SIX_HOURS",
+          "help": "How often finding updates are published to the account."
+        },
+        {
+          "name": "description_tag",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "help": "A short description recorded as the resource's Description tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "help": "The team or person accountable for this resource, recorded as its PIC tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "guardduty",
+        "threat detection",
+        "enable guardduty",
+        "detector"
+      ],
+      "decisions": [
+        "Disabling the detector or suspending its data sources blinds threat detection for the whole account; enablement and scope changes are engineer-reviewed, never self-service.",
+        "Data sources (S3 protection, malware scanning, Kubernetes audit logs) are enabled as a reviewed follow-up; this provisions the detector enabled with none added yet."
+      ]
+    }
+  ]
+}

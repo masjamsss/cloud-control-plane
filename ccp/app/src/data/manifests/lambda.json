@@ -1,0 +1,1149 @@
+{
+  "service": "lambda",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_lambda_function",
+    "aws_lambda_provisioned_concurrency_config",
+    "aws_lambda_function_url",
+    "aws_lambda_event_source_mapping"
+  ],
+  "summary": "Tune the operational Lambda functions at the configuration level Terraform safely owns: memory, timeout, reserved and provisioned concurrency, environment variables, and publish behavior, plus a guardrailed full delete. Function code deploys out-of-band, so the deployable-code lifecycle is deliberately out of scope. Memory, timeout, and publish changes apply live with no downtime and are the most L1-safe surface; concurrency and environment changes carry shared-pool or application risk and take two approvals; deleting a function breaks every caller instantly, so it stays engineer-only. Environment-variable edits push toward secret references, never plaintext values.",
+  "operations": [
+    {
+      "id": "lambda-change-memory-size",
+      "service": "lambda",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Resize function memory",
+      "summary": "Resize a function's memory, which also scales its CPU and network share. Takes effect on the next run, with no downtime.",
+      "consoleLabel": "Memory (MB)",
+      "description": "Change the memory allocated to a function, which also scales its proportional CPU and network bandwidth. Applies to the next invocation with no downtime; in-flight executions finish on the old allocation.",
+      "target": {
+        "resourceType": "aws_lambda_function"
+      },
+      "params": [
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_lambda_function/address",
+          "help": "Lambda function to resize."
+        },
+        {
+          "name": "new_memory_size",
+          "label": "New memory (MB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 128,
+            "max": 10240,
+            "semantic": "AWS accepts any integer 128-10240 MB; CPU/network scale proportionally"
+          },
+          "help": "Higher memory reduces duration for CPU-bound work but raises per-ms cost; too low risks out-of-memory kills."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "scale-performance",
+      "pinned": 1
+    },
+    {
+      "id": "lambda-change-timeout",
+      "service": "lambda",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Adjust function timeout",
+      "summary": "Change how long a function is allowed to run before AWS cuts it off. Takes effect on the next run, with no downtime.",
+      "consoleLabel": "Timeout",
+      "description": "Change how long AWS lets an invocation run before it is forcibly killed. Takes effect on the next invocation, no downtime.",
+      "target": {
+        "resourceType": "aws_lambda_function"
+      },
+      "params": [
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_lambda_function/address",
+          "help": "Lambda function whose timeout to change."
+        },
+        {
+          "name": "new_timeout",
+          "label": "New timeout (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 900,
+            "semantic": "900s (15 min) is the hard AWS ceiling"
+          },
+          "help": "Too short truncates legitimate long-running work; too long lets a hung dependency hold a concurrency slot for the full duration."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "scale-performance",
+      "pinned": 2
+    },
+    {
+      "id": "lambda-change-reserved-concurrency",
+      "service": "lambda",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set reserved concurrent executions",
+      "summary": "Reserve part of the account's shared invocation capacity for this function; too much starves other functions.",
+      "consoleLabel": "Reserved concurrency",
+      "description": "Carve out a fixed slice of the account's shared Lambda concurrency pool for this function, which also caps its own maximum concurrency. Too low throttles the function under load; too high starves concurrency headroom from every other function in the account.",
+      "target": {
+        "resourceType": "aws_lambda_function"
+      },
+      "params": [
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_lambda_function/address",
+          "help": "Lambda function to set reserved concurrency on."
+        },
+        {
+          "name": "new_reserved_concurrent_executions",
+          "label": "New reserved concurrent executions",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 200,
+            "semantic": "carved out of the account-wide unreserved pool (per-region account default 1000); 0 fully throttles the function"
+          },
+          "help": "Set to -1 (via the delete-reservation op, not here) to go back to unreserved. 0 blocks all invocations \u2014 use deliberately as an emergency stop."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "scale-performance"
+    },
+    {
+      "id": "lambda-add-provisioned-concurrency",
+      "service": "lambda",
+      "macd": "Add",
+      "codemodOp": "instantiate_module",
+      "title": "Add provisioned concurrency",
+      "summary": "Keep a set number of instances pre-warmed for a published version to remove cold starts; billed continuously.",
+      "consoleLabel": "Provisioned concurrency",
+      "description": "Create an aws_lambda_provisioned_concurrency_config that pre-initializes a fixed number of execution environments for a published function version or alias, eliminating cold starts for that qualifier. Bills continuously for the reserved capacity whether invoked or not, and requires a published version (not $LATEST) to attach to.",
+      "target": {
+        "resourceType": "aws_lambda_provisioned_concurrency_config"
+      },
+      "params": [
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_lambda_function/address",
+          "help": "Lambda function to add provisioned concurrency to."
+        },
+        {
+          "name": "qualifier",
+          "label": "Version or alias",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(?!\\$LATEST$)([0-9]+|[A-Za-z0-9-_]{1,128})$",
+            "semantic": "must be a published version number or an alias name; $LATEST is rejected by AWS"
+          },
+          "help": "The function must already have a published version to pin this to."
+        },
+        {
+          "name": "provisioned_concurrent_executions",
+          "label": "Provisioned concurrency units",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 200,
+            "semantic": "each unit is billed continuously regardless of invocation volume"
+          },
+          "help": "Size to expected steady-state concurrent invocations; over-provisioning is a direct, ongoing cost."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "lambda-add-env-var",
+      "service": "lambda",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add an environment variable",
+      "summary": "Add a new environment variable to a function; use a secret-store reference for anything sensitive.",
+      "consoleLabel": "Environment variables",
+      "description": "Add a new key to the function's environment variable map. Takes effect immediately on the next invocation; a bad value can break the function on its first cold start after apply. Changing a key that already holds a different value, or a function whose Terraform declares no environment block yet, is refused and routed to an engineer. Never put a raw credential in the value \u2014 point at a Secrets Manager ARN or SSM parameter name and have the function fetch the real secret at runtime.",
+      "target": {
+        "resourceType": "aws_lambda_function",
+        "path": ["environment"],
+        "block": "variables",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_lambda_function/address",
+          "help": "Lambda function whose environment to change."
+        },
+        {
+          "name": "env_key",
+          "label": "Variable name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,255}$",
+            "semantic": "Lambda env var naming rules"
+          },
+          "help": "New key to add. A key the function already sets to a different value is refused (routed to an engineer) rather than silently overwritten."
+        },
+        {
+          "name": "env_value",
+          "label": "Value (or secret reference)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "maxLength": 1024,
+            "semantic": "non-secret config value, or a Secrets Manager/SSM Parameter Store name/ARN \u2014 never a raw credential"
+          },
+          "help": "Plaintext config values only. For anything sensitive, store the actual secret in Secrets Manager/SSM and put its ARN or parameter name here instead."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (environment.variables)",
+      "group": "create"
+    },
+    {
+      "id": "lambda-set-publish-version",
+      "service": "lambda",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle version publishing on deploy",
+      "summary": "Turn automatic version publishing on or off for future code deployments. No effect until code is next deployed.",
+      "consoleLabel": "Publish new version",
+      "description": "Enable or disable automatic publishing of an immutable version each time the function's code changes \u2014 required before pinning aliases or provisioned concurrency to a specific version. In this estate function code is deliberately managed out-of-band (filename/source_code_hash are in lifecycle.ignore_changes), so flipping this alone publishes nothing until code is next deployed in-band.",
+      "target": {
+        "resourceType": "aws_lambda_function"
+      },
+      "params": [
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_lambda_function/address",
+          "help": "Lambda function to change publish behaviour on."
+        },
+        {
+          "name": "publish",
+          "label": "Publish new version on code change",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "help": "true creates a new immutable version on every future in-band code deploy; false leaves only $LATEST mutable."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "scale-performance",
+      "pinned": 3
+    },
+    {
+      "id": "lambda-delete-function",
+      "service": "lambda",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete a Lambda function",
+      "summary": "Permanently delete a function; every caller starts failing immediately. This can't be undone, so an engineer reviews it first.",
+      "description": "Permanently remove the function from AWS and from Terraform state. Anything invoking it \u2014 API Gateway routes, EventBridge rules, S3 notifications, Step Functions, other Lambdas \u2014 starts failing immediately with ResourceNotFoundException. There is no soft-delete or undo once applied; the function, its versions, and its aliases are gone.",
+      "target": {
+        "resourceType": "aws_lambda_function"
+      },
+      "params": [
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_lambda_function/address",
+          "help": "Lambda function to delete. Confirm no live triggers/callers depend on it first."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "lambda-set-architecture",
+      "service": "lambda",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set function instruction set architecture",
+      "summary": "Switch a function between x86 and ARM processors. The deployed code must already support the one you pick, or calls fail.",
+      "consoleLabel": "Architecture",
+      "description": "Set the function's `architectures` value to x86_64 or arm64. The already-deployed code package must support the chosen instruction set; a mismatch causes invocation failures. Applies to the next invocation with no platform downtime; reversible by switching back.",
+      "target": {
+        "resourceType": "aws_lambda_function"
+      },
+      "params": [
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_lambda_function/address",
+          "help": "Lambda function whose architecture to set."
+        },
+        {
+          "name": "architecture",
+          "label": "Instruction set architecture",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "x86_64",
+              "arm64"
+            ],
+            "semantic": "Doc: architectures valid values are [\"x86_64\"] or [\"arm64\"], default [\"x86_64\"]. The deployment package must support the chosen architecture."
+          },
+          "help": "arm64 (Graviton) is typically cheaper per-ms but the deployed package must be built for it."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (architectures)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "lambda-set-application-log-level",
+      "service": "lambda",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set application log level",
+      "summary": "Set how detailed a function's own application logs are. Only takes effect when logs are in structured JSON format.",
+      "consoleLabel": "Application log level",
+      "description": "Set `logging_config.application_log_level`, the detail level of your function's own application logs sent to CloudWatch Logs. Only takes effect when the function's log format is JSON (structured logging). In-place, applies to the next invocation, reversible.",
+      "target": {
+        "resourceType": "aws_lambda_function",
+        "path": [
+          "logging_config"
+        ]
+      },
+      "params": [
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_lambda_function/address",
+          "help": "Lambda function whose application log level to set."
+        },
+        {
+          "name": "application_log_level",
+          "label": "Application log level",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "TRACE",
+              "DEBUG",
+              "INFO",
+              "WARN",
+              "ERROR",
+              "FATAL"
+            ],
+            "semantic": "Doc: logging_config.application_log_level valid values are TRACE, DEBUG, INFO, WARN, ERROR, FATAL. Effective only when log_format is JSON."
+          },
+          "help": "More verbose levels (TRACE/DEBUG) raise log volume and CloudWatch cost."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (logging_config.application_log_level)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "lambda-set-system-log-level",
+      "service": "lambda",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set system log level",
+      "summary": "Set how detailed Lambda's own platform logs are for a function. Only takes effect when logs are in JSON format.",
+      "consoleLabel": "System log level",
+      "description": "Set `logging_config.system_log_level`, the detail level of Lambda platform (system) logs sent to CloudWatch Logs. Only takes effect when the function's log format is JSON (structured logging). In-place, applies to the next invocation, reversible.",
+      "target": {
+        "resourceType": "aws_lambda_function",
+        "path": [
+          "logging_config"
+        ]
+      },
+      "params": [
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_lambda_function/address",
+          "help": "Lambda function whose system log level to set."
+        },
+        {
+          "name": "system_log_level",
+          "label": "System log level",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "DEBUG",
+              "INFO",
+              "WARN"
+            ],
+            "semantic": "Doc: logging_config.system_log_level valid values are DEBUG, INFO, WARN. Effective only when log_format is JSON."
+          },
+          "help": "DEBUG emits verbose Lambda platform logs; INFO/WARN are quieter."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (logging_config.system_log_level)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "lambda-set-publish-to",
+      "service": "lambda",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set the publish target",
+      "summary": "Set where a new version lands when publishing is turned on. Has no effect unless publishing is enabled.",
+      "description": "Set the `publish_to` argument, which selects where a published version/alias is created when `publish` is enabled. The provider accepts only the value LATEST_PUBLISHED; omit it for regular version publishing. In-place, reversible.",
+      "target": {
+        "resourceType": "aws_lambda_function"
+      },
+      "params": [
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_lambda_function/address",
+          "help": "Lambda function whose publish_to behavior to set."
+        },
+        {
+          "name": "publish_to",
+          "label": "Publish target",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "LATEST_PUBLISHED"
+            ],
+            "semantic": "Doc: publish_to's only accepted value is LATEST_PUBLISHED."
+          },
+          "help": "Only takes effect alongside publish=true; in this estate code is managed out-of-band so nothing publishes until code is next deployed in-band."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (publish_to)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "lambda-enable-snap-start",
+      "service": "lambda",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable SnapStart",
+      "summary": "Turn on SnapStart to cut cold-start time for published versions. The code must tolerate being paused and resumed from a snapshot.",
+      "consoleLabel": "SnapStart",
+      "description": "Set the `snap_start` block's `apply_on` to PublishedVersions, enabling SnapStart so Lambda pre-initializes and caches a snapshot of published versions to reduce cold-start latency. Requires the deployed code to be safe under snapshot-and-restore semantics (no assumptions about unique in-memory state, connections, or randomness fixed at init). Applies to newly published versions; reversible by removing the block.",
+      "target": {
+        "resourceType": "aws_lambda_function",
+        "path": [
+          "snap_start"
+        ]
+      },
+      "params": [
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_lambda_function/address",
+          "help": "Lambda function to enable SnapStart on."
+        },
+        {
+          "name": "apply_on",
+          "label": "Apply SnapStart on",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "PublishedVersions"
+            ],
+            "semantic": "Doc: snap_start.apply_on's only accepted value is PublishedVersions. There is no disable value \u2014 remove the block to turn SnapStart off."
+          },
+          "help": "SnapStart optimizes published versions; the function must publish versions and its code must tolerate snapshot restore."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (snap_start.apply_on)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "lambda-set-layer-skip-destroy",
+      "service": "lambda",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle retaining old Lambda layer versions",
+      "summary": "Keep the previous Lambda layer version instead of deleting it when this function is destroyed. No effect right now.",
+      "description": "Set the function-level `skip_destroy` flag, which controls whether the old version of a previously deployed Lambda Layer is retained rather than deleted when the resource is destroyed. Default is false. In-place metadata change with no effect on the live running function's current state; reversible.",
+      "target": {
+        "resourceType": "aws_lambda_function"
+      },
+      "params": [
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_lambda_function/address",
+          "help": "Lambda function whose skip_destroy flag to set."
+        },
+        {
+          "name": "skip_destroy",
+          "label": "Retain old Lambda Layer version on destroy",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ],
+            "semantic": "Doc: skip_destroy is a boolean, default false."
+          },
+          "help": "true retains the previously deployed Lambda Layer version instead of deleting it on destroy."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (skip_destroy)",
+      "group": "protection-backup",
+      "pinned": 4
+    },
+    {
+      "id": "lambda-set-propagation-timeout-behavior",
+      "service": "lambda",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set eventual-consistency propagation timeout behavior",
+      "summary": "Applying this REPLACES the function: new identity and a brief outage while it's recreated. An engineer reviews it first.",
+      "description": "Set `use_resource_timeout_for_propagation`, which controls whether the provider applies resource-level timeout values while retrying eventually-consistent API operations instead of its default 5-minute propagation timeout. Applying it forces replacement of the function: it is destroyed and recreated with a new identity and a brief outage, so an engineer authors and reviews it. Default is false.",
+      "target": {
+        "resourceType": "aws_lambda_function"
+      },
+      "params": [
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_lambda_function/address",
+          "help": "Lambda function whose propagation-timeout behavior to set."
+        },
+        {
+          "name": "use_resource_timeout_for_propagation",
+          "label": "Use resource-level timeout for propagation",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ],
+            "semantic": "Doc: use_resource_timeout_for_propagation is a boolean, default false (provider uses a 5-minute propagation timeout by default)."
+          },
+          "help": "true makes the provider honor resource-level timeouts while waiting on eventually-consistent operations instead of the default 5-minute window."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": true,
+      "terraformCapability": "~ update (use_resource_timeout_for_propagation)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "lambda-create-function",
+      "service": "lambda",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a new function",
+      "summary": "Request a new serverless function; an engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Specify a small serverless function — runtime, sizing and network placement. The code package, its execution role and its triggers are always delivered by the engineer, never uploaded here. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_lambda_function"
+      },
+      "params": [
+        {
+          "name": "function_name",
+          "label": "Function name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "function_name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+          },
+          "help": "Letters, numbers, dashes and underscores."
+        },
+        {
+          "name": "runtime",
+          "label": "Runtime",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "runtime",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "python3.12",
+              "nodejs20.x",
+              "java21",
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The language the function runs on. Pick engineer-decides if unsure."
+        },
+        {
+          "name": "handler",
+          "label": "Handler",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "handler",
+          "group": "compute",
+          "tier": "advanced",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          },
+          "help": "The entry point inside the code package, like app.handler. Leave blank for the engineer."
+        },
+        {
+          "name": "memory_mb",
+          "label": "Memory (MB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "memory_size",
+          "group": "compute",
+          "bounds": {
+            "min": 128,
+            "max": 10240
+          },
+          "default": 512,
+          "help": "Memory also scales the processor share."
+        },
+        {
+          "name": "timeout_seconds",
+          "label": "Timeout (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "timeout",
+          "group": "compute",
+          "bounds": {
+            "min": 1,
+            "max": 900
+          },
+          "default": 60,
+          "help": "How long one invocation may run before it is cut off."
+        },
+        {
+          "name": "inside_vpc",
+          "label": "Runs inside the network (VPC)?",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": false,
+          "help": "Yes only when the function must reach private resources like the database."
+        },
+        {
+          "name": "subnets",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_ids",
+          "path": [
+            "vpc_config"
+          ],
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "dependsOn": {
+            "param": "inside_vpc",
+            "equals": true
+          },
+          "help": "Private subnets the function attaches to."
+        },
+        {
+          "name": "security_groups",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "security_group_ids",
+          "path": [
+            "vpc_config"
+          ],
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "dependsOn": {
+            "param": "inside_vpc",
+            "equals": true
+          },
+          "help": "Who the function may talk to inside the network."
+        },
+        {
+          "name": "resource_name",
+          "label": "Function name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this function does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this function."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new function",
+        "new serverless function"
+      ],
+      "decisions": [
+        "Code package (S3 or zip) — delivered by the engineer, never uploaded here",
+        "The execution role and its permissions",
+        "Trigger wiring — schedule, notification topic, or load balancer",
+        "Environment variables are deliberately excluded here — they can carry secrets"
+      ]
+    },
+    {
+      "id": "lambda-function-url-create",
+      "service": "lambda",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Add a function URL",
+      "summary": "Request a dedicated HTTPS endpoint that invokes a function directly. An engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Specify a new aws_lambda_function_url for an existing function: its authorization mode and invoke mode. This is a public invocation endpoint on the internet the moment it exists — authorization_type controls who can call it, not whether it's reachable. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_lambda_function_url"
+      },
+      "params": [
+        {
+          "name": "url_label",
+          "label": "Function URL label",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names this URL config in the generated draft — a function URL has no name of its own."
+        },
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lambda_function/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "function_name",
+          "attr": "function_name",
+          "group": "identity",
+          "help": "The function this URL invokes."
+        },
+        {
+          "name": "authorization_type",
+          "label": "Authorization",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "authorization_type",
+          "group": "security",
+          "bounds": {
+            "allowlist": [
+              "AWS_IAM",
+              "NONE"
+            ]
+          },
+          "default": "AWS_IAM",
+          "help": "AWS_IAM requires every caller to sign requests with SigV4 credentials. NONE makes the URL callable by anyone on the internet with no authentication at all."
+        },
+        {
+          "name": "invoke_mode",
+          "label": "Invoke mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "invoke_mode",
+          "group": "settings",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              "BUFFERED",
+              "RESPONSE_STREAM"
+            ]
+          },
+          "default": "BUFFERED",
+          "help": "RESPONSE_STREAM streams the response as the function generates it, instead of buffering the whole payload before returning. The function code must be written to stream."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "lambda function url",
+        "public http endpoint for a function",
+        "invoke lambda over http"
+      ],
+      "decisions": [
+        "authorization_type NONE makes this URL callable by anyone on the internet with no authentication — confirm that is genuinely intended before approving; AWS_IAM (the default here) is the safe starting point",
+        "CORS configuration (the cors block: allowed origins/methods/headers) is an engineer follow-up if browser clients call this URL directly",
+        "Pinning to a specific published version or alias (qualifier) instead of $LATEST is an engineer decision"
+      ]
+    },
+    {
+      "id": "lambda-event-source-mapping-create",
+      "service": "lambda",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Add an event source mapping",
+      "summary": "Request a new poll-based trigger that invokes a function per batch. An engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Specify a new aws_lambda_event_source_mapping that polls an SQS queue and invokes a function with each batch. DynamoDB Streams, Kinesis, MSK, and other poll-based sources are engineer follow-ups outside this form's SQS-queue common case. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_lambda_event_source_mapping"
+      },
+      "params": [
+        {
+          "name": "mapping_label",
+          "label": "Mapping label",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names this mapping in the generated draft — AWS assigns it its own UUID; this label is only for the request."
+        },
+        {
+          "name": "function",
+          "label": "Function",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lambda_function/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "function_name",
+          "attr": "function_name",
+          "group": "identity",
+          "help": "The function this mapping invokes for each batch."
+        },
+        {
+          "name": "event_source",
+          "label": "Event source (SQS queue)",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sqs_queue/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "event_source_arn",
+          "group": "source",
+          "help": "The SQS queue that triggers this function. DynamoDB Streams, Kinesis, MSK, and other poll-based sources are an engineer follow-up — this form covers the common SQS case."
+        },
+        {
+          "name": "batch_size",
+          "label": "Batch size",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "batch_size",
+          "group": "settings",
+          "bounds": {
+            "min": 1,
+            "max": 10000
+          },
+          "default": 10,
+          "help": "Maximum number of messages Lambda reads from the queue before invoking the function once with the batch."
+        },
+        {
+          "name": "enabled",
+          "label": "Enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "enabled",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Off creates the mapping in a disabled (paused) state — nothing polls until it's turned on."
+        },
+        {
+          "name": "function_response_types",
+          "label": "Partial batch failure reporting",
+          "type": "list",
+          "source": "allowlist",
+          "required": false,
+          "attr": "function_response_types",
+          "group": "settings",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              "ReportBatchItemFailures"
+            ]
+          },
+          "default": [],
+          "help": "ReportBatchItemFailures lets the function report which individual messages in a batch failed, instead of the whole batch being retried."
+        },
+        {
+          "name": "resource_name",
+          "label": "Mapping name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this trigger is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this trigger."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "lambda event source mapping",
+        "trigger lambda from sqs",
+        "new lambda trigger"
+      ],
+      "decisions": [
+        "DynamoDB Streams, Kinesis, MSK/self-managed Kafka, and Amazon MQ sources are engineer follow-ups — this form covers the common SQS-queue case",
+        "A destination for failed records (destination_config.on_failure), filter criteria, and a non-default starting position are engineer decisions"
+      ]
+    }
+  ]
+}

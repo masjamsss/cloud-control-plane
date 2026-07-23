@@ -1,0 +1,13 @@
+# OPT-IN overlay for the armed lanes (CCP_BUNDLE / CCP_DRIFT_PROPOSALS…).
+# SECURITY: mounting the docker socket makes the api container root-equivalent on this
+# host. Arm only on a host dedicated to the portal; the api stays loopback-only either way.
+# A socket proxy (e.g. one that allows only container-run) is a hardening option — yours.
+services:
+  api:
+    environment:
+      TMPDIR: /data/scratch          # armed-lane scratch checkouts land here (host≡container path)
+    group_add:
+      - "${CCP_DOCKER_GID:?set CCP_DOCKER_GID in .env — stat -c %g /var/run/docker.sock}"
+    volumes:
+      - /data/scratch:/data/scratch
+      - /var/run/docker.sock:/var/run/docker.sock

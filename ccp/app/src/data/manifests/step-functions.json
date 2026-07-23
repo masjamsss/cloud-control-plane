@@ -1,0 +1,285 @@
+{
+  "service": "step-functions",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_sfn_state_machine"
+  ],
+  "summary": "Provision new Step Functions state machines. Greenfield today (no state machine exists yet in this estate) \u2014 the create stands up the execution role, type, tracing and logging shell; the Amazon States Language workflow definition is engineer-authored.",
+  "operations": [
+    {
+      "id": "step-functions-state-machine-create",
+      "service": "step-functions",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Step Functions state machine",
+      "summary": "Request a brand-new state machine; an engineer authors the workflow definition and reviews the Terraform before it applies.",
+      "description": "Stand up a state machine as a complete specification: execution role, workflow type, tracing and logging. The Amazon States Language definition itself is authored by an engineer. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_sfn_state_machine"
+      },
+      "params": [
+        {
+          "name": "state_machine_name",
+          "label": "State machine name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._-]{1,80}$"
+          },
+          "help": "Up to 80 characters. Names the state machine in the Step Functions console and the generated draft."
+        },
+        {
+          "name": "definition",
+          "label": "Workflow definition (Amazon States Language)",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "definition",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The state machine's JSON workflow \u2014 states, transitions and error handling \u2014 is authored and reviewed by an engineer, never typed into this form."
+        },
+        {
+          "name": "execution_role",
+          "label": "Execution role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "role_arn",
+          "group": "identity",
+          "help": "The IAM role Step Functions assumes to invoke the workflow's tasks."
+        },
+        {
+          "name": "type",
+          "label": "Workflow type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "type",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "STANDARD",
+              "EXPRESS"
+            ]
+          },
+          "default": "STANDARD",
+          "help": "STANDARD supports long-running/auditable workflows; EXPRESS is for high-volume, short-duration workloads billed per invocation."
+        },
+        {
+          "name": "publish",
+          "label": "Publish a version on creation",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "publish",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "default": "false",
+          "help": "Creates an immutable published version alongside the $LATEST alias."
+        },
+        {
+          "name": "tracing_enabled",
+          "label": "X-Ray tracing",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "enabled",
+          "path": [
+            "tracing_configuration"
+          ],
+          "group": "observability",
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "default": "false",
+          "help": "Sends trace data for this workflow's executions to AWS X-Ray."
+        },
+        {
+          "name": "logging_level",
+          "label": "Logging level",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "level",
+          "path": [
+            "logging_configuration"
+          ],
+          "group": "observability",
+          "bounds": {
+            "allowlist": [
+              "OFF",
+              "ERROR",
+              "FATAL",
+              "ALL"
+            ]
+          },
+          "default": "OFF",
+          "help": "ALL logs every state transition \u2014 high volume, useful while building a workflow."
+        },
+        {
+          "name": "logging_include_execution_data",
+          "label": "Include execution data in logs",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "include_execution_data",
+          "path": [
+            "logging_configuration"
+          ],
+          "group": "observability",
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "default": "false",
+          "dependsOn": {
+            "param": "logging_level",
+            "notEquals": "OFF"
+          },
+          "help": "Includes state input/output payloads in the log \u2014 may contain sensitive workload data."
+        },
+        {
+          "name": "log_destination",
+          "label": "CloudWatch log group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "log_destination",
+          "path": [
+            "logging_configuration"
+          ],
+          "group": "observability",
+          "dependsOn": {
+            "param": "logging_level",
+            "notEquals": "OFF"
+          },
+          "help": "Destination for the execution log, required once logging is turned on."
+        },
+        {
+          "name": "kms_key_id",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key_id",
+          "path": [
+            "encryption_configuration"
+          ],
+          "group": "settings",
+          "dependsOn": {
+            "param": "encryption_type",
+            "equals": "CUSTOMER_MANAGED_KMS_KEY"
+          },
+          "help": "Required when encryption_type is CUSTOMER_MANAGED_KMS_KEY."
+        },
+        {
+          "name": "encryption_type",
+          "label": "Encryption type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "type",
+          "path": [
+            "encryption_configuration"
+          ],
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "AWS_OWNED_KEY",
+              "CUSTOMER_MANAGED_KMS_KEY"
+            ]
+          },
+          "default": "AWS_OWNED_KEY",
+          "help": "AWS_OWNED_KEY needs no key selection; CUSTOMER_MANAGED_KMS_KEY uses the KMS key above."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this workflow does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this state machine."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new state machine",
+        "step functions",
+        "provision workflow",
+        "new workflow"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "The Amazon States Language definition is authored and reviewed by an engineer, never captured or validated from this form.",
+        "kms_data_key_reuse_period_seconds and any Express workflow log destinations beyond a single CloudWatch log group are engineer follow-ups."
+      ]
+    }
+  ]
+}

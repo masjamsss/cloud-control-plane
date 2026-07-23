@@ -1,0 +1,444 @@
+/* ── Service catalog (Home) — Ledger: display header + numbered rails ───────── */
+
+.catalog__head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: var(--space-7);
+  /* The firm rule under the page-header block (Ledger contract #1). */
+  border-bottom: 2px solid var(--text-primary);
+  padding-bottom: var(--space-7);
+  margin-bottom: var(--space-8);
+}
+.catalog__head-main {
+  min-width: 0;
+}
+/* Eyebrow — the one-line identity tag over the display title. Shared with
+   every other top-level page header via .page-eyebrow (styles/global.css);
+   this page originated the treatment, so no page-specific rule remains here. */
+.catalog__title {
+  font-size: clamp(38px, 5.2vw, 60px);
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  line-height: 0.98;
+  color: var(--text-primary);
+  margin: 0;
+}
+.catalog__sub {
+  margin: var(--space-5) 0 0;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.5;
+  max-width: 52ch;
+}
+/* Data-authority meta, right-aligned mono (Ledger contract #4) — only the
+   totals this page already has on hand; see the component for what's
+   deliberately omitted. */
+.catalog__headmeta {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-faint);
+  line-height: 1.9;
+  white-space: nowrap;
+}
+.catalog__headmeta b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Sticky search row */
+.catalog__controls {
+  position: sticky;
+  top: 56px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  margin: var(--space-6) 0 var(--space-8);
+  padding: var(--space-4) 0;
+  background: var(--bg-canvas);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.catalog__search {
+  position: relative;
+  flex: 1 1 260px;
+  min-width: 200px;
+}
+.catalog__search-icon {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  font-size: 15px;
+  pointer-events: none;
+}
+.catalog__search-input {
+  width: 100%;
+  background: var(--surface-1);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 11px 9px 32px;
+  transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
+}
+.catalog__search-input::placeholder {
+  color: var(--text-faint);
+}
+.catalog__search-input:hover {
+  border-color: var(--border-hover);
+}
+.catalog__search-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* Category sections — a numbered left rail (150px) beside the rows (Ledger
+   contract #2). */
+.catalog__section {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: var(--space-8);
+  margin-top: var(--space-10);
+}
+.catalog__secnum {
+  font-family: var(--font-mono);
+  font-size: 44px;
+  font-weight: 620;
+  line-height: 1;
+  color: var(--text-faint);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.catalog__secname {
+  font-size: 21px;
+  font-weight: 640;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--text-primary);
+  margin: var(--space-3) 0 0;
+}
+.catalog__seccount {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-top: var(--space-2);
+}
+.catalog__rows {
+  display: flex;
+  flex-direction: column;
+}
+.catalog__empty {
+  color: var(--text-muted);
+  font-size: 15px;
+  margin: var(--space-8) 0;
+}
+
+/* ── ServiceCard — a Ledger divider row, not a card (contract #3) ────────────── */
+
+.service-card {
+  display: grid;
+  grid-template-columns: 1fr 200px 130px;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-7) var(--space-2);
+  border-top: 1px solid var(--border-hairline);
+  text-decoration: none;
+  color: inherit;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.catalog__rows > .service-card:first-child {
+  border-top: none;
+}
+.service-card:hover {
+  background: var(--surface-2);
+  /* Pin off the global a:hover underline (global.css) — a:hover's own
+     pseudo-class bumps its specificity above the plain .service-card rule
+     above, so a hover-only override is needed to keep the row link-free. */
+  text-decoration: none;
+}
+.service-card:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.service-card__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.service-card__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+.service-card__name {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+/* Team tag — accent-soft bg + accent text (contract #5), never a border. */
+.service-card__team {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 3px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+.service-card__summary {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Data authority — the big tabular resource count + a small muted label that
+   folds the operation count in (contract #4). */
+.service-card__count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-family: var(--font-mono);
+  text-align: right;
+}
+.service-card__count-big {
+  font-size: 30px;
+  font-weight: 640;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.service-card__count-label {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.service-card__count--none .service-card__count-big {
+  color: var(--text-faint);
+}
+
+/* Op-less service — no catalogued change, so the whole row is a direct
+   "Provision <service>" call-to-action into the generic provision form (never a
+   dead/empty tile). The affordance spans the risk + count columns, right-aligned
+   where the data-authority figure would sit. */
+.service-card__provision {
+  grid-column: 2 / 4;
+  justify-self: end;
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 4px;
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
+/* ── RiskMix — the one colored axis (shared component, styles live here) ─────── */
+
+.risk-mix {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.risk-mix__bar {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  width: 140px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.risk-mix__seg {
+  display: block;
+  border-radius: var(--radius-pill);
+  min-width: 3px;
+}
+.risk-mix__seg--low {
+  background: var(--risk-low);
+}
+.risk-mix__seg--med {
+  background: var(--risk-med);
+}
+.risk-mix__seg--high {
+  background: var(--risk-high);
+}
+.risk-mix__seg--empty {
+  flex: 1;
+  background: var(--surface-3);
+}
+.risk-mix__legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 600;
+}
+.risk-mix__tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.risk-mix__tick::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.risk-mix__tick--low {
+  color: var(--risk-low);
+}
+.risk-mix__tick--low::before {
+  background: var(--risk-low);
+}
+.risk-mix__tick--med {
+  color: var(--risk-med);
+}
+.risk-mix__tick--med::before {
+  background: var(--risk-med);
+}
+.risk-mix__tick--high {
+  color: var(--risk-high);
+}
+.risk-mix__tick--high::before {
+  background: var(--risk-high);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .service-card,
+  .catalog__search-input {
+    transition: none;
+  }
+}
+
+/* Narrow viewports: the header meta and the 3-column rail/row grids don't
+   have room to stay side-by-side — stack them instead of clipping. */
+@media (max-width: 720px) {
+  .catalog__head {
+    grid-template-columns: 1fr;
+  }
+  .catalog__headmeta {
+    text-align: left;
+    margin-top: var(--space-3);
+  }
+  .catalog__section {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+  .catalog__secname {
+    margin-top: var(--space-2);
+  }
+  .service-card {
+    grid-template-columns: 1fr;
+    row-gap: var(--space-4);
+  }
+  .risk-mix {
+    flex-direction: row;
+    align-items: center;
+  }
+  .service-card__count {
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--space-3);
+  }
+}
+
+/* ── "Request something new" (Task 1 beyond-catalog escape hatch) ───────────
+   Same add-card pattern as ServiceConsole's "Add new" section
+   (features/services/console.css .console__add-card) — co-located here under
+   the same class names rather than cross-imported, matching this codebase's
+   per-feature CSS convention. Deliberately the plainest possible entry point:
+   no new visual language, just the one card this app already uses for "add".
+   Kept byte-for-byte in sync with console.css's copy (Task 3 Ledger restyle —
+   a hairline border with no resting fill, since a wrapping grid of "add"
+   affordances needs its own cell boundary and can't become divider rows). */
+.catalog__more {
+  margin-top: var(--space-9);
+}
+.console__add-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+  background: none;
+  text-decoration: none;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard);
+}
+.console__add-card:hover {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+.console__add-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.console__add-glyph {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-2);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+.console__add-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.console__add-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.console__add-desc {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+@media (prefers-reduced-motion: reduce) {
+  .console__add-card {
+    transition: none;
+  }
+}

@@ -1,0 +1,7 @@
+{
+ "aws_efs_file_system.shared": {
+  "file": "ccp/app/fixtures-estate/efs.tf",
+  "line": 3,
+  "source": "resource \"aws_efs_file_system\" \"shared\" {\n  creation_token   = \"«redacted:2e19c31e»\"\n  performance_mode = \"generalPurpose\"\n  throughput_mode  = \"bursting\"\n  encrypted        = true\n  kms_key_id       = aws_kms_key.app_key.arn\n\n  tags = {\n    Name        = \"app-shared-fs\"\n    PIC         = \"user01@example.com\"\n    Description = \"Shared file system for the app tier\"\n  }\n}"
+ }
+}

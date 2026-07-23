@@ -1,0 +1,155 @@
+// Command schemadump builds the AWS provider's SDKv2 + framework providers
+// in-process and reflects their resource schemas into an authoritative
+// per-attribute JSON dump (including ForceNew, which the JSON schema omits).
+//
+// This file is NOT compiled as part of tools/schemadump (it imports the
+// provider's internal/ packages, importable only from inside the provider
+// module). gen.sh renders it — replacing the __SDKV2_PKG__ / __FRAMEWORK_PKG__
+// placeholders — into <provider-src>/cmd/schemadump/main.go, copies
+// schemadump.go beside it as `package main`, and builds there. The .tmpl
+// extension keeps the Go toolchain from trying to compile it in place.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"runtime"
+	"runtime/debug"
+	"strings"
+	"time"
+
+	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
+
+	framework "__FRAMEWORK_PKG__"
+	sdkv2 "__SDKV2_PKG__"
+)
+
+func main() {
+	var typesFile, outFile, provenanceFile, version, tag, module string
+	flag.StringVar(&typesFile, "types", "", "file of resource type names, one per line (blank/`#` lines ignored); empty = all")
+	flag.StringVar(&outFile, "out", "", "output JSON path (default stdout)")
+	flag.StringVar(&provenanceFile, "provenance", "", "JSON file embedded verbatim as metadata.source_provenance")
+	flag.StringVar(&version, "version", "6.53.0", "provider version for metadata")
+	flag.StringVar(&tag, "tag", "v6.53.0", "provider VCS tag for metadata")
+	flag.StringVar(&module, "module", "github.com/hashicorp/terraform-provider-aws", "provider module path")
+	flag.Parse()
+
+	ctx := context.Background()
+
+	// SDKv2 primary provider — the ResourcesMap carries authoritative ForceNew.
+	primary, err := sdkv2.NewProvider(ctx)
+	if err != nil {
+		fatalf("building SDKv2 provider: %v", err)
+	}
+	sdk := primary.ResourcesMap
+
+	// Framework provider — enumerate type names only (RequiresReplace is not
+	// reliably introspectable; those resources are marked framework_unreflected).
+	fwProv, err := framework.NewProvider(ctx, primary)
+	if err != nil {
+		fatalf("building framework provider: %v", err)
+	}
+	fwTypes := map[string]bool{}
+	for _, factory := range fwProv.Resources(ctx) {
+		r := factory()
+		var resp fwresource.MetadataResponse
+		r.Metadata(ctx, fwresource.MetadataRequest{ProviderTypeName: "aws"}, &resp)
+		if resp.TypeName != "" {
+			fwTypes[resp.TypeName] = true
+		}
+	}
+
+	requested := readTypeList(typesFile)
+
+	meta := Metadata{
+		Provider:         "hashicorp/aws",
+		ProviderVersion:  version,
+		ProviderModule:   module,
+		ProviderTag:      tag,
+		GeneratedAt:      time.Now().UTC().Format(time.RFC3339),
+		Generator:        "tools/schemadump (compile-and-reflect; 0013d G0)",
+		GoVersion:        runtime.Version(),
+		SDKVersion:       depVersion("github.com/hashicorp/terraform-plugin-sdk/v2"),
+		FrameworkVersion: depVersion("github.com/hashicorp/terraform-plugin-framework"),
+		Note: "SDKv2 resources reflected authoritatively (per-attribute ForceNew from " +
+			"helper/schema). Framework resources marked framework_unreflected=true " +
+			"(fail-closed). `terraform providers schema -json` omits ForceNew; this dump " +
+			"is the authoritative source (0009 L1, 0013d §2.1).",
+		SourceProvenance: readRawJSON(provenanceFile),
+	}
+
+	dump := BuildDump(sdk, fwTypes, requested, meta)
+
+	out, err := json.MarshalIndent(dump, "", "  ")
+	if err != nil {
+		fatalf("marshaling dump: %v", err)
+	}
+	out = append(out, '\n')
+	if outFile == "" {
+		os.Stdout.Write(out)
+	} else if err := os.WriteFile(outFile, out, 0o644); err != nil {
+		fatalf("writing %s: %v", outFile, err)
+	}
+
+	s := dump.Metadata.Summary
+	fmt.Fprintf(os.Stderr,
+		"schemadump: requested=%d sdkv2=%d framework_unreflected=%d missing=%d | attrs=%d forcenew_true=%d forcenew_false=%d\n",
+		s.Requested, s.SDKv2Reflected, s.FrameworkUnreflected, s.Missing,
+		s.TotalAttributes, s.AttrsForceNewTrue, s.AttrsForceNewFalse)
+	if len(s.MissingTypes) > 0 {
+		fmt.Fprintf(os.Stderr, "schemadump: MISSING types: %s\n", strings.Join(s.MissingTypes, ", "))
+	}
+}
+
+func readTypeList(path string) []string {
+	if path == "" {
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		fatalf("reading types file %s: %v", path, err)
+	}
+	var out []string
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+func readRawJSON(path string) interface{} {
+	if path == "" {
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		fatalf("reading provenance file %s: %v", path, err)
+	}
+	return json.RawMessage(b)
+}
+
+// depVersion returns the module version linked into this binary, from the Go
+// build info — authoritative for the versions actually compiled in.
+func depVersion(module string) string {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	for _, d := range bi.Deps {
+		if d.Path == module {
+			return d.Version
+		}
+	}
+	return ""
+}
+
+func fatalf(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "schemadump: "+format+"\n", args...)
+	os.Exit(1)
+}

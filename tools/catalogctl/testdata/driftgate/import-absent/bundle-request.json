@@ -1,0 +1,36 @@
+{
+  "id": "REQ-01ARZ3NDEKTSV4RRFFQ69G5FD1",
+  "projectId": "sample",
+  "operationId": "system-drift-import",
+  "targetAddress": "aws_instance.oob_bastion01",
+  "status": "APPROVED",
+  "approvals": [
+    { "approver": "alice", "approved_at": "2026-07-20T04:00:00Z", "policy_version": "1", "decision": "approve" },
+    { "approver": "bob", "approved_at": "2026-07-20T04:05:00Z", "policy_version": "1", "decision": "approve" }
+  ],
+  "params": {
+    "finding": {
+      "class": "unmanaged_resource",
+      "arn": null,
+      "tfType": "aws_instance",
+      "liveId": "i-0abc123def456789a",
+      "securityFamily": false,
+      "importPayload": {
+        "address": "aws_instance.oob_bastion01",
+        "targetFile": "oob-adopted.tf",
+        "importBlock": "import {\n  to = aws_instance.oob_bastion01\n  id = \"i-0abc123def456789a\"\n}\n",
+        "skeletonHcl": "resource \"aws_instance\" \"oob_bastion01\" {\n  ami           = \"ami-0123456789abcdef0\"\n  instance_type = \"m5.large\"\n}\n"
+      },
+      "payloadWithheldReason": null
+    },
+    "importPayload": {
+      "address": "aws_instance.oob_bastion01",
+      "targetFile": "oob-adopted.tf",
+      "importBlock": "import {\n  to = aws_instance.oob_bastion01\n  id = \"i-0abc123def456789a\"\n}\n",
+      "skeletonHcl": "resource \"aws_instance\" \"oob_bastion01\" {\n  ami           = \"ami-0123456789abcdef0\"\n  instance_type = \"m5.large\"\n}\n"
+    },
+    "diff": null,
+    "proposalDigest": "fixture-digest-not-verified-by-plan-check-only-drift-edit-checks-it",
+    "reportVersion": 0
+  }
+}

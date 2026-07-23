@@ -1,0 +1,22 @@
+{
+ "aws_ebs_volume.app01_data": {
+  "file": "ccp/app/fixtures-estate/ebs.tf",
+  "line": 3,
+  "source": "resource \"aws_ebs_volume\" \"app01_data\" {\n  availability_zone = \"us-east-1a\"\n  size              = 200\n  type              = \"gp3\"\n  iops              = 3000\n  throughput        = 125\n  encrypted         = true\n\n  tags = {\n    Name        = \"APP01 data\"\n    PIC         = \"user01@example.com\"\n    Description = \"Data volume for the application server\"\n  }\n}"
+ },
+ "aws_volume_attachment.app01_data": {
+  "file": "ccp/app/fixtures-estate/ebs.tf",
+  "line": 18,
+  "source": "resource \"aws_volume_attachment\" \"app01_data\" {\n  device_name = \"/dev/sdf\"\n  volume_id   = aws_ebs_volume.app01_data.id\n  instance_id = aws_instance.app01.id\n}"
+ },
+ "aws_ebs_volume.app02_legacy": {
+  "file": "ccp/app/fixtures-estate/ebs.tf",
+  "line": 26,
+  "source": "resource \"aws_ebs_volume\" \"app02_legacy\" {\n  availability_zone = \"us-east-1a\"\n  size              = 100\n  type              = \"gp2\"\n  encrypted         = true\n\n  tags = {\n    Name        = \"APP02 legacy data\"\n    PIC         = \"user02@example.com\"\n    Description = \"Legacy volume pending gp2-to-gp3 migration\"\n  }\n}"
+ },
+ "aws_volume_attachment.app02_legacy": {
+  "file": "ccp/app/fixtures-estate/ebs.tf",
+  "line": 39,
+  "source": "resource \"aws_volume_attachment\" \"app02_legacy\" {\n  device_name = \"/dev/sdg\"\n  volume_id   = aws_ebs_volume.app02_legacy.id\n  instance_id = aws_instance.app02.id\n}"
+ }
+}

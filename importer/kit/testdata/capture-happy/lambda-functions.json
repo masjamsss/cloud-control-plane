@@ -1,0 +1,10 @@
+{
+  "Functions": [
+    {
+      "FunctionName": "nightly-report",
+      "Runtime": "python3.12",
+      "MemorySize": 256,
+      "Timeout": 60
+    }
+  ]
+}

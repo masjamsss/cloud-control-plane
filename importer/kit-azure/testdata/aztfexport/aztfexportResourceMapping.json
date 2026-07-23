@@ -1,0 +1,12 @@
+{
+  "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app": {
+    "resource_type": "azurerm_resource_group",
+    "resource_name": "rg_app",
+    "resource_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app"
+  },
+  "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.Network/virtualNetworks/vnet-app": {
+    "resource_type": "azurerm_virtual_network",
+    "resource_name": "vnet_app",
+    "resource_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.Network/virtualNetworks/vnet-app"
+  }
+}

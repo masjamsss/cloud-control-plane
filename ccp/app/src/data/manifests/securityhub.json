@@ -1,0 +1,98 @@
+{
+  "service": "securityhub",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_securityhub_account"
+  ],
+  "summary": "Provision and operate AWS Security Hub. Enabling it account-wide with the default standards is an engineer-gated create form; disabling standards or controls removes compliance visibility and never auto-applies.",
+  "operations": [
+    {
+      "id": "securityhub-enable-account",
+      "service": "securityhub",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Enable Security Hub",
+      "summary": "Enable Security Hub for the account with the default standards on. Disabling it removes compliance visibility.",
+      "consoleLabel": "Settings",
+      "description": "Create an aws_securityhub_account, enabling Security Hub for the account with the default standards and auto-enabled controls. Enablement is account-wide, so this is engineer-gated. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_securityhub_account"
+      },
+      "params": [
+        {
+          "name": "account_label",
+          "label": "Account label",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "A short label naming the Terraform block only; the account-level resource has no name attribute in AWS.",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          }
+        },
+        {
+          "name": "enable_default_standards",
+          "label": "Enable default standards",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "attr": "enable_default_standards",
+          "const": true,
+          "group": "settings",
+          "help": "Turn on the default security standards; written into the draft, never asked."
+        },
+        {
+          "name": "auto_enable_controls",
+          "label": "Auto enable controls",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "attr": "auto_enable_controls",
+          "const": true,
+          "group": "settings",
+          "help": "Auto-enable new controls as standards add them; written into the draft, never asked."
+        },
+        {
+          "name": "control_finding_generator",
+          "label": "Finding generator",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "control_finding_generator",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "SECURITY_CONTROL",
+              "STANDARD_CONTROL"
+            ]
+          },
+          "default": "SECURITY_CONTROL",
+          "help": "SECURITY_CONTROL generates one finding per control across standards; STANDARD_CONTROL generates one per standard."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "security hub",
+        "securityhub",
+        "enable security hub",
+        "compliance"
+      ],
+      "decisions": [
+        "Enabling Security Hub is account-wide and turns on the default standards; disabling it or its controls removes compliance visibility, an engineer-reviewed change.",
+        "Individual control tuning and standards subscriptions are reviewed follow-up; this provisions the account enabled with the default standards on."
+      ]
+    }
+  ]
+}

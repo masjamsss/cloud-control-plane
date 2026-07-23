@@ -1,0 +1,47 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_dynamodb_table.orders",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "name": "orders",
+          "global_secondary_index": [
+            {
+              "name": "by-status",
+              "read_capacity": 5,
+              "write_capacity": 5,
+              "hash_key": "status"
+            },
+            {
+              "name": "by-date",
+              "read_capacity": 10,
+              "write_capacity": 10,
+              "hash_key": "date"
+            }
+          ]
+        },
+        "after": {
+          "name": "orders",
+          "global_secondary_index": [
+            {
+              "name": "by-status",
+              "read_capacity": 2,
+              "write_capacity": 5,
+              "hash_key": "status"
+            },
+            {
+              "name": "by-date",
+              "read_capacity": 10,
+              "write_capacity": 10,
+              "hash_key": "date"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

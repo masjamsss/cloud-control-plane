@@ -1,0 +1,3587 @@
+{
+  "service": "alb",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_lb",
+    "aws_lb_target_group",
+    "aws_lb_listener",
+    "aws_lb_listener_rule"
+  ],
+  "summary": "Tune and maintain the Application Load Balancers: target-group health checks, idle timeout, deregistration delay, listener-rule add/delete, and ALB tagging.",
+  "operations": [
+    {
+      "id": "alb-adjust-health-check",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Adjust target group health check thresholds and timing",
+      "summary": "Retune how often and how strictly a target group checks server health. Overly aggressive values can make healthy targets flap in and out.",
+      "description": "Tunes the health_check block (interval, timeout, healthy/unhealthy thresholds, matcher) on a target group; overly aggressive values can cause targets to flap in and out of service.",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "health_check"
+        ]
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group whose health check will be retuned."
+        },
+        {
+          "name": "new_healthy_threshold",
+          "label": "Healthy threshold (consecutive checks)",
+          "type": "number",
+          "source": "user_input",
+          "help": "Number of consecutive successful health checks before an unhealthy target is put back in service; the 2-10 range matches AWS's valid healthy_threshold values, so a target can neither return on a single lucky check nor be held out indefinitely.",
+          "required": false,
+          "default": 3,
+          "bounds": {
+            "min": 2,
+            "max": 10
+          }
+        },
+        {
+          "name": "new_unhealthy_threshold",
+          "label": "Unhealthy threshold (consecutive checks)",
+          "type": "number",
+          "source": "user_input",
+          "help": "Number of consecutive failed health checks before a target is marked unhealthy and removed from rotation; the 2-10 range matches AWS's valid unhealthy_threshold values, so one transient blip can never eject a healthy target.",
+          "required": false,
+          "default": 3,
+          "bounds": {
+            "min": 2,
+            "max": 10
+          }
+        },
+        {
+          "name": "new_interval",
+          "label": "Check interval (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "default": 30,
+          "bounds": {
+            "min": 5,
+            "max": 300
+          },
+          "help": "Seconds between health checks."
+        },
+        {
+          "name": "new_timeout",
+          "label": "Check timeout (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "default": 5,
+          "bounds": {
+            "min": 2,
+            "max": 120
+          },
+          "help": "Must be less than the interval."
+        },
+        {
+          "name": "new_matcher",
+          "label": "Success matcher",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "200",
+          "bounds": {
+            "pattern": "^[0-9]{3}(-[0-9]{3})?$"
+          },
+          "help": "HTTP status code or range considered healthy, e.g. 200 or 200-299."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "health check",
+        "backends flapping",
+        "targets unhealthy",
+        "relax health check"
+      ],
+      "group": "availability-lifecycle",
+      "pinned": 1
+    },
+    {
+      "id": "alb-set-idle-timeout",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set ALB idle timeout",
+      "summary": "Set how long a connection can sit idle before the load balancer closes it. Too short a value cuts off long-running requests early.",
+      "description": "Changes idle_timeout on the load balancer; too low a value can prematurely close long-running application sessions, too high delays connection recycling.",
+      "target": {
+        "attr": "idle_timeout_seconds",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to update."
+        },
+        {
+          "name": "new_idle_timeout_seconds",
+          "label": "Idle timeout (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "help": "Seconds a connection may sit idle before the load balancer closes it (AWS attribute idle_timeout, default 60); the 1-4000 bound is exactly the range AWS accepts, so no value can be submitted that the API would reject.",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 4000
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "uploads time out",
+        "idle timeout",
+        "long requests dropped"
+      ],
+      "group": "availability-lifecycle",
+      "pinned": 1
+    },
+    {
+      "id": "alb-set-deregistration-delay",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target group deregistration delay",
+      "summary": "Set how long the load balancer drains a removed target's connections. Shortening it speeds deploys but can drop in-flight requests.",
+      "description": "Changes deregistration_delay (connection draining period) on a target group; shortening it speeds up deploys but can drop in-flight requests from targets being removed.",
+      "target": {
+        "attr": "deregistration_delay",
+        "resourceType": "aws_lb_target_group"
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "help": "Target group whose deregistration (connection-draining) delay will change, chosen from the estate inventory so only a Terraform-managed target group can be selected.",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true
+        },
+        {
+          "name": "new_deregistration_delay",
+          "label": "Deregistration delay (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "help": "Seconds the load balancer keeps draining in-flight requests to a target after deregistration begins (AWS attribute deregistration_delay, default 300); the 0-3600 bound is AWS's full valid range, where 0 drops connections immediately and 3600 is the longest drain AWS supports.",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 3600
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "connectivity-access",
+      "pinned": 2
+    },
+    {
+      "id": "alb-add-listener-rule",
+      "service": "alb",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a listener rule",
+      "summary": "Add a routing rule to a listener that sends matching traffic to a target group. A routing mistake can misdirect live production traffic.",
+      "description": "Creates a new aws_lb_listener_rule on an existing listener that forwards matching traffic (path pattern and/or host header) to a target group; a routing mistake can misdirect production traffic.",
+      "target": {
+        "resourceType": "aws_lb_listener_rule"
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "Listener the new rule attaches to."
+        },
+        {
+          "name": "priority",
+          "label": "Rule priority",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 50000
+          },
+          "help": "Lower numbers are evaluated first; must be unique on the listener."
+        },
+        {
+          "name": "path_pattern",
+          "label": "Path pattern condition",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "/*",
+          "help": "e.g. /PI/* \u2014 leave default to match all paths."
+        },
+        {
+          "name": "host_header",
+          "label": "Host header condition",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "",
+          "help": "Optional hostname condition, e.g. app.internal.example.com."
+        },
+        {
+          "name": "target_group",
+          "label": "Forward to target group",
+          "type": "string",
+          "source": "inventory",
+          "help": "Target group that receives traffic matching this rule's conditions, chosen from the estate inventory so the rule can only forward to a Terraform-managed target group.",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "keywords": [
+        "route path",
+        "listener rule",
+        "path routing"
+      ],
+      "group": "create"
+    },
+    {
+      "id": "alb-delete-listener-rule",
+      "service": "alb",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete a listener rule",
+      "summary": "Permanently delete a listener rule. This can't be undone; its traffic falls through to the next rule. An engineer reviews it first.",
+      "description": "Removes an existing listener rule, permanently withdrawing its routing condition; any traffic depending on it will fall through to the next matching rule or the listener default action.",
+      "target": {
+        "resourceType": "aws_lb_listener_rule"
+      },
+      "params": [
+        {
+          "name": "listener_rule",
+          "label": "Listener rule",
+          "type": "string",
+          "source": "inventory",
+          "help": "The listener rule to permanently remove, chosen from the estate inventory so only a Terraform-managed rule known to the repo can be deleted through this form.",
+          "enumSource": "inventory://aws_lb_listener_rule/address",
+          "required": true
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "alb-add-tag",
+      "service": "alb",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a load balancer",
+      "summary": "Add a tag to a load balancer for cost tracking or ownership. Metadata only, no effect on traffic.",
+      "description": "Adds a key/value pair to the ALB's tags map for cost allocation or ownership tracking; purely metadata with no effect on traffic.",
+      "target": {
+        "resourceType": "aws_lb",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "help": "Load balancer that receives the new tag, chosen from the estate inventory so only a Terraform-managed ALB can be modified; tagging is metadata only and never affects traffic.",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9:_-]{0,127}$"
+          },
+          "help": "e.g. CostCentre, Owner, Environment."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "help": "Text stored under the tag key, such as a cost-centre code or owner name; the 1-255 character bound stays inside AWS's 256-character tag-value limit, and tag values never affect load balancer behaviour.",
+          "required": true,
+          "bounds": {
+            "pattern": "^.{1,255}$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "create"
+    },
+    {
+      "id": "alb-set-tls-version-cipher-headers",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle TLS version and cipher suite headers",
+      "summary": "Turn on or off extra headers that tell targets which TLS version and cipher the client used. Purely informational, no behavior change.",
+      "description": "Set enable_tls_version_and_cipher_suite_headers on the load balancer, which adds the x-amzn-tls-version and x-amzn-tls-cipher-suite headers to requests forwarded to targets. Application load balancers only; purely additive informational headers with no change to existing behavior.",
+      "target": {
+        "attr": "enable_tls_version_and_cipher_suite_headers",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to update."
+        },
+        {
+          "name": "enabled",
+          "label": "TLS version/cipher headers enabled",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; provider default is false (application type only)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (enable_tls_version_and_cipher_suite_headers)",
+      "group": "connectivity-access",
+      "pinned": 2
+    },
+    {
+      "id": "alb-set-dns-record-client-routing-policy",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set DNS record client routing policy",
+      "summary": "Set how DNS spreads traffic across this load balancer's Availability Zones. Network load balancers only.",
+      "description": "Set dns_record_client_routing_policy, controlling how traffic is distributed among the load balancer's Availability Zones at the DNS level. Network load balancers only.",
+      "target": {
+        "attr": "dns_record_client_routing_policy",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to update."
+        },
+        {
+          "name": "policy",
+          "label": "DNS record client routing policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "any_availability_zone",
+              "availability_zone_affinity",
+              "partial_availability_zone_affinity"
+            ]
+          },
+          "help": "Doc enum; default any_availability_zone (network type only)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (dns_record_client_routing_policy)",
+      "group": "connectivity-access",
+      "pinned": 3
+    },
+    {
+      "id": "alb-set-prefix-for-ipv6-source-nat",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set IPv6 source NAT prefix mode",
+      "summary": "Turn on or off using a per-subnet IPv6 prefix for source address translation. Requires the load balancer to be dual-stack.",
+      "description": "Set enable_prefix_for_ipv6_source_nat (on/off), controlling whether an IPv6 prefix from each subnet is used for source NAT. Requires ip_address_type = dualstack.",
+      "target": {
+        "attr": "enable_prefix_for_ipv6_source_nat",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to update."
+        },
+        {
+          "name": "mode",
+          "label": "IPv6 source NAT prefix (on/off)",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "on",
+              "off"
+            ]
+          },
+          "help": "Doc enum on/off; requires ip_address_type = dualstack."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (enable_prefix_for_ipv6_source_nat)",
+      "group": "connectivity-access",
+      "pinned": 4
+    },
+    {
+      "id": "alb-set-xff-header-processing-mode",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set X-Forwarded-For header processing mode",
+      "summary": "Set how the load balancer rewrites the client-IP header before forwarding requests. Backends that rely on client IP may be affected.",
+      "description": "Set xff_header_processing_mode (append/preserve/remove), controlling how the ALB modifies the X-Forwarded-For header before forwarding to targets. Application load balancers only; backends doing IP-based logic may be affected.",
+      "target": {
+        "attr": "xff_header_processing_mode",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to update."
+        },
+        {
+          "name": "mode",
+          "label": "XFF header processing mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "append",
+              "preserve",
+              "remove"
+            ]
+          },
+          "help": "Doc enum; default append (application type only)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (xff_header_processing_mode)",
+      "group": "connectivity-access",
+      "pinned": 5
+    },
+    {
+      "id": "alb-set-client-keep-alive",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set client keep-alive duration",
+      "summary": "Set how long the load balancer keeps a client connection open. Too short a value can abruptly drop long-running client connections.",
+      "description": "Set client_keep_alive (seconds) on the load balancer. Too-short values abruptly drop active long-running client connections.",
+      "target": {
+        "attr": "client_keep_alive",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to update."
+        },
+        {
+          "name": "seconds",
+          "label": "Client keep-alive (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 60,
+            "max": 604800
+          },
+          "help": "Doc range 60-604800 seconds; provider default 3600."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (client_keep_alive)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-drop-invalid-header-fields",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle dropping of invalid HTTP header fields",
+      "summary": "Turn on or off dropping requests with invalid HTTP header fields instead of forwarding them. A security-hardening toggle.",
+      "description": "Set drop_invalid_header_fields, controlling whether HTTP headers with invalid field names are dropped instead of routed to targets. Application load balancers only; a hardening toggle.",
+      "target": {
+        "attr": "drop_invalid_header_fields",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to update."
+        },
+        {
+          "name": "enabled",
+          "label": "Drop invalid header fields",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; provider default false (application type only)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (drop_invalid_header_fields)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-cross-zone-load-balancing",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle load balancer cross-zone load balancing",
+      "summary": "Turn on or off spreading traffic evenly across all Availability Zones for this load balancer. Network and gateway types only.",
+      "description": "Set enable_cross_zone_load_balancing on the load balancer itself (distinct from alb-set-load-balancing-cross-zone, which sets the target group's load_balancing_cross_zone_enabled). Network/Gateway load balancers only \u2014 for application load balancers this is always enabled and cannot be changed.",
+      "target": {
+        "attr": "enable_cross_zone_load_balancing",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to update."
+        },
+        {
+          "name": "enabled",
+          "label": "Cross-zone load balancing enabled",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; default false for network/gateway; locked true for application type."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (enable_cross_zone_load_balancing)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-http2",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle HTTP/2 support",
+      "summary": "Turn HTTP/2 on or off for this load balancer. Disabling forces every client back to HTTP/1.1.",
+      "description": "Set enable_http2, controlling whether HTTP/2 is enabled on the application load balancer. Applied LB-wide across all listeners; disabling forces clients to HTTP/1.1.",
+      "target": {
+        "attr": "enable_http2",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to update."
+        },
+        {
+          "name": "enabled",
+          "label": "HTTP/2 enabled",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; provider default true (application type only)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (enable_http2)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-xff-client-port",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle X-Forwarded-For client port preservation",
+      "summary": "Turn on or off including the client's source port in the client-IP header sent to targets. Changes the format backends must parse.",
+      "description": "Set enable_xff_client_port, controlling whether the X-Forwarded-For header preserves the client's source port. Application load balancers only; changes the header format backends parse for client IP.",
+      "target": {
+        "attr": "enable_xff_client_port",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to update."
+        },
+        {
+          "name": "enabled",
+          "label": "Preserve client port in XFF",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; provider default false (application type only)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (enable_xff_client_port)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-zonal-shift",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle zonal shift",
+      "summary": "Turn on or off the ability to shift traffic away from an Availability Zone during an incident. A resiliency safeguard.",
+      "description": "Set enable_zonal_shift, controlling whether zonal shift (AZ traffic shift during incidents) is enabled on the load balancer. A resiliency capability toggle.",
+      "target": {
+        "attr": "enable_zonal_shift",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to update."
+        },
+        {
+          "name": "enabled",
+          "label": "Zonal shift enabled",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; provider default false."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (enable_zonal_shift)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-preserve-host-header",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle Host header preservation",
+      "summary": "Turn on or off keeping the original Host header when forwarding to targets. Backends that route by hostname may depend on this.",
+      "description": "Set preserve_host_header, controlling whether the ALB preserves the incoming Host header when forwarding to targets. Backends doing vhost/routing logic may depend on this.",
+      "target": {
+        "attr": "preserve_host_header",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to update."
+        },
+        {
+          "name": "enabled",
+          "label": "Preserve Host header",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; provider default false."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (preserve_host_header)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-access-logs-enabled",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable access logs",
+      "summary": "Turn access logging on or off. Enabling needs a log bucket already set up; disabling stops that audit trail.",
+      "description": "Toggle access_logs.enabled on the load balancer's access_logs block. Enabling requires an access_logs bucket to already be configured; disabling stops delivery of the S3 access-log audit trail.",
+      "target": {
+        "resourceType": "aws_lb",
+        "path": [
+          "access_logs"
+        ]
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to update."
+        },
+        {
+          "name": "enabled",
+          "label": "Access logs enabled",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; provider default false even when a bucket is set."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (access_logs.enabled)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-connection-logs-enabled",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable connection logs",
+      "summary": "Turn connection logging on or off. Enabling needs a log bucket already set up; disabling stops that audit trail.",
+      "description": "Toggle connection_logs.enabled. Enabling requires a connection_logs bucket to already be configured; disabling stops delivery of the S3 connection-log audit trail. Application load balancers only.",
+      "target": {
+        "resourceType": "aws_lb",
+        "path": [
+          "connection_logs"
+        ]
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to update."
+        },
+        {
+          "name": "enabled",
+          "label": "Connection logs enabled",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; provider default false even when a bucket is set."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (connection_logs.enabled)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-health-check-logs-enabled",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable health check logs",
+      "summary": "Turn health-check logging on or off. Enabling needs a log bucket already set up; disabling stops that audit trail.",
+      "description": "Toggle health_check_logs.enabled. Enabling requires a health_check_logs bucket to already be configured; disabling stops delivery of the S3 health-check-log audit trail. Application load balancers only.",
+      "target": {
+        "resourceType": "aws_lb",
+        "path": [
+          "health_check_logs"
+        ]
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to update."
+        },
+        {
+          "name": "enabled",
+          "label": "Health check logs enabled",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; provider default false even when a bucket is set."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (health_check_logs.enabled)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "alb-set-deletion-protection",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle deletion protection",
+      "summary": "Turn deletion protection on or off. Disabling removes the safeguard against deleting this load balancer. An engineer reviews it first.",
+      "description": "Set enable_deletion_protection. Disabling removes the guardrail that blocks deletion of the load balancer via the AWS API and Terraform.",
+      "target": {
+        "attr": "enable_deletion_protection",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to modify."
+        },
+        {
+          "name": "enabled",
+          "label": "Deletion protection enabled",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; provider default false."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (enable_deletion_protection)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "alb-set-waf-fail-open",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle WAF fail-open",
+      "summary": "Set whether traffic bypasses WAF inspection if AWS WAF becomes unreachable. A security trade-off; an engineer reviews it first.",
+      "description": "Set enable_waf_fail_open, controlling whether a WAF-associated load balancer routes requests when it cannot reach AWS WAF. Enabling lets traffic bypass WAF inspection during a WAF outage.",
+      "target": {
+        "attr": "enable_waf_fail_open",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to modify."
+        },
+        {
+          "name": "enabled",
+          "label": "WAF fail-open enabled",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; provider default false."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (enable_waf_fail_open)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "alb-set-enforce-sg-inbound-privatelink",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set security-group enforcement on PrivateLink traffic",
+      "summary": "Turn on or off enforcing security-group inbound rules for PrivateLink traffic. A security boundary change; an engineer reviews it first.",
+      "description": "Set enforce_security_group_inbound_rules_on_private_link_traffic (on/off), controlling whether inbound security-group rules are enforced for PrivateLink-originated traffic. Network load balancers only; a security-group boundary control.",
+      "target": {
+        "attr": "enforce_security_group_inbound_rules_on_private_link_traffic",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to modify."
+        },
+        {
+          "name": "mode",
+          "label": "Enforce SG inbound rules on PrivateLink (on/off)",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "on",
+              "off"
+            ]
+          },
+          "help": "Doc enum on/off (network type only)."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (enforce_security_group_inbound_rules_on_private_link_traffic)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-internal",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set load balancer internal/internet-facing scheme",
+      "summary": "Switch between internal and internet-facing. Applying REPLACES the load balancer: new DNS name and a brief outage.",
+      "description": "Set `internal` (internet-facing to internal or back). CAUTION: `internal` is ForceNew on aws_lb — Terraform REPLACES the load balancer: new ARN and DNS name, and every listener and target-group attachment is recreated. Consumers of the old DNS name break until repointed. Engineer-authored change.",
+      "target": {
+        "attr": "internal",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to modify."
+        },
+        {
+          "name": "internal",
+          "label": "Internal (true) / internet-facing (false)",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; provider default false (internet-facing)."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "Brief outage while the load balancer is replaced; the DNS name changes, so consumers must repoint",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (internal is ForceNew)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "alb-set-ip-address-type",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set IP address type",
+      "summary": "Change which IP address families, including public IPv6, this load balancer accepts. A public-exposure change; an engineer reviews it first.",
+      "description": "Set ip_address_type, controlling which IP address families (including public IPv6) are reachable on the load balancer. A public-access exposure change with LB-wide blast radius.",
+      "target": {
+        "attr": "ip_address_type",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to modify."
+        },
+        {
+          "name": "ip_address_type",
+          "label": "IP address type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ipv4",
+              "dualstack",
+              "dualstack-without-public-ipv4"
+            ]
+          },
+          "help": "Doc enum; dualstack-without-public-ipv4 is application type only."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (ip_address_type)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-load-balancer-type",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set load balancer type",
+      "summary": "Change the load balancer type: application, network, or gateway. Applying REPLACES it: new DNS name, brief outage, everything recreated.",
+      "description": "Set `load_balancer_type` (application/network/gateway). CAUTION: ForceNew on aws_lb — Terraform REPLACES the load balancer entirely (new ARN and DNS name, all listeners and attachments recreated). Engineer-authored change.",
+      "target": {
+        "attr": "load_balancer_type",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to modify."
+        },
+        {
+          "name": "load_balancer_type",
+          "label": "Load balancer type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "application",
+              "gateway",
+              "network"
+            ]
+          },
+          "help": "Doc enum; provider default application."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "Brief outage while the load balancer is replaced; the DNS name changes, so consumers must repoint",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (load_balancer_type is ForceNew)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "alb-set-secondary-ips-per-subnet",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set secondary IPs auto-assigned per subnet",
+      "summary": "Set how many secondary IPs are auto-assigned per subnet (network load balancers). Decreasing this value REPLACES it, with a brief outage.",
+      "description": "Set secondary_ips_auto_assigned_per_subnet (0-7) on a network load balancer. Per the doc, decreasing this value forces full replacement of the load balancer.",
+      "target": {
+        "attr": "secondary_ips_auto_assigned_per_subnet",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to modify."
+        },
+        {
+          "name": "count",
+          "label": "Secondary IPs per subnet (0-7)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 7
+          },
+          "help": "Doc range 0-7; default 0 (network type only). Decreasing forces replacement."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none unless decreased (decrease forces replacement)",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (secondary_ips_auto_assigned_per_subnet)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-name",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Rename the load balancer",
+      "summary": "Rename the load balancer. Applying REPLACES it: new DNS name, brief outage, and old records or hardcoded references break.",
+      "description": "Set name (max 32 chars, alphanumeric and hyphens, no leading or trailing hyphen). The load balancer's AWS-assigned DNS name is derived from this value; changing it breaks downstream DNS records and hardcoded references.",
+      "target": {
+        "attr": "name",
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "alb",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "help": "ALB to rename."
+        },
+        {
+          "name": "name",
+          "label": "Load balancer name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9]([A-Za-z0-9-]{0,30}[A-Za-z0-9])?$"
+          },
+          "help": "Max 32 chars, alphanumeric/hyphens, no leading/trailing hyphen (doc constraint)."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief (AWS-assigned DNS name changes)",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (name)",
+      "group": "tags-naming"
+    },
+    {
+      "id": "alb-add-target-group-tag",
+      "service": "alb",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a target group",
+      "summary": "Add a tag to a target group for cost tracking or ownership. Metadata only, no effect on traffic.",
+      "description": "Adds a key/value pair to an aws_lb_target_group's tags map for cost allocation or ownership tracking; purely metadata with no effect on traffic.",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to tag."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9:_-]{0,127}$"
+          },
+          "help": "e.g. CostCentre, Owner, Environment."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^.{1,255}$"
+          },
+          "help": "The tag value (1\u2013128 characters)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "create"
+    },
+    {
+      "id": "alb-tg-set-connection-termination",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target group connection termination",
+      "summary": "Set whether the load balancer cuts a target's connections at the end of the drain period instead of letting them finish. Network type only.",
+      "description": "Sets connection_termination on an NLB target group, controlling whether the load balancer terminates connections at the end of the deregistration timeout instead of letting them drain.",
+      "target": {
+        "attr": "connection_termination",
+        "resourceType": "aws_lb_target_group"
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "connection_termination",
+          "label": "Terminate connections at deregistration timeout",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; default false. NLB target groups only."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (connection_termination)",
+      "group": "connectivity-access",
+      "pinned": 3
+    },
+    {
+      "id": "alb-tg-set-health-check-enabled",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable target group health checks",
+      "summary": "Turn target group health checks on or off. Disabling removes failure detection, so an unhealthy target can stay in rotation.",
+      "description": "Sets health_check.enabled; disabling health checks removes failure detection for this target group so unhealthy targets stay in rotation.",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "health_check"
+        ]
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "health_check_enabled",
+          "label": "Health checks enabled",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; default true.",
+          "attr": "enabled"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (health_check.enabled)",
+      "group": "availability-lifecycle",
+      "pinned": 4
+    },
+    {
+      "id": "alb-tg-set-health-check-port",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target group health check port",
+      "summary": "Set the port used to health-check this target group's servers. A wrong port marks healthy targets unhealthy and removes capacity.",
+      "description": "Sets health_check.port, the port the load balancer uses to health-check targets; a wrong port marks targets unhealthy and removes capacity.",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "health_check"
+        ]
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "health_check_port",
+          "label": "Health check port",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(traffic-port|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-6])$"
+          },
+          "help": "'traffic-port' (default) or a port number 1-65536.",
+          "attr": "port"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (health_check.port)",
+      "group": "availability-lifecycle",
+      "pinned": 5
+    },
+    {
+      "id": "alb-tg-set-health-check-protocol",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target group health check protocol",
+      "summary": "Set the protocol used to health-check this target group. A mismatch with what the targets actually speak marks them unhealthy.",
+      "description": "Sets health_check.protocol; a protocol mismatch with the targets causes health checks to fail and marks targets unhealthy.",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "health_check"
+        ]
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "health_check_protocol",
+          "label": "Health check protocol",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "TCP",
+              "HTTP",
+              "HTTPS"
+            ]
+          },
+          "help": "Default HTTP. TCP is not supported if the target group protocol is HTTP/HTTPS; not applicable for lambda targets.",
+          "attr": "protocol"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (health_check.protocol)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "alb-tg-set-lambda-multi-value-headers",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set Lambda multi-value headers",
+      "summary": "Change the request and response format sent to Lambda targets. If the function isn't updated to match, requests through it can fail.",
+      "description": "Sets lambda_multi_value_headers_enabled, which changes the request/response event format sent to Lambda targets; if the function is not updated to match, requests through this target group can fail.",
+      "target": {
+        "attr": "lambda_multi_value_headers_enabled",
+        "resourceType": "aws_lb_target_group"
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "lambda_multi_value_headers_enabled",
+          "label": "Lambda multi-value headers enabled",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; default false. Only applies when target_type is lambda."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (lambda_multi_value_headers_enabled)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-tg-set-anomaly-mitigation",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target group load balancing anomaly mitigation",
+      "summary": "Turn on or off automatic mitigation for targets behaving abnormally. Only works with the weighted-random load-balancing algorithm.",
+      "description": "Sets load_balancing_anomaly_mitigation on/off, a reliability toggle that enables automated mitigation for anomalous targets. Only supported with the weighted_random algorithm.",
+      "target": {
+        "attr": "load_balancing_anomaly_mitigation",
+        "resourceType": "aws_lb_target_group"
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "load_balancing_anomaly_mitigation",
+          "label": "Anomaly mitigation",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "on",
+              "off"
+            ]
+          },
+          "help": "Default off. Only valid when the load balancing algorithm is weighted_random."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (load_balancing_anomaly_mitigation)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-tg-set-preserve-client-ip",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target group client IP preservation",
+      "summary": "Turn on or off passing the real client IP through to targets. Changing it can break backend logic that depends on the source address.",
+      "description": "Sets preserve_client_ip, controlling whether targets see the original client IP; changing it can break backend logic that depends on the source address.",
+      "target": {
+        "attr": "preserve_client_ip",
+        "resourceType": "aws_lb_target_group"
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "preserve_client_ip",
+          "label": "Preserve client IP",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; provider default depends on target group type/protocol."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (preserve_client_ip)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-tg-set-proxy-protocol-v2",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target group proxy protocol v2",
+      "summary": "Turn on or off Proxy Protocol v2 between the load balancer and its targets. If targets aren't ready for it, connections break immediately.",
+      "description": "Sets proxy_protocol_v2 on an NLB target group, which changes the wire format between the load balancer and targets; if targets are not configured to expect the proxy protocol header, connections break immediately.",
+      "target": {
+        "attr": "proxy_protocol_v2",
+        "resourceType": "aws_lb_target_group"
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "proxy_protocol_v2",
+          "label": "Proxy protocol v2 enabled",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; default false. NLB target groups only."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (proxy_protocol_v2)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-tg-set-slow-start",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target group slow start duration",
+      "summary": "Set the warm-up period that gradually ramps up traffic to a newly registered target. Disabling or shortening it can overload new targets.",
+      "description": "Sets slow_start, the warm-up ramp during which a newly registered target receives a linearly increasing share of traffic; disabling or shortening it can overload new targets during deploys.",
+      "target": {
+        "attr": "slow_start",
+        "resourceType": "aws_lb_target_group"
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "slow_start_seconds",
+          "label": "Slow start duration (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 900
+          },
+          "help": "0 disables slow start; otherwise 30-900 seconds (values 1-29 are rejected by AWS). Default 0."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (slow_start)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-tg-set-stickiness-enabled",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable target group stickiness",
+      "summary": "Turn session stickiness on or off for this target group. Toggling it can break session continuity for users mid-session.",
+      "description": "Sets stickiness.enabled, turning session affinity on or off; toggling it can drop session continuity for active users mid-session.",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "stickiness"
+        ]
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "stickiness_enabled",
+          "label": "Stickiness enabled",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; default true.",
+          "attr": "enabled"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (stickiness.enabled)",
+      "keywords": [
+        "session stickiness",
+        "sticky sessions"
+      ],
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-tg-set-stickiness-type",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target group stickiness type",
+      "summary": "Change how this target group computes session stickiness. Switching the mechanism can disrupt users with an active session.",
+      "description": "Sets stickiness.type, the sticky-routing mechanism; changing it entirely alters how session affinity is computed and can disrupt active sessions.",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "stickiness"
+        ]
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "stickiness_type",
+          "label": "Stickiness type",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "lb_cookie",
+              "app_cookie",
+              "source_ip",
+              "source_ip_dest_ip",
+              "source_ip_dest_ip_proto"
+            ]
+          },
+          "help": "lb_cookie/app_cookie (ALB), source_ip (NLB), source_ip_dest_ip and source_ip_dest_ip_proto (GWLB).",
+          "attr": "type"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (stickiness.type)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-tg-set-stickiness-cookie-duration",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target group stickiness cookie duration",
+      "summary": "Set how long the stickiness cookie keeps a client routed to the same target. Shortening it a lot can drop affinity for active users.",
+      "description": "Sets stickiness.cookie_duration (used with type lb_cookie), the period a client keeps routing to the same target; shortening it drastically can drop session affinity for active users.",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "stickiness"
+        ]
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "cookie_duration_seconds",
+          "label": "Cookie duration (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 604800
+          },
+          "help": "1 second to 1 week (604800). Default 86400 (1 day). Only used when stickiness type is lb_cookie.",
+          "attr": "cookie_duration"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (stickiness.cookie_duration)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-tg-set-target-failover",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Set target group failover flow handling",
+      "summary": "Set whether existing network flows are rebalanced when a target is removed or turns unhealthy. Gateway load balancer target groups only.",
+      "description": "Sets both target_failover.on_deregistration and target_failover.on_unhealthy on a GWLB target group to control how existing flows are handled when a target is deregistered or becomes unhealthy. AWS requires both attributes to be equal, so this operation sets them together.",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "target_failover"
+        ]
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "flow_rebalancing",
+          "label": "Existing-flow handling (deregistration and unhealthy)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "rebalance",
+              "no_rebalance"
+            ]
+          },
+          "help": "Default no_rebalance. Applied to both on_deregistration and on_unhealthy, which the provider requires to match. GWLB target groups only.",
+          "attr": "on_deregistration"
+        },
+        {
+          "name": "flow_rebalancing",
+          "label": "Existing-flow handling (deregistration and unhealthy)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "rebalance",
+              "no_rebalance"
+            ]
+          },
+          "help": "Default no_rebalance. Applied to both on_deregistration and on_unhealthy, which the provider requires to match. GWLB target groups only.",
+          "attr": "on_unhealthy"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (target_failover.on_deregistration/on_unhealthy)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "alb-tg-set-unhealthy-connection-termination",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set termination of connections to unhealthy targets",
+      "summary": "Set whether client connections are cut the instant a target turns unhealthy, or left to keep hitting it. Network target groups only.",
+      "description": "Sets target_health_state.enable_unhealthy_connection_termination on an NLB (TCP/TLS) target group; disabling it lets clients keep hitting a target that has become unhealthy.",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "target_health_state"
+        ]
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "enable_unhealthy_connection_termination",
+          "label": "Terminate connections to unhealthy targets",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Boolean; default true. NLB target groups with protocol TCP/TLS only."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (target_health_state.enable_unhealthy_connection_termination)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-tg-set-unhealthy-draining-interval",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set unhealthy target draining interval",
+      "summary": "Set how long in-flight requests may finish after a target turns unhealthy. Only applies when connections aren't cut immediately.",
+      "description": "Sets target_health_state.unhealthy_draining_interval, the time in-flight requests are allowed to complete when a target becomes unhealthy. Only meaningful when enable_unhealthy_connection_termination is false.",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "target_health_state"
+        ]
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "unhealthy_draining_interval_seconds",
+          "label": "Unhealthy draining interval (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 360000
+          },
+          "help": "0-360000 seconds. Default 0. Applies only when enable_unhealthy_connection_termination is false.",
+          "attr": "unhealthy_draining_interval"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (target_health_state.unhealthy_draining_interval)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-tg-set-dns-failover-min-healthy-count",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set DNS failover minimum healthy target count",
+      "summary": "Set how many healthy targets are needed before an Availability Zone is marked unhealthy for DNS failover.",
+      "description": "Sets target_group_health.dns_failover.minimum_healthy_targets_count, the number of healthy targets required before the Availability Zone is marked unhealthy in DNS (Route 53 failover).",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "target_group_health",
+          "dns_failover"
+        ]
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "minimum_healthy_targets_count",
+          "label": "Minimum healthy targets (count)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(off|[1-9][0-9]*)$"
+          },
+          "help": "'off' (default) or a positive integer up to the number of registered targets."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (target_group_health.dns_failover.minimum_healthy_targets_count)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "alb-tg-set-dns-failover-min-healthy-percentage",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set DNS failover minimum healthy target percentage",
+      "summary": "Set what percentage of targets must be healthy before an Availability Zone is marked unhealthy for DNS failover.",
+      "description": "Sets target_group_health.dns_failover.minimum_healthy_targets_percentage, the percentage of healthy targets required before the Availability Zone is marked unhealthy in DNS (Route 53 failover).",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "target_group_health",
+          "dns_failover"
+        ]
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "minimum_healthy_targets_percentage",
+          "label": "Minimum healthy targets (percentage)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(off|100|[1-9][0-9]?)$"
+          },
+          "help": "'off' (default) or an integer 1-100."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (target_group_health.dns_failover.minimum_healthy_targets_percentage)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "alb-tg-set-unhealthy-routing-min-healthy-count",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set unhealthy-state routing minimum healthy target count",
+      "summary": "Set the healthy-target count below which the load balancer routes to every target, including unhealthy ones, as a last resort.",
+      "description": "Sets target_group_health.unhealthy_state_routing.minimum_healthy_targets_count, the number of healthy targets below which traffic is sent to all targets (including unhealthy ones) as a last resort.",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "target_group_health",
+          "unhealthy_state_routing"
+        ]
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "minimum_healthy_targets_count",
+          "label": "Minimum healthy targets (count)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "help": "A positive integer (1 to the number of registered targets). Default 1."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (target_group_health.unhealthy_state_routing.minimum_healthy_targets_count)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-tg-set-unhealthy-routing-min-healthy-percentage",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set unhealthy-state routing minimum healthy target percentage",
+      "summary": "Set the healthy-target percentage below which the load balancer routes to every target, including unhealthy ones, as a last resort.",
+      "description": "Sets target_group_health.unhealthy_state_routing.minimum_healthy_targets_percentage, the percentage of healthy targets below which traffic is sent to all targets (including unhealthy ones) as a last resort.",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "target_group_health",
+          "unhealthy_state_routing"
+        ]
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to modify."
+        },
+        {
+          "name": "minimum_healthy_targets_percentage",
+          "label": "Minimum healthy targets (percentage)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(off|100|[1-9][0-9]?)$"
+          },
+          "help": "'off' (default) or an integer 1-100."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (target_group_health.unhealthy_state_routing.minimum_healthy_targets_percentage)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-tg-set-protocol",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target group protocol (forces replacement)",
+      "summary": "Change the target group's protocol. Applying REPLACES it: targets must re-register and listener rules re-point, with a brief interruption.",
+      "description": "Sets protocol on the target group. This is a ForceNew argument: changing it destroys and recreates the target group, requiring targets to re-register and listener rules to be re-pointed.",
+      "target": {
+        "attr": "protocol",
+        "resourceType": "aws_lb_target_group"
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to replace."
+        },
+        {
+          "name": "protocol",
+          "label": "Protocol",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "GENEVE",
+              "HTTP",
+              "HTTPS",
+              "TCP",
+              "TCP_UDP",
+              "TLS",
+              "UDP",
+              "QUIC",
+              "TCP_QUIC"
+            ]
+          },
+          "help": "Required when target_type is instance, ip, or alb; not applicable for lambda."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (protocol)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "alb-tg-set-protocol-version",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target group protocol version (forces replacement)",
+      "summary": "Change the target group's protocol version. Applying REPLACES it and can break protocol compatibility with targets; brief interruption.",
+      "description": "Sets protocol_version on the target group. This is a ForceNew argument: changing GRPC/HTTP2/HTTP1 destroys and recreates the target group and can break target protocol compatibility.",
+      "target": {
+        "attr": "protocol_version",
+        "resourceType": "aws_lb_target_group"
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to replace."
+        },
+        {
+          "name": "protocol_version",
+          "label": "Protocol version",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "GRPC",
+              "HTTP2",
+              "HTTP1"
+            ]
+          },
+          "help": "Default HTTP1. Only applicable when protocol is HTTP or HTTPS."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (protocol_version)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "alb-tg-set-target-type",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target group target type (forces replacement)",
+      "summary": "Change what kind of targets this group holds: instances, IPs, Lambda, or another load balancer. Applying REPLACES it; brief interruption.",
+      "description": "Sets target_type on the target group. This is a ForceNew argument: changing the fundamental target type destroys and recreates the target group.",
+      "target": {
+        "attr": "target_type",
+        "resourceType": "aws_lb_target_group"
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to replace."
+        },
+        {
+          "name": "target_type",
+          "label": "Target type",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "instance",
+              "ip",
+              "lambda",
+              "alb"
+            ]
+          },
+          "help": "Default instance. NLBs do not support lambda; ALBs do not support alb targets."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (target_type)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "alb-tg-set-ip-address-type",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target group IP address type (forces replacement)",
+      "summary": "Change the target group's IP address type. Applying REPLACES it, causing a brief interruption.",
+      "description": "Sets ip_address_type on the target group. This is a ForceNew argument: changing the target IP addressing destroys and recreates the target group.",
+      "target": {
+        "attr": "ip_address_type",
+        "resourceType": "aws_lb_target_group"
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to replace."
+        },
+        {
+          "name": "ip_address_type",
+          "label": "IP address type",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ipv4",
+              "ipv6"
+            ]
+          },
+          "help": "Only applicable when target_type is ip."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (ip_address_type)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "alb-tg-set-name",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target group name (forces replacement)",
+      "summary": "Rename the target group. Applying REPLACES it: targets must re-register and listener rules re-point, with a brief interruption.",
+      "description": "Sets name on the target group. This is a ForceNew argument: renaming destroys and recreates the target group, requiring targets to re-register and listener rules to be re-pointed.",
+      "target": {
+        "attr": "name",
+        "resourceType": "aws_lb_target_group"
+      },
+      "params": [
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group to replace."
+        },
+        {
+          "name": "name",
+          "label": "New target group name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9]([a-zA-Z0-9-]{0,30}[a-zA-Z0-9])?$"
+          },
+          "help": "Max 32 characters, alphanumeric and hyphens only, cannot begin or end with a hyphen. Must be unique per region/account."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (name)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "alb-add-listener-rule-tag",
+      "service": "alb",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a listener rule",
+      "summary": "Add a tag to a listener rule for ownership or cost tracking. Metadata only, no effect on routing.",
+      "description": "Adds a key/value entry to an aws_lb_listener_rule's tags map for ownership or cost-allocation tracking; purely metadata with no effect on routing. Mirrors the existing alb-add-tag operation applied to this resource type.",
+      "target": {
+        "resourceType": "aws_lb_listener_rule",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "listener_rule",
+          "label": "Listener rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener_rule/address",
+          "required": true,
+          "help": "Listener rule to tag."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9:_-]{0,127}$"
+          },
+          "help": "e.g. Owner, CostCentre, Environment."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^.{1,255}$"
+          },
+          "help": "The tag value (1\u2013128 characters)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "create"
+    },
+    {
+      "id": "alb-set-listener-rule-fixed-response-content-type",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set listener rule fixed-response content type",
+      "summary": "Set the content type of the fixed response this listener rule returns, such as plain text or JSON.",
+      "description": "Changes action.fixed_response.content_type on a rule whose action already returns a fixed response; selects the MIME type of the static response body.",
+      "target": {
+        "resourceType": "aws_lb_listener_rule",
+        "path": [
+          "action",
+          "fixed_response"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener_rule",
+          "label": "Listener rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener_rule/address",
+          "required": true,
+          "help": "Listener rule whose fixed-response action to update."
+        },
+        {
+          "name": "content_type",
+          "label": "Content type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "text/plain",
+              "text/css",
+              "text/html",
+              "application/javascript",
+              "application/json"
+            ]
+          },
+          "help": "MIME type of the fixed response body returned to the client."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (action.fixed_response.content_type)",
+      "group": "connectivity-access",
+      "pinned": 1
+    },
+    {
+      "id": "alb-set-listener-rule-fixed-response-status-code",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set listener rule fixed-response status code",
+      "summary": "Set the HTTP status code this listener rule's fixed response returns, such as 200, 404, or 503.",
+      "description": "Changes action.fixed_response.status_code on a rule whose action already returns a fixed response; must be a three-digit HTTP code in the 2XX, 4XX or 5XX range (AWS API pattern ^(2|4|5)\\d\\d$).",
+      "target": {
+        "resourceType": "aws_lb_listener_rule",
+        "path": [
+          "action",
+          "fixed_response"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener_rule",
+          "label": "Listener rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener_rule/address",
+          "required": true,
+          "help": "Listener rule whose fixed-response action to update."
+        },
+        {
+          "name": "status_code",
+          "label": "Status code",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(2|4|5)[0-9][0-9]$"
+          },
+          "help": "Three-digit HTTP code starting with 2, 4, or 5 (e.g. 200, 404, 503)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (action.fixed_response.status_code)",
+      "group": "connectivity-access",
+      "pinned": 2
+    },
+    {
+      "id": "alb-set-listener-rule-redirect-protocol",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set listener rule redirect protocol",
+      "summary": "Set the protocol this listener rule redirects to. Choosing HTTP downgrades users from an encrypted connection on their next request.",
+      "description": "Changes action.redirect.protocol on a rule whose action already redirects. Setting HTTP downgrades users from an encrypted connection on their next request; #{protocol} preserves the incoming protocol.",
+      "target": {
+        "resourceType": "aws_lb_listener_rule",
+        "path": [
+          "action",
+          "redirect"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener_rule",
+          "label": "Listener rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener_rule/address",
+          "required": true,
+          "help": "Listener rule whose redirect action to update."
+        },
+        {
+          "name": "protocol",
+          "label": "Redirect protocol",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "HTTP",
+              "HTTPS",
+              "#{protocol}"
+            ]
+          },
+          "help": "Protocol to use; #{protocol} preserves the client's incoming protocol."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (action.redirect.protocol)",
+      "group": "connectivity-access",
+      "pinned": 3
+    },
+    {
+      "id": "alb-set-listener-rule-redirect-status-code",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set listener rule redirect status code",
+      "summary": "Choose whether this rule's redirect is permanent or temporary. Permanent redirects get cached by browsers and CDNs, even after you revert.",
+      "description": "Changes action.redirect.status_code between permanent (HTTP_301) and temporary (HTTP_302) on a rule whose action already redirects. Note: HTTP_301 responses are cached by browsers/CDNs and can persist in client caches even after a revert.",
+      "target": {
+        "resourceType": "aws_lb_listener_rule",
+        "path": [
+          "action",
+          "redirect"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener_rule",
+          "label": "Listener rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener_rule/address",
+          "required": true,
+          "help": "Listener rule whose redirect action to update."
+        },
+        {
+          "name": "status_code",
+          "label": "Redirect status code",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "HTTP_301",
+              "HTTP_302"
+            ]
+          },
+          "help": "Redirect type: HTTP_301 is a permanent redirect, HTTP_302 a temporary one."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (action.redirect.status_code)",
+      "group": "connectivity-access",
+      "pinned": 4
+    },
+    {
+      "id": "alb-set-listener-rule-redirect-port",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set listener rule redirect port",
+      "summary": "Set the destination port this listener rule redirects to.",
+      "description": "Changes action.redirect.port on a rule whose action already redirects; accepts a numeric port 1-65535 (the #{port} passthrough placeholder is not offered through this bounded form).",
+      "target": {
+        "resourceType": "aws_lb_listener_rule",
+        "path": [
+          "action",
+          "redirect"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener_rule",
+          "label": "Listener rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener_rule/address",
+          "required": true,
+          "help": "Listener rule whose redirect action to update."
+        },
+        {
+          "name": "port",
+          "label": "Redirect port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "help": "Numeric destination port, 1-65535."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (action.redirect.port)",
+      "group": "connectivity-access",
+      "pinned": 5
+    },
+    {
+      "id": "alb-set-listener-rule-forward-target-group-weight",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set listener rule weighted-forward target group weight",
+      "summary": "Set how much traffic share a target group gets in this rule's weighted forward, for canary or blue-green rollouts.",
+      "description": "Sets the weight (0-999) for a specific target group within a rule's weighted forward action, shifting the share of traffic it receives (e.g. canary / blue-green). The target group selects which member of the forward block to reweight.",
+      "target": {
+        "resourceType": "aws_lb_listener_rule",
+        "path": [
+          "action",
+          "forward",
+          "target_group"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener_rule",
+          "label": "Listener rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener_rule/address",
+          "required": true,
+          "help": "Listener rule whose weighted forward action to update."
+        },
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Target group within the rule's weighted forward whose weight to set."
+        },
+        {
+          "name": "weight",
+          "label": "Weight",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 999
+          },
+          "help": "Relative weight 0-999 for this target group."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (action.forward.target_group.weight)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-listener-rule-forward-stickiness-enabled",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable listener rule weighted-forward stickiness",
+      "summary": "Turn target-group stickiness on or off for this rule's weighted forward. Toggling it can briefly disrupt users with an active session.",
+      "description": "Toggles action.forward.stickiness.enabled for a rule's weighted forward action. Turning target-group affinity on or off can disrupt in-flight user sessions.",
+      "target": {
+        "resourceType": "aws_lb_listener_rule",
+        "path": [
+          "action",
+          "forward",
+          "stickiness"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener_rule",
+          "label": "Listener rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener_rule/address",
+          "required": true,
+          "help": "Listener rule whose weighted forward stickiness to update."
+        },
+        {
+          "name": "enabled",
+          "label": "Stickiness enabled",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Enable or disable listener rule weighted-forward stickiness: true enables or disable listener rule weighted-forward stickiness, false disables it."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (action.forward.stickiness.enabled)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-listener-rule-forward-stickiness-duration",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set listener rule weighted-forward stickiness duration",
+      "summary": "Set how long this rule's weighted-forward stickiness lasts. Shortening it a lot can drop affinity for users with an active session.",
+      "description": "Sets action.forward.stickiness.duration (1-604800 seconds / up to 7 days) for a rule's weighted forward action. Drastically shortening it can drop target-group affinity for active sessions.",
+      "target": {
+        "resourceType": "aws_lb_listener_rule",
+        "path": [
+          "action",
+          "forward",
+          "stickiness"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener_rule",
+          "label": "Listener rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener_rule/address",
+          "required": true,
+          "help": "Listener rule whose weighted forward stickiness to update."
+        },
+        {
+          "name": "duration_seconds",
+          "label": "Stickiness duration (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 604800
+          },
+          "help": "1-604800 seconds (up to 7 days).",
+          "attr": "duration"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (action.forward.stickiness.duration)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-listener-rule-cognito-on-unauth-request",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set listener rule Cognito on-unauthenticated-request behavior",
+      "summary": "Set how this rule treats requests without a login: let through, block, or send to sign in. A security control; an engineer reviews it first.",
+      "description": "Changes action.authenticate_cognito.on_unauthenticated_request. Setting allow lets unauthenticated users through, disabling the Cognito authentication gate; deny blocks them; authenticate starts the login flow. Engineer-reviewed because it is a security-boundary control.",
+      "target": {
+        "resourceType": "aws_lb_listener_rule",
+        "path": [
+          "action",
+          "authenticate_cognito"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener_rule",
+          "label": "Listener rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener_rule/address",
+          "required": true,
+          "help": "Listener rule whose Cognito authenticate action to update."
+        },
+        {
+          "name": "behavior",
+          "label": "On unauthenticated request",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "deny",
+              "allow",
+              "authenticate"
+            ]
+          },
+          "help": "How to handle an unauthenticated request: deny blocks it, allow lets it through unauthenticated, authenticate challenges the user to log in.",
+          "attr": "on_unauthenticated_request"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (action.authenticate_cognito.on_unauthenticated_request)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-set-listener-rule-oidc-on-unauth-request",
+      "service": "alb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set listener rule OIDC on-unauthenticated-request behavior",
+      "summary": "Set how this rule treats requests without an OIDC login: allow, block, or send to sign in. An engineer reviews it first.",
+      "description": "Changes action.authenticate_oidc.on_unauthenticated_request. Setting allow lets unauthenticated users through, disabling the OIDC authentication gate; deny blocks them; authenticate starts the login flow. Engineer-reviewed because it is a security-boundary control.",
+      "target": {
+        "resourceType": "aws_lb_listener_rule",
+        "path": [
+          "action",
+          "authenticate_oidc"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener_rule",
+          "label": "Listener rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener_rule/address",
+          "required": true,
+          "help": "Listener rule whose OIDC authenticate action to update."
+        },
+        {
+          "name": "behavior",
+          "label": "On unauthenticated request",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "deny",
+              "allow",
+              "authenticate"
+            ]
+          },
+          "help": "How to handle an unauthenticated request: deny blocks it, allow lets it through unauthenticated, authenticate challenges the user to log in.",
+          "attr": "on_unauthenticated_request"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (action.authenticate_oidc.on_unauthenticated_request)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "alb-add-target-group",
+      "service": "alb",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a new target group",
+      "summary": "Request a new target group for a backend or blue-green cutover; an engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Create a target group for a new backend or a blue/green cutover, with the same health-check fields you can tune later. Submitting routes the complete specification to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_lb_target_group"
+      },
+      "params": [
+        {
+          "name": "tg_name",
+          "label": "Target group name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9-]{2,32}$"
+          },
+          "help": "Up to 32 letters, numbers and dashes (an AWS limit)."
+        },
+        {
+          "name": "protocol",
+          "label": "Protocol",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "protocol",
+          "group": "backend",
+          "bounds": {
+            "allowlist": [
+              "HTTPS",
+              "HTTP"
+            ]
+          },
+          "default": "HTTPS",
+          "help": "HTTPS unless the backend only speaks HTTP."
+        },
+        {
+          "name": "port",
+          "label": "Backend port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "port",
+          "group": "backend",
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "default": 443,
+          "help": "The port your servers listen on."
+        },
+        {
+          "name": "vpc",
+          "label": "Network (VPC)",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_vpc/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc_id",
+          "group": "backend",
+          "help": "Which network the targets live in."
+        },
+        {
+          "name": "target_type",
+          "label": "Targets are",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "target_type",
+          "group": "backend",
+          "bounds": {
+            "allowlist": [
+              "instance",
+              "ip"
+            ]
+          },
+          "default": "instance",
+          "help": "Instance for EC2 hosts; IP for addresses outside EC2. This choice is fixed once created."
+        },
+        {
+          "name": "health_path",
+          "label": "Health check path",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "path",
+          "path": [
+            "health_check"
+          ],
+          "group": "health-check",
+          "bounds": {
+            "pattern": "^/[^\\s]{0,200}$"
+          },
+          "default": "/",
+          "help": "The URL the load balancer probes."
+        },
+        {
+          "name": "healthy_threshold",
+          "label": "Healthy after (checks)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "healthy_threshold",
+          "path": [
+            "health_check"
+          ],
+          "group": "health-check",
+          "tier": "advanced",
+          "bounds": {
+            "min": 2,
+            "max": 10
+          },
+          "default": 3,
+          "help": "Consecutive successes before a target counts as healthy — the same field you can tune later."
+        },
+        {
+          "name": "unhealthy_threshold",
+          "label": "Unhealthy after (checks)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "unhealthy_threshold",
+          "path": [
+            "health_check"
+          ],
+          "group": "health-check",
+          "tier": "advanced",
+          "bounds": {
+            "min": 2,
+            "max": 10
+          },
+          "default": 3,
+          "help": "Consecutive failures before a target counts as unhealthy."
+        },
+        {
+          "name": "interval_seconds",
+          "label": "Check interval (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "interval",
+          "path": [
+            "health_check"
+          ],
+          "group": "health-check",
+          "tier": "advanced",
+          "bounds": {
+            "min": 5,
+            "max": 300
+          },
+          "default": 30,
+          "help": "How often the load balancer probes each target."
+        },
+        {
+          "name": "matcher",
+          "label": "Healthy response codes",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "matcher",
+          "path": [
+            "health_check"
+          ],
+          "group": "health-check",
+          "tier": "advanced",
+          "bounds": {
+            "pattern": "^[0-9]{3}(-[0-9]{3})?$"
+          },
+          "default": "200-399",
+          "help": "HTTP status codes that count as healthy, like 200-399."
+        },
+        {
+          "name": "deregistration_delay",
+          "label": "Drain time (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "deregistration_delay",
+          "group": "backend",
+          "tier": "advanced",
+          "bounds": {
+            "min": 0,
+            "max": 3600
+          },
+          "default": 300,
+          "help": "How long to let in-flight requests finish when a target is removed."
+        },
+        {
+          "name": "resource_name",
+          "label": "Target group name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this target group holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this target group."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new target group",
+        "blue green cutover"
+      ],
+      "decisions": [
+        "Registering servers into this group happens in the console today — the estate does not manage registrations in Terraform",
+        "Wire it into a listener with the add-a-listener-rule action after creation"
+      ]
+    },
+    {
+      "id": "alb-create-load-balancer",
+      "service": "alb",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new load balancer",
+      "summary": "Request a brand-new Application or Network Load Balancer; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new load balancer as a complete specification: type, internal/internet-facing, subnets, security groups and deletion protection. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review. Listeners and target groups are added afterward with the existing create actions.",
+      "target": {
+        "resourceType": "aws_lb"
+      },
+      "params": [
+        {
+          "name": "lb_name",
+          "label": "Load balancer name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9]([A-Za-z0-9-]{0,30}[A-Za-z0-9])?$"
+          },
+          "help": "Max 32 chars, alphanumeric/hyphens, no leading/trailing hyphen (doc constraint) \u2014 same rule the rename action enforces."
+        },
+        {
+          "name": "load_balancer_type",
+          "label": "Load balancer type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "load_balancer_type",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              "application",
+              "network"
+            ]
+          },
+          "default": "application",
+          "help": "Gateway Load Balancer is an engineer decision (specialized target-group type) \u2014 use the request-a-change catch-all for that."
+        },
+        {
+          "name": "internal",
+          "label": "Internal (private)",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "internal",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "On (internal) keeps this load balancer reachable only from inside the VPC. Off makes it internet-facing on the chosen subnets' public IPs."
+        },
+        {
+          "name": "subnets",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnets",
+          "group": "network",
+          "bounds": {
+            "minItems": 2,
+            "maxItems": 10
+          },
+          "help": "Pick subnets spanning at least two Availability Zones. For internet-facing, these must be public subnets."
+        },
+        {
+          "name": "security_groups",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "security_groups",
+          "group": "network",
+          "dependsOn": {
+            "param": "load_balancer_type",
+            "equals": "application"
+          },
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "help": "Required for an Application Load Balancer. Pick one to five groups."
+        },
+        {
+          "name": "enable_deletion_protection",
+          "label": "Deletion protection",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "enable_deletion_protection",
+          "group": "protection",
+          "help": "Always on for a new load balancer \u2014 written into the draft, never asked."
+        },
+        {
+          "name": "resource_name",
+          "label": "Load balancer name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this load balancer is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this load balancer."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new load balancer",
+        "new alb",
+        "new nlb",
+        "provision load balancer"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "internal defaults to true (private, VPC-internal only); setting it false makes this load balancer internet-facing on the chosen subnets' public IPs \u2014 confirm that is intended and that those subnets are actually public before flipping it",
+        "Listeners and target groups are separate follow-up steps (the existing create-a-listener and create-a-target-group actions) \u2014 a load balancer with neither serves no traffic",
+        "Access/connection/health-check log destinations, WAF association, cross-zone load balancing and idle timeout keep their AWS defaults \u2014 tune them afterward with the existing set-* actions"
+      ]
+    }
+  ]
+}

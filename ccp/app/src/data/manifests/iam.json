@@ -1,0 +1,882 @@
+{
+  "service": "iam",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_iam_instance_profile",
+    "aws_iam_role",
+    "aws_iam_role_policy_attachment",
+    "aws_iam_access_key",
+    "aws_iam_user",
+    "aws_iam_group",
+    "aws_iam_policy",
+    "aws_iam_role_policy",
+    "aws_iam_user_policy",
+    "aws_iam_group_policy"
+  ],
+  "summary": "Manage IAM roles, managed-policy attachments, and access keys. Tagging is self-service; policy attach/detach and access-key status toggles (rotation) are guardrailed with a second approver; role creation and deletion are security-relevant and architectural, so they route to an engineer.",
+  "operations": [
+    {
+      "id": "iam-add-tag-to-role",
+      "service": "iam",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to an IAM role",
+      "summary": "Add one tag to an IAM role. Metadata only, no change to its permissions, trust policy, or attached policies.",
+      "description": "Add a single new key/value tag to an existing role's tags map. Metadata-only \u2014 no change to permissions, trust policy, or attached policies.",
+      "target": {
+        "resourceType": "aws_iam_role",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "role",
+          "label": "Role",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing IAM role to tag, chosen from the estate inventory so only a real, Terraform-managed role can be targeted; adding a tag is metadata-only and never changes the role's permissions or trust policy.",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_.:/=+@-]{0,127}$"
+          },
+          "help": "New tag key, up to 128 chars; must not already exist on the role."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^.{0,256}$"
+          },
+          "help": "Tag value, up to 256 characters."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "create"
+    },
+    {
+      "id": "iam-attach-managed-policy",
+      "service": "iam",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Attach a managed policy to a role",
+      "summary": "Grant a role one of a pre-approved set of read-only or support permissions by attaching an AWS-managed policy.",
+      "description": "Attach a pre-approved AWS-managed policy to an existing role via a new policy attachment. Limited to read-only/support policies from the allowlist; anything write-capable or administrative requires an engineer-authored change.",
+      "target": {
+        "resourceType": "aws_iam_role",
+        "block": "policy_attachment"
+      },
+      "params": [
+        {
+          "name": "role",
+          "label": "Role",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing IAM role that will receive the new policy attachment, chosen from the estate inventory so only a real, Terraform-managed role can be targeted; the policies it can gain here are limited to the pre-approved read-only/support allowlist.",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true
+        },
+        {
+          "name": "policy_arn",
+          "label": "Managed policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "arn:aws:iam::aws:policy/ReadOnlyAccess",
+              "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+              "arn:aws:iam::aws:policy/CloudWatchReadOnlyAccess",
+              "arn:aws:iam::aws:policy/AWSSupportAccess"
+            ]
+          },
+          "help": "Pre-approved read-only/support policies only. Write-capable or administrative policies must go through an engineer-authored change."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (policy attachment)",
+      "group": "create"
+    },
+    {
+      "id": "iam-detach-managed-policy",
+      "service": "iam",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Detach a managed policy from a role",
+      "summary": "Revoke a role's permissions by detaching a managed policy. Takes effect immediately for anything using the role; can be reattached later.",
+      "description": "Remove an existing policy attachment from a role, revoking the permissions it granted. Reversible \u2014 the same policy can be reattached \u2014 but takes effect immediately for anything assuming the role.",
+      "target": {
+        "resourceType": "aws_iam_role",
+        "block": "policy_attachment"
+      },
+      "params": [
+        {
+          "name": "role",
+          "label": "Role",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing IAM role to detach the policy from, chosen from the estate inventory so only a real, Terraform-managed role can be targeted; detaching revokes that policy's permissions immediately for anything assuming the role, but the same policy can be reattached.",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true
+        },
+        {
+          "name": "policy_arn",
+          "label": "Managed policy to detach",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "arn:aws:iam::aws:policy/ReadOnlyAccess",
+              "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+              "arn:aws:iam::aws:policy/CloudWatchReadOnlyAccess",
+              "arn:aws:iam::aws:policy/AWSSupportAccess"
+            ]
+          },
+          "help": "Must currently be attached to the selected role."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy (policy attachment)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "iam-rotate-access-key",
+      "service": "iam",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Deactivate or reactivate an access key",
+      "summary": "Deactivate a suspect or old access key without deleting it, or reactivate one. Apps still using it fail authentication right away.",
+      "description": "Toggle an access key's status. Set to Inactive to immediately disable a suspected-compromised or superseded key without deleting it \u2014 the standard first step of key rotation; set to Active to restore a previously deactivated key. The key material itself is never handled here.",
+      "target": {
+        "resourceType": "aws_iam_access_key"
+      },
+      "params": [
+        {
+          "name": "access_key",
+          "label": "Access key",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing IAM access key whose status you are toggling, chosen from the estate inventory so only a real, Terraform-managed key can be targeted; only its Active/Inactive status changes and the secret key material is never displayed or handled here.",
+          "enumSource": "inventory://aws_iam_access_key/address",
+          "required": true
+        },
+        {
+          "name": "new_status",
+          "label": "New status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "Active",
+              "Inactive"
+            ]
+          },
+          "help": "Inactive disables the key immediately; Active re-enables it. Any application still using a key you set Inactive will fail authentication right away."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup",
+      "pinned": 1
+    },
+    {
+      "id": "iam-create-role",
+      "service": "iam",
+      "macd": "Add",
+      "codemodOp": "instantiate_module",
+      "title": "Create a new IAM role",
+      "summary": "Request a brand-new IAM role; an engineer designs the trust and permissions and reviews the Terraform before it is applied.",
+      "description": "Stand up a brand-new IAM role with a trust (assume-role) policy and initial permissions. Trust boundary and permission scope are security-relevant design decisions, so an engineer authors and reviews the change.",
+      "target": {
+        "resourceType": "aws_iam_role"
+      },
+      "params": [
+        {
+          "name": "proposed_name",
+          "label": "Proposed role name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,63}$"
+          },
+          "help": "Lower-case, hyphenated; the engineer will confirm the final name and path against the estate's naming convention."
+        },
+        {
+          "name": "purpose",
+          "label": "Purpose / assuming principal",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Describe the workload, service, or principal that will assume this role \u2014 the engineer designs the trust and permission policies from this."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "decisions": [
+        "Trust (assume-role) policy — which principals may assume this role",
+        "Permission policy scope and attachments"
+      ]
+    },
+    {
+      "id": "iam-delete-role",
+      "service": "iam",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete an IAM role",
+      "summary": "Permanently delete an IAM role. Anything assuming that role loses access immediately. Can't be undone; an engineer reviews it first.",
+      "description": "Destroy an IAM role, detaching all its policies and invalidating its trust relationship. Irreversible \u2014 anything currently assuming the role loses access immediately. High blast radius; an engineer authors and reviews the change.",
+      "target": {
+        "resourceType": "aws_iam_role"
+      },
+      "params": [
+        {
+          "name": "role",
+          "label": "Role",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing IAM role to destroy, chosen from the estate inventory so only a real, Terraform-managed role can be targeted; deletion is irreversible and anything still assuming the role loses access immediately, which is why an engineer authors and reviews this change.",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "iam-set-force-detach-policies",
+      "service": "iam",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set forced policy detach for an IAM role",
+      "summary": "Allow this role's policies to auto-detach on deletion instead of blocking it, removing a safety check. Engineer-only.",
+      "description": "Set the role's `force_detach_policies` flag (true/false). When true, Terraform force-detaches any attached managed policies before destroying the role; enabling it removes the guardrail that otherwise blocks destroying a role that still has policies attached, so an engineer authors and reviews the change.",
+      "target": {
+        "resourceType": "aws_iam_role"
+      },
+      "params": [
+        {
+          "name": "role",
+          "label": "Role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "help": "The IAM role to change, chosen from live inventory."
+        },
+        {
+          "name": "force_detach_policies",
+          "label": "Force detach policies",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true = Terraform force-detaches attached policies before destroying the role; false (AWS default) = destroy is blocked while policies remain attached."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (force_detach_policies)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "iam-iam-user-rename",
+      "service": "iam",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Rename an IAM user",
+      "summary": "Rename an IAM user. Keys and ID stay the same, but its ARN changes and can break anything referencing the old name.",
+      "description": "Change the `name` of an existing IAM user in place via Terraform's `name` argument \u2014 applied through the IAM UpdateUser API, not a destroy/recreate (the user keeps its unique ID and credentials). Its ARN changes, so external resource-based policies or trust relationships that reference this user by name or ARN can silently break. Note: per the AWS provider docs, if managed policies are attached to the user via the legacy `aws_iam_policy_attachment` resource, the rename fails with a `DeleteConflict` error unless `force_destroy` is set first. Value is bounded to the documented IAM user-name character set.",
+      "target": {
+        "resourceType": "aws_iam_user"
+      },
+      "params": [
+        {
+          "name": "user_name",
+          "label": "User Name",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_user/address",
+          "required": true,
+          "help": "The IAM user to change, chosen from live inventory."
+        },
+        {
+          "name": "new_name",
+          "label": "New User Name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9=,.@_-]{1,64}$"
+          },
+          "help": "Upper/lowercase alphanumerics with no spaces, plus =,.@-_ ; 1-64 characters. Names are case-insensitive and must be unique in the account. Renaming changes the user's ARN, which can break external policies that reference it by name."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (name)",
+      "group": "tags-naming",
+      "pinned": 1
+    },
+    {
+      "id": "iam-iam-user-set-force-destroy",
+      "service": "iam",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set forced destroy for an IAM user",
+      "summary": "Allow a future deletion of this user even if it still has access keys, a password, or MFA set up outside Terraform. Engineer-only.",
+      "description": "Set the Terraform `force_destroy` argument on an existing IAM user. When true, a later destroy of this user succeeds even if it still has non-Terraform-managed access keys, a login profile, or MFA devices; false (the default) keeps that guardrail in place. Enabling it removes a deletion safety guardrail, so an engineer authors and reviews the change. Applied in-place \u2014 the flag itself changes nothing about the live user until a destroy is attempted.",
+      "target": {
+        "resourceType": "aws_iam_user"
+      },
+      "params": [
+        {
+          "name": "user_name",
+          "label": "User Name",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_user/address",
+          "required": true,
+          "help": "The IAM user to change, chosen from live inventory."
+        },
+        {
+          "name": "force_destroy",
+          "label": "Force destroy",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true = allow a future destroy of this user even if it has non-Terraform-managed access keys, a login profile, or MFA devices; false = keep the default guardrail that blocks such a destroy."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (force_destroy)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "iam-rename-group",
+      "service": "iam",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Rename an IAM group",
+      "summary": "Rename an IAM group; membership and policies stay, but its ARN changes and can break references to the old name.",
+      "description": "Change the name of an existing IAM group in-place (aws_iam_group.name). Attached policies and group memberships are preserved, but the group's ARN changes together with its name, which can silently break external references (resource-based policies, automation, or documentation) that identify the group by its old name or ARN. Blast radius scales with membership size, so it is guardrailed; no permissions are directly changed.",
+      "target": {
+        "resourceType": "aws_iam_group"
+      },
+      "params": [
+        {
+          "name": "group",
+          "label": "Group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_group/address",
+          "required": true,
+          "help": "The IAM group to change, chosen from live inventory."
+        },
+        {
+          "name": "new_name",
+          "label": "New group name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9=,.@_-]{1,128}$"
+          },
+          "help": "Upper/lowercase alphanumerics plus = , . @ _ - and no spaces; 1-128 characters (AWS IAM group-name limit). Names are case-insensitive and must be unique within the account."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (name)",
+      "group": "tags-naming",
+      "pinned": 2
+    },
+    {
+      "id": "iam-update-group-path",
+      "service": "iam",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update IAM group path",
+      "summary": "Move an IAM group to a different organizational path. Metadata only, no change to its permissions or membership.",
+      "description": "Change the organizational path of an existing IAM group in-place (aws_iam_group.path), e.g. from / to /division_abc/. Path is hierarchical metadata used for organization and IAM path-based policy scoping; it does not change the group's permissions or membership. In-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_iam_group"
+      },
+      "params": [
+        {
+          "name": "group",
+          "label": "Group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_group/address",
+          "required": true,
+          "help": "The IAM group to change, chosen from live inventory."
+        },
+        {
+          "name": "path",
+          "label": "New path",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^/[A-Za-z0-9/_-]*$",
+            "max": 512
+          },
+          "help": "Hierarchical path; must begin with '/'. Alphanumerics, '/', '-', '_'; up to 512 characters (AWS IAM path limit). Defaults to '/'."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (path)",
+      "group": "connectivity-access",
+      "pinned": 1
+    },
+    {
+      "id": "iam-rename-role-policy",
+      "service": "iam",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Rename inline role policy",
+      "summary": "Rename an inline role policy. Applying REPLACES it: the permission grant is briefly removed and recreated. Engineer-only.",
+      "description": "Change the name of an existing inline role policy (the aws_iam_role_policy `name` argument). The policy document and the permissions it grants are unchanged. Important: `name` is ForceNew in the AWS provider (confirmed from provider source; the internal reference doc had recorded it as in-place), so Terraform replaces the inline policy (destroy + recreate) rather than editing it in place, briefly interrupting the grant during apply.",
+      "target": {
+        "resourceType": "aws_iam_role_policy"
+      },
+      "params": [
+        {
+          "name": "role_policy",
+          "label": "Inline role policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role_policy/address",
+          "required": true,
+          "help": "Select the existing inline role policy (aws_iam_role_policy) to rename."
+        },
+        {
+          "name": "new_name",
+          "label": "New policy name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w+=,.@-]{1,128}$"
+          },
+          "help": "New IAM policy name: letters, digits, and _ + = , . @ - only; 1-128 characters (validRolePolicyName charset). Changing the name forces Terraform to replace the inline policy (destroy + recreate)."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (name)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "iam-move-role-policy",
+      "service": "iam",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Move inline policy to a different role",
+      "summary": "Move an inline policy to a different role. This REPLACES it: permissions briefly vanish, then reappear on the new role. Engineer-only.",
+      "description": "Reassign an existing inline policy to a different IAM role (the aws_iam_role_policy `role` argument), moving the permission grant from one principal to another. `role` is ForceNew in the AWS provider (confirmed from provider source; the internal reference doc had recorded it as in-place), so Terraform destroys the inline policy on the current role and recreates it on the destination role. Security-relevant boundary change, so an engineer authors and reviews the Terraform.",
+      "target": {
+        "resourceType": "aws_iam_role_policy"
+      },
+      "params": [
+        {
+          "name": "role_policy",
+          "label": "Inline role policy to move",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role_policy/address",
+          "required": true,
+          "help": "Select the existing inline role policy (aws_iam_role_policy) to move."
+        },
+        {
+          "name": "new_role",
+          "label": "Destination IAM role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "help": "Destination IAM role to reattach the inline policy to. The policy is destroyed on the current role and recreated on this one (role is ForceNew)."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (role)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "iam-provision-role",
+      "service": "iam",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision an IAM role",
+      "summary": "Create an IAM role. The trust policy and any permissions are engineer-authored; the role starts with none attached.",
+      "consoleLabel": "Roles",
+      "description": "Create an aws_iam_role. The trust policy (assume_role_policy) is a policy document, so it is never authored here: this form bounds the trust to a small allowlist of common service principals or defers it to an engineer, and the role is provisioned with NO attached permissions and NO inline policy. Least-privilege managed-policy attachments are a separate reviewed step. Submitting drafts the resource and routes it to an engineer to complete and own.",
+      "target": {
+        "resourceType": "aws_iam_role"
+      },
+      "params": [
+        {
+          "name": "role_name",
+          "label": "Role name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "The name of the role (written to the name attribute and used to name the Terraform block).",
+          "attr": "name",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9+=,.@_-]{1,64}$"
+          }
+        },
+        {
+          "name": "assume_role_policy",
+          "label": "Trust policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "assume_role_policy",
+          "group": "trust",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The trust policy (assume_role_policy) is a full JSON policy document, so it is authored and reviewed by an engineer, never typed here. The common service principals a role trusts are Amazon EC2 (ec2.amazonaws.com), AWS Lambda (lambda.amazonaws.com), and Amazon ECS tasks (ecs-tasks.amazonaws.com); anything broader is an engineer decision."
+        },
+        {
+          "name": "max_session_duration",
+          "label": "Max session duration (seconds)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "attr": "max_session_duration",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              3600,
+              7200,
+              14400,
+              28800
+            ]
+          },
+          "default": 3600,
+          "help": "How long a session assumed with this role stays valid, in seconds. Bounded to common values; longer sessions widen the window a leaked credential is usable."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "audit",
+          "help": "A short note describing what the role is for.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "description_tag",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "help": "A short description recorded as the resource's Description tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "help": "The team or person accountable for this resource, recorded as its PIC tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "iam role",
+        "create role",
+        "service role",
+        "provision role"
+      ],
+      "decisions": [
+        "Over-broad trust or permissions are engineer-authored: the trust policy (assume_role_policy) and any managed-policy attachment beyond the read-only allowlist are written and reviewed by an engineer, never captured on this form.",
+        "This role is provisioned with NO permissions and NO inline policy. Attach a least-privilege AWS-managed policy as a separate reviewed step; an inline policy is out of self-service reach.",
+        "Confirm a permissions boundary is set when the role can be assumed broadly; the engineer adds it during review to cap the maximum privilege."
+      ]
+    },
+    {
+      "id": "iam-provision-policy-attachment",
+      "service": "iam",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Attach a managed policy to a role",
+      "summary": "Attach an AWS-managed, read-only least-privilege policy to a role. A broader or customer-authored policy is an engineer decision.",
+      "consoleLabel": "Permissions",
+      "description": "Create an aws_iam_role_policy_attachment binding an AWS-managed policy to a role. The policy is chosen from a read-only, least-privilege allowlist (ReadOnlyAccess, service read-only policies); a write-capable or customer-authored policy is never offered here. The role is an inventory picker. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_iam_role_policy_attachment"
+      },
+      "params": [
+        {
+          "name": "attachment_label",
+          "label": "Attachment label",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "A short label naming the Terraform block only; it is not written to AWS.",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,64}$"
+          }
+        },
+        {
+          "name": "role",
+          "label": "Role",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "role",
+          "enumSource": "inventory://aws_iam_role/address",
+          "group": "access",
+          "help": "The role the policy attaches to (the aws_iam_role.name it references)."
+        },
+        {
+          "name": "policy_arn",
+          "label": "Managed policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "policy_arn",
+          "group": "access",
+          "bounds": {
+            "allowlist": [
+              "arn:aws:iam::aws:policy/ReadOnlyAccess",
+              "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+              "arn:aws:iam::aws:policy/CloudWatchReadOnlyAccess",
+              "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess",
+              "arn:aws:iam::aws:policy/job-function/ViewOnlyAccess",
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The AWS-managed policy to attach. Limited to read-only, least-privilege managed policies; a write-capable or customer-authored policy is an engineer decision. Leave it as engineer-decides if none fit."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "policy attachment",
+        "attach policy",
+        "grant policy",
+        "managed policy"
+      ],
+      "decisions": [
+        "A customer-authored or write-capable policy is an engineer decision: this form offers only AWS-managed read-only, least-privilege policies. Anything broader is authored and reviewed by an engineer, never attached from self-service.",
+        "Each attachment is additive to whatever the role already holds; confirm the combined permissions are still least-privilege for what the role does."
+      ]
+    },
+    {
+      "id": "iam-provision-instance-profile",
+      "service": "iam",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision an instance profile",
+      "summary": "Create an instance profile that carries a chosen IAM role onto EC2 instances. The role sets the privilege.",
+      "consoleLabel": "Instance profiles",
+      "description": "Create an aws_iam_instance_profile that carries a role onto EC2 instances that reference it. The profile is only as privileged as the role it holds, so the role is an inventory picker and its least-privilege is confirmed at review. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_iam_instance_profile"
+      },
+      "params": [
+        {
+          "name": "profile_name",
+          "label": "Profile name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "The name of the instance profile (written to the name attribute).",
+          "attr": "name",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9+=,.@_-]{1,128}$"
+          }
+        },
+        {
+          "name": "role",
+          "label": "Role",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "role",
+          "enumSource": "inventory://aws_iam_role/address",
+          "group": "access",
+          "help": "The role this profile carries onto instances (the aws_iam_role.name it references)."
+        },
+        {
+          "name": "description_tag",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "help": "A short description recorded as the resource's Description tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "help": "The team or person accountable for this resource, recorded as its PIC tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "instance profile",
+        "ec2 role profile",
+        "provision instance profile"
+      ],
+      "decisions": [
+        "The instance profile is only as privileged as the role it carries; confirm the selected role is least-privilege for the instances that will assume it."
+      ]
+    }
+  ]
+}

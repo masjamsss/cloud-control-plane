@@ -1,0 +1,114 @@
+{
+  "service": "keyspaces",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_keyspaces_keyspace"
+  ],
+  "summary": "Provision a brand-new Amazon Keyspaces (Cassandra-compatible) keyspace. No Keyspaces estate exists yet, so this is a first stand-up an engineer reviews before it applies.",
+  "operations": [
+    {
+      "id": "keyspaces-keyspace-create",
+      "service": "keyspaces",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Keyspaces keyspace",
+      "summary": "Request a brand-new Cassandra-compatible keyspace; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a keyspace as a complete specification: name and replication strategy. Tables (with their own capacity and TTL settings) are added afterward as an engineer follow-up. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_keyspaces_keyspace"
+      },
+      "params": [
+        {
+          "name": "keyspace_name",
+          "label": "Keyspace name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z][a-zA-Z0-9_]{2,47}$"
+          },
+          "help": "Letters, numbers and underscores, starting with a letter. Names the keyspace queries select."
+        },
+        {
+          "name": "replication_strategy",
+          "label": "Replication strategy",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "replication_strategy",
+          "path": [
+            "replication_specification"
+          ],
+          "group": "availability",
+          "bounds": {
+            "allowlist": [
+              "SINGLE_REGION",
+              "MULTI_REGION"
+            ]
+          },
+          "default": "SINGLE_REGION",
+          "help": "MULTI_REGION replicates every table in this keyspace to other Regions; the region list is an engineer decision."
+        },
+        {
+          "name": "resource_name",
+          "label": "Keyspace name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this keyspace holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this keyspace."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new keyspaces keyspace",
+        "provision cassandra keyspace"
+      ],
+      "decisions": [
+        "Multi-region replication's region list is an engineer decision — this form provisions the common single-region case",
+        "Tables, with their own capacity mode and TTL settings, are an engineer follow-up after the keyspace exists"
+      ]
+    }
+  ]
+}

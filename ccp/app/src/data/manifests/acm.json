@@ -1,0 +1,1874 @@
+{
+  "service": "acm",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_acm_certificate",
+    "aws_lb_listener",
+    "aws_lb_listener_certificate"
+  ],
+  "summary": "Manage TLS certificates and their load-balancer bindings: add or remove certificate tags, request a new DNS-validated certificate, attach an extra SNI certificate to a listener, swap a listener's default certificate (engineer-only — it changes what live clients are served), and delete a confirmed-unused certificate. DNS validation records are managed outside this catalog.",
+  "operations": [
+    {
+      "id": "acm-add-tag",
+      "service": "acm",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a certificate",
+      "summary": "Add a metadata tag to a certificate. Additive and reversible, with no effect on validation or the listeners using it.",
+      "description": "Add one metadata tag key/value to an ACM certificate. Additive and reversible; no impact on validation state or on listeners consuming the certificate.",
+      "target": {
+        "resourceType": "aws_acm_certificate",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "certificate",
+          "label": "Certificate",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing ACM certificate to tag, chosen from the estate inventory so only a real, Terraform-managed certificate can be targeted; adding a tag is metadata-only and has no effect on validation state or the listeners serving the certificate.",
+          "enumSource": "inventory://aws_acm_certificate/address",
+          "required": true
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{1,64}$"
+          },
+          "help": "Letters/digits/_/- , 2-65 chars. Governance keys are engineer-owned."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "help": "Free-text value stored under the tag key, 1-128 characters; tag values are pure metadata on the certificate, so any text within the length bound is safe and never affects TLS behavior.",
+          "required": true,
+          "bounds": {
+            "pattern": "^.{1,128}$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (tag add)",
+      "group": "create"
+    },
+    {
+      "id": "acm-remove-tag",
+      "service": "acm",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag from a certificate",
+      "summary": "Remove a metadata tag from a certificate. Reversible - protected governance tags can't be removed this way.",
+      "description": "Delete one metadata tag from an ACM certificate. Reversible - the tag can be re-added. Governance tags such as Environment or CostCentre are protected and rejected.",
+      "target": {
+        "resourceType": "aws_acm_certificate",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "certificate",
+          "label": "Certificate",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing ACM certificate to remove the tag from, chosen from the estate inventory so only a real, Terraform-managed certificate can be targeted; the change is metadata-only and reversible by re-adding the tag.",
+          "enumSource": "inventory://aws_acm_certificate/address",
+          "required": true
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{1,64}$"
+          },
+          "help": "The tag key to delete. Governance keys (Environment, CostCentre) are engineer-owned and rejected."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (tag removal)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "acm-request-certificate",
+      "service": "acm",
+      "macd": "Add",
+      "codemodOp": "instantiate_module",
+      "title": "Request a new ACM-managed certificate (DNS-validated)",
+      "summary": "Request a new certificate for one or more domains. Publish the DNS records to validate it; it then renews itself automatically.",
+      "description": "Issue a brand-new Amazon-managed certificate for one or more hostnames, validated via DNS CNAME records. Unlike the estate's imported wildcard certificate, an ACM-managed certificate auto-renews - but the DNS validation records must be published by whoever controls the zone before it reaches ISSUED.",
+      "target": {
+        "resourceType": "aws_acm_certificate"
+      },
+      "params": [
+        {
+          "name": "primary_domain_name",
+          "label": "Primary domain (FQDN)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(\\*\\.)?([a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$"
+          },
+          "help": "e.g. app.example.com or *.example.com (wildcard only as leftmost label)."
+        },
+        {
+          "name": "validation_method",
+          "label": "Validation method",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "default": "DNS",
+          "bounds": {
+            "allowlist": [
+              "DNS"
+            ]
+          },
+          "help": "DNS only - EMAIL validation requires manual approver clicks and is rejected by the catalog."
+        },
+        {
+          "name": "subject_alternative_names",
+          "label": "Additional hostnames (SANs)",
+          "type": "list",
+          "source": "user_input",
+          "required": false,
+          "default": [],
+          "bounds": {
+            "semantic": "each an FQDN the org controls; total SANs incl. primary <= 100",
+            "maxItems": 99,
+            "pattern": "^(\\*\\.)?([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$"
+          },
+          "help": "Optional extra hostnames covered by the same certificate."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": false,
+          "default": {},
+          "bounds": {
+            "semantic": "<=50 keys, values <=256 chars",
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$"
+          },
+          "help": "Optional resource tags."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (certificate + DNS validation)",
+      "keywords": [
+        "new certificate",
+        "request cert"
+      ],
+      "group": "create"
+    },
+    {
+      "id": "acm-attach-sni-certificate",
+      "service": "acm",
+      "macd": "Add",
+      "codemodOp": "set_association_attribute",
+      "title": "Attach an additional certificate to a listener (SNI)",
+      "summary": "Attach an extra certificate to a listener for other hostnames. Additive - the listener's default certificate is untouched.",
+      "description": "Associate an already-ISSUED certificate with an HTTPS listener as an extra SNI certificate, alongside its default certificate. Additive and reversible - the listener's default certificate is untouched and existing connections are unaffected.",
+      "target": {
+        "resourceType": "aws_lb_listener_certificate"
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing ALB HTTPS listener that will serve the extra SNI certificate, chosen from the estate inventory so only a real, Terraform-managed listener can be targeted; its default certificate and existing connections are untouched by this additive change.",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true
+        },
+        {
+          "name": "certificate",
+          "label": "Certificate to attach",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_acm_certificate/address",
+          "required": true,
+          "help": "Must already be ISSUED and in the same region as the listener."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (aws_lb_listener_certificate)",
+      "keywords": [
+        "renew certificate",
+        "attach certificate",
+        "sni certificate",
+        "new cert on listener"
+      ],
+      "group": "create"
+    },
+    {
+      "id": "acm-swap-default-certificate",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Swap the default certificate on a listener",
+      "summary": "Point a listener at a new certificate to replace one that's expiring. A mismatch breaks TLS for every client, so an engineer reviews it.",
+      "description": "Re-point a listener's default certificate_arn to a different ISSUED certificate - the standard remediation for a certificate nearing expiry. Updates in place, but a mismatched or not-yet-issued certificate causes an immediate TLS failure for every client on that listener.",
+      "target": {
+        "resourceType": "aws_lb_listener"
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing ALB HTTPS listener whose default certificate_arn is being re-pointed, chosen from the estate inventory so only a real, Terraform-managed listener can be targeted; every client connecting to this listener is affected by the swap, which is why an engineer authors and reviews it.",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true
+        },
+        {
+          "name": "new_certificate",
+          "label": "New default certificate",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_acm_certificate/address",
+          "required": true,
+          "help": "Must be ISSUED, same region as the listener, and cover the hostnames it serves.",
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "certificate_arn"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (certificate_arn)",
+      "keywords": [
+        "swap certificate",
+        "replace default certificate",
+        "cert expiring"
+      ],
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-delete-certificate",
+      "service": "acm",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete an unused certificate",
+      "summary": "Permanently delete a certificate confirmed to be unused. This can't be undone, and protected certificates can't be selected.",
+      "description": "Permanently destroy an ACM certificate confirmed unattached to any listener, CloudFront distribution, or API Gateway. Irreversible - a destroyed certificate cannot be recreated and would need re-issue/re-import plus re-validation. Certificates with lifecycle prevent_destroy set (e.g. the estate's imported wildcard) cannot be targeted.",
+      "target": {
+        "resourceType": "aws_acm_certificate"
+      },
+      "params": [
+        {
+          "name": "certificate",
+          "label": "Certificate",
+          "type": "string",
+          "source": "inventory",
+          "help": "The ACM certificate to permanently destroy, chosen from the estate inventory so only a real, Terraform-managed certificate can be targeted; deletion is irreversible, and certificates guarded by lifecycle prevent_destroy (such as the estate's imported wildcard) cannot be selected.",
+          "enumSource": "inventory://aws_acm_certificate/address",
+          "required": true
+        },
+        {
+          "name": "confirm_unused",
+          "label": "Confirm unused",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "default": false,
+          "help": "Typed confirmation that no listener, CloudFront distribution, or API Gateway references this certificate's ARN."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "acm-toggle-certificate-transparency-logging",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle certificate transparency logging",
+      "summary": "Turn certificate transparency logging on or off. Turning it off only stops future logging - past entries stay public.",
+      "description": "Set options.certificate_transparency_logging_preference to ENABLED or DISABLED. Updates in place per the AWS provider \u2014 no ForceNew, no downtime, fully reversible (re-enabling always works; note AWS cannot remove an entry already written to the public CT log).",
+      "target": {
+        "resourceType": "aws_acm_certificate",
+        "path": [
+          "options"
+        ]
+      },
+      "params": [
+        {
+          "name": "certificate",
+          "label": "Certificate",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_acm_certificate/address",
+          "required": true,
+          "help": "Which ACM certificate to update."
+        },
+        {
+          "name": "preference",
+          "label": "Transparency logging",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "help": "ENABLED publishes the cert to public Certificate Transparency logs; DISABLED opts out of future logging.",
+          "attr": "certificate_transparency_logging_preference"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (options.certificate_transparency_logging_preference)",
+      "group": "connectivity-access",
+      "pinned": 1
+    },
+    {
+      "id": "acm-set-early-renewal-duration",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set early renewal duration",
+      "summary": "Set how many days before expiry ACM starts renewing this certificate automatically.",
+      "description": "Set early_renewal_duration (ISO 8601 period, e.g. P90D) controlling how far before expiry ACM initiates managed renewal. Updates in place \u2014 no ForceNew, no downtime, reversible. Bounded to common renewal windows.",
+      "target": {
+        "resourceType": "aws_acm_certificate"
+      },
+      "params": [
+        {
+          "name": "certificate",
+          "label": "Certificate",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_acm_certificate/address",
+          "required": true,
+          "help": "Which ACM certificate to update."
+        },
+        {
+          "name": "duration",
+          "label": "Early renewal window",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "P30D",
+              "P45D",
+              "P60D",
+              "P90D"
+            ]
+          },
+          "help": "ISO 8601 period before expiry at which ACM renews the certificate."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (early_renewal_duration)",
+      "group": "connectivity-access",
+      "pinned": 2
+    },
+    {
+      "id": "acm-set-certificate-key-export",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set certificate private-key export",
+      "summary": "Allow or block exporting this certificate's private key. Enabling export can't be safely undone once used, so an engineer reviews it.",
+      "description": "Set options.export (ENABLED/DISABLED), which governs whether the certificate's private key can be exported from ACM. Security exposure: enabling export lets private key material leave ACM and cannot be safely undone once used. Bounded enum but engineer-reviewed given the blast radius and provider caveats around exportable certificates.",
+      "target": {
+        "resourceType": "aws_acm_certificate",
+        "path": [
+          "options"
+        ]
+      },
+      "params": [
+        {
+          "name": "certificate",
+          "label": "Certificate",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_acm_certificate/address",
+          "required": true,
+          "help": "Which ACM certificate to update."
+        },
+        {
+          "name": "export",
+          "label": "Key export",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "help": "ENABLED makes the private key exportable from ACM \u2014 treat as irreversible security exposure."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (options.export)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-acm-certificate-engineer-request",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to ACM certificate",
+      "summary": "Request any other change to a certificate, including ones that replace it. An engineer authors and reviews the Terraform.",
+      "description": "Catch-all for any change to an ACM certificate not offered as a bounded self-service form \u2014 including ForceNew edits (domain_name, subject_alternative_names, validation_method, key_algorithm, certificate_authority_arn, imported key/body/chain). An engineer authors and reviews the Terraform.",
+      "target": {
+        "resourceType": "aws_acm_certificate"
+      },
+      "params": [
+        {
+          "name": "certificate",
+          "label": "Certificate",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_acm_certificate/address",
+          "required": true,
+          "help": "The certificate to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-lb-listener-set-tls-policy",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set the listener's TLS security policy",
+      "summary": "Set which TLS versions and ciphers this listener accepts. A stricter policy can lock out very old clients; it applies with no downtime.",
+      "description": "Updates ssl_policy on an HTTPS listener — the named policy that fixes which TLS versions and cipher suites clients may negotiate. In-place, reversible, no downtime; a stricter policy can lock out very old clients, so it is guardrailed.",
+      "target": {
+        "resourceType": "aws_lb_listener"
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_lb_listener/address",
+          "help": "The HTTPS listener whose TLS policy changes, picked from the estate's live listeners. Plain HTTP listeners carry no TLS policy."
+        },
+        {
+          "name": "tls_policy",
+          "label": "TLS security policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "ssl_policy",
+          "default": "ELBSecurityPolicy-TLS13-1-2-2021-06",
+          "bounds": {
+            "allowlist": [
+              "ELBSecurityPolicy-TLS13-1-2-2021-06",
+              "ELBSecurityPolicy-TLS13-1-2-Res-2021-06",
+              "ELBSecurityPolicy-FS-1-2-Res-2020-10"
+            ]
+          },
+          "help": "Which TLS versions and ciphers clients may use. The 2021 TLS 1.3 policy is the AWS-recommended default."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (ssl_policy)",
+      "keywords": [
+        "tls audit",
+        "tls policy",
+        "ssl policy",
+        "weak ciphers",
+        "old tls version"
+      ],
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-lb-listener-set-protocol",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set listener protocol",
+      "summary": "Change the listener's protocol, for example HTTPS to HTTP. This can silently drop encryption for every client, so an engineer reviews it.",
+      "description": "Set protocol for client-to-load-balancer connections. HIGH: can silently remove transport encryption (e.g. HTTPS->HTTP) and breaks every client expecting the prior protocol, so engineer-reviewed. Allowlist restricted to the provider-documented ALB/NLB protocols.",
+      "target": {
+        "resourceType": "aws_lb_listener"
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "protocol",
+          "label": "Protocol",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "HTTP",
+              "HTTPS",
+              "TCP",
+              "TLS",
+              "UDP",
+              "TCP_UDP",
+              "QUIC",
+              "TCP_QUIC"
+            ]
+          },
+          "help": "ALB: HTTP/HTTPS; NLB: TCP/TLS/UDP/TCP_UDP/QUIC/TCP_QUIC."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (protocol)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-lb-listener-toggle-response-server-header",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle HTTP response Server header",
+      "summary": "Show or hide the Server header in this listener's HTTP responses. A minor detail with no effect on routing or encryption.",
+      "description": "Set routing_http_response_server_enabled (ALB HTTP/HTTPS) to add or remove the response Server header. Updates in place, reversible, no downtime; a minor info-disclosure toggle. Bounded to the fixed true/false.",
+      "target": {
+        "resourceType": "aws_lb_listener"
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "enabled",
+          "label": "Server header enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true keeps the response Server header; false removes it."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (routing_http_response_server_enabled)",
+      "group": "connectivity-access",
+      "pinned": 1
+    },
+    {
+      "id": "acm-lb-listener-set-cors-allow-methods",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set CORS Access-Control-Allow-Methods header",
+      "summary": "Set which HTTP methods this listener allows for cross-origin (CORS) requests.",
+      "description": "Set routing_http_response_access_control_allow_methods_header_value (ALB) \u2014 the HTTP methods ALB advertises as allowed cross-origin. Updates in place, reversible. Each selected method is bounded to the provider's closed set of eight methods.",
+      "target": {
+        "resourceType": "aws_lb_listener"
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "methods",
+          "label": "Allowed methods",
+          "type": "list",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "GET",
+              "HEAD",
+              "POST",
+              "DELETE",
+              "CONNECT",
+              "OPTIONS",
+              "TRACE",
+              "PATCH"
+            ]
+          },
+          "help": "Each entry must be one of the eight provider-documented methods; joined into the header value."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (routing_http_response_access_control_allow_methods_header_value)",
+      "group": "connectivity-access",
+      "pinned": 3
+    },
+    {
+      "id": "acm-lb-listener-enable-cors-allow-credentials",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set CORS Access-Control-Allow-Credentials header",
+      "summary": "Allow credentialed cross-origin requests here. Paired with a permissive origin this is a serious security hole, so an engineer reviews it.",
+      "description": "Set routing_http_response_access_control_allow_credentials_header_value. HIGH: enabling credentialed cross-origin requests combined with a permissive allow-origin is a classic high-severity CORS vulnerability, so engineer-reviewed. The provider's only valid value is true; removing the header disables it.",
+      "target": {
+        "resourceType": "aws_lb_listener"
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "value",
+          "label": "Allow-credentials",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true"
+            ]
+          },
+          "help": "Provider's only valid value is true."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (routing_http_response_access_control_allow_credentials_header_value)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-lb-listener-add-tag",
+      "service": "acm",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a listener",
+      "summary": "Add a metadata tag to a listener. No effect on routing or TLS.",
+      "description": "Add one metadata tag key/value to an aws_lb_listener. Additive, reversible, no impact on routing or TLS termination. Key and value are pattern-bounded, mirroring the certificate tag operation.",
+      "target": {
+        "resourceType": "aws_lb_listener",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{1,64}$"
+          },
+          "help": "Letters/digits/_/- , 2-65 chars."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^.{1,128}$"
+          },
+          "help": "The tag value (1\u2013128 characters)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tag add)",
+      "group": "create"
+    },
+    {
+      "id": "acm-lb-listener-set-default-action-order",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set default action evaluation order",
+      "summary": "Change the order this listener's default actions run in. Reordering can bypass an authentication step, so an engineer reviews it.",
+      "description": "Set default_action.order \u2014 the evaluation sequence of a default action. HIGH: reordering can place a forward action ahead of an authenticate action and bypass the auth boundary, so engineer-reviewed. Bounded to the provider range 1-50000.",
+      "target": {
+        "resourceType": "aws_lb_listener",
+        "path": [
+          "default_action"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "order",
+          "label": "Action order",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 50000
+          },
+          "help": "1-50000."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_action.order)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-lb-listener-set-cognito-on-unauthenticated-request",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set how Cognito treats unauthenticated requests",
+      "summary": "Choose how this listener's Cognito login handles a request with no session: deny, allow through, or prompt to log in. Engineer-reviewed.",
+      "description": "Set default_action.authenticate_cognito.on_unauthenticated_request \u2014 whether unauthenticated requests are denied, allowed, or challenged. HIGH: this is the access-control decision itself, so engineer-reviewed. Allowlist per provider docs.",
+      "target": {
+        "resourceType": "aws_lb_listener",
+        "path": [
+          "default_action",
+          "authenticate_cognito"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "behavior",
+          "label": "On unauthenticated request",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "deny",
+              "allow",
+              "authenticate"
+            ]
+          },
+          "help": "How to handle an unauthenticated request: deny blocks it, allow lets it through unauthenticated, authenticate challenges the user to log in.",
+          "attr": "on_unauthenticated_request"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_action.authenticate_cognito.on_unauthenticated_request)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-lb-listener-set-oidc-on-unauthenticated-request",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set how OIDC treats unauthenticated requests",
+      "summary": "Choose how this listener's OIDC login handles a request with no session: deny, allow through, or prompt to log in. Engineer-reviewed.",
+      "description": "Set default_action.authenticate_oidc.on_unauthenticated_request \u2014 whether unauthenticated requests are denied, allowed, or challenged. HIGH: this is the access-control decision itself, so engineer-reviewed. Allowlist per provider docs.",
+      "target": {
+        "resourceType": "aws_lb_listener",
+        "path": [
+          "default_action",
+          "authenticate_oidc"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "behavior",
+          "label": "On unauthenticated request",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "deny",
+              "allow",
+              "authenticate"
+            ]
+          },
+          "help": "How to handle an unauthenticated request: deny blocks it, allow lets it through unauthenticated, authenticate challenges the user to log in.",
+          "attr": "on_unauthenticated_request"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_action.authenticate_oidc.on_unauthenticated_request)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-lb-listener-set-fixed-response-content-type",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set fixed-response content type",
+      "summary": "Set the content type of this listener's fixed static response, such as plain text or JSON.",
+      "description": "Set default_action.fixed_response.content_type. Updates in place, reversible, no downtime; the cosmetic MIME type of a static response. Allowlist per provider docs.",
+      "target": {
+        "resourceType": "aws_lb_listener",
+        "path": [
+          "default_action",
+          "fixed_response"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "content_type",
+          "label": "Content type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "text/plain",
+              "text/css",
+              "text/html",
+              "application/javascript",
+              "application/json"
+            ]
+          },
+          "help": "MIME type of the fixed response body returned to the client."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (default_action.fixed_response.content_type)",
+      "group": "connectivity-access",
+      "pinned": 2
+    },
+    {
+      "id": "acm-lb-listener-set-fixed-response-status-code",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set fixed-response status code",
+      "summary": "Set the HTTP status code this listener's fixed response returns. If that response is active, every client hitting it sees the new code.",
+      "description": "Set default_action.fixed_response.status_code. Updates in place, reversible. If this is the active action it changes the HTTP status every client receives. Bounded by pattern to the provider's 2XX/4XX/5XX classes.",
+      "target": {
+        "resourceType": "aws_lb_listener",
+        "path": [
+          "default_action",
+          "fixed_response"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "status_code",
+          "label": "Status code",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[245][0-9]{2}$"
+          },
+          "help": "A 2xx, 4xx, or 5xx code, e.g. 200, 404, 503."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_action.fixed_response.status_code)",
+      "group": "connectivity-access",
+      "pinned": 4
+    },
+    {
+      "id": "acm-lb-listener-set-forward-target-group-weight",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set forward target-group weight",
+      "summary": "Adjust how much traffic this listener sends to one target group versus the others. A skewed weight can overload or starve a group.",
+      "description": "Set default_action.forward.target_group.weight for one target group in the listener's forward action \u2014 the traffic-split weighting. Updates in place, reversible; can overload or starve a target group so guardrailed. Bounded to the provider range 0-999.",
+      "target": {
+        "resourceType": "aws_lb_listener",
+        "path": [
+          "default_action",
+          "forward",
+          "target_group"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "help": "Which target group in the forward action to reweight."
+        },
+        {
+          "name": "weight",
+          "label": "Weight",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 999
+          },
+          "help": "0-999."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_action.forward.target_group.weight)",
+      "group": "connectivity-access",
+      "pinned": 5
+    },
+    {
+      "id": "acm-lb-listener-set-forward-stickiness",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Configure forward stickiness",
+      "summary": "Turn session stickiness on or off for this listener and set how long it lasts, keeping repeat requests on the same target.",
+      "description": "Configure default_action.forward.stickiness \u2014 enable/disable target-group session affinity and set its duration together (setting a duration is meaningless without the enabled flag). Updates in place, reversible, single-listener scope. enabled bounded to true/false; duration bounded to the provider range 1-604800 seconds (7 days).",
+      "target": {
+        "resourceType": "aws_lb_listener",
+        "path": [
+          "default_action",
+          "forward",
+          "stickiness"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "enabled",
+          "label": "Stickiness enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Configure forward stickiness: true enables configure forward stickiness, false disables it."
+        },
+        {
+          "name": "duration",
+          "label": "Duration (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 604800
+          },
+          "help": "1-604800 seconds; applies when enabled is true."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_action.forward.stickiness.enabled, default_action.forward.stickiness.duration)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-lb-listener-set-redirect-status-code",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set redirect status code",
+      "summary": "Choose permanent or temporary for this listener's redirect. A permanent one can stay cached in browsers even after you change it back.",
+      "description": "Set default_action.redirect.status_code \u2014 HTTP_301 (permanent) or HTTP_302 (temporary). Updates in place, reversible; note a 301 may be cached client-side and can appear sticky even after reverting. Allowlist per provider docs.",
+      "target": {
+        "resourceType": "aws_lb_listener",
+        "path": [
+          "default_action",
+          "redirect"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "status_code",
+          "label": "Redirect status code",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "HTTP_301",
+              "HTTP_302"
+            ]
+          },
+          "help": "Redirect type: HTTP_301 is a permanent redirect, HTTP_302 a temporary one."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_action.redirect.status_code)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-lb-listener-set-redirect-port",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set redirect target port",
+      "summary": "Set which port this listener's redirect sends clients to.",
+      "description": "Set default_action.redirect.port \u2014 the port clients are redirected to. Updates in place, reversible. Bounded to 1-65535; the #{port} placeholder form is intentionally excluded (use the engineer catch-all if the dynamic placeholder is required).",
+      "target": {
+        "resourceType": "aws_lb_listener",
+        "path": [
+          "default_action",
+          "redirect"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "port",
+          "label": "Redirect port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "help": "1-65535."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_action.redirect.port)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-lb-listener-set-redirect-protocol",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set redirect protocol",
+      "summary": "Set the protocol this listener redirects to. Switching HTTPS to HTTP can undermine encryption for every client, so an engineer reviews it.",
+      "description": "Set default_action.redirect.protocol. HIGH: can downgrade an HTTPS-enforcing redirect to HTTP and undermine TLS enforcement for every client hitting this action, so engineer-reviewed. Allowlist HTTP, HTTPS, or the #{protocol} placeholder per provider docs.",
+      "target": {
+        "resourceType": "aws_lb_listener",
+        "path": [
+          "default_action",
+          "redirect"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "protocol",
+          "label": "Redirect protocol",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "HTTP",
+              "HTTPS",
+              "#{protocol}"
+            ]
+          },
+          "help": "Protocol to use; #{protocol} preserves the client's incoming protocol."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_action.redirect.protocol)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-lb-listener-set-mutual-authentication-mode",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set mutual authentication mode",
+      "summary": "Turn this listener's client-certificate check off, pass it through, or verify it. The access decision itself, so an engineer reviews it.",
+      "description": "Set mutual_authentication.mode \u2014 off, passthrough, or verify. HIGH: directly controls whether client-certificate (mTLS) authentication is enforced, the access-control decision itself, so engineer-reviewed. Allowlist per provider docs.",
+      "target": {
+        "resourceType": "aws_lb_listener",
+        "path": [
+          "mutual_authentication"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "mode",
+          "label": "mTLS mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "off",
+              "passthrough",
+              "verify"
+            ]
+          },
+          "help": "Mutual-TLS mode: off disables mTLS, passthrough forwards the client cert, verify validates it against the trust store."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (mutual_authentication.mode)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-lb-listener-set-advertise-trust-store-ca-names",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set mTLS advertise trust-store CA names",
+      "summary": "Show or hide trusted CA names during this listener's client-certificate handshake. Minor disclosure only, not the access decision.",
+      "description": "Set mutual_authentication.advertise_trust_store_ca_names \u2014 off or on. Updates in place, reversible; controls minor CA-name disclosure during the mTLS handshake, not the access decision. Only valid when mode is verify. Allowlist per provider docs.",
+      "target": {
+        "resourceType": "aws_lb_listener",
+        "path": [
+          "mutual_authentication"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "value",
+          "label": "Advertise trust-store CA names",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "off",
+              "on"
+            ]
+          },
+          "help": "Only valid when mutual_authentication.mode is verify.",
+          "attr": "advertise_trust_store_ca_names"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (mutual_authentication.advertise_trust_store_ca_names)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-lb-listener-set-ignore-client-certificate-expiry",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set mTLS ignore client-certificate expiry",
+      "summary": "Let this listener accept expired client certificates. Removes a safety check on that boundary, so an engineer reviews it.",
+      "description": "Set mutual_authentication.ignore_client_certificate_expiry (true/false). HIGH: enabling it disables a client-certificate expiry check and removes a safety guardrail on the mTLS boundary, so engineer-reviewed. Only valid when mode is verify. Bounded to the fixed true/false.",
+      "target": {
+        "resourceType": "aws_lb_listener",
+        "path": [
+          "mutual_authentication"
+        ]
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "enabled",
+          "label": "Ignore client-certificate expiry",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Only valid when mutual_authentication.mode is verify.",
+          "attr": "ignore_client_certificate_expiry"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (mutual_authentication.ignore_client_certificate_expiry)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-lb-listener-engineer-request",
+      "service": "acm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to this listener",
+      "summary": "Request any other change to this listener. An engineer authors and reviews the Terraform.",
+      "description": "Catch-all for any aws_lb_listener change not offered as a bounded self-service form \u2014 default-action routing and auth blocks (forward target-group ARNs, authenticate-cognito/oidc, jwt-validation), ssl_policy, load_balancer_arn (ForceNew), region, mutual_authentication trust store, and free-text routing/response headers. An engineer authors and reviews the Terraform. Adds the engineer catch-all targeting aws_lb_listener that acm.json previously lacked, so unbounded/skipped arguments have a reachable engineer path.",
+      "target": {
+        "resourceType": "aws_lb_listener"
+      },
+      "params": [
+        {
+          "name": "listener",
+          "label": "Listener",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_listener/address",
+          "required": true,
+          "help": "The listener to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Describe it; an engineer will author the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "acm-lb-listener-create",
+      "service": "acm",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new listener",
+      "summary": "Request a brand-new HTTP or HTTPS listener on an existing load balancer; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new listener as a complete specification: port, protocol, certificate, and a single forwarding rule to a target group. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_lb_listener"
+      },
+      "params": [
+        {
+          "name": "listener_name",
+          "label": "Listener name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the listener in the generated draft — a listener has no name field of its own."
+        },
+        {
+          "name": "load_balancer",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "load_balancer_arn",
+          "group": "identity",
+          "help": "The existing load balancer this listener attaches to."
+        },
+        {
+          "name": "port",
+          "label": "Port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "port",
+          "group": "network",
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "default": 443,
+          "help": "The port this listener accepts connections on, e.g. 443 for HTTPS or 80 for HTTP."
+        },
+        {
+          "name": "protocol",
+          "label": "Protocol",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "protocol",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              "HTTPS",
+              "HTTP"
+            ]
+          },
+          "default": "HTTPS",
+          "help": "ALB protocol. NLB protocols (TCP/UDP/TLS) are an engineer decision — use the request-a-change catch-all."
+        },
+        {
+          "name": "certificate",
+          "label": "Default certificate",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_acm_certificate/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "certificate_arn",
+          "group": "tls",
+          "dependsOn": {
+            "param": "protocol",
+            "equals": "HTTPS"
+          },
+          "help": "Required for HTTPS. Must already be ISSUED and cover the hostnames this listener serves."
+        },
+        {
+          "name": "ssl_policy",
+          "label": "TLS security policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "ssl_policy",
+          "group": "tls",
+          "dependsOn": {
+            "param": "protocol",
+            "equals": "HTTPS"
+          },
+          "bounds": {
+            "allowlist": [
+              "ELBSecurityPolicy-TLS13-1-2-2021-06",
+              "ELBSecurityPolicy-TLS13-1-2-Res-2021-06",
+              "ELBSecurityPolicy-FS-1-2-Res-2020-10"
+            ]
+          },
+          "default": "ELBSecurityPolicy-TLS13-1-2-2021-06",
+          "help": "Which TLS versions and ciphers clients may use. Required for HTTPS; the 2021 TLS 1.3 policy is the AWS-recommended default."
+        },
+        {
+          "name": "default_action_type",
+          "label": "Default action",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "forward",
+          "attr": "type",
+          "path": [
+            "default_action"
+          ],
+          "group": "routing",
+          "help": "Always forward to a target group for the common case — written into the draft, never asked."
+        },
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "target_group_arn",
+          "path": [
+            "default_action"
+          ],
+          "group": "routing",
+          "help": "Where this listener forwards every request by default."
+        },
+        {
+          "name": "resource_name",
+          "label": "Listener name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this listener serves",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this listener."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new listener",
+        "provision listener",
+        "new alb listener"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Non-forward default actions (redirect, fixed response, authenticate-cognito/oidc, weighted or multi-target-group forwarding) are engineer decisions — use the request-a-change catch-all or the dedicated set operations after creation",
+        "NLB protocols and mutual-TLS (mTLS) trust-store configuration are engineer decisions"
+      ]
+    },
+    {
+      "id": "acm-create-certificate",
+      "service": "acm",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new ACM certificate (raw resource)",
+      "summary": "Author a new ACM certificate as a raw Terraform resource; an engineer finalizes and reviews it, including validation, before it applies.",
+      "description": "Stand up a new aws_acm_certificate as a complete specification: domain, SANs, validation method and certificate-transparency preference. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review. Prefer the existing guided DNS-validated certificate request for the common case, which also automates the validation records; use this form when the raw resource skeleton is what is needed instead.",
+      "target": {
+        "resourceType": "aws_acm_certificate"
+      },
+      "params": [
+        {
+          "name": "cert_name",
+          "label": "Certificate name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the certificate in the generated draft \u2014 an ACM certificate has no name field of its own."
+        },
+        {
+          "name": "domain_name",
+          "label": "Primary domain (FQDN)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "domain_name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^(\\*\\.)?([a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$"
+          },
+          "help": "e.g. app.example.com or *.example.com (wildcard only as leftmost label)."
+        },
+        {
+          "name": "subject_alternative_names",
+          "label": "Additional hostnames (SANs)",
+          "type": "list",
+          "source": "user_input",
+          "required": false,
+          "attr": "subject_alternative_names",
+          "group": "identity",
+          "default": [],
+          "bounds": {
+            "semantic": "each an FQDN the org controls; total SANs incl. primary <= 100",
+            "maxItems": 99,
+            "pattern": "^(\\*\\.)?([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$"
+          },
+          "help": "Optional extra hostnames covered by the same certificate."
+        },
+        {
+          "name": "validation_method",
+          "label": "Validation method",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "validation_method",
+          "group": "tls",
+          "bounds": {
+            "allowlist": [
+              "DNS"
+            ]
+          },
+          "default": "DNS",
+          "help": "DNS only \u2014 EMAIL validation requires manual approver clicks and is rejected by the catalog."
+        },
+        {
+          "name": "key_algorithm",
+          "label": "Key algorithm",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "key_algorithm",
+          "group": "tls",
+          "bounds": {
+            "allowlist": [
+              "RSA_2048",
+              "EC_prime256v1"
+            ]
+          },
+          "default": "RSA_2048",
+          "help": "RSA_2048 is the broadly-compatible default; EC_prime256v1 is smaller/faster if every client supports it."
+        },
+        {
+          "name": "certificate_transparency_logging_preference",
+          "label": "Certificate transparency logging",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "certificate_transparency_logging_preference",
+          "path": [
+            "options"
+          ],
+          "group": "tls",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "default": "ENABLED",
+          "help": "Public CT logging of the issued certificate. Same setting the existing toggle action changes later."
+        },
+        {
+          "name": "resource_name",
+          "label": "Certificate name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this certificate is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this certificate."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new acm certificate",
+        "provision certificate",
+        "raw certificate resource"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "DNS validation records must be published in the zone before the certificate reaches ISSUED \u2014 coordinate with whoever controls the zone, or prefer the existing guided DNS-validated request action, which automates the validation records",
+        "Private-CA-issued certificates (certificate_authority_arn) and imported certificates (certificate_body/private_key) are engineer decisions outside this form"
+      ]
+    }
+  ]
+}

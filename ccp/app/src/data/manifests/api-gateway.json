@@ -1,0 +1,288 @@
+{
+  "service": "api-gateway",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_api_gateway_rest_api",
+    "aws_apigatewayv2_api"
+  ],
+  "summary": "Provision new REST (v1) and HTTP/WebSocket (v2) API Gateway containers. Greenfield today (no API Gateway APIs exist yet in this estate) \u2014 each create stands up the empty API shell; resources/routes, integrations and a deployed stage are engineer follow-ups.",
+  "operations": [
+    {
+      "id": "api-gateway-create-rest-api",
+      "service": "api-gateway",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new REST API (API Gateway v1)",
+      "summary": "Request a brand-new REST API container; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new aws_api_gateway_rest_api as a complete specification: name, description and endpoint type. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review. This provisions the empty API container; resources, methods, integrations and a deployed stage are separate follow-up steps.",
+      "target": {
+        "resourceType": "aws_api_gateway_rest_api"
+      },
+      "params": [
+        {
+          "name": "api_name",
+          "label": "API name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "description",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 256
+          },
+          "help": "Shown in the console next to the API's name."
+        },
+        {
+          "name": "endpoint_type",
+          "label": "Endpoint type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "types",
+          "path": [
+            "endpoint_configuration"
+          ],
+          "wrap": "list",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              "REGIONAL",
+              "PRIVATE",
+              "EDGE"
+            ]
+          },
+          "default": "REGIONAL",
+          "help": "REGIONAL is the current AWS-recommended default. PRIVATE is reachable only through a VPC endpoint; EDGE fronts it with the CloudFront edge network."
+        },
+        {
+          "name": "disable_execute_api_endpoint",
+          "label": "Disable the default execute-api endpoint",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "disable_execute_api_endpoint",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": false,
+          "help": "On disables the AWS-generated execute-api URL, leaving only a custom domain name reachable \u2014 set this only once a custom domain is wired up."
+        },
+        {
+          "name": "resource_name",
+          "label": "API name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this API is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this API."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new rest api",
+        "provision api gateway",
+        "new api gateway v1"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "The REST API body (OpenAPI/Swagger definition), resources, methods and integrations are engineer decisions after creation \u2014 this form provisions the empty API container",
+        "PRIVATE endpoint type additionally requires associating a VPC endpoint (vpc_endpoint_ids) and a resource policy \u2014 an engineer follow-up",
+        "Deploying a stage (the API Gateway stage resource) is a required follow-up before this API serves any traffic \u2014 no stage is created here"
+      ]
+    },
+    {
+      "id": "api-gateway-create-http-api",
+      "service": "api-gateway",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new HTTP or WebSocket API (API Gateway v2)",
+      "summary": "Request a brand-new HTTP or WebSocket API container; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new aws_apigatewayv2_api as a complete specification: protocol type, description and allowed CORS origins. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review. This provisions the empty API container; routes, integrations and a deployed stage are separate follow-up steps.",
+      "target": {
+        "resourceType": "aws_apigatewayv2_api"
+      },
+      "params": [
+        {
+          "name": "api_name",
+          "label": "API name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes."
+        },
+        {
+          "name": "protocol_type",
+          "label": "Protocol type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "protocol_type",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "HTTP",
+              "WEBSOCKET"
+            ]
+          },
+          "default": "HTTP",
+          "help": "HTTP is the common low-latency REST-style API; WEBSOCKET keeps a persistent two-way connection."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 256
+          },
+          "help": "Shown in the console next to the API's name."
+        },
+        {
+          "name": "cors_allow_origins",
+          "label": "CORS allowed origins",
+          "type": "list",
+          "source": "user_input",
+          "required": false,
+          "attr": "allow_origins",
+          "path": [
+            "cors_configuration"
+          ],
+          "group": "network",
+          "default": [],
+          "dependsOn": {
+            "param": "protocol_type",
+            "equals": "HTTP"
+          },
+          "bounds": {
+            "maxItems": 20,
+            "pattern": "^(\\*|https?://[A-Za-z0-9.-]+(:[0-9]+)?)$",
+            "semantic": "each an origin URL or the literal *"
+          },
+          "help": "Leave empty for no CORS configuration (the default, no browser cross-origin access). HTTP APIs only."
+        },
+        {
+          "name": "resource_name",
+          "label": "API name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this API is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this API."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new http api",
+        "provision apigatewayv2",
+        "new websocket api"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Routes, integrations and a deployed stage are engineer follow-ups \u2014 this form provisions the empty API container",
+        "WEBSOCKET APIs additionally need route_selection_expression \u2014 an engineer decision (AWS defaults to $request.body.action when left unset)",
+        "Full CORS tuning beyond allowed origins (headers, methods, credentials, max age) is an engineer decision after creation"
+      ]
+    }
+  ]
+}

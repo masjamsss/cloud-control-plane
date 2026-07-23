@@ -1,0 +1,2312 @@
+{
+  "service": "aws-analytics",
+  "scope": "expansion",
+  "resourceTypes": [
+    "aws_athena_data_catalog",
+    "aws_athena_workgroup",
+    "aws_dataexchange_data_set",
+    "aws_dataexchange_revision",
+    "aws_datapipeline_pipeline",
+    "aws_elasticsearch_domain",
+    "aws_emr_cluster",
+    "aws_emr_studio",
+    "aws_emrcontainers_virtual_cluster",
+    "aws_emrserverless_application",
+    "aws_finspace_kx_cluster",
+    "aws_finspace_kx_database",
+    "aws_finspace_kx_dataview",
+    "aws_finspace_kx_environment",
+    "aws_finspace_kx_scaling_group",
+    "aws_finspace_kx_user",
+    "aws_finspace_kx_volume",
+    "aws_glue_catalog_database",
+    "aws_glue_connection",
+    "aws_glue_crawler",
+    "aws_glue_data_quality_ruleset",
+    "aws_glue_dev_endpoint",
+    "aws_glue_job",
+    "aws_glue_ml_transform",
+    "aws_glue_registry",
+    "aws_glue_schema",
+    "aws_glue_trigger",
+    "aws_glue_workflow",
+    "aws_kinesis_analytics_application",
+    "aws_kinesis_firehose_delivery_stream",
+    "aws_kinesis_stream",
+    "aws_kinesis_stream_consumer",
+    "aws_kinesis_video_stream",
+    "aws_kinesisanalyticsv2_application",
+    "aws_msk_cluster",
+    "aws_msk_replicator",
+    "aws_msk_serverless_cluster",
+    "aws_msk_vpc_connection",
+    "aws_mskconnect_connector",
+    "aws_mskconnect_custom_plugin",
+    "aws_mskconnect_worker_configuration",
+    "aws_opensearch_domain",
+    "aws_quicksight_analysis",
+    "aws_quicksight_dashboard",
+    "aws_quicksight_data_set",
+    "aws_quicksight_data_source",
+    "aws_quicksight_folder",
+    "aws_quicksight_template",
+    "aws_quicksight_theme"
+  ],
+  "summary": "Tag management across Analytics AWS resources (auto-generated comprehensive tag surface — 49 resource types).",
+  "operations": [
+    {
+      "id": "aws-tag-athena-data-catalog",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Athena Data Catalog tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Athena Data Catalog (aws_athena_data_catalog). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_athena_data_catalog",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Athena Data Catalog",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_athena_data_catalog/address",
+          "help": "The Athena Data Catalog to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-athena-workgroup",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Athena Workgroup tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Athena Workgroup (aws_athena_workgroup). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_athena_workgroup",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Athena Workgroup",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_athena_workgroup/address",
+          "help": "The Athena Workgroup to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-dataexchange-data-set",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Dataexchange Data Set tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Dataexchange Data Set (aws_dataexchange_data_set). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_dataexchange_data_set",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Dataexchange Data Set",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_dataexchange_data_set/address",
+          "help": "The Dataexchange Data Set to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-dataexchange-revision",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Dataexchange Revision tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Dataexchange Revision (aws_dataexchange_revision). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_dataexchange_revision",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Dataexchange Revision",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_dataexchange_revision/address",
+          "help": "The Dataexchange Revision to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-datapipeline-pipeline",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Datapipeline Pipeline tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Datapipeline Pipeline (aws_datapipeline_pipeline). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_datapipeline_pipeline",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Datapipeline Pipeline",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_datapipeline_pipeline/address",
+          "help": "The Datapipeline Pipeline to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-elasticsearch-domain",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Elasticsearch Domain tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Elasticsearch Domain (aws_elasticsearch_domain). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_elasticsearch_domain",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Elasticsearch Domain",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_elasticsearch_domain/address",
+          "help": "The Elasticsearch Domain to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-emr-cluster",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Emr Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Emr Cluster (aws_emr_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_emr_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Emr Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_emr_cluster/address",
+          "help": "The Emr Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-emr-studio",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Emr Studio tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Emr Studio (aws_emr_studio). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_emr_studio",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Emr Studio",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_emr_studio/address",
+          "help": "The Emr Studio to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-emrcontainers-virtual-cluster",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Emrcontainers Virtual Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Emrcontainers Virtual Cluster (aws_emrcontainers_virtual_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_emrcontainers_virtual_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Emrcontainers Virtual Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_emrcontainers_virtual_cluster/address",
+          "help": "The Emrcontainers Virtual Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-emrserverless-application",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Emrserverless Application tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Emrserverless Application (aws_emrserverless_application). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_emrserverless_application",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Emrserverless Application",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_emrserverless_application/address",
+          "help": "The Emrserverless Application to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-finspace-kx-cluster",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Finspace Kx Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Finspace Kx Cluster (aws_finspace_kx_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_finspace_kx_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Finspace Kx Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_finspace_kx_cluster/address",
+          "help": "The Finspace Kx Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-finspace-kx-database",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Finspace Kx Database tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Finspace Kx Database (aws_finspace_kx_database). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_finspace_kx_database",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Finspace Kx Database",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_finspace_kx_database/address",
+          "help": "The Finspace Kx Database to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-finspace-kx-dataview",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Finspace Kx Dataview tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Finspace Kx Dataview (aws_finspace_kx_dataview). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_finspace_kx_dataview",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Finspace Kx Dataview",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_finspace_kx_dataview/address",
+          "help": "The Finspace Kx Dataview to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-finspace-kx-environment",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Finspace Kx Environment tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Finspace Kx Environment (aws_finspace_kx_environment). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_finspace_kx_environment",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Finspace Kx Environment",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_finspace_kx_environment/address",
+          "help": "The Finspace Kx Environment to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-finspace-kx-scaling-group",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Finspace Kx Scaling Group tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Finspace Kx Scaling Group (aws_finspace_kx_scaling_group). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_finspace_kx_scaling_group",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Finspace Kx Scaling Group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_finspace_kx_scaling_group/address",
+          "help": "The Finspace Kx Scaling Group to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-finspace-kx-user",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Finspace Kx User tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Finspace Kx User (aws_finspace_kx_user). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_finspace_kx_user",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Finspace Kx User",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_finspace_kx_user/address",
+          "help": "The Finspace Kx User to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-finspace-kx-volume",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Finspace Kx Volume tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Finspace Kx Volume (aws_finspace_kx_volume). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_finspace_kx_volume",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Finspace Kx Volume",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_finspace_kx_volume/address",
+          "help": "The Finspace Kx Volume to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-glue-catalog-database",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Glue Catalog Database tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Glue Catalog Database (aws_glue_catalog_database). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_glue_catalog_database",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Glue Catalog Database",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_glue_catalog_database/address",
+          "help": "The Glue Catalog Database to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-glue-connection",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Glue Connection tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Glue Connection (aws_glue_connection). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_glue_connection",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Glue Connection",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_glue_connection/address",
+          "help": "The Glue Connection to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-glue-crawler",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Glue Crawler tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Glue Crawler (aws_glue_crawler). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_glue_crawler",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Glue Crawler",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_glue_crawler/address",
+          "help": "The Glue Crawler to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-glue-data-quality-ruleset",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Glue Data Quality Ruleset tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Glue Data Quality Ruleset (aws_glue_data_quality_ruleset). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_glue_data_quality_ruleset",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Glue Data Quality Ruleset",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_glue_data_quality_ruleset/address",
+          "help": "The Glue Data Quality Ruleset to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-glue-dev-endpoint",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Glue Dev Endpoint tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Glue Dev Endpoint (aws_glue_dev_endpoint). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_glue_dev_endpoint",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Glue Dev Endpoint",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_glue_dev_endpoint/address",
+          "help": "The Glue Dev Endpoint to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-glue-job",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Glue Job tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Glue Job (aws_glue_job). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_glue_job",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Glue Job",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_glue_job/address",
+          "help": "The Glue Job to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-glue-ml-transform",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Glue Ml Transform tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Glue Ml Transform (aws_glue_ml_transform). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_glue_ml_transform",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Glue Ml Transform",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_glue_ml_transform/address",
+          "help": "The Glue Ml Transform to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-glue-registry",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Glue Registry tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Glue Registry (aws_glue_registry). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_glue_registry",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Glue Registry",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_glue_registry/address",
+          "help": "The Glue Registry to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-glue-schema",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Glue Schema tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Glue Schema (aws_glue_schema). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_glue_schema",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Glue Schema",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_glue_schema/address",
+          "help": "The Glue Schema to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-glue-trigger",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Glue Trigger tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Glue Trigger (aws_glue_trigger). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_glue_trigger",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Glue Trigger",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_glue_trigger/address",
+          "help": "The Glue Trigger to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-glue-workflow",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Glue Workflow tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Glue Workflow (aws_glue_workflow). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_glue_workflow",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Glue Workflow",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_glue_workflow/address",
+          "help": "The Glue Workflow to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-kinesis-analytics-application",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Kinesis Analytics Application tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Kinesis Analytics Application (aws_kinesis_analytics_application). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_kinesis_analytics_application",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Kinesis Analytics Application",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_kinesis_analytics_application/address",
+          "help": "The Kinesis Analytics Application to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-kinesis-firehose-delivery-stream",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Kinesis Firehose Delivery Stream tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Kinesis Firehose Delivery Stream (aws_kinesis_firehose_delivery_stream). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_kinesis_firehose_delivery_stream",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Kinesis Firehose Delivery Stream",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_kinesis_firehose_delivery_stream/address",
+          "help": "The Kinesis Firehose Delivery Stream to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-kinesis-stream",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Kinesis Stream tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Kinesis Stream (aws_kinesis_stream). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_kinesis_stream",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Kinesis Stream",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_kinesis_stream/address",
+          "help": "The Kinesis Stream to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-kinesis-stream-consumer",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Kinesis Stream Consumer tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Kinesis Stream Consumer (aws_kinesis_stream_consumer). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_kinesis_stream_consumer",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Kinesis Stream Consumer",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_kinesis_stream_consumer/address",
+          "help": "The Kinesis Stream Consumer to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-kinesis-video-stream",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Kinesis Video Stream tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Kinesis Video Stream (aws_kinesis_video_stream). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_kinesis_video_stream",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Kinesis Video Stream",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_kinesis_video_stream/address",
+          "help": "The Kinesis Video Stream to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-kinesisanalyticsv2-application",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Kinesisanalyticsv2 Application tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Kinesisanalyticsv2 Application (aws_kinesisanalyticsv2_application). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_kinesisanalyticsv2_application",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Kinesisanalyticsv2 Application",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_kinesisanalyticsv2_application/address",
+          "help": "The Kinesisanalyticsv2 Application to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-msk-cluster",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Msk Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Msk Cluster (aws_msk_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_msk_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Msk Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_msk_cluster/address",
+          "help": "The Msk Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-msk-replicator",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Msk Replicator tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Msk Replicator (aws_msk_replicator). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_msk_replicator",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Msk Replicator",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_msk_replicator/address",
+          "help": "The Msk Replicator to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-msk-serverless-cluster",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Msk Serverless Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Msk Serverless Cluster (aws_msk_serverless_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_msk_serverless_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Msk Serverless Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_msk_serverless_cluster/address",
+          "help": "The Msk Serverless Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-msk-vpc-connection",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Msk Vpc Connection tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Msk Vpc Connection (aws_msk_vpc_connection). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_msk_vpc_connection",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Msk Vpc Connection",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_msk_vpc_connection/address",
+          "help": "The Msk Vpc Connection to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-mskconnect-connector",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Mskconnect Connector tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Mskconnect Connector (aws_mskconnect_connector). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_mskconnect_connector",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Mskconnect Connector",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_mskconnect_connector/address",
+          "help": "The Mskconnect Connector to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-mskconnect-custom-plugin",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Mskconnect Custom Plugin tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Mskconnect Custom Plugin (aws_mskconnect_custom_plugin). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_mskconnect_custom_plugin",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Mskconnect Custom Plugin",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_mskconnect_custom_plugin/address",
+          "help": "The Mskconnect Custom Plugin to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-mskconnect-worker-configuration",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Mskconnect Worker Configuration tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Mskconnect Worker Configuration (aws_mskconnect_worker_configuration). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_mskconnect_worker_configuration",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Mskconnect Worker Configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_mskconnect_worker_configuration/address",
+          "help": "The Mskconnect Worker Configuration to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-opensearch-domain",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Opensearch Domain tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Opensearch Domain (aws_opensearch_domain). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_opensearch_domain",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Opensearch Domain",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_opensearch_domain/address",
+          "help": "The Opensearch Domain to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-quicksight-analysis",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Quicksight Analysis tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Quicksight Analysis (aws_quicksight_analysis). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_quicksight_analysis",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Quicksight Analysis",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_quicksight_analysis/address",
+          "help": "The Quicksight Analysis to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-quicksight-dashboard",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Quicksight Dashboard tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Quicksight Dashboard (aws_quicksight_dashboard). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_quicksight_dashboard",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Quicksight Dashboard",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_quicksight_dashboard/address",
+          "help": "The Quicksight Dashboard to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-quicksight-data-set",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Quicksight Data Set tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Quicksight Data Set (aws_quicksight_data_set). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_quicksight_data_set",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Quicksight Data Set",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_quicksight_data_set/address",
+          "help": "The Quicksight Data Set to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-quicksight-data-source",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Quicksight Data Source tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Quicksight Data Source (aws_quicksight_data_source). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_quicksight_data_source",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Quicksight Data Source",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_quicksight_data_source/address",
+          "help": "The Quicksight Data Source to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-quicksight-folder",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Quicksight Folder tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Quicksight Folder (aws_quicksight_folder). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_quicksight_folder",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Quicksight Folder",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_quicksight_folder/address",
+          "help": "The Quicksight Folder to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-quicksight-template",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Quicksight Template tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Quicksight Template (aws_quicksight_template). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_quicksight_template",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Quicksight Template",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_quicksight_template/address",
+          "help": "The Quicksight Template to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-quicksight-theme",
+      "service": "aws-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Quicksight Theme tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Quicksight Theme (aws_quicksight_theme). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_quicksight_theme",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Quicksight Theme",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_quicksight_theme/address",
+          "help": "The Quicksight Theme to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    }
+  ]
+}

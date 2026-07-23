@@ -1,0 +1,30 @@
+--- a/environments/prod/waf.tf
++++ b/environments/prod/waf.tf
+@@ -77,4 +77,27 @@
+       count {}
+     }
+   }
++
++  rule {
++    name     = "AWSManagedRulesCommonRuleSet"
++    priority = 10
++
++    statement {
++      managed_rule_group_statement {
++        name        = "AWSManagedRulesCommonRuleSet"
++        vendor_name = "AWS"
++      }
++    }
++
++    visibility_config {
++      metric_name                = "common-rule-set"
++      cloudwatch_metrics_enabled = true
++      sampled_requests_enabled   = true
++    }
++
++    override_action {
++      count {
++      }
++    }
++  }
+ }

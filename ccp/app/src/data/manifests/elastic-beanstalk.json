@@ -1,0 +1,172 @@
+{
+  "service": "elastic-beanstalk",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_elastic_beanstalk_application"
+  ],
+  "summary": "Provision new Elastic Beanstalk applications. Every stand-up routes to an engineer for review \u2014 environments and day-2 operations land in a later wave.",
+  "operations": [
+    {
+      "id": "elastic-beanstalk-application-create",
+      "service": "elastic-beanstalk",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Elastic Beanstalk application",
+      "summary": "Request a brand-new Elastic Beanstalk application; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new application as a complete specification: name, description, and an optional application-version retention rule. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_elastic_beanstalk_application"
+      },
+      "params": [
+        {
+          "name": "app_name",
+          "label": "Application name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, like checkout-web. Names the application in AWS and in the generated draft."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "Shown in the Elastic Beanstalk console's application list."
+        },
+        {
+          "name": "lifecycle_service_role",
+          "label": "Version-lifecycle service role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "service_role",
+          "path": [
+            "appversion_lifecycle"
+          ],
+          "group": "lifecycle",
+          "tier": "advanced",
+          "help": "Required only if you set a version-retention rule below; leave both blank to keep every application version forever."
+        },
+        {
+          "name": "max_age_in_days",
+          "label": "Delete versions older than (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "max_age_in_days",
+          "path": [
+            "appversion_lifecycle"
+          ],
+          "group": "lifecycle",
+          "tier": "advanced",
+          "dependsOn": {
+            "param": "lifecycle_service_role",
+            "notEquals": ""
+          },
+          "bounds": {
+            "min": 1,
+            "max": 3650
+          },
+          "help": "Application versions older than this are deleted automatically."
+        },
+        {
+          "name": "delete_source_from_s3",
+          "label": "Delete source bundle from S3 too",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "delete_source_from_s3",
+          "path": [
+            "appversion_lifecycle"
+          ],
+          "group": "lifecycle",
+          "tier": "advanced",
+          "dependsOn": {
+            "param": "lifecycle_service_role",
+            "notEquals": ""
+          },
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": false,
+          "help": "Also removes the version's source bundle from the S3 storage bucket when it is deleted."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this application does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this application."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new elastic beanstalk application",
+        "provision beanstalk app",
+        "new eb application"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Environments (the running application stack) are provisioned as an engineer follow-up after the application exists",
+        "Version retention by COUNT instead of age (max_count) is an engineer decision \u2014 this form offers the age-based rule"
+      ]
+    }
+  ]
+}

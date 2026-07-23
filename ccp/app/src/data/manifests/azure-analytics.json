@@ -1,0 +1,526 @@
+{
+  "service": "azure-analytics",
+  "scope": "expansion",
+  "resourceTypes": [
+    "azurerm_databricks_access_connector",
+    "azurerm_databricks_workspace",
+    "azurerm_hdinsight_hadoop_cluster",
+    "azurerm_hdinsight_hbase_cluster",
+    "azurerm_hdinsight_interactive_query_cluster",
+    "azurerm_hdinsight_kafka_cluster",
+    "azurerm_hdinsight_spark_cluster",
+    "azurerm_kusto_cluster",
+    "azurerm_synapse_spark_pool",
+    "azurerm_synapse_sql_pool",
+    "azurerm_synapse_workspace"
+  ],
+  "summary": "Tag management across Analytics Azure resources (auto-generated comprehensive tag surface — 11 resource types).",
+  "operations": [
+    {
+      "id": "azure-tag-databricks-access-connector",
+      "service": "azure-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Databricks Access Connector tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Databricks Access Connector (azurerm_databricks_access_connector). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_databricks_access_connector",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Databricks Access Connector",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_databricks_access_connector/address",
+          "help": "The Databricks Access Connector to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-databricks-workspace",
+      "service": "azure-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Databricks Workspace tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Databricks Workspace (azurerm_databricks_workspace). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_databricks_workspace",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Databricks Workspace",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_databricks_workspace/address",
+          "help": "The Databricks Workspace to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-hdinsight-hadoop-cluster",
+      "service": "azure-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Hdinsight Hadoop Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Hdinsight Hadoop Cluster (azurerm_hdinsight_hadoop_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_hdinsight_hadoop_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Hdinsight Hadoop Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_hdinsight_hadoop_cluster/address",
+          "help": "The Hdinsight Hadoop Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-hdinsight-hbase-cluster",
+      "service": "azure-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Hdinsight Hbase Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Hdinsight Hbase Cluster (azurerm_hdinsight_hbase_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_hdinsight_hbase_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Hdinsight Hbase Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_hdinsight_hbase_cluster/address",
+          "help": "The Hdinsight Hbase Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-hdinsight-interactive-query-cluster",
+      "service": "azure-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Hdinsight Interactive Query Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Hdinsight Interactive Query Cluster (azurerm_hdinsight_interactive_query_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_hdinsight_interactive_query_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Hdinsight Interactive Query Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_hdinsight_interactive_query_cluster/address",
+          "help": "The Hdinsight Interactive Query Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-hdinsight-kafka-cluster",
+      "service": "azure-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Hdinsight Kafka Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Hdinsight Kafka Cluster (azurerm_hdinsight_kafka_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_hdinsight_kafka_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Hdinsight Kafka Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_hdinsight_kafka_cluster/address",
+          "help": "The Hdinsight Kafka Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-hdinsight-spark-cluster",
+      "service": "azure-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Hdinsight Spark Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Hdinsight Spark Cluster (azurerm_hdinsight_spark_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_hdinsight_spark_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Hdinsight Spark Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_hdinsight_spark_cluster/address",
+          "help": "The Hdinsight Spark Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-kusto-cluster",
+      "service": "azure-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Kusto Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Kusto Cluster (azurerm_kusto_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_kusto_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Kusto Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_kusto_cluster/address",
+          "help": "The Kusto Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-synapse-spark-pool",
+      "service": "azure-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Synapse Spark Pool tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Synapse Spark Pool (azurerm_synapse_spark_pool). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_synapse_spark_pool",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Synapse Spark Pool",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_synapse_spark_pool/address",
+          "help": "The Synapse Spark Pool to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-synapse-sql-pool",
+      "service": "azure-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Synapse Sql Pool tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Synapse Sql Pool (azurerm_synapse_sql_pool). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_synapse_sql_pool",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Synapse Sql Pool",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_synapse_sql_pool/address",
+          "help": "The Synapse Sql Pool to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-synapse-workspace",
+      "service": "azure-analytics",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Synapse Workspace tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Synapse Workspace (azurerm_synapse_workspace). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_synapse_workspace",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Synapse Workspace",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_synapse_workspace/address",
+          "help": "The Synapse Workspace to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    }
+  ]
+}

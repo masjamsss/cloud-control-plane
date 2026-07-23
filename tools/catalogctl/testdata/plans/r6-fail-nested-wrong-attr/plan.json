@@ -1,0 +1,29 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_instance.sample02",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "metadata_options": [
+            {
+              "http_tokens": "optional",
+              "http_endpoint": "enabled"
+            }
+          ]
+        },
+        "after": {
+          "metadata_options": [
+            {
+              "http_tokens": "optional",
+              "http_endpoint": "disabled"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

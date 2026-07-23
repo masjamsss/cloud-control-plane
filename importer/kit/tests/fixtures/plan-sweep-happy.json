@@ -1,0 +1,50 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.15.7",
+  "planned_values": { "root_module": {} },
+  "resource_changes": [],
+  "prior_state": {
+    "format_version": "1.0",
+    "terraform_version": "1.15.7",
+    "values": {
+      "root_module": {
+        "resources": [
+          {
+            "address": "aws_instance.root_managed",
+            "mode": "managed",
+            "type": "aws_instance",
+            "name": "root_managed",
+            "provider_name": "registry.terraform.io/hashicorp/aws",
+            "schema_version": 0,
+            "values": { "id": "i-happy0000000000002" }
+          },
+          {
+            "address": "data.aws_ami.decoy",
+            "mode": "data",
+            "type": "aws_ami",
+            "name": "decoy",
+            "provider_name": "registry.terraform.io/hashicorp/aws",
+            "schema_version": 0,
+            "values": { "id": "i-happy0000000000001" }
+          }
+        ],
+        "child_modules": [
+          {
+            "address": "module.legacy",
+            "resources": [
+              {
+                "address": "module.legacy.aws_instance.child_managed",
+                "mode": "managed",
+                "type": "aws_instance",
+                "name": "child_managed",
+                "provider_name": "registry.terraform.io/hashicorp/aws",
+                "schema_version": 0,
+                "values": { "id": "i-happy0000000000003" }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

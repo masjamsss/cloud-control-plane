@@ -1,0 +1,2177 @@
+{
+  "service": "backup",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_backup_plan",
+    "aws_backup_selection",
+    "aws_backup_vault"
+  ],
+  "summary": "Tune AWS Backup plans and coverage: adjust a plan's schedule (cron is UTC) and retention, add an extra backup rule, onboard resources with a tag-based selection, detach a selection, and tear down a vault (engineer-only, unrecoverable). Not set up yet? Start with Create a backup vault, then Create a backup plan, then add a selection — after that every operation here has something to target. On-demand backup jobs are excluded by design: running a job now is an operational action, not a configuration change.",
+  "operations": [
+    {
+      "id": "backup-change-plan-schedule",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a backup plan rule's schedule",
+      "summary": "Change the time this backup rule runs. Schedules are in UTC, so convert from your local time. No downtime; only future backups shift.",
+      "consoleLabel": "Backup frequency",
+      "description": "Retune the cron schedule of an existing backup rule (e.g. move a daily job earlier to clear the batch window). In-place update to the plan; no workload downtime and no effect on existing recovery points \u2014 only when future jobs fire changes. AWS Backup cron is evaluated in UTC, so the requester must offset it from their local time.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "path": [
+          "rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true,
+          "help": "The aws_backup_plan whose rule you want to reschedule."
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "primary",
+          "help": "Which rule inside the plan to modify. Leave as the plan's primary rule unless it has multiple.",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_-]{1,50}$"
+          },
+          "role": "selector",
+          "matchAttr": "rule_name"
+        },
+        {
+          "name": "new_schedule",
+          "label": "New schedule (cron, UTC)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "AWS Backup cron expression in UTC. Example: cron(0 17 ? * * *) = daily 17:00 UTC.",
+          "bounds": {
+            "pattern": "^cron\\(.+\\)$",
+            "semantic": "aws_backup_cron_utc"
+          },
+          "attr": "schedule"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "backup schedule",
+        "run backup earlier",
+        "backup time"
+      ],
+      "group": "protection-backup",
+      "pinned": 1
+    },
+    {
+      "id": "backup-change-plan-retention",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a backup plan rule's retention",
+      "summary": "Change how long this rule's backups are kept. Shortening it can permanently delete existing backups early; a retention floor is enforced.",
+      "consoleLabel": "Retention period",
+      "description": "Adjust how many days recovery points from a rule are retained before automatic expiry. Extending retention is safe and additive; SHORTENING it can cause AWS Backup to permanently expire existing recovery points at the next lifecycle pass \u2014 that data cannot be recovered. In-place plan update, no downtime, but data-protection relevant, so it carries a guardrail and a floor on the minimum retention.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "path": [
+          "rule",
+          "lifecycle"
+        ]
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true,
+          "help": "The aws_backup_plan whose rule retention you want to change."
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "primary",
+          "help": "Which rule inside the plan to modify.",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_-]{1,50}$"
+          },
+          "role": "selector",
+          "matchAttr": "rule_name"
+        },
+        {
+          "name": "new_delete_after_days",
+          "label": "New retention (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "Days to retain recovery points before expiry. Must exceed any cold_storage_after by at least 90 days per AWS rules. Shortening below the current value may permanently delete existing recovery points.",
+          "bounds": {
+            "min": 7,
+            "max": 2555,
+            "semantic": "retention_days"
+          },
+          "attr": "delete_after"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "backup retention",
+        "keep recovery points"
+      ],
+      "group": "protection-backup",
+      "pinned": 3
+    },
+    {
+      "id": "backup-add-plan-rule",
+      "service": "backup",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a backup rule to an existing plan",
+      "summary": "Add another schedule to this plan, like a monthly rule alongside the daily one. Adds ongoing storage cost that grows with how often it runs.",
+      "description": "Append an additional rule to an existing plan \u2014 for example a long-retention monthly rule alongside the existing daily one \u2014 targeting a chosen vault with its own schedule and retention. In-place plan update, no downtime. Creates ongoing storage cost proportional to schedule frequency times retention, so it is guardrailed.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "block": "rule"
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true,
+          "help": "The aws_backup_plan to append a new rule to."
+        },
+        {
+          "name": "rule_name",
+          "label": "New rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Unique name for the new rule within this plan.",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_-]{1,50}$"
+          },
+          "role": "key"
+        },
+        {
+          "name": "target_vault_name",
+          "label": "Target vault",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_vault/address",
+          "required": true,
+          "help": "Vault the new rule writes recovery points into.",
+          "role": "reference",
+          "refAttr": "name"
+        },
+        {
+          "name": "schedule",
+          "label": "Schedule (cron, UTC)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Cron in UTC. Example: cron(0 18 1 * ? *) = 1st of month 18:00 UTC.",
+          "bounds": {
+            "pattern": "^cron\\(.+\\)$",
+            "semantic": "aws_backup_cron_utc"
+          }
+        },
+        {
+          "name": "delete_after_days",
+          "label": "Retention (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "Days to retain recovery points created by this rule before expiry.",
+          "bounds": {
+            "min": 7,
+            "max": 2555,
+            "semantic": "retention_days"
+          },
+          "attr": "delete_after",
+          "path": [
+            "lifecycle"
+          ]
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "add backup rule",
+        "monthly backup"
+      ],
+      "group": "create"
+    },
+    {
+      "id": "backup-add-resource-selection",
+      "service": "backup",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a tag-based resource selection to a plan",
+      "summary": "Start backing up resources that match a tag you pick. Adds new backup storage cost and protects them on the plan's schedule.",
+      "description": "Onboard resources into a backup plan by creating a new aws_backup_selection that matches a tag key/value (e.g. Backup=daily on EBS volumes and EFS). Everything matching the tag begins backing up on the plan's schedule, creating new storage cost. No downtime on the workload. The AWS Backup service role is picked from the account inventory — the requester never supplies a raw role by hand.",
+      "target": {
+        "resourceType": "aws_backup_selection"
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true,
+          "help": "The aws_backup_plan the new selection attaches to."
+        },
+        {
+          "name": "selection_name",
+          "label": "Selection name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Unique name for the new selection resource.",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_-]{1,50}$"
+          }
+        },
+        {
+          "name": "backup_tag_key",
+          "label": "Match tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Tag key resources must carry to be included (e.g. Backup).",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$"
+          }
+        },
+        {
+          "name": "backup_tag_value",
+          "label": "Match tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Tag value resources must carry (e.g. daily).",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,256}$"
+          }
+        },
+        {
+          "name": "iam_role_arn",
+          "label": "Backup service role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "help": "IAM role AWS Backup assumes to snapshot the selected resources; must grant the AWSBackupServiceRolePolicy (or equivalent). Only roles managed in this account's Terraform appear — a console-created backup service role must be adopted into the estate before it shows up here.",
+          "role": "reference",
+          "refAttr": "arn"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "keywords": [
+        "add to backup",
+        "backup scheme",
+        "protect resources"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Confirm the service role scope if the non-default role is chosen"
+      ]
+    },
+    {
+      "id": "backup-delete-resource-selection",
+      "service": "backup",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Remove a resource selection from a plan",
+      "summary": "Stop future backups for resources this selection covers. Existing backups are kept. A second approver reviews it before this takes effect.",
+      "description": "Detach an aws_backup_selection so the resources it matched stop being backed up on future runs. Existing recovery points already in the vault are NOT deleted and remain restorable until their retention expires, so this is reversible by re-adding the selection. No workload downtime, but it silently drops resources from protection, so it is guardrailed with a second approver.",
+      "target": {
+        "resourceType": "aws_backup_selection"
+      },
+      "params": [
+        {
+          "name": "selection",
+          "label": "Resource selection",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_selection/address",
+          "required": true,
+          "help": "The aws_backup_selection to remove. Future backups of its matched resources stop; existing recovery points are retained."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "backup-delete-vault",
+      "service": "backup",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete a backup vault",
+      "summary": "Permanently delete this empty backup vault. Every backup it ever held is already gone by this point; an engineer reviews it first.",
+      "description": "Destroy an aws_backup_vault. AWS refuses to delete a vault that still holds recovery points, so this only succeeds once the vault is empty \u2014 at which point every recovery point that ever lived in it is already gone. This is the destructive, unrecoverable teardown that stands in for deleting recovery points: no restore is possible afterward. Engineer-authored and engineer-reviewed only.",
+      "target": {
+        "resourceType": "aws_backup_vault"
+      },
+      "params": [
+        {
+          "name": "vault",
+          "label": "Backup vault",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_vault/address",
+          "required": true,
+          "help": "The aws_backup_vault to destroy. Must be empty; any recovery points are permanently unrecoverable once removed."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "backup-toggle-vault-force-destroy",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle vault force-destroy",
+      "summary": "Allow or block a future vault deletion from also wiping out its backups. Removes a safety net when turned on; it deletes nothing by itself.",
+      "description": "Enable or disable force_destroy on a backup vault. When true, a future terraform destroy will also delete all recovery points held in the vault. Updates in place, reversible, no downtime; it deletes nothing on its own but toggling it on removes a guardrail against accidental data loss, so it runs with guardrails.",
+      "target": {
+        "attr": "force_destroy",
+        "resourceType": "aws_backup_vault"
+      },
+      "params": [
+        {
+          "name": "vault",
+          "label": "Backup vault",
+          "type": "string",
+          "source": "inventory",
+          "help": "The backup vault whose force-destroy flag you are toggling, picked from Terraform-managed vaults so this data-loss guardrail can only be changed on a known vault.",
+          "enumSource": "inventory://aws_backup_vault/address",
+          "required": true
+        },
+        {
+          "name": "force_destroy",
+          "label": "Force destroy on delete",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true lets a future destroy remove all recovery points in this vault; false protects them."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (force_destroy)",
+      "group": "protection-backup",
+      "pinned": 1
+    },
+    {
+      "id": "backup-add-vault-tag",
+      "service": "backup",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to the vault",
+      "summary": "Add or update a tag on this backup vault. Metadata only, no effect on how backups run.",
+      "description": "Add or overwrite a single key/value tag on a backup vault. Cosmetic metadata change, updates in place, fully reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_backup_vault",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "vault",
+          "label": "Backup vault",
+          "type": "string",
+          "source": "inventory",
+          "help": "The backup vault receiving the tag, selected from Terraform inventory so the metadata is applied to a known vault.",
+          "enumSource": "inventory://aws_backup_vault/address",
+          "required": true
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9+\\-=._:/@ ]{1,128}$"
+          },
+          "help": "1-128 chars: letters, digits and + - = . _ : / @ space."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9+\\-=._:/@ ]{0,256}$"
+          },
+          "help": "Up to 256 chars: letters, digits and + - = . _ : / @ space."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "create"
+    },
+    {
+      "id": "backup-remove-vault-tag",
+      "service": "backup",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag from the vault",
+      "summary": "Remove a tag from this backup vault. Metadata only, no effect on how backups run.",
+      "description": "Remove a single tag (by key) from a backup vault. Cosmetic metadata change, updates in place, reversible by re-adding, no downtime.",
+      "target": {
+        "resourceType": "aws_backup_vault",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "vault",
+          "label": "Backup vault",
+          "type": "string",
+          "source": "inventory",
+          "help": "The backup vault to remove the tag from, selected from Terraform inventory so only a managed vault's metadata changes.",
+          "enumSource": "inventory://aws_backup_vault/address",
+          "required": true
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9+\\-=._:/@ ]{1,128}$"
+          },
+          "help": "Exact key of the tag to remove, 1-128 chars."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "backup-backup-vault-engineer-request",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to Backup vault",
+      "summary": "Request any other change to this backup vault, such as its encryption key or its name; an engineer writes and reviews the Terraform.",
+      "description": "Catch-all for any backup vault change not offered as a bounded self-service form (for example changing the KMS key or renaming, both of which force replacement). An engineer authors and reviews the Terraform.",
+      "target": {
+        "attr": "purpose",
+        "resourceType": "aws_backup_vault"
+      },
+      "params": [
+        {
+          "name": "vault",
+          "label": "Backup vault",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "enumSource": "inventory://aws_backup_vault/address",
+          "help": "The backup vault this request is about, when the estate already tracks one. Leave blank when describing one that is not tracked yet."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "protection-backup"
+    },
+    {
+      "id": "backup-change-selection-role",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change IAM role for backup selection",
+      "summary": "Change the IAM role a backup selection uses. It gets recreated to apply this; existing backups stay untouched. An engineer reviews it.",
+      "description": "Update iam_role_arn — the IAM role AWS Backup assumes to back up the selected resources. Chosen from existing IAM roles (inventory-bounded), so no free-form input. AWS Backup selections are immutable, so the selection is destroyed and recreated to apply this; existing recovery points in the vault are untouched, and it is reversible. A role lacking the required backup permissions will cause backup jobs to fail, so this is guardrailed rather than auto-applied.",
+      "target": {
+        "attr": "iam_role_arn",
+        "resourceType": "aws_backup_selection"
+      },
+      "params": [
+        {
+          "name": "selection",
+          "label": "Backup selection",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_selection/address",
+          "required": true,
+          "help": "Which backup selection to modify."
+        },
+        {
+          "name": "iam_role_arn",
+          "label": "IAM role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "help": "Role AWS Backup assumes; must grant the AWSBackupServiceRolePolicy (or equivalent) for the selected resource types.",
+          "role": "reference",
+          "refAttr": "arn"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (iam_role_arn)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "backup-add-selection-tag",
+      "service": "backup",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add tag-based rule to backup selection",
+      "summary": "Add a tag rule to cover more resources in this selection. It gets recreated to apply; existing backups stay untouched. Engineer-reviewed.",
+      "description": "Append a selection_tag block so AWS Backup includes any resource whose tag matches the given key/value. selection_tag supports the STRINGEQUALS operator only. Expands or refines what the plan backs up. The selection is destroyed and recreated to apply this; existing recovery points in the vault are untouched, and it is reversible. Changes protection scope, so it is guardrailed.",
+      "target": {
+        "resourceType": "aws_backup_selection",
+        "block": "selection_tag"
+      },
+      "params": [
+        {
+          "name": "selection",
+          "label": "Backup selection",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_selection/address",
+          "required": true,
+          "help": "Which backup selection to modify."
+        },
+        {
+          "name": "type",
+          "label": "Match operator",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "STRINGEQUALS"
+            ]
+          },
+          "help": "selection_tag supports STRINGEQUALS only."
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9\\s_.:/=+@-]{1,128}$"
+          },
+          "help": "AWS tag key to match on (1-128 chars)."
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9\\s_.:/=+@-]{0,256}$"
+          },
+          "help": "Exact AWS tag value to match (0-256 chars)."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (selection_tag)",
+      "group": "create"
+    },
+    {
+      "id": "backup-remove-selection-tag",
+      "service": "backup",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Remove a tag-based rule from backup selection",
+      "summary": "Remove a tag rule to cover fewer resources in this selection. It's recreated to apply; existing backups stay untouched. Engineer-reviewed.",
+      "description": "Remove a selection_tag block identified by its operator/key/value. Resources matched only by that tag will no longer be included by the selection, reducing backup scope, so this is guardrailed. The selection is destroyed and recreated to apply this; existing recovery points in the vault are untouched. Reversible by re-adding the block.",
+      "target": {
+        "resourceType": "aws_backup_selection",
+        "block": "selection_tag"
+      },
+      "params": [
+        {
+          "name": "selection",
+          "label": "Backup selection",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_selection/address",
+          "required": true,
+          "help": "Which backup selection to modify."
+        },
+        {
+          "name": "type",
+          "label": "Match operator",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "STRINGEQUALS"
+            ]
+          },
+          "help": "Operator of the selection_tag block to remove."
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9\\s_.:/=+@-]{1,128}$"
+          },
+          "help": "Tag key of the selection_tag block to remove."
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9\\s_.:/=+@-]{0,256}$"
+          },
+          "help": "Tag value of the selection_tag block to remove."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (selection_tag)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "backup-add-selection-condition",
+      "service": "backup",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add tag condition to backup selection",
+      "summary": "Add a filter that narrows which tagged resources this selection covers. No downtime, and it is reversible.",
+      "description": "Append a condition sub-block (string_equals, string_not_equals, string_like, or string_not_like) to refine which tagged resources the selection matches. The *_like operators accept '*' wildcards. In-place update, reversible, no downtime; changes protection scope so it is guardrailed.",
+      "target": {
+        "resourceType": "aws_backup_selection"
+      },
+      "params": [
+        {
+          "name": "selection",
+          "label": "Backup selection",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_selection/address",
+          "required": true,
+          "help": "Which backup selection to modify."
+        },
+        {
+          "name": "operator",
+          "label": "Condition operator",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "string_equals",
+              "string_not_equals",
+              "string_like",
+              "string_not_like"
+            ]
+          },
+          "help": "Comparator sub-block to add."
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9\\s_.:/=+@-]{1,128}$"
+          },
+          "help": "AWS tag key the condition matches on."
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9\\s_.:/=+@*-]{0,256}$"
+          },
+          "help": "Tag value to match; '*' wildcards allowed for the *_like operators."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (condition)",
+      "group": "create"
+    },
+    {
+      "id": "backup-remove-selection-condition",
+      "service": "backup",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Remove a tag condition from backup selection",
+      "summary": "Remove a filter from this selection, which can widen what it covers. It's recreated to apply this; an engineer reviews it.",
+      "description": "Remove a condition sub-block identified by its operator/key/value. Relaxes the tag filter, which broadens or otherwise changes which resources the selection matches, so this is guardrailed. The selection is destroyed and recreated to apply this; existing recovery points in the vault are untouched. Reversible by re-adding the condition.",
+      "target": {
+        "resourceType": "aws_backup_selection",
+        "block": "condition"
+      },
+      "params": [
+        {
+          "name": "selection",
+          "label": "Backup selection",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_selection/address",
+          "required": true,
+          "help": "Which backup selection to modify."
+        },
+        {
+          "name": "operator",
+          "label": "Condition operator",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "string_equals",
+              "string_not_equals",
+              "string_like",
+              "string_not_like"
+            ]
+          },
+          "help": "Comparator sub-block to remove."
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9\\s_.:/=+@-]{1,128}$"
+          },
+          "help": "Tag key of the condition block to remove."
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9\\s_.:/=+@*-]{0,256}$"
+          },
+          "help": "Tag value of the condition block to remove."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (condition)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "backup-backup-selection-engineer-request",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to backup selection",
+      "summary": "Request any other change to this backup selection, such as its region or resource list; an engineer writes and reviews the Terraform.",
+      "description": "Catch-all for any backup selection change not offered as a bounded form above \u2014 for example changing the resource region, editing the resources/not_resources ARN lists in bulk, or any ForceNew change (name, plan_id). An engineer authors and reviews the Terraform.",
+      "target": {
+        "attr": "purpose",
+        "resourceType": "aws_backup_selection"
+      },
+      "params": [
+        {
+          "name": "selection",
+          "label": "Resource selection",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "enumSource": "inventory://aws_backup_selection/address",
+          "help": "The backup selection this request is about, when the estate already tracks one. Leave blank when describing one that is not tracked yet."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "protection-backup"
+    },
+    {
+      "id": "backup-rename-plan",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Rename backup plan",
+      "summary": "Rename this backup plan. This REPLACES it with a new ID and recreates its selections; vault backups are untouched. Reviewed first.",
+      "description": "Rename the plan. CAUTION: `name` is ForceNew on aws_backup_plan — Terraform REPLACES the plan (new plan ID and ARN), and aws_backup_selection associations referencing it are recreated with it. Existing recovery points are unaffected (they live in the vault) and schedules resume under the replacement plan. The -/+ replace is visible in the diff at review; approval required.",
+      "target": {
+        "attr": "name",
+        "resourceType": "aws_backup_plan"
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "help": "The backup plan to rename, chosen from Terraform-managed plans. Warning: name is ForceNew — the plan is replaced (new ID/ARN) and its selections are recreated; existing recovery points in the vault are kept.",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true
+        },
+        {
+          "name": "new_name",
+          "label": "New plan name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "1-50 chars: letters, digits, hyphen, underscore, period.",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9._-]{1,50}$"
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none (plan + selections replaced; recovery points and vault untouched)",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (name is ForceNew; aws_backup_selection cascades)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "backup-toggle-continuous-backup",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle continuous backup (PITR) on a rule",
+      "summary": "Turn continuous backup (point-in-time recovery) on or off for supported resources like S3 and RDS. No downtime; reviewed before it applies.",
+      "consoleLabel": "Continuous backups",
+      "description": "Enable or disable `enable_continuous_backup` on a rule, controlling point-in-time recovery for supported resources (S3, RDS). Reversible, no downtime. Continuous backup is incompatible with a cold-storage lifecycle on the same rule, so the plan is reviewed before apply.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "path": [
+          "rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "help": "The backup plan containing the rule to change, picked from Terraform inventory so the point-in-time-recovery toggle applies to a known plan.",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Name of the existing rule within the plan to modify.",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9._-]{1,50}$"
+          },
+          "role": "selector",
+          "matchAttr": "rule_name"
+        },
+        {
+          "name": "enabled",
+          "label": "Continuous backup",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "true turns on continuous backup (point-in-time recovery) for supported resources such as S3 and RDS on this rule, false returns it to snapshot-only backups; the allowlist permits nothing besides these two values.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "attr": "enable_continuous_backup"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (rule.enable_continuous_backup)",
+      "keywords": [
+        "point in time recovery",
+        "pitr"
+      ],
+      "group": "protection-backup",
+      "pinned": 4
+    },
+    {
+      "id": "backup-change-start-window",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change backup start window (minutes)",
+      "summary": "Change how long a backup job can wait to start before it's cancelled. Reversible, no downtime.",
+      "description": "Set `start_window` on a rule \u2014 minutes AWS Backup waits for a job to start before canceling it. Bounded 60-1440. Must stay at least 60 minutes below completion_window; the plan is reviewed before apply. Reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "path": [
+          "rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "help": "The backup plan containing the rule whose start window you are changing, selected from Terraform-managed plans so the timing change lands on a known plan.",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Name of the existing rule within the plan to modify.",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9._-]{1,50}$"
+          },
+          "role": "selector",
+          "matchAttr": "rule_name"
+        },
+        {
+          "name": "minutes",
+          "label": "Start window (minutes)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "Minimum 60. Must be at least 60 below the completion window.",
+          "bounds": {
+            "min": 60,
+            "max": 1440
+          },
+          "attr": "start_window"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (rule.start_window)",
+      "keywords": [
+        "backup start window"
+      ],
+      "group": "protection-backup",
+      "pinned": 5
+    },
+    {
+      "id": "backup-change-completion-window",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change backup completion window (minutes)",
+      "summary": "Change how long a backup job is allowed to run before it's cancelled. Reversible, no downtime.",
+      "description": "Set `completion_window` on a rule \u2014 maximum minutes a backup job may run before AWS Backup cancels it. Bounded 120-2880. Must be at least 60 minutes greater than start_window; the plan is reviewed before apply. Reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "path": [
+          "rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "help": "The backup plan containing the rule whose completion window you are changing, selected from Terraform-managed plans so the timing change lands on a known plan.",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Name of the existing rule within the plan to modify.",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9._-]{1,50}$"
+          },
+          "role": "selector",
+          "matchAttr": "rule_name"
+        },
+        {
+          "name": "minutes",
+          "label": "Completion window (minutes)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "Minimum 120. Must exceed the start window by at least 60 minutes.",
+          "bounds": {
+            "min": 120,
+            "max": 2880
+          },
+          "attr": "completion_window"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (rule.completion_window)",
+      "keywords": [
+        "backup completion window"
+      ],
+      "group": "protection-backup"
+    },
+    {
+      "id": "backup-toggle-archive-tier",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle archive-tier opt-in on a rule",
+      "summary": "Let eligible backups move into lower-cost archive storage over time, or keep them out. No downtime.",
+      "description": "Enable or disable `lifecycle.opt_in_to_archive_for_supported_resources` on a rule, allowing supported recovery points to transition to the archive storage tier per the rule's lifecycle settings. Reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "path": [
+          "rule",
+          "lifecycle"
+        ]
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "help": "The backup plan containing the rule to change, chosen from Terraform inventory so the archive-tier toggle targets a known plan.",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Name of the existing rule within the plan to modify.",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9._-]{1,50}$"
+          },
+          "role": "selector",
+          "matchAttr": "rule_name"
+        },
+        {
+          "name": "enabled",
+          "label": "Archive-tier opt-in",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "true lets supported recovery points transition to the lower-cost archive storage tier according to the rule's lifecycle settings, false keeps them in warm storage; only true or false is accepted.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "attr": "opt_in_to_archive_for_supported_resources"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (rule.lifecycle.opt_in_to_archive_for_supported_resources)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "backup-change-schedule-timezone",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change schedule timezone on a rule",
+      "summary": "Change the timezone this rule's schedule runs on, shifting when it actually fires. No downtime.",
+      "description": "Set `schedule_expression_timezone` \u2014 the IANA timezone the rule's cron schedule is evaluated in \u2014 from a bounded list. Shifts when backup windows fire (the cron expression itself is unchanged). Reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "path": [
+          "rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "help": "The backup plan containing the rule whose schedule timezone you are changing, selected from Terraform-managed plans so the shift in backup timing applies to a known plan.",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Name of the existing rule within the plan to modify.",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9._-]{1,50}$"
+          },
+          "role": "selector",
+          "matchAttr": "rule_name"
+        },
+        {
+          "name": "timezone",
+          "label": "Timezone",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "IANA timezone name.",
+          "bounds": {
+            "allowlist": [
+              "Etc/UTC",
+              "Asia/Dubai",
+              "Asia/Singapore",
+              "Asia/Tokyo",
+              "Asia/Kolkata",
+              "Europe/London",
+              "Europe/Berlin",
+              "America/New_York",
+              "America/Los_Angeles",
+              "Australia/Sydney"
+            ]
+          },
+          "attr": "schedule_expression_timezone"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (rule.schedule_expression_timezone)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "backup-add-plan-tag",
+      "service": "backup",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add or update a tag",
+      "summary": "Add or update a tag on this backup plan. Metadata only, no effect on how backups run.",
+      "description": "Add or overwrite a single entry in the plan's `tags` map. Cosmetic metadata; reversible with no downtime.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "help": "The backup plan receiving the tag entry, picked from Terraform inventory so the metadata lands on a known plan.",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "1-128 chars from the AWS tag key character set.",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9 _.:/=+@-]{1,128}$"
+          }
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "0-256 chars from the AWS tag value character set.",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9 _.:/=+@-]{0,256}$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "create"
+    },
+    {
+      "id": "backup-remove-plan-tag",
+      "service": "backup",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag",
+      "summary": "Remove a tag from this backup plan. Metadata only, no effect on how backups run.",
+      "description": "Remove a single entry from the plan's `tags` map by key. Reversible with no downtime.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "help": "The backup plan to remove the tag entry from, picked from Terraform inventory so only a managed plan's metadata changes.",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Exact key of the tag entry to remove.",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9 _.:/=+@-]{1,128}$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "backup-backup-plan-engineer-request",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to backup plan",
+      "summary": "Request any other change to this backup plan, like cross-region copies or advanced settings; an engineer writes and reviews the Terraform.",
+      "description": "Catch-all for any aws_backup_plan change not offered as a bounded form (e.g. copy_action cross-region/cross-account copies, advanced_backup_setting WindowsVSS, scan_setting/GuardDuty malware scanning, target_vault_name changes, or renaming a rule). An engineer authors and reviews the Terraform.",
+      "target": {
+        "attr": "purpose",
+        "resourceType": "aws_backup_plan"
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "enumSource": "inventory://aws_backup_plan/address",
+          "help": "The backup plan this request is about, when the estate already tracks one. Leave blank when describing one that is not tracked yet."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "protection-backup"
+    },
+    {
+      "id": "backup-rename-rule",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Rename a backup rule",
+      "summary": "Rename a rule inside this backup plan. Doesn't change its schedule or existing backups; update any automation that references the old name.",
+      "description": "Update the `rule_name` (display name) of an existing rule within a backup plan, applied in place via UpdateBackupPlan. Does not change the plan, its schedule/retention, or any existing recovery points. Reversible with no downtime. Automation or drift checks that reference the rule by name may need updating, so like the plan-rename op it is not auto-applied.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "path": [
+          "rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true,
+          "help": "The aws_backup_plan containing the rule to rename."
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9._-]{1,50}$"
+          },
+          "help": "Current name of the rule to rename. 1-50 chars: letters, digits, hyphen, underscore, period.",
+          "role": "selector",
+          "matchAttr": "rule_name"
+        },
+        {
+          "name": "new_rule_name",
+          "label": "New rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9._-]{1,50}$"
+          },
+          "help": "New rule name. 1-50 chars: letters, digits, hyphen, underscore, period."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (rule.rule_name)",
+      "group": "tags-naming",
+      "pinned": 2
+    },
+    {
+      "id": "backup-change-rule-target-vault",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a rule's target vault",
+      "summary": "Send this rule's future backups to a different vault. Backups already stored in the old vault stay there.",
+      "description": "Update `target_vault_name` on an existing rule so future recovery points are written to a different vault, chosen from inventory. Existing recovery points already in the old vault are not moved or deleted. In-place plan update, reversible, no downtime; it changes backup topology and which vault's protections apply going forward, so it is guardrailed.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "path": [
+          "rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true,
+          "help": "The aws_backup_plan whose rule you want to retarget."
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9._-]{1,50}$"
+          },
+          "help": "Name of the existing rule within the plan to modify.",
+          "role": "selector",
+          "matchAttr": "rule_name"
+        },
+        {
+          "name": "target_vault_name",
+          "label": "Target vault",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_vault/address",
+          "required": true,
+          "help": "Vault the rule's future recovery points are written into.",
+          "role": "reference",
+          "refAttr": "name"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (rule.target_vault_name)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "backup-add-recovery-point-tag",
+      "service": "backup",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add or update a recovery-point tag on a rule",
+      "summary": "Add or update a tag applied to backups this rule creates from now on. Metadata only, no effect on how backups run.",
+      "description": "Add or overwrite a single key/value entry in a rule's `recovery_point_tags` map \u2014 metadata applied to recovery points the rule creates. Cosmetic metadata; in-place plan update, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "path": [
+          "rule"
+        ],
+        "block": "recovery_point_tags"
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true,
+          "help": "The aws_backup_plan containing the rule."
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9._-]{1,50}$"
+          },
+          "help": "Name of the existing rule within the plan whose recovery-point tags you are editing.",
+          "role": "selector",
+          "matchAttr": "rule_name"
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9 _.:/=+@-]{1,128}$"
+          },
+          "help": "1-128 chars from the AWS tag key character set."
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9 _.:/=+@-]{0,256}$"
+          },
+          "help": "0-256 chars from the AWS tag value character set."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (rule.recovery_point_tags)",
+      "group": "create"
+    },
+    {
+      "id": "backup-remove-recovery-point-tag",
+      "service": "backup",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a recovery-point tag from a rule",
+      "summary": "Remove a tag applied to backups this rule creates from now on. Metadata only, no effect on how backups run.",
+      "description": "Remove a single entry (by key) from a rule's `recovery_point_tags` map. Cosmetic metadata; in-place plan update, reversible by re-adding, no downtime.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "path": [
+          "rule"
+        ],
+        "block": "recovery_point_tags"
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true,
+          "help": "The aws_backup_plan containing the rule."
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9._-]{1,50}$"
+          },
+          "help": "Name of the existing rule within the plan whose recovery-point tags you are editing.",
+          "role": "selector",
+          "matchAttr": "rule_name"
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9 _.:/=+@-]{1,128}$"
+          },
+          "help": "Exact key of the recovery-point tag entry to remove."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (rule.recovery_point_tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "backup-set-rule-scan-action",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Set a rule's malware scan action",
+      "summary": "Set how this rule scans backups for malware. Choosing the faster scan mode checks less thoroughly.",
+      "description": "Configure the `scan_action` block on a rule \u2014 the malware scanner and scan depth. `malware_scanner` is fixed to the only currently supported value `GUARDDUTY`; `scan_mode` selects `FULL_SCAN` or `INCREMENTAL_SCAN`. In-place plan update, reversible, no downtime. Choosing INCREMENTAL_SCAN silently reduces detection depth versus FULL_SCAN without breaking backups, so it is guardrailed.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "path": [
+          "rule",
+          "scan_action"
+        ]
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true,
+          "help": "The aws_backup_plan containing the rule."
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9._-]{1,50}$"
+          },
+          "help": "Name of the existing rule within the plan to modify.",
+          "role": "selector",
+          "matchAttr": "rule_name"
+        },
+        {
+          "name": "malware_scanner",
+          "label": "Malware scanner",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "GUARDDUTY"
+            ]
+          },
+          "help": "Only GUARDDUTY is currently supported."
+        },
+        {
+          "name": "scan_mode",
+          "label": "Scan mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "FULL_SCAN",
+              "INCREMENTAL_SCAN"
+            ]
+          },
+          "help": "FULL_SCAN scans all data; INCREMENTAL_SCAN scans only changes and can miss threats a full scan would catch."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (rule.scan_action)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "backup-set-plan-scan-setting",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Set the plan's malware scan setting",
+      "summary": "Set which resource types this plan scans for malware and who runs it. A narrower list means less coverage.",
+      "description": "Configure the plan-wide `scan_setting` block — the malware scanner, the resource types scanned, and the scanner IAM role (chosen from inventory). `malware_scanner` is fixed to `GUARDDUTY`; `resource_types` is any of `EBS`, `EC2`, `S3`, `ALL`. In-place plan update, reversible, no downtime. Narrowing resource_types silently reduces scan coverage without breaking backups, so it is guardrailed.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "path": [
+          "scan_setting"
+        ]
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true,
+          "help": "The aws_backup_plan whose scan_setting you want to configure."
+        },
+        {
+          "name": "malware_scanner",
+          "label": "Malware scanner",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "GUARDDUTY"
+            ]
+          },
+          "help": "Only GUARDDUTY is currently supported."
+        },
+        {
+          "name": "resource_types",
+          "label": "Resource types",
+          "type": "list",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "EBS",
+              "EC2",
+              "S3",
+              "ALL"
+            ]
+          },
+          "help": "Resource types scanned for malware. Each member must be one of EBS, EC2, S3, ALL."
+        },
+        {
+          "name": "scanner_role_arn",
+          "label": "Scanner IAM role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "help": "IAM role AWS Backup assumes to scan resources; an under-permissioned role causes scan failures rather than a new exposure.",
+          "role": "reference",
+          "refAttr": "arn"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (scan_setting)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "backup-change-selection-plan",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Reassign a backup selection to a different plan",
+      "summary": "Move this selection's resources onto a different backup plan. It's recreated to apply; existing backups stay untouched. Engineer-reviewed.",
+      "description": "Change `plan_id` \u2014 the aws_backup_plan an existing aws_backup_selection is associated with \u2014 moving the selection's matched resources onto a different plan's schedule and target vault. The new plan is chosen from inventory (existing aws_backup_plan resources), so there is no free-form input. AWS Backup selections are immutable in the provider, so Terraform recreates the selection to re-associate it (a destroy-and-create of this membership resource, not of the protected workload); existing recovery points already in the vault are NOT deleted and the workload is untouched. Reversible by pointing plan_id back at the original plan. Guardrailed with a second approver because it changes which plan protects the resources.",
+      "target": {
+        "attr": "plan_id",
+        "resourceType": "aws_backup_selection"
+      },
+      "params": [
+        {
+          "name": "selection",
+          "label": "Backup selection",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_selection/address",
+          "required": true,
+          "help": "The aws_backup_selection to re-associate with a different plan."
+        },
+        {
+          "name": "new_plan",
+          "label": "New backup plan",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_plan/address",
+          "required": true,
+          "help": "The aws_backup_plan to associate the selection with, chosen from existing plans. The selection is recreated under this plan; recovery points already in the vault are unaffected."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (plan_id)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "backup-create-vault",
+      "service": "backup",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a backup vault",
+      "summary": "Request a new backup vault to store recovery points. An engineer finalizes and reviews the Terraform before it applies.",
+      "description": "The first step of setting up backups: the safe recovery points are stored in. After the vault, create a plan, then a selection. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_backup_vault"
+      },
+      "params": [
+        {
+          "name": "vault_name",
+          "label": "Vault name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9_-]{2,50}$"
+          },
+          "help": "The safe recovery points are stored in, like daily-backups."
+        },
+        {
+          "name": "kms_key",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key_arn",
+          "group": "identity",
+          "tier": "advanced",
+          "help": "Only change for key-scoped compliance needs; blank uses the managed backup key."
+        },
+        {
+          "name": "resource_name",
+          "label": "Vault name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this vault holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this vault."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "backup vault",
+        "set up backups"
+      ],
+      "decisions": [
+        "Vault lock and compliance retention are a separate engineer decision"
+      ]
+    },
+    {
+      "id": "backup-create-plan",
+      "service": "backup",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a backup plan",
+      "summary": "Request a new backup plan with a first daily schedule. An engineer finalizes and reviews the Terraform before it applies.",
+      "description": "The second step of setting up backups: the schedule-and-retention policy, starting with one daily rule. Next step after the plan exists: add a selection so resources start backing up. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_backup_plan"
+      },
+      "params": [
+        {
+          "name": "plan_name",
+          "label": "Plan name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9_-]{2,50}$"
+          },
+          "help": "The schedule-and-retention policy, like standard-retention."
+        },
+        {
+          "name": "rule_name",
+          "label": "First rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "rule_name",
+          "path": [
+            "rule"
+          ],
+          "group": "first-rule",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_-]{1,50}$"
+          },
+          "default": "daily",
+          "help": "Plans hold rules; start with one."
+        },
+        {
+          "name": "vault",
+          "label": "Target vault",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_backup_vault/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "target_vault_name",
+          "path": [
+            "rule"
+          ],
+          "group": "first-rule",
+          "help": "Where this rule's recovery points land. Create a vault first if the list is empty."
+        },
+        {
+          "name": "schedule",
+          "label": "Schedule (cron, UTC)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "schedule",
+          "path": [
+            "rule"
+          ],
+          "group": "first-rule",
+          "bounds": {
+            "pattern": "^cron\\(.+\\)$",
+            "semantic": "aws_backup_cron_utc"
+          },
+          "default": "cron(0 17 ? * * *)",
+          "help": "Cron in UTC. The default, cron(0 17 ? * * *), is daily 17:00 UTC."
+        },
+        {
+          "name": "retention_days",
+          "label": "Keep recovery points (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "delete_after",
+          "path": [
+            "rule",
+            "lifecycle"
+          ],
+          "group": "first-rule",
+          "bounds": {
+            "min": 7,
+            "max": 2555
+          },
+          "default": 35,
+          "help": "How long before recovery points expire."
+        },
+        {
+          "name": "start_window_minutes",
+          "label": "Start window (minutes)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "start_window",
+          "path": [
+            "rule"
+          ],
+          "group": "first-rule",
+          "tier": "advanced",
+          "bounds": {
+            "min": 60,
+            "max": 1440
+          },
+          "default": 60,
+          "help": "How long a job may wait to start before it is marked failed."
+        },
+        {
+          "name": "completion_window_minutes",
+          "label": "Completion window (minutes)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "completion_window",
+          "path": [
+            "rule"
+          ],
+          "group": "first-rule",
+          "tier": "advanced",
+          "bounds": {
+            "min": 120,
+            "max": 2880
+          },
+          "default": 180,
+          "help": "How long a job may run."
+        },
+        {
+          "name": "continuous_backup",
+          "label": "Point-in-time recovery?",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "enable_continuous_backup",
+          "path": [
+            "rule"
+          ],
+          "group": "first-rule",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": false,
+          "help": "For supported services, enables restore to any moment inside retention."
+        },
+        {
+          "name": "resource_name",
+          "label": "Plan name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this plan holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this plan."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "set up a backup plan",
+        "backup schedule setup"
+      ],
+      "decisions": [
+        "Add a second monthly or long-retention rule after creation with the add-a-backup-rule action",
+        "Cross-region copy is an engineer decision"
+      ]
+    }
+  ]
+}

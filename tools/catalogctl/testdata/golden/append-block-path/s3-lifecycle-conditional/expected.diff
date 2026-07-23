@@ -1,0 +1,21 @@
+--- a/environments/prod/s3.tf
++++ b/environments/prod/s3.tf
+@@ -13,4 +13,18 @@
+       days = 30
+     }
+   }
++
++  rule {
++    id     = "ArchiveOld"
++    status = "Enabled"
++
++    filter {
++      prefix = "logs/"
++    }
++
++    transition {
++      days          = 90
++      storage_class = "GLACIER"
++    }
++  }
+ }

@@ -1,0 +1,1 @@
+{"service":"notification","types":{"azurerm_notification_hub_authorization_rule":{"attrs":[{"n":"name","t":"string","r":1},{"n":"namespace_name","t":"string","r":1},{"n":"notification_hub_name","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"listen","t":"bool"},{"n":"manage","t":"bool"},{"n":"send","t":"bool"}],"blocks":[]}}}

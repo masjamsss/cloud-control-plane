@@ -1,0 +1,12 @@
+{
+ "aws_cloudwatch_log_group.app": {
+  "file": "ccp/app/fixtures-estate/cloudwatch.tf",
+  "line": 3,
+  "source": "resource \"aws_cloudwatch_log_group\" \"app\" {\n  name              = \"/app/service-logs\"\n  retention_in_days = 365\n\n  tags = {\n    Name        = \"app-service-logs\"\n    PIC         = \"user01@example.com\"\n    Description = \"App service logs\"\n  }\n}"
+ },
+ "aws_cloudwatch_metric_alarm.cpu_high": {
+  "file": "ccp/app/fixtures-estate/cloudwatch.tf",
+  "line": 14,
+  "source": "resource \"aws_cloudwatch_metric_alarm\" \"cpu_high\" {\n  alarm_name          = \"app-cpu-high\"\n  comparison_operator = \"GreaterThanThreshold\"\n  evaluation_periods  = 3\n  metric_name         = \"CPUUtilization\"\n  namespace           = \"AWS/EC2\"\n  period              = 300\n  statistic           = \"Average\"\n  threshold           = 80\n  alarm_actions       = [aws_sns_topic.alerts.arn]\n  treat_missing_data  = \"missing\"\n\n  dimensions = {\n    InstanceId = aws_instance.app01.id\n  }\n\n  tags = {\n    Name = \"app-cpu-high\"\n    PIC  = \"user01@example.com\"\n  }\n}"
+ }
+}

@@ -1,0 +1,188 @@
+{
+  "service": "ecr",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_ecr_repository"
+  ],
+  "summary": "Provision new ECR repositories. Every stand-up routes to an engineer for review \u2014 day-2 operations on existing repositories land in a later wave.",
+  "operations": [
+    {
+      "id": "ecr-repository-create",
+      "service": "ecr",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new ECR repository",
+      "summary": "Request a brand-new container image repository; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new ECR repository as a complete specification: tag mutability, vulnerability scanning, and encryption. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_ecr_repository"
+      },
+      "params": [
+        {
+          "name": "repo_name",
+          "label": "Repository name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9._/-]{1,255}$"
+          },
+          "help": "Lower-case letters, numbers, dots, dashes and slashes, like team/checkout-api. Names the repository in AWS and in the generated draft."
+        },
+        {
+          "name": "image_tag_mutability",
+          "label": "Image tag mutability",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "image_tag_mutability",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "IMMUTABLE",
+              "MUTABLE",
+              "IMMUTABLE_WITH_EXCLUSION",
+              "MUTABLE_WITH_EXCLUSION"
+            ]
+          },
+          "default": "IMMUTABLE",
+          "help": "IMMUTABLE blocks overwriting a pushed tag \u2014 the safer default for production images."
+        },
+        {
+          "name": "scan_on_push",
+          "label": "Scan on push",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "scan_on_push",
+          "path": [
+            "image_scanning_configuration"
+          ],
+          "group": "security",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Automatically scans every pushed image for known vulnerabilities."
+        },
+        {
+          "name": "encryption_type",
+          "label": "Encryption type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "encryption_type",
+          "path": [
+            "encryption_configuration"
+          ],
+          "group": "security",
+          "bounds": {
+            "allowlist": [
+              "AES256",
+              "KMS"
+            ]
+          },
+          "default": "AES256",
+          "help": "KMS lets you pick a customer-managed key below; AES256 uses an AWS-owned key at no extra cost."
+        },
+        {
+          "name": "kms_key",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key",
+          "path": [
+            "encryption_configuration"
+          ],
+          "group": "security",
+          "tier": "advanced",
+          "dependsOn": {
+            "param": "encryption_type",
+            "equals": "KMS"
+          },
+          "help": "Required when encryption type is KMS; leave blank for AES256."
+        },
+        {
+          "name": "force_delete",
+          "label": "Force delete",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": false,
+          "attr": "force_delete",
+          "group": "protection",
+          "help": "Off \u2014 deleting a repository that still has images fails safely instead of silently destroying them; written into the draft, never asked."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this repository does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this repository."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new ecr repository",
+        "provision container repository",
+        "new image repository",
+        "create a docker repo"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "A lifecycle policy (expiring untagged or old images) is an engineer follow-up after creation",
+        "Cross-account or public replication and a repository policy are engineer decisions"
+      ]
+    }
+  ]
+}

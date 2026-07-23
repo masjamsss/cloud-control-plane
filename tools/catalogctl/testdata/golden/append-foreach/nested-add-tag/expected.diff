@@ -1,0 +1,10 @@
+--- a/environments/prod/main.tf
++++ b/environments/prod/main.tf
+@@ -9,6 +9,7 @@
+     tags = {
+       Name = "app-root"
+       Role = "data"
++      Snap = "daily"
+     }
+   }
+ 

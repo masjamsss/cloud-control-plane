@@ -1,0 +1,328 @@
+{
+  "service": "azure-keyvault",
+  "scope": "expansion",
+  "resourceTypes": ["azurerm_key_vault"],
+  "summary": "Operate Azure Key Vault at the vault-container level: tag hygiene, one-way enablement of purge protection, and soft-delete retention tuning. Keys, secrets, certificates, and access policies inside a vault are key material or access control and are engineer-authored, never self-service. Provisioning a brand-new vault also routes to an engineer.",
+  "operations": [
+    {
+      "id": "azure-key-vault-update-tags",
+      "service": "azure-keyvault",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update key vault tags",
+      "summary": "Set or update this key vault's tags. Only the tags you list change; others are left alone. No effect on secrets, keys, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on the key vault. Non-disruptive, takes effect immediately, and has no effect on the vault's stored keys, secrets, certificates, access policies, or network configuration.",
+      "target": {
+        "resourceType": "azurerm_key_vault",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "key_vault",
+          "label": "Key vault",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_key_vault/address",
+          "help": "The key vault to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-key-vault-enable-purge-protection",
+      "service": "azure-keyvault",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable key vault purge protection",
+      "summary": "Turn on purge protection so a soft-deleted vault or secret cannot be permanently purged before retention ends. One-way; cannot be undone.",
+      "consoleLabel": "Purge protection",
+      "description": "Sets purge_protection_enabled to true on the key vault. With purge protection on, a soft-deleted vault (and its keys/secrets/certificates) cannot be permanently purged by anyone — including an administrator — until the soft-delete retention period expires, protecting against both accidental and malicious permanent deletion. This operation only offers turning it on; Azure does not allow purge protection to be disabled once enabled, so this change is irreversible.",
+      "target": {
+        "resourceType": "azurerm_key_vault",
+        "attr": "purge_protection_enabled"
+      },
+      "params": [
+        {
+          "name": "key_vault",
+          "label": "Key vault",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_key_vault/address",
+          "help": "The key vault to enable purge protection on."
+        },
+        {
+          "name": "purge_protection_enabled",
+          "label": "Purge protection enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [true]
+          },
+          "help": "Whether a soft-deleted vault or secret can be permanently purged before its retention period ends. This operation only offers true (protected); Azure does not permit turning it back off."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (purge_protection_enabled)",
+      "group": "protection-backup",
+      "decisions": [
+        "Irreversible: Azure does not allow purge protection to be disabled once enabled. Confirm the vault should be permanently protected before applying — you cannot undo this without deleting and recreating the vault after its retention window.",
+        "Purge protection is a durability/anti-deletion control, not an access control; it does not change who can read the vault's secrets."
+      ]
+    },
+    {
+      "id": "azure-key-vault-set-soft-delete-retention",
+      "service": "azure-keyvault",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set key vault soft-delete retention",
+      "summary": "Set how many days a soft-deleted vault or secret stays recoverable before permanent removal. Longer is safer; shorter narrows the window.",
+      "consoleLabel": "Soft-delete retention (days)",
+      "description": "Sets soft_delete_retention_days on the key vault — the number of days (7 to 90) that a soft-deleted vault or secret is retained and recoverable before it becomes eligible for permanent purge. A longer window gives more time to recover from an accidental delete; a shorter window reduces how long deleted material lingers. In-place and non-disruptive to the vault's active contents.",
+      "target": {
+        "resourceType": "azurerm_key_vault",
+        "attr": "soft_delete_retention_days"
+      },
+      "params": [
+        {
+          "name": "key_vault",
+          "label": "Key vault",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_key_vault/address",
+          "help": "The key vault whose soft-delete retention to set."
+        },
+        {
+          "name": "soft_delete_retention_days",
+          "label": "Soft-delete retention (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 7,
+            "max": 90
+          },
+          "help": "Days a soft-deleted vault or secret stays recoverable before eligible for permanent purge. Azure allows 7 to 90."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (soft_delete_retention_days)",
+      "group": "protection-backup",
+      "decisions": [
+        "Lowering the retention window shortens how long a deleted vault or secret can be recovered — confirm no recovery process depends on the current window before reducing it.",
+        "If purge protection is enabled, deleted material is retained for the full window regardless; this setting defines that window's length."
+      ]
+    },
+    {
+      "id": "azure-keyvault-vault-provision",
+      "service": "azure-keyvault",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new key vault",
+      "summary": "Request a new key vault with purge protection on, RBAC required, and public network access blocked. An engineer reviews it first.",
+      "description": "Create a key vault the way this estate builds every one: purge protection on from birth, a deliberate soft-delete retention window, and RBAC controlling who can read its contents instead of vault access policies. Submitting routes the complete specification to an engineer with a draft of the resource to review and finish. Keys, secrets, certificates and access policies inside the vault are never captured here — they are separate, engineer-authored follow-ups once the vault exists.",
+      "target": {
+        "resourceType": "azurerm_key_vault"
+      },
+      "params": [
+        {
+          "name": "key_vault_name",
+          "label": "Key vault name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]$"
+          },
+          "help": "Letters, numbers and dashes, 3 to 24 characters, starting with a letter and ending with a letter or number. Key vault names are globally unique across Azure."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group this key vault belongs to."
+        },
+        {
+          "name": "tenant_id",
+          "label": "Azure AD tenant ID",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "tenant_id",
+          "group": "identity",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The engineer fills in the estate's Azure AD tenant ID during review."
+        },
+        {
+          "name": "sku_name",
+          "label": "Pricing tier",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku_name",
+          "group": "identity",
+          "bounds": {
+            "allowlist": ["standard", "premium"]
+          },
+          "default": "standard",
+          "help": "Standard covers software-protected keys and secrets; Premium adds hardware-backed (HSM) keys at a higher cost."
+        },
+        {
+          "name": "rbac_authorization_enabled",
+          "label": "RBAC authorization",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "rbac_authorization_enabled",
+          "group": "protection",
+          "help": "Always on for a new vault — written into the draft, never asked. Azure role assignments control who can read or manage secrets, not the vault's own access-policy list."
+        },
+        {
+          "name": "public_network_access_enabled",
+          "label": "Public network access",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "public_network_access_enabled",
+          "group": "protection",
+          "bounds": {
+            "allowlist": [true, false]
+          },
+          "default": false,
+          "help": "Off by default so the vault has no public endpoint — reach it over a private endpoint. Choosing On exposes it to the public internet; pick On only with a reason a reviewer will read."
+        },
+        {
+          "name": "purge_protection_enabled",
+          "label": "Purge protection",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "purge_protection_enabled",
+          "group": "protection",
+          "help": "Always on for a new vault — written into the draft, never asked. Azure never allows this to be turned off again once set, so a soft-deleted vault or secret can never be purged early by anyone."
+        },
+        {
+          "name": "soft_delete_retention_days",
+          "label": "Soft-delete retention (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "soft_delete_retention_days",
+          "group": "protection",
+          "bounds": {
+            "min": 7,
+            "max": 90
+          },
+          "default": 90,
+          "help": "Days a soft-deleted vault or secret stays recoverable before it is eligible for permanent purge. Azure allows 7 to 90; longer gives more time to recover from an accidental delete."
+        },
+        {
+          "name": "resource_name",
+          "label": "Key vault name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this key vault holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this key vault."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new key vault", "new secrets vault", "provision key vault"],
+      "decisions": [
+        "Public network access is blocked by default — confirm a private endpoint already reaches this vault, or the engineer relaxes it consciously during review.",
+        "Purge protection is on from creation and can never be turned off again — confirm this vault should be permanently protected before applying.",
+        "Access policies and RBAC role assignments granting who can read or manage secrets are not captured here — grant them as a separate, engineer-authored follow-up once the vault exists.",
+        "Confirm the chosen region matches where the rest of the workload runs."
+      ]
+    }
+  ]
+}

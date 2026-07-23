@@ -1,0 +1,2120 @@
+{
+  "azurerm_aadb2c_directory.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_active_directory_domain_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_ai_foundry.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_ai_foundry_project.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_ai_services.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_analysis_services_server.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_api_connection.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_api_management.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_app_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_app_configuration_feature.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_app_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_app_service_certificate.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_app_service_certificate_order.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_app_service_environment_v3.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_app_service_managed_certificate.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_app_service_plan.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_app_service_slot.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_application_insights.retention_in_days": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: retention_in_days"
+  },
+  "azurerm_application_insights.sampling_percentage": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: sampling_percentage"
+  },
+  "azurerm_application_insights.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_application_insights_standard_web_test.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_application_insights_web_test.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_application_insights_workbook.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_application_insights_workbook_template.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_application_load_balancer.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_application_load_balancer_frontend.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_application_load_balancer_subnet_association.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_arc_kubernetes_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_arc_kubernetes_provisioned_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_arc_machine.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_arc_machine_extension.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_arc_resource_bridge_appliance.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_attestation_provider.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_automanage_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_automation_account.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_automation_dsc_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_automation_powershell72_module.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_automation_python3_package.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_automation_runbook.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_automation_watcher.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_availability_set.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_bastion_host.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_batch_account.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_bot_channels_registration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_bot_service_azure_bot.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_bot_web_app.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_capacity_reservation.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_capacity_reservation_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_cdn_endpoint.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_cdn_frontdoor_endpoint.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_cdn_frontdoor_profile.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_cdn_profile.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_cognitive_account.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_cognitive_account_project.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_communication_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_confidential_ledger.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_container_app.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_container_app_environment.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_container_app_environment_certificate.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_container_app_environment_managed_certificate.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_container_app_job.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_container_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_container_registry.public_network_access_enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: public_network_access_enabled"
+  },
+  "azurerm_container_registry.sku": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: sku"
+  },
+  "azurerm_container_registry.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_container_registry_agent_pool.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_container_registry_task.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_container_registry_webhook.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_cosmosdb_account.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_cosmosdb_cassandra_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_cosmosdb_postgresql_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_custom_ip_prefix.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dashboard_grafana.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_data_factory.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_data_protection_backup_vault.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_data_protection_resource_guard.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_data_share_account.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_database_migration_project.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_database_migration_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_databox_edge_device.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_databricks_access_connector.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_databricks_workspace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_datadog_monitor.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dedicated_hardware_security_module.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dedicated_host.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dedicated_host_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dev_center.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dev_center_dev_box_definition.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dev_center_environment_type.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dev_center_network_connection.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dev_center_project.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dev_center_project_environment_type.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dev_center_project_pool.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dev_test_global_vm_shutdown_schedule.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dev_test_lab.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dev_test_linux_virtual_machine.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dev_test_schedule.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dev_test_virtual_network.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dev_test_windows_virtual_machine.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_digital_twins_instance.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_disk_access.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_disk_encryption_set.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dns_a_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dns_a_record.ttl": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: ttl"
+  },
+  "azurerm_dns_aaaa_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dns_caa_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dns_cname_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dns_cname_record.ttl": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: ttl"
+  },
+  "azurerm_dns_mx_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dns_ns_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dns_ptr_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dns_srv_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dns_txt_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dns_zone.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_dynatrace_monitor.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_elastic_cloud_elasticsearch.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_elastic_san.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_email_communication_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_email_communication_service_domain.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_eventgrid_domain.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_eventgrid_namespace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_eventgrid_partner_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_eventgrid_partner_namespace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_eventgrid_partner_registration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_eventgrid_system_topic.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_eventgrid_topic.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_eventhub_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_eventhub_namespace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_fabric_capacity.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_firewall.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_fluid_relay_server.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_frontdoor.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_function_app.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_function_app_flex_consumption.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_function_app_slot.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_gallery_application.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_gallery_application_version.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_graph_services_account.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_hdinsight_hadoop_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_hdinsight_hbase_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_hdinsight_interactive_query_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_hdinsight_kafka_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_hdinsight_spark_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_healthbot.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_healthcare_dicom_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_healthcare_fhir_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_healthcare_medtech_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_healthcare_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_healthcare_workspace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_hpc_cache.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_image.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_iot_security_solution.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_iotcentral_application.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_iothub.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_iothub_device_update_account.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_iothub_device_update_instance.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_iothub_dps.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_ip_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_key_vault.purge_protection_enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: purge_protection_enabled"
+  },
+  "azurerm_key_vault.soft_delete_retention_days": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: soft_delete_retention_days"
+  },
+  "azurerm_key_vault.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_kubernetes_automatic_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_kubernetes_cluster.sku_tier": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: sku_tier"
+  },
+  "azurerm_kubernetes_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_kubernetes_cluster_node_pool.node_count": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: node_count"
+  },
+  "azurerm_kubernetes_cluster_node_pool.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_kubernetes_fleet_manager.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_kusto_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_lb.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_linux_function_app.https_only": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: https_only"
+  },
+  "azurerm_linux_function_app.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_linux_function_app_slot.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_linux_virtual_machine.size": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: size"
+  },
+  "azurerm_linux_virtual_machine.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_linux_virtual_machine_scale_set.instances": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: instances"
+  },
+  "azurerm_linux_virtual_machine_scale_set.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_linux_web_app.https_only": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: https_only"
+  },
+  "azurerm_linux_web_app.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_linux_web_app_slot.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_load_test.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_log_analytics_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_log_analytics_query_pack.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_log_analytics_query_pack_query.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_log_analytics_solution.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_log_analytics_workspace.daily_quota_gb": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: daily_quota_gb"
+  },
+  "azurerm_log_analytics_workspace.retention_in_days": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: retention_in_days"
+  },
+  "azurerm_log_analytics_workspace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_logic_app_integration_account.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_logic_app_standard.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_logic_app_workflow.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_machine_learning_compute_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_machine_learning_workspace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_maintenance_configuration.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_managed_application.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_managed_application_definition.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_managed_devops_pool.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_managed_disk.disk_size_gb": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: disk_size_gb"
+  },
+  "azurerm_managed_disk.storage_account_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: storage_account_type"
+  },
+  "azurerm_managed_disk.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_managed_lustre_file_system.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_managed_redis.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_maps_account.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_maps_creator.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_mongo_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_monitor_action_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_monitor_activity_log_alert.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_monitor_autoscale_setting.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_monitor_data_collection_endpoint.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_monitor_metric_alert.enabled": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: enabled"
+  },
+  "azurerm_monitor_metric_alert.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_monitor_workspace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_mssql_database.max_size_gb": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: max_size_gb"
+  },
+  "azurerm_mssql_database.short_term_retention_policy.retention_days": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: short_term_retention_policy.retention_days"
+  },
+  "azurerm_mssql_database.sku_name": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: sku_name"
+  },
+  "azurerm_mssql_database.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_mssql_elasticpool.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_mssql_failover_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_mssql_job_agent.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_mssql_managed_database.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_mssql_managed_instance.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_mssql_server.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_mssql_virtual_machine.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_mssql_virtual_machine_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_mysql_flexible_server.backup_retention_days": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: backup_retention_days"
+  },
+  "azurerm_mysql_flexible_server.sku_name": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: sku_name"
+  },
+  "azurerm_mysql_flexible_server.storage.size_gb": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: storage.size_gb"
+  },
+  "azurerm_mysql_flexible_server.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_netapp_account.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_netapp_backup_vault.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_netapp_pool.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_netapp_volume.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_network_connection_monitor.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_network_ddos_protection_plan.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_network_function_azure_traffic_collector.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_network_interface.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_network_profile.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_nginx_deployment.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_notification_hub.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_notification_hub_namespace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_oracle_autonomous_database.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_oracle_cloud_vm_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_oracle_exadata_infrastructure.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_oracle_exascale_database_storage_vault.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_oracle_resource_anchor.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_orbital_contact_profile.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_orbital_spacecraft.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_orchestrated_virtual_machine_scale_set.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_portal_dashboard.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_postgresql_flexible_server.backup_retention_days": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: backup_retention_days"
+  },
+  "azurerm_postgresql_flexible_server.sku_name": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: sku_name"
+  },
+  "azurerm_postgresql_flexible_server.storage_mb": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: storage_mb"
+  },
+  "azurerm_postgresql_flexible_server.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_postgresql_server.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_powerbi_embedded.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_private_dns_a_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_private_dns_aaaa_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_private_dns_cname_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_private_dns_mx_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_private_dns_ptr_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_private_dns_resolver.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_private_dns_resolver_inbound_endpoint.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_private_dns_resolver_outbound_endpoint.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_private_dns_srv_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_private_dns_txt_record.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_private_dns_zone.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_private_dns_zone_virtual_network_link.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_proximity_placement_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_public_ip.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_public_ip_prefix.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_purview_account.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_qumulo_file_system.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_recovery_services_vault.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_redhat_openshift_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_redis_cache.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_redis_enterprise_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_relay_namespace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_resource_deployment_script_azure_cli.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_resource_deployment_script_azure_power_shell.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_resource_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_resource_group_template_deployment.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_restore_point_collection.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_search_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_service_fabric_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_service_fabric_managed_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_service_plan.sku_name": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: sku_name"
+  },
+  "azurerm_service_plan.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_servicebus_namespace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_shared_image.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_shared_image_gallery.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_shared_image_version.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_signalr_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_snapshot.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_spring_cloud_service.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_stack_hci_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_stack_hci_logical_network.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_stack_hci_marketplace_gallery_image.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_stack_hci_network_interface.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_stack_hci_storage_path.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_stack_hci_virtual_hard_disk.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_static_site.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_static_web_app.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_storage_account.account_replication_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: account_replication_type"
+  },
+  "azurerm_storage_account.allow_nested_items_to_be_public": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: allow_nested_items_to_be_public"
+  },
+  "azurerm_storage_account.min_tls_version": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: min_tls_version"
+  },
+  "azurerm_storage_account.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_storage_container.container_access_type": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: container_access_type"
+  },
+  "azurerm_storage_mover.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_storage_share.quota": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: quota"
+  },
+  "azurerm_storage_sync.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_stream_analytics_cluster.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_stream_analytics_job.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_subscription.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_subscription_template_deployment.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_synapse_spark_pool.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_synapse_sql_pool.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_synapse_workspace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_system_center_virtual_machine_manager_availability_set.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_system_center_virtual_machine_manager_cloud.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_system_center_virtual_machine_manager_server.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_system_center_virtual_machine_manager_virtual_machine_template.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_system_center_virtual_machine_manager_virtual_network.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_tenant_template_deployment.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_traffic_manager_profile.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_trusted_signing_account.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_user_assigned_identity.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_video_indexer_account.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_virtual_desktop_application_group.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_virtual_desktop_host_pool.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_virtual_desktop_scaling_plan.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_virtual_desktop_workspace.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_virtual_hub.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_virtual_hub_security_partner_provider.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_virtual_machine.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_virtual_machine_extension.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_virtual_machine_restore_point_collection.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_virtual_machine_run_command.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_virtual_machine_scale_set.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_virtual_machine_scale_set_standby_pool.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_virtual_network.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_virtual_network_gateway.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_vmware_private_cloud.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_web_pubsub.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_web_pubsub_socketio.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_windows_function_app.https_only": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: https_only"
+  },
+  "azurerm_windows_function_app.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_windows_function_app_slot.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_windows_virtual_machine.size": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: size"
+  },
+  "azurerm_windows_virtual_machine.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_windows_virtual_machine_scale_set.instances": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: instances"
+  },
+  "azurerm_windows_virtual_machine_scale_set.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_windows_web_app.https_only": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: https_only"
+  },
+  "azurerm_windows_web_app.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  },
+  "azurerm_windows_web_app_slot.tags": {
+    "verdict": "in_place",
+    "file": "tools/schemadump/azurerm-v4.81.0-schema.json",
+    "tag": "v4.81.0",
+    "path": "exact: tags"
+  }
+}

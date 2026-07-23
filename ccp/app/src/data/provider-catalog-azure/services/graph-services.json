@@ -1,0 +1,1 @@
+{"service":"graph-services","types":{"azurerm_graph_services_account":{"attrs":[{"n":"application_id","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"tags","t":"map"}],"blocks":[]}}}

@@ -1,0 +1,54 @@
+/* Shared styling for RouteError and NotFound — Ledger: a display heading,
+   muted body, and an accent link home. No boxed card — a single error/404
+   state sits directly on the canvas, centered, the same "quiet" ethos as the
+   rest of the app's chrome. */
+.routeerr {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: var(--space-8);
+}
+.routeerr__content {
+  max-width: 440px;
+  text-align: center;
+}
+.routeerr__badge {
+  display: block;
+  margin: 0 0 var(--space-5);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--risk-high);
+}
+.routeerr__title {
+  margin: 0 0 var(--space-4);
+  font-size: clamp(28px, 4vw, 40px);
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  color: var(--text-primary);
+}
+.routeerr__detail {
+  margin: 0 0 var(--space-7);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.routeerr__link {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+.routeerr__link:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+.routeerr__link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-1);
+}

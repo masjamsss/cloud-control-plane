@@ -1,0 +1,432 @@
+{
+  "service": "aws-media",
+  "scope": "expansion",
+  "resourceTypes": [
+    "aws_ivs_channel",
+    "aws_ivschat_logging_configuration",
+    "aws_ivschat_room",
+    "aws_media_convert_queue",
+    "aws_media_package_channel",
+    "aws_media_store_container",
+    "aws_medialive_channel",
+    "aws_medialive_input",
+    "aws_medialive_multiplex"
+  ],
+  "summary": "Tag management across Media Services AWS resources (auto-generated comprehensive tag surface — 9 resource types).",
+  "operations": [
+    {
+      "id": "aws-tag-ivs-channel",
+      "service": "aws-media",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Ivs Channel tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Ivs Channel (aws_ivs_channel). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_ivs_channel",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Ivs Channel",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_ivs_channel/address",
+          "help": "The Ivs Channel to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-ivschat-logging-configuration",
+      "service": "aws-media",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Ivschat Logging Configuration tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Ivschat Logging Configuration (aws_ivschat_logging_configuration). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_ivschat_logging_configuration",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Ivschat Logging Configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_ivschat_logging_configuration/address",
+          "help": "The Ivschat Logging Configuration to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-ivschat-room",
+      "service": "aws-media",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Ivschat Room tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Ivschat Room (aws_ivschat_room). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_ivschat_room",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Ivschat Room",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_ivschat_room/address",
+          "help": "The Ivschat Room to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-media-convert-queue",
+      "service": "aws-media",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Media Convert Queue tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Media Convert Queue (aws_media_convert_queue). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_media_convert_queue",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Media Convert Queue",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_media_convert_queue/address",
+          "help": "The Media Convert Queue to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-media-package-channel",
+      "service": "aws-media",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Media Package Channel tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Media Package Channel (aws_media_package_channel). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_media_package_channel",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Media Package Channel",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_media_package_channel/address",
+          "help": "The Media Package Channel to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-media-store-container",
+      "service": "aws-media",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Media Store Container tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Media Store Container (aws_media_store_container). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_media_store_container",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Media Store Container",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_media_store_container/address",
+          "help": "The Media Store Container to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-medialive-channel",
+      "service": "aws-media",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Medialive Channel tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Medialive Channel (aws_medialive_channel). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_medialive_channel",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Medialive Channel",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_medialive_channel/address",
+          "help": "The Medialive Channel to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-medialive-input",
+      "service": "aws-media",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Medialive Input tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Medialive Input (aws_medialive_input). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_medialive_input",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Medialive Input",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_medialive_input/address",
+          "help": "The Medialive Input to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-medialive-multiplex",
+      "service": "aws-media",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Medialive Multiplex tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Medialive Multiplex (aws_medialive_multiplex). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_medialive_multiplex",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Medialive Multiplex",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_medialive_multiplex/address",
+          "help": "The Medialive Multiplex to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    }
+  ]
+}

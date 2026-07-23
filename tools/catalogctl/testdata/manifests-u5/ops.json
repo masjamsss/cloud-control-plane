@@ -1,0 +1,59 @@
+{
+  "service": "u5-fixtures",
+  "operations": [
+    {
+      "id": "waf-add-ip-set-entry",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "append_list_entry",
+      "title": "Add a CIDR to a WAF IP set",
+      "target": {
+        "resourceType": "aws_wafv2_ip_set",
+        "block": "addresses"
+      },
+      "terraformCapability": "~ update (addresses)",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "ip_set",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "cidr",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "rds-snapshot-unshare-account",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "remove_list_entry",
+      "title": "Stop sharing a DB snapshot with an account",
+      "target": {
+        "resourceType": "aws_db_snapshot",
+        "block": "shared_accounts"
+      },
+      "terraformCapability": "~ update (shared_accounts)",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "snapshot",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "account",
+          "source": "user_input",
+          "type": "string",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+{
+  "service": "fx0013a",
+  "operations": [
+    {
+      "id": "dlm-add-schedule",
+      "service": "dlm",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a DLM schedule",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": ["policy_details"],
+        "block": "schedule"
+      },
+      "params": [
+        {"name": "policy", "source": "inventory", "type": "string", "required": true},
+        {"name": "schedule_name", "source": "user_input", "type": "string", "required": true, "attr": "name", "role": "key"},
+        {"name": "copy_tags", "source": "user_input", "type": "bool", "required": true},
+        {"name": "new_interval", "source": "user_input", "type": "number", "required": true, "path": ["create_rule"]},
+        {"name": "interval_unit", "role": "const", "const": "HOURS", "path": ["create_rule"]},
+        {"name": "new_times", "source": "user_input", "type": "string", "required": true, "attr": "times", "wrap": "list", "path": ["create_rule"]},
+        {"name": "new_count", "source": "user_input", "type": "number", "required": true, "attr": "count", "path": ["retain_rule"]}
+      ],
+      "forcesReplace": false,
+      "terraformCapability": "+ create (schedule)"
+    },
+    {
+      "id": "s3-add-lifecycle-rule",
+      "service": "s3",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add an S3 lifecycle rule",
+      "target": {
+        "resourceType": "aws_s3_bucket_lifecycle_configuration",
+        "block": "rule"
+      },
+      "params": [
+        {"name": "bucket", "source": "inventory", "type": "string", "required": true},
+        {"name": "rule_id", "source": "user_input", "type": "string", "required": true, "attr": "id", "role": "key"},
+        {"name": "status", "role": "const", "const": "Enabled"},
+        {"name": "prefix", "source": "user_input", "type": "string", "required": true, "path": ["filter"]},
+        {"name": "transition_days", "source": "user_input", "type": "number", "required": true, "attr": "days", "path": ["transition"]},
+        {"name": "storage_class", "source": "user_input", "type": "string", "required": true, "path": ["transition"]},
+        {"name": "expiration_days", "source": "user_input", "type": "number", "required": false, "attr": "days", "path": ["expiration"]}
+      ],
+      "forcesReplace": false,
+      "terraformCapability": "+ create (rule)"
+    },
+    {
+      "id": "waf-add-managed-rule-group",
+      "service": "waf",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a WAF managed rule group",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "block": "rule",
+        "emptyBlocks": [["override_action", "count"]]
+      },
+      "params": [
+        {"name": "web_acl", "source": "inventory", "type": "string", "required": true},
+        {"name": "rule_name", "source": "user_input", "type": "string", "required": true, "attr": "name", "role": "key"},
+        {"name": "priority", "source": "user_input", "type": "number", "required": true},
+        {"name": "group_name", "source": "user_input", "type": "string", "required": true, "attr": "name", "path": ["statement", "managed_rule_group_statement"]},
+        {"name": "vendor_name", "role": "const", "const": "AWS", "path": ["statement", "managed_rule_group_statement"]},
+        {"name": "metric_name", "source": "user_input", "type": "string", "required": true, "path": ["visibility_config"]},
+        {"name": "cloudwatch_metrics_enabled", "role": "const", "const": true, "path": ["visibility_config"]},
+        {"name": "sampled_requests_enabled", "role": "const", "const": true, "path": ["visibility_config"]}
+      ],
+      "forcesReplace": false,
+      "terraformCapability": "+ create (rule)"
+    },
+    {
+      "id": "asg-start-instance-refresh",
+      "service": "autoscaling",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Start an instance refresh (singleton)",
+      "target": {
+        "resourceType": "aws_autoscaling_group",
+        "block": "instance_refresh",
+        "singleton": true
+      },
+      "params": [
+        {"name": "asg", "source": "inventory", "type": "string", "required": true},
+        {"name": "strategy", "role": "const", "const": "Rolling"},
+        {"name": "min_healthy_percentage", "source": "user_input", "type": "number", "required": true, "path": ["preferences"]},
+        {"name": "instance_warmup", "source": "user_input", "type": "number", "required": true, "path": ["preferences"]}
+      ],
+      "forcesReplace": false,
+      "terraformCapability": "+ create (instance_refresh)"
+    },
+    {
+      "id": "dlm-add-cross-region-copy",
+      "service": "dlm",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a cross-region copy rule to a chosen schedule",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": ["policy_details", "schedule"],
+        "block": "cross_region_copy_rule"
+      },
+      "params": [
+        {"name": "policy", "source": "inventory", "type": "string", "required": true},
+        {"name": "which_schedule", "source": "user_input", "type": "string", "required": true, "role": "selector", "matchAttr": "name"},
+        {"name": "target_region", "source": "user_input", "type": "string", "required": true, "attr": "target"},
+        {"name": "encrypted", "role": "const", "const": true},
+        {"name": "copy_interval", "source": "user_input", "type": "number", "required": true, "attr": "interval", "path": ["retain_rule"]},
+        {"name": "copy_interval_unit", "role": "const", "const": "DAYS", "attr": "interval_unit", "path": ["retain_rule"]}
+      ],
+      "forcesReplace": false,
+      "terraformCapability": "+ create (cross_region_copy_rule)"
+    }
+  ]
+}

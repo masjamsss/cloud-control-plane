@@ -1,0 +1,210 @@
+{
+  "generatedAt": null,
+  "source": "Hand-authored representative inventory for the azure-fixture project — models a small imported Azure subscription (landing zone) across the catalog's azure-* service types; not machine-generated (Azure estate-import tooling is a later phase).",
+  "resources": [
+    {
+      "address": "azurerm_resource_group.core_rg",
+      "resourceType": "azurerm_resource_group",
+      "name": "core-rg",
+      "service": "azure-core",
+      "attributes": { "location": "southeastasia" }
+    },
+    {
+      "address": "azurerm_virtual_network.core_vnet",
+      "resourceType": "azurerm_virtual_network",
+      "name": "core-vnet",
+      "service": "azure-network",
+      "attributes": { "location": "southeastasia", "address_space": "10.20.0.0/16" }
+    },
+    {
+      "address": "azurerm_subnet.core_vnet_app",
+      "resourceType": "azurerm_subnet",
+      "name": "app-subnet",
+      "service": "azure-network",
+      "attributes": { "address_prefix": "10.20.1.0/24" }
+    },
+    {
+      "address": "azurerm_subnet.core_vnet_data",
+      "resourceType": "azurerm_subnet",
+      "name": "data-subnet",
+      "service": "azure-network",
+      "attributes": { "address_prefix": "10.20.2.0/24" }
+    },
+    {
+      "address": "azurerm_public_ip.app_pip_01",
+      "resourceType": "azurerm_public_ip",
+      "name": "app-pip-01",
+      "service": "azure-network",
+      "attributes": {
+        "location": "southeastasia",
+        "allocation_method": "Static",
+        "sku": "Standard"
+      }
+    },
+    {
+      "address": "azurerm_network_interface.app_vm_01_nic",
+      "resourceType": "azurerm_network_interface",
+      "name": "app-vm-01-nic",
+      "service": "azure-network",
+      "attributes": { "location": "southeastasia", "private_ip_address": "10.20.1.4" }
+    },
+    {
+      "address": "azurerm_network_interface.app_vm_02_nic",
+      "resourceType": "azurerm_network_interface",
+      "name": "app-vm-02-nic",
+      "service": "azure-network",
+      "attributes": { "location": "southeastasia", "private_ip_address": "10.20.1.5" }
+    },
+    {
+      "address": "azurerm_storage_account.appdatasa01",
+      "resourceType": "azurerm_storage_account",
+      "name": "appdatasa01",
+      "service": "azure-storage",
+      "attributes": {
+        "location": "southeastasia",
+        "account_tier": "Standard",
+        "account_replication_type": "LRS",
+        "min_tls_version": "TLS1_2",
+        "allow_nested_items_to_be_public": false
+      }
+    },
+    {
+      "address": "azurerm_storage_container.app_assets",
+      "resourceType": "azurerm_storage_container",
+      "name": "app-assets",
+      "service": "azure-storage",
+      "attributes": { "container_access_type": "private" }
+    },
+    {
+      "address": "azurerm_key_vault.core_kv_01",
+      "resourceType": "azurerm_key_vault",
+      "name": "core-kv-01",
+      "service": "azure-keyvault",
+      "attributes": {
+        "location": "southeastasia",
+        "sku_name": "standard",
+        "purge_protection_enabled": true,
+        "soft_delete_retention_days": 30
+      }
+    },
+    {
+      "address": "azurerm_mssql_server.data_sql_01",
+      "resourceType": "azurerm_mssql_server",
+      "name": "data-sql-01",
+      "service": "azure-database",
+      "attributes": {
+        "location": "southeastasia",
+        "version": "12.0",
+        "minimum_tls_version": "1.2",
+        "public_network_access_enabled": false
+      }
+    },
+    {
+      "address": "azurerm_mssql_database.app_db",
+      "resourceType": "azurerm_mssql_database",
+      "name": "app-db",
+      "service": "azure-database",
+      "attributes": { "sku_name": "GP_Gen5_2", "max_size_gb": 32 }
+    },
+    {
+      "address": "azurerm_linux_virtual_machine.app_vm_01",
+      "resourceType": "azurerm_linux_virtual_machine",
+      "name": "app-vm-01",
+      "service": "azure-compute",
+      "attributes": {
+        "location": "southeastasia",
+        "size": "Standard_B2s",
+        "admin_username": "azureuser"
+      }
+    },
+    {
+      "address": "azurerm_linux_virtual_machine.app_vm_02",
+      "resourceType": "azurerm_linux_virtual_machine",
+      "name": "app-vm-02",
+      "service": "azure-compute",
+      "attributes": {
+        "location": "southeastasia",
+        "size": "Standard_B2s",
+        "admin_username": "azureuser"
+      }
+    },
+    {
+      "address": "azurerm_managed_disk.app_vm_01_datadisk",
+      "resourceType": "azurerm_managed_disk",
+      "name": "app-vm-01-datadisk",
+      "service": "azure-compute",
+      "attributes": { "disk_size_gb": 128, "storage_account_type": "StandardSSD_LRS" }
+    },
+    {
+      "address": "azurerm_managed_disk.app_vm_02_datadisk",
+      "resourceType": "azurerm_managed_disk",
+      "name": "app-vm-02-datadisk",
+      "service": "azure-compute",
+      "attributes": { "disk_size_gb": 128, "storage_account_type": "StandardSSD_LRS" }
+    },
+    {
+      "address": "azurerm_log_analytics_workspace.core_law_01",
+      "resourceType": "azurerm_log_analytics_workspace",
+      "name": "core-law-01",
+      "service": "azure-monitoring",
+      "attributes": { "location": "southeastasia", "retention_in_days": 30, "daily_quota_gb": 5 }
+    },
+    {
+      "address": "azurerm_application_insights.app_appinsights_01",
+      "resourceType": "azurerm_application_insights",
+      "name": "app-appinsights-01",
+      "service": "azure-monitoring",
+      "attributes": { "retention_in_days": 90, "sampling_percentage": 100 }
+    },
+    {
+      "address": "azurerm_service_plan.core_asp_01",
+      "resourceType": "azurerm_service_plan",
+      "name": "core-asp-01",
+      "service": "azure-web",
+      "attributes": { "location": "southeastasia", "sku_name": "P1v3", "os_type": "Linux" }
+    },
+    {
+      "address": "azurerm_linux_web_app.app_web_01",
+      "resourceType": "azurerm_linux_web_app",
+      "name": "app-web-01",
+      "service": "azure-web",
+      "attributes": { "location": "southeastasia", "https_only": true }
+    },
+    {
+      "address": "azurerm_kubernetes_cluster.core_aks_01",
+      "resourceType": "azurerm_kubernetes_cluster",
+      "name": "core-aks-01",
+      "service": "azure-containers",
+      "attributes": {
+        "location": "southeastasia",
+        "sku_tier": "Standard",
+        "kubernetes_version": "1.29"
+      }
+    },
+    {
+      "address": "azurerm_kubernetes_cluster_node_pool.core_aks_01_systempool",
+      "resourceType": "azurerm_kubernetes_cluster_node_pool",
+      "name": "systempool",
+      "service": "azure-containers",
+      "attributes": { "node_count": 3, "vm_size": "Standard_D2s_v5" }
+    },
+    {
+      "address": "azurerm_kubernetes_cluster_node_pool.core_aks_01_userpool",
+      "resourceType": "azurerm_kubernetes_cluster_node_pool",
+      "name": "userpool",
+      "service": "azure-containers",
+      "attributes": { "node_count": 3, "vm_size": "Standard_D2s_v5" }
+    },
+    {
+      "address": "azurerm_container_registry.coreacr01",
+      "resourceType": "azurerm_container_registry",
+      "name": "coreacr01",
+      "service": "azure-containers",
+      "attributes": {
+        "location": "southeastasia",
+        "sku": "Standard",
+        "public_network_access_enabled": false
+      }
+    }
+  ]
+}

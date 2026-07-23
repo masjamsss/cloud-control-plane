@@ -1,0 +1,37 @@
+{
+ "aws_iam_role.app_role": {
+  "file": "ccp/app/fixtures-estate/iam.tf",
+  "line": 6,
+  "source": "resource \"aws_iam_role\" \"app_role\" {\n  name = \"app-instance-role\"\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"ec2.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n\n  tags = {\n    Name = \"app-instance-role\"\n    PIC  = \"user01@example.com\"\n  }\n}"
+ },
+ "aws_iam_instance_profile.app_role": {
+  "file": "ccp/app/fixtures-estate/iam.tf",
+  "line": 24,
+  "source": "resource \"aws_iam_instance_profile\" \"app_role\" {\n  name = \"app-instance-profile\"\n  role = aws_iam_role.app_role.name\n}"
+ },
+ "aws_iam_role.lambda_role": {
+  "file": "ccp/app/fixtures-estate/iam.tf",
+  "line": 29,
+  "source": "resource \"aws_iam_role\" \"lambda_role\" {\n  name = \"lambda-execution-role\"\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Service = \"lambda.amazonaws.com\" }\n      Action    = \"sts:AssumeRole\"\n    }]\n  })\n\n  tags = {\n    Name = \"lambda-execution-role\"\n    PIC  = \"user02@example.com\"\n  }\n}"
+ },
+ "aws_iam_role_policy_attachment.lambda_basic": {
+  "file": "ccp/app/fixtures-estate/iam.tf",
+  "line": 47,
+  "source": "resource \"aws_iam_role_policy_attachment\" \"lambda_basic\" {\n  role       = aws_iam_role.lambda_role.name\n  policy_arn = \"arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole\"\n}"
+ },
+ "aws_iam_user.user01": {
+  "file": "ccp/app/fixtures-estate/iam.tf",
+  "line": 52,
+  "source": "resource \"aws_iam_user\" \"user01\" {\n  name = \"user01\"\n\n  tags = {\n    \"AKIAEXAMPLE000000001\" = \"CI upload key for the data pipeline\"\n    PIC                     = \"user01@example.com\"\n  }\n}"
+ },
+ "aws_iam_user.user02": {
+  "file": "ccp/app/fixtures-estate/iam.tf",
+  "line": 61,
+  "source": "resource \"aws_iam_user\" \"user02\" {\n  name = \"user02\"\n\n  tags = {\n    \"AKIAEXAMPLE000000002\" = \"Read-only monitoring integration\"\n    PIC                     = \"user02@example.com\"\n  }\n}"
+ },
+ "aws_iam_user.user03": {
+  "file": "ccp/app/fixtures-estate/iam.tf",
+  "line": 70,
+  "source": "resource \"aws_iam_user\" \"user03\" {\n  name = \"user03\"\n\n  tags = {\n    \"AKIAEXAMPLE000000003\" = \"Backup automation service account\"\n    PIC                     = \"user03@example.com\"\n  }\n}"
+ }
+}

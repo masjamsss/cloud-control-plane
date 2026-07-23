@@ -1,0 +1,1 @@
+{"service":"file-sync","types":{"azurerm_storage_sync":{"attrs":[{"n":"location","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"incoming_traffic_policy","t":"string"},{"n":"tags","t":"map"}],"blocks":[]}}}

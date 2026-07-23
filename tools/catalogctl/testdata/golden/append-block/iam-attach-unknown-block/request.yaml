@@ -1,0 +1,9 @@
+schema: ccp.request/v1
+id: REQ-01JZTC4QWERTY0123456789AB1
+item: iam-attach-managed-policy
+created_at: "2026-07-13T00:00:00Z"
+requester_login: fixture-l1
+params:
+  role: aws_iam_role.application_migration
+  policy_arn: arn:aws:iam::aws:policy/ReadOnlyAccess
+justification: "S2 — append_block into a nonexistent nested block must refuse UNKNOWN_BLOCK_TYPE"

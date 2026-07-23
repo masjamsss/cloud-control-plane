@@ -1,0 +1,7 @@
+{
+  "aws_s3_bucket.state": {
+    "file": "example-bootstrap/s3.tf",
+    "line": 1,
+    "source": "resource \"aws_s3_bucket\" \"state\" {\n  bucket = \"example-tfstate\"\n\n  tags = {\n    Name        = \"state\"\n    Description = \"Terraform state bucket for the bootstrap sandbox\"\n  }\n\n  lifecycle {\n    prevent_destroy = true\n  }\n}"
+  }
+}

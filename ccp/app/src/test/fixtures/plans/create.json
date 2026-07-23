@@ -1,0 +1,28 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.15.7",
+  "resource_changes": [
+    {
+      "address": "aws_cloudwatch_metric_alarm.new_cpu_high",
+      "mode": "managed",
+      "type": "aws_cloudwatch_metric_alarm",
+      "name": "new_cpu_high",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "alarm_name": "app01-cpu-high",
+          "comparison_operator": "GreaterThanThreshold",
+          "threshold": 85
+        },
+        "after_unknown": {
+          "id": true,
+          "arn": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {}
+      }
+    }
+  ]
+}

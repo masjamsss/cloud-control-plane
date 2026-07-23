@@ -1,0 +1,99 @@
+{
+  "service": "azure-compute",
+  "scope": "estate",
+  "resourceTypes": ["azurerm_linux_virtual_machine", "azurerm_managed_disk"],
+  "summary": "Fixture manifest for the catalogctl Azure-executability verify lane — mirrors two REAL azure-compute.json set_attribute op SHAPES so the golden harness proves them byte-exact: a scalar target.attr resize (azurerm_linux_virtual_machine.size) and a grow-only numeric bound (azurerm_managed_disk.disk_size_gb, bounds.growOnly). The op shapes (codemodOp/target/params/bounds) mirror the app catalog; only the prose is trimmed.",
+  "operations": [
+    {
+      "id": "azure-compute-linux-vm-resize",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Resize a Linux virtual machine",
+      "description": "Change the size argument (the Azure VM SKU) to an allowlisted value. Applied in place; Azure deallocates and restarts the VM to move it onto the new size.",
+      "target": {
+        "attr": "size",
+        "resourceType": "azurerm_linux_virtual_machine"
+      },
+      "params": [
+        {
+          "name": "virtual_machine",
+          "label": "Virtual machine",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_linux_virtual_machine/address",
+          "help": "Select the virtual machine to resize; the picker only lists VMs already tracked in inventory."
+        },
+        {
+          "name": "size",
+          "label": "New size",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "Standard_B2s",
+              "Standard_B2ms",
+              "Standard_D2s_v5",
+              "Standard_D4s_v5",
+              "Standard_E2s_v5",
+              "Standard_F2s_v2"
+            ]
+          },
+          "help": "The Azure VM size (SKU) that fixes the host's vCPU and memory."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "deallocate and restart",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (size)"
+    },
+    {
+      "id": "azure-compute-managed-disk-grow",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Grow a managed disk",
+      "description": "Increase a managed disk's size via the disk_size_gb argument. Grow-only — an Azure managed disk cannot be shrunk, so this is irreversible.",
+      "target": {
+        "attr": "disk_size_gb",
+        "resourceType": "azurerm_managed_disk"
+      },
+      "params": [
+        {
+          "name": "managed_disk",
+          "label": "Managed disk",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_managed_disk/address",
+          "help": "Select the managed disk to enlarge; the size field separately enforces grow-only."
+        },
+        {
+          "name": "disk_size_gb",
+          "label": "New size (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 32767,
+            "growOnly": true
+          },
+          "help": "Must exceed the current size in GiB; a managed disk cannot be shrunk."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (disk_size_gb)"
+    }
+  ]
+}

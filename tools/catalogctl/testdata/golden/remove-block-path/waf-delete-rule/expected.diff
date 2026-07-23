@@ -1,0 +1,14 @@
+--- a/environments/prod/waf.tf
++++ b/environments/prod/waf.tf
+@@ -3,11 +3,6 @@
+   scope = "REGIONAL"
+ 
+   rule {
+-    name     = "r1"
+-    priority = 1
+-  }
+-
+-  rule {
+     name     = "r2"
+     priority = 2
+   }

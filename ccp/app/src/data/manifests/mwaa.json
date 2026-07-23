@@ -1,0 +1,303 @@
+{
+  "service": "mwaa",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_mwaa_environment"
+  ],
+  "summary": "Provision new Managed Workflows for Apache Airflow environments. Greenfield today (no environment exists yet in this estate) \u2014 the create stands up the environment against an existing DAG source bucket and execution role; Airflow configuration overrides and per-log-type levels are engineer follow-ups.",
+  "operations": [
+    {
+      "id": "mwaa-environment-create",
+      "service": "mwaa",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new MWAA environment",
+      "summary": "Request a brand-new Managed Workflows for Apache Airflow environment; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up an Airflow environment as a complete specification: the S3 DAG source, execution role, sizing, and network placement. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_mwaa_environment"
+      },
+      "params": [
+        {
+          "name": "environment_name",
+          "label": "Environment name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._-]{1,80}$"
+          },
+          "help": "Names the environment in the MWAA console and the generated draft."
+        },
+        {
+          "name": "source_bucket_arn",
+          "label": "DAG source S3 bucket",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_s3_bucket/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "source_bucket_arn",
+          "group": "identity",
+          "help": "The bucket MWAA syncs dags/, plugins.zip and requirements.txt from."
+        },
+        {
+          "name": "dag_s3_path",
+          "label": "DAG folder path",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "dag_s3_path",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9!_.*'()/-]{1,1024}$"
+          },
+          "default": "dags/",
+          "help": "Key prefix inside the source bucket where DAG files live."
+        },
+        {
+          "name": "execution_role",
+          "label": "Execution role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "execution_role_arn",
+          "group": "identity",
+          "help": "The IAM role Airflow tasks assume to reach other AWS services."
+        },
+        {
+          "name": "airflow_version",
+          "label": "Airflow version",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "airflow_version",
+          "group": "sizing",
+          "bounds": {
+            "allowlist": [
+              "2.10.3",
+              "2.9.2",
+              "2.8.1",
+              "2.7.2",
+              "engineer-decides"
+            ]
+          },
+          "default": "2.10.3",
+          "help": "The managed Apache Airflow version."
+        },
+        {
+          "name": "environment_class",
+          "label": "Environment class",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "environment_class",
+          "group": "sizing",
+          "bounds": {
+            "allowlist": [
+              "mw1.micro",
+              "mw1.small",
+              "mw1.medium",
+              "mw1.large"
+            ]
+          },
+          "default": "mw1.small",
+          "help": "Size class for the scheduler/webserver/worker fleet."
+        },
+        {
+          "name": "min_workers",
+          "label": "Minimum workers",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "min_workers",
+          "group": "sizing",
+          "bounds": {
+            "min": 1,
+            "max": 25
+          },
+          "default": 1,
+          "help": "The worker fleet never scales below this count."
+        },
+        {
+          "name": "max_workers",
+          "label": "Maximum workers",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "max_workers",
+          "group": "sizing",
+          "bounds": {
+            "min": 1,
+            "max": 25
+          },
+          "default": 5,
+          "help": "The worker fleet auto-scales up to this count under load."
+        },
+        {
+          "name": "schedulers",
+          "label": "Schedulers",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "schedulers",
+          "group": "sizing",
+          "bounds": {
+            "min": 2,
+            "max": 5
+          },
+          "default": 2,
+          "help": "Number of Airflow scheduler replicas."
+        },
+        {
+          "name": "webserver_access_mode",
+          "label": "Webserver access",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "webserver_access_mode",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              "PRIVATE_ONLY",
+              "PUBLIC_ONLY"
+            ]
+          },
+          "default": "PRIVATE_ONLY",
+          "help": "PRIVATE_ONLY keeps the Airflow UI reachable only from inside the VPC."
+        },
+        {
+          "name": "network_security_group_ids",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "security_group_ids",
+          "path": [
+            "network_configuration"
+          ],
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "help": "Who can reach the environment's webserver and metadata database."
+        },
+        {
+          "name": "network_subnet_ids",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_ids",
+          "path": [
+            "network_configuration"
+          ],
+          "group": "network",
+          "bounds": {
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "help": "Exactly two private subnets in different Availability Zones \u2014 the AWS requirement for MWAA."
+        },
+        {
+          "name": "kms_key",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key",
+          "group": "sizing",
+          "help": "Leave blank for the AWS-managed key."
+        },
+        {
+          "name": "weekly_maintenance_window_start",
+          "label": "Weekly maintenance window",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "weekly_maintenance_window_start",
+          "group": "sizing",
+          "bounds": {
+            "pattern": "^(MON|TUE|WED|THU|FRI|SAT|SUN):([01][0-9]|2[0-3]):[0-5][0-9]$"
+          },
+          "help": "DDD:HH:MM in UTC, e.g. SUN:03:30. Leave blank for an AWS-assigned window."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this Airflow environment orchestrates",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this environment."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new mwaa environment",
+        "provision airflow",
+        "managed airflow",
+        "new workflow orchestration"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "requirements.txt / plugins.zip S3 object versions, custom Airflow configuration options (airflow_configuration_options), and per-log-type logging levels are engineer follow-ups after creation.",
+        "Endpoint management mode and worker replacement strategy beyond the AWS defaults are engineer follow-ups."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+--- a/environments/prod/main.tf
++++ b/environments/prod/main.tf
+@@ -3,7 +3,7 @@
+   instance_type = "m5.xlarge"
+ 
+   tags = {
+-    Owner = "platform"
++    Owner = "bi-team"
+     Env   = "prod"
+   }
+ }

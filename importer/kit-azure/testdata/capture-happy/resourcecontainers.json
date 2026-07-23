@@ -1,0 +1,14 @@
+{
+  "data": [
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app",
+      "name": "rg-app",
+      "type": "microsoft.resources/resourcegroups",
+      "location": "southeastasia",
+      "subscriptionId": "00000000-0000-0000-0000-000000000000",
+      "tags": {}
+    }
+  ],
+  "count": 1,
+  "total_records": 1
+}

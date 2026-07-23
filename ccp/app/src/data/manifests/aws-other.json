@@ -1,0 +1,667 @@
+{
+  "service": "aws-other",
+  "scope": "expansion",
+  "resourceTypes": [
+    "aws_applicationinsights_application",
+    "aws_budgets_budget",
+    "aws_budgets_budget_action",
+    "aws_cleanrooms_collaboration",
+    "aws_cleanrooms_configured_table",
+    "aws_cur_report_definition",
+    "aws_customerprofiles_domain",
+    "aws_gamelift_alias",
+    "aws_gamelift_build",
+    "aws_gamelift_fleet",
+    "aws_gamelift_game_server_group",
+    "aws_gamelift_game_session_queue",
+    "aws_gamelift_script",
+    "aws_internetmonitor_monitor"
+  ],
+  "summary": "Tag management across Other AWS Resources AWS resources (auto-generated comprehensive tag surface — 14 resource types).",
+  "operations": [
+    {
+      "id": "aws-tag-applicationinsights-application",
+      "service": "aws-other",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Applicationinsights Application tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Applicationinsights Application (aws_applicationinsights_application). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_applicationinsights_application",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Applicationinsights Application",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_applicationinsights_application/address",
+          "help": "The Applicationinsights Application to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-budgets-budget",
+      "service": "aws-other",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Budgets Budget tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Budgets Budget (aws_budgets_budget). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_budgets_budget",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Budgets Budget",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_budgets_budget/address",
+          "help": "The Budgets Budget to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-budgets-budget-action",
+      "service": "aws-other",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Budgets Budget Action tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Budgets Budget Action (aws_budgets_budget_action). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_budgets_budget_action",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Budgets Budget Action",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_budgets_budget_action/address",
+          "help": "The Budgets Budget Action to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-cleanrooms-collaboration",
+      "service": "aws-other",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Cleanrooms Collaboration tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Cleanrooms Collaboration (aws_cleanrooms_collaboration). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_cleanrooms_collaboration",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Cleanrooms Collaboration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cleanrooms_collaboration/address",
+          "help": "The Cleanrooms Collaboration to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-cleanrooms-configured-table",
+      "service": "aws-other",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Cleanrooms Configured Table tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Cleanrooms Configured Table (aws_cleanrooms_configured_table). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_cleanrooms_configured_table",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Cleanrooms Configured Table",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cleanrooms_configured_table/address",
+          "help": "The Cleanrooms Configured Table to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-cur-report-definition",
+      "service": "aws-other",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Cur Report Definition tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Cur Report Definition (aws_cur_report_definition). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_cur_report_definition",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Cur Report Definition",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cur_report_definition/address",
+          "help": "The Cur Report Definition to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-customerprofiles-domain",
+      "service": "aws-other",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Customerprofiles Domain tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Customerprofiles Domain (aws_customerprofiles_domain). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_customerprofiles_domain",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Customerprofiles Domain",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_customerprofiles_domain/address",
+          "help": "The Customerprofiles Domain to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-gamelift-alias",
+      "service": "aws-other",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Gamelift Alias tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Gamelift Alias (aws_gamelift_alias). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_gamelift_alias",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Gamelift Alias",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_gamelift_alias/address",
+          "help": "The Gamelift Alias to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-gamelift-build",
+      "service": "aws-other",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Gamelift Build tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Gamelift Build (aws_gamelift_build). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_gamelift_build",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Gamelift Build",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_gamelift_build/address",
+          "help": "The Gamelift Build to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-gamelift-fleet",
+      "service": "aws-other",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Gamelift Fleet tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Gamelift Fleet (aws_gamelift_fleet). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_gamelift_fleet",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Gamelift Fleet",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_gamelift_fleet/address",
+          "help": "The Gamelift Fleet to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-gamelift-game-server-group",
+      "service": "aws-other",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Gamelift Game Server Group tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Gamelift Game Server Group (aws_gamelift_game_server_group). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_gamelift_game_server_group",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Gamelift Game Server Group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_gamelift_game_server_group/address",
+          "help": "The Gamelift Game Server Group to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-gamelift-game-session-queue",
+      "service": "aws-other",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Gamelift Game Session Queue tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Gamelift Game Session Queue (aws_gamelift_game_session_queue). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_gamelift_game_session_queue",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Gamelift Game Session Queue",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_gamelift_game_session_queue/address",
+          "help": "The Gamelift Game Session Queue to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-gamelift-script",
+      "service": "aws-other",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Gamelift Script tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Gamelift Script (aws_gamelift_script). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_gamelift_script",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Gamelift Script",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_gamelift_script/address",
+          "help": "The Gamelift Script to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-internetmonitor-monitor",
+      "service": "aws-other",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Internetmonitor Monitor tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Internetmonitor Monitor (aws_internetmonitor_monitor). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_internetmonitor_monitor",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Internetmonitor Monitor",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_internetmonitor_monitor/address",
+          "help": "The Internetmonitor Monitor to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    }
+  ]
+}

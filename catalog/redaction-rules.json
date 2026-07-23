@@ -1,0 +1,16 @@
+{
+  "$comment": "Shared redaction rules for Cloud Control Plane. Consumed by the SPA (ccp/app/src/lib/redact.ts) today and, when it exists, by catalogctl before it writes any block-diff artifact — so display and archive mask identically. See docs/proposals/0005 findings LEARN-1, LEARN-2, ADV-6.",
+  "secretAttributeNames": [
+    "password", "passwd", "token", "api_token", "secret", "api_key", "apikey",
+    "private_key", "privatekey", "psk", "preshared_key", "credential", "credentials",
+    "access_key", "secret_key", "client_secret", "auth_token", "session_token",
+    "sas_token", "connection_string", "shared_access_key"
+  ],
+  "maskAllValuesInBlocks": ["environment", "variables", "secret_string", "kms"],
+  "valueAllowlistPrefixes": [
+    "arn:", "ami-", "subnet-", "vpc-", "sg-", "i-", "snap-", "vol-", "igw-",
+    "rtb-", "acl-", "eni-", "nat-", "eipalloc-", "pcx-", "tgw-", "fs-",
+    "/subscriptions/",
+    "http://", "https://"
+  ]
+}

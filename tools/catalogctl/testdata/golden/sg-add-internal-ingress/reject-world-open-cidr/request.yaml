@@ -1,0 +1,12 @@
+schema: ccp.request/v1
+id: REQ-01JZTC4QWERTY0123456789F1A
+item: sg-add-internal-ingress-rule
+created_at: "2026-07-13T00:00:00Z"
+requester_login: fixture-l1
+params:
+  security_group: aws_security_group.web
+  protocol: tcp
+  from_port: 443
+  to_port: 443
+  cidr_block: 0.0.0.0/0
+justification: "F1 fixture — world-open ingress CIDR must be refused OUT_OF_BOUNDS (used to execute at exit 0)"

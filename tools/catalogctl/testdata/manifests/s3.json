@@ -1,0 +1,956 @@
+{
+  "service": "s3",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_s3_bucket",
+    "aws_s3_bucket_versioning",
+    "aws_s3_bucket_public_access_block",
+    "aws_s3_bucket_lifecycle_configuration",
+    "aws_s3_bucket_policy",
+    "aws_s3_bucket_server_side_encryption_configuration",
+    "aws_s3_bucket_ownership_controls",
+    "aws_s3_bucket_cors_configuration"
+  ],
+  "summary": "Day-2 operations for the sample ERP S3 estate: lifecycle retention rules, versioning and public-access-block guardrails, tag hygiene, cross-region replication (engineer-authored), and bucket teardown (engineer-authored, irreversible).",
+  "operations": [
+    {
+      "id": "s3-add-lifecycle-rule",
+      "service": "s3",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add S3 lifecycle rule",
+      "description": "Appends a new lifecycle rule (transition to a cheaper storage class and/or expire objects) to the bucket's lifecycle configuration. Applies to matching objects going forward; AWS evaluates lifecycle rules within roughly 24-48 hours of the change, it does not act instantly.",
+      "target": {
+        "resourceType": "aws_s3_bucket_lifecycle_configuration",
+        "block": "rule"
+      },
+      "params": [
+        {
+          "name": "lifecycle_config",
+          "label": "Bucket lifecycle configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket_lifecycle_configuration/address",
+          "help": "The bucket to add the rule to."
+        },
+        {
+          "name": "rule_id",
+          "label": "Rule ID",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+          },
+          "help": "Unique identifier for this rule within the bucket."
+        },
+        {
+          "name": "prefix",
+          "label": "Object key prefix",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "",
+          "help": "Limit the rule to keys starting with this prefix; leave blank to apply to the whole bucket."
+        },
+        {
+          "name": "transition_days",
+          "label": "Transition after (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "default": 90,
+          "bounds": {
+            "min": 1,
+            "max": 3650
+          },
+          "help": "Days after object creation before it transitions to the target storage class."
+        },
+        {
+          "name": "storage_class",
+          "label": "Target storage class",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "STANDARD_IA",
+              "ONEZONE_IA",
+              "INTELLIGENT_TIERING",
+              "GLACIER",
+              "GLACIER_IR",
+              "DEEP_ARCHIVE"
+            ]
+          },
+          "help": "Storage class objects move into after the transition period."
+        },
+        {
+          "name": "expiration_days",
+          "label": "Expire after (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "default": 0,
+          "bounds": {
+            "min": 0,
+            "max": 36500
+          },
+          "help": "Days after which matching objects are permanently deleted; 0 means no expiration."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update"
+    },
+    {
+      "id": "s3-toggle-versioning",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or suspend bucket versioning",
+      "description": "Switches object versioning on the bucket between Enabled and Suspended. Suspending stops new versions being created but keeps existing versions; once a bucket has been versioned it can never return to a fully unversioned state, so treat this as a one-way door on first enable.",
+      "target": {
+        "resourceType": "aws_s3_bucket_versioning",
+        "block": "versioning_configuration"
+      },
+      "params": [
+        {
+          "name": "versioning",
+          "label": "Bucket versioning config",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket_versioning/address",
+          "help": "The bucket versioning resource to change."
+        },
+        {
+          "name": "status",
+          "label": "New status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "Enabled",
+              "Suspended"
+            ]
+          },
+          "help": "Enabled protects against accidental overwrite/delete; Suspended stops creating new versions."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update"
+    },
+    {
+      "id": "s3-update-tags",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update bucket tags",
+      "description": "Sets or merges cost-allocation and ownership tags on the bucket. Non-disruptive, takes effect immediately, no impact on stored objects or access.",
+      "target": {
+        "resourceType": "aws_s3_bucket",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "bucket",
+          "label": "S3 bucket",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket/address",
+          "help": "The bucket to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update"
+    },
+    {
+      "id": "s3-set-public-access-block",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set public access block flags",
+      "description": "Adjusts the four S3 public-access-block controls on the bucket. Tightening them is a safe remediation for accidentally-public buckets; relaxing any of them can expose bucket contents or policy to the internet, so both directions require review.",
+      "target": {
+        "resourceType": "aws_s3_bucket_public_access_block"
+      },
+      "params": [
+        {
+          "name": "pab",
+          "label": "Public access block config",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket_public_access_block/address",
+          "help": "The bucket's public-access-block resource to change."
+        },
+        {
+          "name": "block_public_acls",
+          "label": "Block public ACLs",
+          "type": "bool",
+          "source": "user_input",
+          "help": "Sets block_public_acls: when true, S3 rejects any new public ACL on the bucket or its objects; true is the safe hardening default, and relaxing it to false is the direction reviewers scrutinize.",
+          "required": true,
+          "default": true
+        },
+        {
+          "name": "block_public_policy",
+          "label": "Block public bucket policies",
+          "type": "bool",
+          "source": "user_input",
+          "help": "Sets block_public_policy: when true, S3 rejects any bucket policy that would grant public access, so a mistyped policy cannot open the bucket to the internet; true is the safe default.",
+          "required": true,
+          "default": true
+        },
+        {
+          "name": "ignore_public_acls",
+          "label": "Ignore public ACLs",
+          "type": "bool",
+          "source": "user_input",
+          "help": "Sets ignore_public_acls: when true, S3 treats every existing public ACL on the bucket and its objects as private, so anything made public in the past stops being publicly readable; true is the safe default.",
+          "required": true,
+          "default": true
+        },
+        {
+          "name": "restrict_public_buckets",
+          "label": "Restrict public bucket policies",
+          "type": "bool",
+          "source": "user_input",
+          "help": "Sets restrict_public_buckets: when true, only the bucket owner's account and AWS services can use a public bucket policy, cutting off anonymous and cross-account access even if such a policy exists; true is the safe default.",
+          "required": true,
+          "default": true
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update"
+    },
+    {
+      "id": "s3-enable-replication",
+      "service": "s3",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Enable cross-region replication",
+      "description": "Creates a new replication configuration to continuously copy objects from this bucket to a destination bucket (typically the DR region). Requires versioning already enabled on both source and destination and an existing IAM replication role; architectural change, must be authored and reviewed by an engineer.",
+      "target": {
+        "resourceType": "aws_s3_bucket",
+        "block": "aws_s3_bucket_replication_configuration"
+      },
+      "params": [
+        {
+          "name": "bucket",
+          "label": "Source S3 bucket",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket/address",
+          "help": "The bucket replication will be added to. Must already have versioning enabled."
+        },
+        {
+          "name": "destination_bucket_arn",
+          "label": "Destination bucket ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^arn:aws:s3:::[a-z0-9.-]+$"
+          },
+          "help": "ARN of the versioned destination bucket, e.g. in the DR region."
+        },
+        {
+          "name": "iam_role_arn",
+          "label": "Replication IAM role ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^arn:aws:iam::[0-9]{12}:role/.+$"
+          },
+          "help": "Existing IAM role granting s3 replication permissions; this operation references it by ARN, it does not create the role."
+        },
+        {
+          "name": "storage_class",
+          "label": "Destination storage class",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "default": "STANDARD",
+          "bounds": {
+            "allowlist": [
+              "STANDARD",
+              "STANDARD_IA",
+              "GLACIER",
+              "GLACIER_IR"
+            ]
+          },
+          "help": "Storage class replicated objects land in at the destination."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create"
+    },
+    {
+      "id": "s3-delete-bucket",
+      "service": "s3",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete S3 bucket",
+      "description": "Permanently removes the bucket and its Terraform-managed configuration. Apply fails unless the bucket is already empty or force_destroy is set; all objects, versions and configuration are unrecoverable once deleted.",
+      "target": {
+        "resourceType": "aws_s3_bucket"
+      },
+      "params": [
+        {
+          "name": "bucket",
+          "label": "S3 bucket",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket/address",
+          "help": "The bucket to permanently delete."
+        },
+        {
+          "name": "confirm_empty",
+          "label": "Confirm bucket is empty or force-destroy acceptable",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "default": false,
+          "help": "Must be explicitly confirmed; the deletion is unrecoverable."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy"
+    },
+    {
+      "id": "s3-set-acceleration-status",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set S3 Transfer Acceleration status",
+      "description": "Sets the legacy inline `acceleration_status` argument on the bucket to Enabled or Suspended, toggling S3 Transfer Acceleration. In-place and reversible; affects transfer routing and cost only, with no impact on stored objects or access. (Legacy inline field; the standalone aws_s3_bucket_accelerate_configuration is AWS's preferred equivalent but is not managed by this manifest.)",
+      "target": {
+        "resourceType": "aws_s3_bucket"
+      },
+      "params": [
+        {
+          "name": "bucket",
+          "label": "S3 bucket",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket/address",
+          "help": "The bucket whose transfer-acceleration status to set."
+        },
+        {
+          "name": "acceleration_status",
+          "label": "Acceleration status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "Enabled",
+              "Suspended"
+            ]
+          },
+          "help": "Enabled turns on S3 Transfer Acceleration; Suspended turns it off. (Not usable in cn-north-1 or us-gov-west-1.)"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (acceleration_status)"
+    },
+    {
+      "id": "s3-set-request-payer",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set S3 bucket request payer",
+      "description": "Sets the legacy inline `request_payer` argument on the bucket to BucketOwner or Requester, controlling who bears the cost of requests and data transfer. Reversible in-place; switching to Requester can silently break downstream consumers that are not configured to pay, so the change is guardrailed. (Legacy inline field; the standalone aws_s3_bucket_request_payment_configuration is AWS's preferred equivalent but is not managed by this manifest.)",
+      "target": {
+        "resourceType": "aws_s3_bucket"
+      },
+      "params": [
+        {
+          "name": "bucket",
+          "label": "S3 bucket",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket/address",
+          "help": "The bucket whose request-payer setting to change."
+        },
+        {
+          "name": "request_payer",
+          "label": "Request payer",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "BucketOwner",
+              "Requester"
+            ]
+          },
+          "help": "BucketOwner: the bucket owner pays for requests. Requester: the requester pays; consumers must send requester-pays headers or access breaks."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (request_payer)"
+    },
+    {
+      "id": "s3-set-canned-acl",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set legacy inline bucket canned ACL",
+      "description": "Sets the deprecated inline `acl` canned ACL on the bucket (e.g. private, public-read). This controls a public-access security boundary \u2014 public-read and public-read-write can expose bucket contents to the internet \u2014 so it is engineer-authored and reviewed before apply. In-place and reversible. (Legacy inline field; the standalone aws_s3_bucket_acl is AWS's preferred equivalent but is not managed by this manifest.)",
+      "target": {
+        "resourceType": "aws_s3_bucket"
+      },
+      "params": [
+        {
+          "name": "bucket",
+          "label": "S3 bucket",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket/address",
+          "help": "The bucket whose canned ACL to set."
+        },
+        {
+          "name": "acl",
+          "label": "Canned ACL",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "private",
+              "public-read",
+              "public-read-write",
+              "aws-exec-read",
+              "authenticated-read",
+              "log-delivery-write"
+            ]
+          },
+          "help": "Canned ACL to apply. private is the safe default; public-read and public-read-write grant internet-facing access and require deliberate engineer review."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (acl)"
+    },
+    {
+      "id": "s3-set-bucket-namespace",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change bucket namespace scope",
+      "description": "Sets the `bucket_namespace` argument (account-regional or global) that determines the bucket's naming/addressing scope. Changing it forces replacement: Terraform destroys and recreates the bucket, and all stored objects are lost unless separately preserved. Engineer-authored, reviewed, and irreversible in place.",
+      "target": {
+        "resourceType": "aws_s3_bucket"
+      },
+      "params": [
+        {
+          "name": "bucket",
+          "label": "S3 bucket",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket/address",
+          "help": "The bucket whose namespace scope to change (will be replaced)."
+        },
+        {
+          "name": "bucket_namespace",
+          "label": "Bucket namespace",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "account-regional",
+              "global"
+            ]
+          },
+          "help": "global (default) or account-regional. Changing this destroys and recreates the bucket."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "bucket replacement",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (bucket_namespace)"
+    },
+    {
+      "id": "s3-set-public-access-block-skip-destroy",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set public access block skip_destroy flag",
+      "description": "Sets the skip_destroy flag on the bucket's public-access-block resource. When true, a future terraform destroy retains the public-access-block in AWS and merely removes it from Terraform state (the four blocking flags stay enforced on the bucket); when false (the default), destroy removes the public-access-block from AWS. Takes effect only on a future destroy, not on the live bucket now.",
+      "target": {
+        "resourceType": "aws_s3_bucket_public_access_block"
+      },
+      "params": [
+        {
+          "name": "pab",
+          "label": "Public access block config",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket_public_access_block/address",
+          "help": "The bucket's public-access-block resource to change."
+        },
+        {
+          "name": "skip_destroy",
+          "label": "Skip destroy (retain on destroy)",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "help": "When true, terraform destroy leaves the public-access-block in AWS and only removes it from state; false restores default destroy behavior."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (skip_destroy)"
+    },
+    {
+      "id": "s3-set-abort-incomplete-multipart-upload-days",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set incomplete multipart upload abort days",
+      "description": "Sets rule.abort_incomplete_multipart_upload.days_after_initiation on an existing lifecycle rule \u2014 the number of days after a multipart upload is initiated before S3 aborts it and deletes the uploaded parts. Only affects orphaned incomplete uploads, never committed objects.",
+      "target": {
+        "resourceType": "aws_s3_bucket_lifecycle_configuration"
+      },
+      "params": [
+        {
+          "name": "lifecycle_config",
+          "label": "Bucket lifecycle configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket_lifecycle_configuration/address",
+          "help": "The bucket's lifecycle configuration to modify."
+        },
+        {
+          "name": "rule_id",
+          "label": "Rule ID",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "The ID of the lifecycle rule to modify."
+        },
+        {
+          "name": "days_after_initiation",
+          "label": "Abort after (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1
+          },
+          "help": "Days after a multipart upload is initiated before S3 aborts it and deletes its parts; positive integer (minimum 1)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ rule[*].abort_incomplete_multipart_upload.days_after_initiation"
+    },
+    {
+      "id": "s3-set-expired-object-delete-marker",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle expired object delete marker cleanup",
+      "description": "Sets rule.expiration.expired_object_delete_marker on an existing lifecycle rule. When true, S3 removes an object's delete marker once it has no remaining noncurrent versions; no retrievable data is affected. Conflicts with a date/days expiration on the same block.",
+      "target": {
+        "resourceType": "aws_s3_bucket_lifecycle_configuration"
+      },
+      "params": [
+        {
+          "name": "lifecycle_config",
+          "label": "Bucket lifecycle configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket_lifecycle_configuration/address",
+          "help": "The bucket's lifecycle configuration to modify."
+        },
+        {
+          "name": "rule_id",
+          "label": "Rule ID",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "The ID of the lifecycle rule to modify."
+        },
+        {
+          "name": "expired_object_delete_marker",
+          "label": "Remove expired object delete markers",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "help": "When true, S3 removes an object's delete marker once it has no noncurrent versions; when false, no action is taken."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ rule[*].expiration.expired_object_delete_marker"
+    },
+    {
+      "id": "s3-set-transition-date",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set fixed-date storage class transition",
+      "description": "Sets rule.transition.date on an existing lifecycle rule \u2014 a fixed RFC3339 calendar date (YYYY-MM-DD) on which matching objects transition to the rule's target storage class. Affects cost/retrieval speed only, not deletion; conflicts with a day-based transition (rule.transition.days) on the same block.",
+      "target": {
+        "resourceType": "aws_s3_bucket_lifecycle_configuration"
+      },
+      "params": [
+        {
+          "name": "lifecycle_config",
+          "label": "Bucket lifecycle configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket_lifecycle_configuration/address",
+          "help": "The bucket's lifecycle configuration to modify."
+        },
+        {
+          "name": "rule_id",
+          "label": "Rule ID",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "The ID of the lifecycle rule whose transition to modify."
+        },
+        {
+          "name": "transition_date",
+          "label": "Transition on date (YYYY-MM-DD)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$"
+          },
+          "help": "RFC3339 full-date (YYYY-MM-DD) on which objects transition storage class, e.g. 2027-01-01."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ rule[*].transition.date"
+    },
+    {
+      "id": "s3-set-noncurrent-version-transition",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set noncurrent version storage class transition",
+      "description": "Configures rule.noncurrent_version_transition on an existing lifecycle rule: after an object version has been noncurrent for the given number of days it transitions to the chosen storage class, optionally keeping the most recent N noncurrent versions in their current class. Transition only \u2014 no deletion.",
+      "target": {
+        "resourceType": "aws_s3_bucket_lifecycle_configuration"
+      },
+      "params": [
+        {
+          "name": "lifecycle_config",
+          "label": "Bucket lifecycle configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket_lifecycle_configuration/address",
+          "help": "The bucket's lifecycle configuration to modify."
+        },
+        {
+          "name": "rule_id",
+          "label": "Rule ID",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "The ID of the lifecycle rule to modify."
+        },
+        {
+          "name": "noncurrent_days",
+          "label": "Transition after (noncurrent days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1
+          },
+          "help": "Days a version stays noncurrent before transitioning; positive integer (minimum 1)."
+        },
+        {
+          "name": "storage_class",
+          "label": "Target storage class",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "GLACIER",
+              "STANDARD_IA",
+              "ONEZONE_IA",
+              "INTELLIGENT_TIERING",
+              "DEEP_ARCHIVE",
+              "GLACIER_IR"
+            ]
+          },
+          "help": "Target storage class for noncurrent versions."
+        },
+        {
+          "name": "newer_noncurrent_versions",
+          "label": "Keep newer noncurrent versions",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "bounds": {
+            "min": 1
+          },
+          "help": "Optional: keep this many of the most recent noncurrent versions in the current class before transitioning older ones; non-zero positive integer (minimum 1)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ rule[*].noncurrent_version_transition"
+    },
+    {
+      "id": "s3-set-noncurrent-version-expiration",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set noncurrent version expiration",
+      "description": "Configures rule.noncurrent_version_expiration on an existing lifecycle rule: permanently deletes object versions after they have been noncurrent for the given number of days, optionally retaining the most recent N noncurrent versions. This permanently removes the recovery copies versioning exists to protect \u2014 irreversible data loss \u2014 so an engineer authors and reviews it.",
+      "target": {
+        "resourceType": "aws_s3_bucket_lifecycle_configuration"
+      },
+      "params": [
+        {
+          "name": "lifecycle_config",
+          "label": "Bucket lifecycle configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket_lifecycle_configuration/address",
+          "help": "The bucket's lifecycle configuration to modify."
+        },
+        {
+          "name": "rule_id",
+          "label": "Rule ID",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "The ID of the lifecycle rule to modify."
+        },
+        {
+          "name": "noncurrent_days",
+          "label": "Expire after (noncurrent days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1
+          },
+          "help": "Days a version stays noncurrent before it is permanently deleted; positive integer (minimum 1). Deletion is irreversible."
+        },
+        {
+          "name": "newer_noncurrent_versions",
+          "label": "Keep newer noncurrent versions",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "bounds": {
+            "min": 1
+          },
+          "help": "Optional: retain this many of the most recent noncurrent versions; older ones are permanently deleted; non-zero positive integer (minimum 1)."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ rule[*].noncurrent_version_expiration"
+    },
+    {
+      "id": "s3-set-expiration-date",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set fixed-date object expiration",
+      "description": "Sets rule.expiration.date on an existing lifecycle rule \u2014 a fixed RFC3339 calendar date (YYYY-MM-DD) on which matching current object versions are permanently deleted. Irreversible data loss if misconfigured, so an engineer authors and reviews it.",
+      "target": {
+        "resourceType": "aws_s3_bucket_lifecycle_configuration"
+      },
+      "params": [
+        {
+          "name": "lifecycle_config",
+          "label": "Bucket lifecycle configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket_lifecycle_configuration/address",
+          "help": "The bucket's lifecycle configuration to modify."
+        },
+        {
+          "name": "rule_id",
+          "label": "Rule ID",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "The ID of the lifecycle rule whose expiration to modify."
+        },
+        {
+          "name": "expiration_date",
+          "label": "Expire on date (YYYY-MM-DD)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$"
+          },
+          "help": "RFC3339 full-date (YYYY-MM-DD) on which current object versions are permanently deleted, e.g. 2027-01-01. Deletion is irreversible."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ rule[*].expiration.date"
+    },
+    {
+      "id": "s3-set-lifecycle-expected-bucket-owner",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set expected bucket owner account ID",
+      "description": "Sets expected_bucket_owner (the 12-digit AWS account ID of the expected bucket owner) on the lifecycle configuration resource as a safety guard against operating on a bucket that has changed hands. This argument is deprecated and forces replacement of the lifecycle configuration resource (its rules are briefly removed and re-created; the bucket and its data stay available throughout).",
+      "target": {
+        "resourceType": "aws_s3_bucket_lifecycle_configuration"
+      },
+      "params": [
+        {
+          "name": "lifecycle_config",
+          "label": "Bucket lifecycle configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_s3_bucket_lifecycle_configuration/address",
+          "help": "The bucket's lifecycle configuration to modify."
+        },
+        {
+          "name": "expected_bucket_owner",
+          "label": "Expected bucket owner account ID",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[0-9]{12}$"
+          },
+          "help": "12-digit AWS account ID expected to own the bucket; the operation fails if the live bucket owner differs. Deprecated and forces replacement of the lifecycle configuration resource."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (expected_bucket_owner)"
+    }
+  ]
+}

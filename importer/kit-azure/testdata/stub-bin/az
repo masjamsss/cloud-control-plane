@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Stub `az` CLI for kit tests — NO network, ever. Behavior is driven by env:
+#   STUB_SUBSCRIPTION  id `account show` reports (default fixture 00000000-0000-0000-0000-000000000000)
+#   STUB_TENANT        tenantId `account show` reports (default fixture 11111111-1111-1111-1111-111111111111)
+#   STUB_FAIL_SERVICE  when "graph", every `graph query` exits 1 (to exercise PARTIAL_CAPTURE)
+#   STUB_GRAPH_FILE    file whose contents `graph query` returns (else an empty ARG envelope)
+# The stub only needs to be faithful enough for discover.sh's ORCHESTRATION (identity gate,
+# paging loop, failure accounting); record fidelity is the recorded fixtures' job.
+set -u
+cmd="${1:-}"
+sub="${2:-}"
+
+if [ "$cmd" = "account" ] && [ "$sub" = "show" ]; then
+  # emulates `az account show --query "[id,tenantId]" --output tsv`
+  printf '%s\t%s\n' \
+    "${STUB_SUBSCRIPTION:-00000000-0000-0000-0000-000000000000}" \
+    "${STUB_TENANT:-11111111-1111-1111-1111-111111111111}"
+  exit 0
+fi
+
+if [ "$cmd" = "graph" ]; then
+  if [ "${STUB_FAIL_SERVICE:-}" = "graph" ]; then echo "stub: simulated graph failure" >&2; exit 1; fi
+  # paging: a call carrying --skip-token is a 2nd+ page → return a no-token empty page so the
+  # loop terminates. Otherwise return STUB_GRAPH_FILE (page 0) or an empty envelope.
+  for a in "$@"; do
+    if [ "$a" = "--skip-token" ]; then echo '{"data":[],"count":0,"total_records":0}'; exit 0; fi
+  done
+  if [ -n "${STUB_GRAPH_FILE:-}" ] && [ -f "${STUB_GRAPH_FILE}" ]; then cat "${STUB_GRAPH_FILE}"; else echo '{"data":[],"count":0,"total_records":0}'; fi
+  exit 0
+fi
+
+echo '{}'

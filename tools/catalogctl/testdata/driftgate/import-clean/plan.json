@@ -1,0 +1,14 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_instance.oob_bastion01",
+      "change": {
+        "actions": ["no-op"],
+        "before": { "ami": "ami-0123456789abcdef0", "instance_type": "m5.large" },
+        "after": { "ami": "ami-0123456789abcdef0", "instance_type": "m5.large" },
+        "importing": { "id": "i-0abc123def456789a" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,519 @@
+{
+ "generatedAt": "2026-07-22T09:52:07+00:00",
+ "sourceCommit": "b3bcf5d0bcc9f45230d17961692a7ff9567a9a12",
+ "source": "ccp/app/fixtures-estate/*.tf (baseline capture)",
+ "resources": [
+  {
+   "address": "aws_acm_certificate.wildcard",
+   "resourceType": "aws_acm_certificate",
+   "name": "example-com-wildcard",
+   "service": "acm",
+   "attributes": {
+    "domain_name": "*.example.com",
+    "validation_method": "DNS"
+   }
+  },
+  {
+   "address": "aws_lb.app",
+   "resourceType": "aws_lb",
+   "name": "app-alb",
+   "service": "alb",
+   "attributes": {
+    "name": "app-alb",
+    "internal": false,
+    "load_balancer_type": "application"
+   }
+  },
+  {
+   "address": "aws_lb_listener.https",
+   "resourceType": "aws_lb_listener",
+   "name": "https",
+   "service": "alb",
+   "attributes": {
+    "port": 443,
+    "protocol": "HTTPS",
+    "ssl_policy": "ELBSecurityPolicy-TLS13-1-2-2021-06"
+   }
+  },
+  {
+   "address": "aws_lb_listener.https_legacy",
+   "resourceType": "aws_lb_listener",
+   "name": "https_legacy",
+   "service": "alb",
+   "attributes": {
+    "port": 8443,
+    "protocol": "HTTPS",
+    "ssl_policy": "ELBSecurityPolicy-2016-08"
+   }
+  },
+  {
+   "address": "aws_lb_target_group.app",
+   "resourceType": "aws_lb_target_group",
+   "name": "app-tg",
+   "service": "alb",
+   "attributes": {
+    "name": "app-tg",
+    "port": 443,
+    "protocol": "HTTPS",
+    "target_type": "instance"
+   }
+  },
+  {
+   "address": "aws_cloudfront_distribution.cdn",
+   "resourceType": "aws_cloudfront_distribution",
+   "name": "app-cdn",
+   "service": "cloudfront",
+   "attributes": {
+    "enabled": true,
+    "price_class": "PriceClass_100",
+    "comment": "Static assets for the checkout app",
+    "is_ipv6_enabled": true
+   }
+  },
+  {
+   "address": "aws_cloudwatch_log_group.app",
+   "resourceType": "aws_cloudwatch_log_group",
+   "name": "app-service-logs",
+   "service": "cloudwatch",
+   "attributes": {
+    "retention_in_days": 365,
+    "name": "/app/service-logs"
+   }
+  },
+  {
+   "address": "aws_cloudwatch_metric_alarm.cpu_high",
+   "resourceType": "aws_cloudwatch_metric_alarm",
+   "name": "app-cpu-high",
+   "service": "cloudwatch",
+   "attributes": {
+    "alarm_name": "app-cpu-high",
+    "comparison_operator": "GreaterThanThreshold",
+    "evaluation_periods": 3,
+    "metric_name": "CPUUtilization",
+    "namespace": "AWS/EC2",
+    "period": 300,
+    "statistic": "Average",
+    "threshold": 80
+   }
+  },
+  {
+   "address": "aws_dynamodb_table.sessions",
+   "resourceType": "aws_dynamodb_table",
+   "name": "sessions",
+   "service": "dynamodb",
+   "attributes": {
+    "name": "sessions",
+    "billing_mode": "PAY_PER_REQUEST",
+    "hash_key": "session_id"
+   }
+  },
+  {
+   "address": "aws_ebs_volume.app01_data",
+   "resourceType": "aws_ebs_volume",
+   "name": "APP01 data",
+   "service": "ebs",
+   "attributes": {
+    "size_gib": 200,
+    "type": "gp3",
+    "availability_zone": "us-east-1a",
+    "iops": 3000,
+    "throughput": 125,
+    "encrypted": true
+   }
+  },
+  {
+   "address": "aws_ebs_volume.app02_legacy",
+   "resourceType": "aws_ebs_volume",
+   "name": "APP02 legacy data",
+   "service": "ebs",
+   "attributes": {
+    "size_gib": 100,
+    "type": "gp2",
+    "availability_zone": "us-east-1a",
+    "encrypted": true
+   }
+  },
+  {
+   "address": "aws_volume_attachment.app01_data",
+   "resourceType": "aws_volume_attachment",
+   "name": "app01_data",
+   "service": "ebs",
+   "attributes": {
+    "device_name": "/dev/sdf"
+   }
+  },
+  {
+   "address": "aws_volume_attachment.app02_legacy",
+   "resourceType": "aws_volume_attachment",
+   "name": "app02_legacy",
+   "service": "ebs",
+   "attributes": {
+    "device_name": "/dev/sdg"
+   }
+  },
+  {
+   "address": "aws_instance.app01",
+   "resourceType": "aws_instance",
+   "name": "APP01_NewInstall",
+   "service": "ec2",
+   "attributes": {
+    "instance_type": "t3.large",
+    "ebs_optimized": true,
+    "ami": "ami-0abcd1234efgh5678",
+    "iam_instance_profile": "app-instance-profile"
+   }
+  },
+  {
+   "address": "aws_instance.app02",
+   "resourceType": "aws_instance",
+   "name": "APP02_NewInstall",
+   "service": "ec2",
+   "attributes": {
+    "instance_type": "t3.large",
+    "ebs_optimized": true,
+    "ami": "ami-0abcd1234efgh5678",
+    "iam_instance_profile": "app-instance-profile"
+   }
+  },
+  {
+   "address": "aws_instance.bastion",
+   "resourceType": "aws_instance",
+   "name": "bastion",
+   "service": "ec2",
+   "attributes": {
+    "instance_type": "t3.micro",
+    "private_ip": "10.0.0.10",
+    "ebs_optimized": true,
+    "ami": "ami-0abcd1234efgh5678"
+   }
+  },
+  {
+   "address": "aws_key_pair.admin",
+   "resourceType": "aws_key_pair",
+   "name": "admin-key",
+   "service": "ec2",
+   "attributes": {}
+  },
+  {
+   "address": "aws_efs_file_system.shared",
+   "resourceType": "aws_efs_file_system",
+   "name": "app-shared-fs",
+   "service": "efs",
+   "attributes": {
+    "performance_mode": "generalPurpose",
+    "throughput_mode": "bursting",
+    "encrypted": true,
+    "creation_token": "app-shared-fs"
+   }
+  },
+  {
+   "address": "aws_iam_instance_profile.app_role",
+   "resourceType": "aws_iam_instance_profile",
+   "name": "app_role",
+   "service": "iam",
+   "attributes": {
+    "name": "app-instance-profile"
+   }
+  },
+  {
+   "address": "aws_iam_role.app_role",
+   "resourceType": "aws_iam_role",
+   "name": "app-instance-role",
+   "service": "iam",
+   "attributes": {
+    "name": "app-instance-role"
+   }
+  },
+  {
+   "address": "aws_iam_role.lambda_role",
+   "resourceType": "aws_iam_role",
+   "name": "lambda-execution-role",
+   "service": "iam",
+   "attributes": {
+    "name": "lambda-execution-role"
+   }
+  },
+  {
+   "address": "aws_iam_role_policy_attachment.lambda_basic",
+   "resourceType": "aws_iam_role_policy_attachment",
+   "name": "lambda_basic",
+   "service": "iam",
+   "attributes": {
+    "policy_arn": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+   }
+  },
+  {
+   "address": "aws_iam_user.user01",
+   "resourceType": "aws_iam_user",
+   "name": "user01",
+   "service": "iam",
+   "attributes": {}
+  },
+  {
+   "address": "aws_iam_user.user02",
+   "resourceType": "aws_iam_user",
+   "name": "user02",
+   "service": "iam",
+   "attributes": {}
+  },
+  {
+   "address": "aws_iam_user.user03",
+   "resourceType": "aws_iam_user",
+   "name": "user03",
+   "service": "iam",
+   "attributes": {}
+  },
+  {
+   "address": "aws_kms_alias.app_key",
+   "resourceType": "aws_kms_alias",
+   "name": "app_key",
+   "service": "kms",
+   "attributes": {
+    "name": "alias/app-key"
+   }
+  },
+  {
+   "address": "aws_kms_key.app_key",
+   "resourceType": "aws_kms_key",
+   "name": "app-key",
+   "service": "kms",
+   "attributes": {
+    "description": "App data encryption key",
+    "enable_key_rotation": true,
+    "deletion_window_in_days": 30
+   }
+  },
+  {
+   "address": "aws_lambda_function.webhook",
+   "resourceType": "aws_lambda_function",
+   "name": "ticket-webhook",
+   "service": "lambda",
+   "attributes": {
+    "runtime": "python3.12",
+    "memory_size": 256,
+    "timeout": 60,
+    "role": "arn:aws:iam::123456789012:role/lambda-execution-role",
+    "function_name": "ticket-webhook"
+   }
+  },
+  {
+   "address": "aws_db_instance.app_db",
+   "resourceType": "aws_db_instance",
+   "name": "app-db",
+   "service": "rds",
+   "attributes": {
+    "engine": "postgres",
+    "engine_version": "16.4",
+    "instance_class": "db.t3.large",
+    "allocated_storage": 100,
+    "multi_az": true,
+    "storage_type": "gp3",
+    "backup_retention_period": 7,
+    "identifier": "app-db"
+   }
+  },
+  {
+   "address": "aws_db_subnet_group.main",
+   "resourceType": "aws_db_subnet_group",
+   "name": "app-db-subnet-group",
+   "service": "rds",
+   "attributes": {}
+  },
+  {
+   "address": "aws_route_table.private",
+   "resourceType": "aws_route_table",
+   "name": "private-rt",
+   "service": "routing",
+   "attributes": {}
+  },
+  {
+   "address": "aws_route_table.public",
+   "resourceType": "aws_route_table",
+   "name": "public-rt",
+   "service": "routing",
+   "attributes": {}
+  },
+  {
+   "address": "aws_s3_bucket.app_data",
+   "resourceType": "aws_s3_bucket",
+   "name": "app-data",
+   "service": "s3",
+   "attributes": {
+    "bucket": "example-estate-app-data"
+   }
+  },
+  {
+   "address": "aws_s3_bucket.logs",
+   "resourceType": "aws_s3_bucket",
+   "name": "logs",
+   "service": "s3",
+   "attributes": {
+    "bucket": "example-estate-access-logs"
+   }
+  },
+  {
+   "address": "aws_s3_bucket_server_side_encryption_configuration.app_data",
+   "resourceType": "aws_s3_bucket_server_side_encryption_configuration",
+   "name": "app_data",
+   "service": "s3",
+   "attributes": {}
+  },
+  {
+   "address": "aws_s3_bucket_versioning.app_data",
+   "resourceType": "aws_s3_bucket_versioning",
+   "name": "app_data",
+   "service": "s3",
+   "attributes": {}
+  },
+  {
+   "address": "aws_security_group.app",
+   "resourceType": "aws_security_group",
+   "name": "app-tier",
+   "service": "security-groups",
+   "attributes": {
+    "name": "app-tier",
+    "description": "Application tier \u2014 inbound HTTPS from the load balancer"
+   }
+  },
+  {
+   "address": "aws_security_group.db",
+   "resourceType": "aws_security_group",
+   "name": "db-tier",
+   "service": "security-groups",
+   "attributes": {
+    "name": "db-tier",
+    "description": "Database tier \u2014 inbound Postgres from the app tier only"
+   }
+  },
+  {
+   "address": "aws_sns_topic.alerts",
+   "resourceType": "aws_sns_topic",
+   "name": "oncall-alerts",
+   "service": "sns",
+   "attributes": {
+    "display_name": "On-call",
+    "name": "oncall-alerts"
+   }
+  },
+  {
+   "address": "aws_ssm_parameter.app_config",
+   "resourceType": "aws_ssm_parameter",
+   "name": "app-config",
+   "service": "ssm",
+   "attributes": {
+    "type": "String",
+    "description": "Checkout service feature flag parameter",
+    "name": "/app/checkout/feature-flags",
+    "value": "{}"
+   }
+  },
+  {
+   "address": "aws_eip.nat",
+   "resourceType": "aws_eip",
+   "name": "APP01_NewInstall-nat-eip",
+   "service": "vpc",
+   "attributes": {
+    "domain": "vpc"
+   }
+  },
+  {
+   "address": "aws_internet_gateway.main",
+   "resourceType": "aws_internet_gateway",
+   "name": "APP01_NewInstall-igw",
+   "service": "vpc",
+   "attributes": {}
+  },
+  {
+   "address": "aws_nat_gateway.main",
+   "resourceType": "aws_nat_gateway",
+   "name": "APP01_NewInstall-nat",
+   "service": "vpc",
+   "attributes": {}
+  },
+  {
+   "address": "aws_subnet.private_a",
+   "resourceType": "aws_subnet",
+   "name": "private-a",
+   "service": "vpc",
+   "attributes": {
+    "cidr_block": "10.0.10.0/24",
+    "availability_zone": "us-east-1a",
+    "map_public_ip_on_launch": false
+   }
+  },
+  {
+   "address": "aws_subnet.public_a",
+   "resourceType": "aws_subnet",
+   "name": "public-a",
+   "service": "vpc",
+   "attributes": {
+    "cidr_block": "10.0.0.0/24",
+    "availability_zone": "us-east-1a",
+    "map_public_ip_on_launch": true
+   }
+  },
+  {
+   "address": "aws_subnet.public_b",
+   "resourceType": "aws_subnet",
+   "name": "public-b",
+   "service": "vpc",
+   "attributes": {
+    "cidr_block": "10.0.1.0/24",
+    "availability_zone": "us-east-1b",
+    "map_public_ip_on_launch": true
+   }
+  },
+  {
+   "address": "aws_vpc.main",
+   "resourceType": "aws_vpc",
+   "name": "APP01_NewInstall-vpc",
+   "service": "vpc",
+   "attributes": {
+    "cidr_block": "10.0.0.0/16",
+    "enable_dns_hostnames": true,
+    "enable_dns_support": true
+   }
+  },
+  {
+   "address": "aws_customer_gateway.onprem",
+   "resourceType": "aws_customer_gateway",
+   "name": "onprem-cgw",
+   "service": "vpn",
+   "attributes": {
+    "ip_address": "203.0.113.10",
+    "bgp_asn": 65000,
+    "type": "ipsec.1"
+   }
+  },
+  {
+   "address": "aws_vpn_connection.site_to_site",
+   "resourceType": "aws_vpn_connection",
+   "name": "onprem-vpn",
+   "service": "vpn",
+   "attributes": {
+    "static_routes_only": true,
+    "type": "ipsec.1"
+   }
+  },
+  {
+   "address": "aws_vpn_gateway.main",
+   "resourceType": "aws_vpn_gateway",
+   "name": "app-vgw",
+   "service": "vpn",
+   "attributes": {
+    "amazon_side_asn": 64512
+   }
+  },
+  {
+   "address": "aws_wafv2_web_acl.app",
+   "resourceType": "aws_wafv2_web_acl",
+   "name": "app-waf",
+   "service": "waf",
+   "attributes": {
+    "name": "app-waf",
+    "scope": "REGIONAL",
+    "description": "WAF for the application load balancer"
+   }
+  }
+ ]
+}

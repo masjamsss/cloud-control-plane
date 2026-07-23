@@ -1,0 +1,13 @@
+--- a/environments/prod/sg.tf
++++ b/environments/prod/sg.tf
+@@ -6,4 +6,10 @@
+     to_port   = 443
+     protocol  = "tcp"
+   }
++
++  ingress {
++    from_port = 80
++    to_port   = 80
++    protocol  = "tcp"
++  }
+ }

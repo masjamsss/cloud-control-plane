@@ -1,0 +1,270 @@
+{
+  "service": "datasync",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_datasync_task"
+  ],
+  "summary": "Provision new DataSync transfer tasks between existing locations. Greenfield today (no task exists yet in this estate) \u2014 the create stands up the task against two already-provisioned aws_datasync_location_* resources; the locations themselves and include/exclude filters are engineer follow-ups.",
+  "operations": [
+    {
+      "id": "datasync-task-create",
+      "service": "datasync",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new DataSync task",
+      "summary": "Request a brand-new data transfer task between two existing locations; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a transfer task as a complete specification: source/destination locations, schedule, and transfer options. Both locations must already exist as aws_datasync_location_* resources. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_datasync_task"
+      },
+      "params": [
+        {
+          "name": "task_name",
+          "label": "Task name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{1,256}$"
+          },
+          "help": "Names the task in the DataSync console and the generated draft."
+        },
+        {
+          "name": "source_location_arn",
+          "label": "Source location ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "source_location_arn",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^arn:aws:datasync:[a-z0-9-]+:[0-9]{12}:location/loc-[0-9a-f]{17}$"
+          },
+          "help": "The ARN of an existing aws_datasync_location_* resource (S3, NFS, SMB, EFS, FSx, HDFS, object storage) to read from."
+        },
+        {
+          "name": "destination_location_arn",
+          "label": "Destination location ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "destination_location_arn",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^arn:aws:datasync:[a-z0-9-]+:[0-9]{12}:location/loc-[0-9a-f]{17}$"
+          },
+          "help": "The ARN of an existing aws_datasync_location_* resource to write to."
+        },
+        {
+          "name": "task_mode",
+          "label": "Task mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "task_mode",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "BASIC",
+              "ENHANCED"
+            ]
+          },
+          "default": "BASIC",
+          "help": "ENHANCED scales to larger datasets/file counts and supports task reporting; BASIC is the classic mode."
+        },
+        {
+          "name": "cloudwatch_log_group_arn",
+          "label": "CloudWatch log group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "cloudwatch_log_group_arn",
+          "group": "identity",
+          "help": "Destination for the task's transfer logs."
+        },
+        {
+          "name": "schedule_expression",
+          "label": "Schedule (cron)",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "schedule_expression",
+          "path": [
+            "schedule"
+          ],
+          "group": "schedule",
+          "bounds": {
+            "pattern": "^cron\\([^)]+\\)$"
+          },
+          "help": "Leave blank to run the task on demand only. AWS cron syntax, e.g. cron(0 0 * * ? *)."
+        },
+        {
+          "name": "verify_mode",
+          "label": "Verification mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "verify_mode",
+          "path": [
+            "options"
+          ],
+          "group": "options",
+          "bounds": {
+            "allowlist": [
+              "POINT_IN_TIME_CONSISTENT",
+              "ONLY_FILES_TRANSFERRED",
+              "NONE"
+            ]
+          },
+          "default": "POINT_IN_TIME_CONSISTENT",
+          "help": "How thoroughly DataSync verifies data integrity after the transfer."
+        },
+        {
+          "name": "transfer_mode",
+          "label": "Transfer mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "transfer_mode",
+          "path": [
+            "options"
+          ],
+          "group": "options",
+          "bounds": {
+            "allowlist": [
+              "CHANGED",
+              "ALL"
+            ]
+          },
+          "default": "CHANGED",
+          "help": "CHANGED only transfers new/modified files on repeated runs."
+        },
+        {
+          "name": "overwrite_mode",
+          "label": "Overwrite mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "overwrite_mode",
+          "path": [
+            "options"
+          ],
+          "group": "options",
+          "bounds": {
+            "allowlist": [
+              "ALWAYS",
+              "NEVER"
+            ]
+          },
+          "default": "ALWAYS",
+          "help": "NEVER preserves files that already exist at the destination."
+        },
+        {
+          "name": "preserve_deleted_files",
+          "label": "Preserve deleted files",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "preserve_deleted_files",
+          "path": [
+            "options"
+          ],
+          "group": "options",
+          "bounds": {
+            "allowlist": [
+              "PRESERVE",
+              "REMOVE"
+            ]
+          },
+          "default": "PRESERVE",
+          "help": "REMOVE deletes destination files no longer present at the source."
+        },
+        {
+          "name": "log_level",
+          "label": "Log level",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "log_level",
+          "path": [
+            "options"
+          ],
+          "group": "options",
+          "bounds": {
+            "allowlist": [
+              "OFF",
+              "BASIC",
+              "TRANSFER"
+            ]
+          },
+          "default": "OFF",
+          "help": "TRANSFER logs every file transferred; requires the CloudWatch log group above."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this task transfers",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this task."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new datasync task",
+        "provision data transfer",
+        "sync task",
+        "migrate data"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "source_location_arn and destination_location_arn must already exist \u2014 provisioning the matching aws_datasync_location_* resource (S3, NFS, SMB, EFS, FSx, HDFS, object storage) is a prerequisite engineer follow-up; this form does not create locations.",
+        "Include/exclude filters and a task report destination beyond CloudWatch logging are engineer follow-ups."
+      ]
+    }
+  ]
+}

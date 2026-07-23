@@ -1,0 +1,11 @@
+{
+  "data": [
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.Network/virtualNetworks/vnet-app",
+      "name": "vnet-app",
+      "location": "southeastasia"
+    }
+  ],
+  "count": 1,
+  "total_records": 1
+}

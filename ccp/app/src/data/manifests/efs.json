@@ -1,0 +1,1202 @@
+{
+  "service": "efs",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_efs_file_system",
+    "aws_efs_mount_target",
+    "aws_efs_backup_policy"
+  ],
+  "summary": "Operate the shared EFS file systems: throughput mode and provisioned throughput tuning, IA lifecycle tiering for cost control, AWS Backup policy toggling, tagging, extending mount targets to new subnets, and engineer-only file-system deletion.",
+  "operations": [
+    {
+      "id": "efs-change-throughput-mode",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Change EFS throughput mode",
+      "summary": "Change this file share's throughput mode: bursting, a fixed provisioned rate, or auto-scaling elastic. No downtime.",
+      "consoleLabel": "Throughput mode",
+      "description": "Switches the file system between Bursting, Provisioned, and Elastic throughput modes. AWS rate-limits mode decreases and downward provisioned changes to roughly once per 24 hours; no downtime occurs but the change can take a few minutes to take effect.",
+      "target": {
+        "attr": "throughput_mode",
+        "resourceType": "aws_efs_file_system"
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "label": "File system",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_efs_file_system/address",
+          "help": "The EFS file system to change."
+        },
+        {
+          "name": "new_throughput_mode",
+          "label": "New throughput mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "bursting",
+              "provisioned",
+              "elastic"
+            ]
+          },
+          "help": "Bursting scales with storage size; Provisioned lets you fix a MiB/s rate; Elastic auto-scales throughput independent of size and is billed per use."
+        },
+        {
+          "name": "new_provisioned_throughput_in_mibps",
+          "label": "Provisioned throughput (MiB/s)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "default": null,
+          "bounds": {
+            "min": 1,
+            "max": 1024
+          },
+          "dependsOn": {
+            "param": "new_throughput_mode",
+            "equals": "provisioned"
+          },
+          "help": "The sustained MiB/s rate to reserve. This field only applies to Provisioned mode."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "share throttling",
+        "file share slow",
+        "efs slow",
+        "throughput mode"
+      ],
+      "group": "scale-performance"
+    },
+    {
+      "id": "efs-change-provisioned-throughput",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Resize provisioned throughput",
+      "summary": "Change the fixed throughput rate for this file share. Increases apply right away; decreases are limited to once a day.",
+      "consoleLabel": "Provisioned throughput (MiB/s)",
+      "description": "Adjusts the fixed MiB/s rate on a file system already running in Provisioned throughput mode. Increases apply immediately; AWS limits decreases to once per 24 hours.",
+      "target": {
+        "attr": "provisioned_throughput_in_mibps",
+        "resourceType": "aws_efs_file_system"
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "label": "File system",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_efs_file_system/address",
+          "help": "Must currently be in Provisioned throughput mode."
+        },
+        {
+          "name": "new_provisioned_throughput_in_mibps",
+          "label": "New provisioned throughput (MiB/s)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 1024
+          },
+          "help": "Sustained throughput independent of file system size. Higher values cost more per MiB/s-month."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "provisioned throughput",
+        "share speed"
+      ],
+      "group": "scale-performance"
+    },
+    {
+      "id": "efs-set-lifecycle-transition-to-ia",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set the Infrequent-Access transition for an EFS file system",
+      "summary": "Move files untouched for a chosen period into cheaper Infrequent Access storage. Slightly slower to read back, no downtime.",
+      "consoleLabel": "Transition into Infrequent Access",
+      "description": "Write transition_to_ia inside the lifecycle_policy sibling that already carries it. matchPresence picks that sibling by WHICH attribute it carries (not its value), so a file system with both an IA and an Archive transition edits only the IA one; ensurePath creates the lifecycle_policy block (up to 3 may coexist) when the file system has none yet. No availability impact; retrieval latency for IA files increases slightly.",
+      "target": {
+        "resourceType": "aws_efs_file_system",
+        "path": [
+          "lifecycle_policy"
+        ],
+        "matchPresence": {
+          "lifecycle_policy": "transition_to_ia"
+        },
+        "ensurePath": true
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "label": "File system",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_efs_file_system/address",
+          "help": "The EFS file system to retune."
+        },
+        {
+          "name": "transition_to_ia",
+          "label": "Transition to IA after",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "AFTER_1_DAY",
+              "AFTER_7_DAYS",
+              "AFTER_14_DAYS",
+              "AFTER_30_DAYS",
+              "AFTER_60_DAYS",
+              "AFTER_90_DAYS",
+              "AFTER_180_DAYS",
+              "AFTER_270_DAYS",
+              "AFTER_365_DAYS"
+            ]
+          },
+          "help": "Moves files untouched for this long into EFS Infrequent Access (IA) storage."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "archive cold files",
+        "infrequent access",
+        "storage cost"
+      ],
+      "group": "availability-lifecycle",
+      "pinned": 1
+    },
+    {
+      "id": "efs-toggle-backup-policy",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_association_attribute",
+      "title": "Enable or disable AWS Backup for a file system",
+      "summary": "Turn automatic daily backups on or off for this file share. Existing backups stay; none are added while it's off.",
+      "consoleLabel": "Automatic backups",
+      "description": "Turns automatic daily AWS Backup snapshots on or off for the file system. Disabling removes future recovery points going forward; existing recovery points are unaffected but no new ones are taken until re-enabled.",
+      "target": {
+        "resourceType": "aws_efs_backup_policy",
+        "path": [
+          "backup_policy"
+        ]
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "label": "File system",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_efs_backup_policy/address",
+          "help": "The file system whose backup policy is being changed."
+        },
+        {
+          "name": "new_backup_policy_status",
+          "label": "Backup policy status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "help": "ENABLED takes automatic AWS Backup snapshots on the standard plan schedule; DISABLED stops future snapshots.",
+          "attr": "status"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup",
+      "pinned": 2
+    },
+    {
+      "id": "efs-update-tags",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add or update a tag on a file system",
+      "summary": "Add or update a tag on this file share. Metadata only — no effect on mounts or performance.",
+      "description": "Sets a single tag key/value pair on the file system for cost allocation or ownership tracking. Purely metadata; no effect on mounts or performance.",
+      "target": {
+        "resourceType": "aws_efs_file_system",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "label": "File system",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_efs_file_system/address",
+          "help": "The file system to tag."
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9_.:/=+@-]{1,128}$"
+          },
+          "help": "e.g. CostCentre, Application, Owner."
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^.{1,256}$"
+          },
+          "help": "The value to assign to the tag key."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "pinned": 2
+    },
+    {
+      "id": "efs-add-mount-target",
+      "service": "efs",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a mount target in a new subnet/AZ",
+      "summary": "Add a new mount point for this file share in another subnet or zone. Existing mounts and traffic aren't touched.",
+      "description": "Creates a new mount target for the file system in an additional subnet, typically to extend NFS access into another Availability Zone or a new application subnet. Existing mount targets and traffic are unaffected.",
+      "target": {
+        "resourceType": "aws_efs_mount_target"
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "label": "File system",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_efs_file_system/address",
+          "help": "The parent file system to extend."
+        },
+        {
+          "name": "subnet_id",
+          "label": "Subnet",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_subnet/address",
+          "bounds": {
+            "semantic": "must be in the same VPC as the file system's existing mount targets"
+          },
+          "help": "Subnet to place the new mount target's network interface in, picked from the estate's subnets (the picker shows each one's zone and address range). One mount target per Availability Zone per file system."
+        },
+        {
+          "name": "security_group_ids",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_security_group/address",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "help": "Security groups controlling NFS (2049/tcp) access to this mount target, picked from the estate's groups. AWS allows up to five per mount target."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "keywords": [
+        "mount share",
+        "mount target",
+        "mount in new zone",
+        "mount in subnet"
+      ],
+      "group": "create"
+    },
+    {
+      "id": "efs-delete-file-system",
+      "service": "efs",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete an EFS file system",
+      "summary": "Permanently delete this file share and all its data. This can't be undone and breaks anything that mounts it — an engineer reviews it first.",
+      "description": "Permanently destroys the file system, its mount targets, and all data it holds. Irreversible and will break any job, process, or interface that mounts it; requires a verified final backup or export before proceeding.",
+      "target": {
+        "resourceType": "aws_efs_file_system"
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "label": "File system",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_efs_file_system/address",
+          "help": "The file system to permanently delete."
+        },
+        {
+          "name": "final_backup_confirmed",
+          "label": "Final backup verified",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "default": false,
+          "help": "Confirms a final AWS Backup recovery point or export has been taken and validated before destroying this file system."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "replace",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "efs-enable-backup-policy",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable automatic backups",
+      "summary": "Turn on automatic daily backups for this file share.",
+      "description": "Set backup_policy.status to ENABLED so AWS Backup takes automatic daily backups of the file system. Purely additive data protection — reversible and no downtime.",
+      "target": {
+        "resourceType": "aws_efs_backup_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "EFS backup policy",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the aws_efs_backup_policy resource (one exists per file system) whose status will be set to ENABLED; the inventory picker limits the change to estate-managed policies, and enabling backups is purely additive data protection.",
+          "enumSource": "inventory://aws_efs_backup_policy/address",
+          "required": true
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (backup_policy.status → ENABLED)",
+      "keywords": [
+        "back up the share",
+        "efs backup"
+      ],
+      "group": "protection-backup",
+      "pinned": 1
+    },
+    {
+      "id": "efs-disable-backup-policy",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Disable automatic backups",
+      "summary": "Turn off automatic daily backups for this file share. You can re-enable any time, but coverage stops until you do.",
+      "description": "Set backup_policy.status to DISABLED, stopping automatic daily backups. Reversible (re-enable any time) and no downtime, but it removes data-protection coverage — guardrailed.",
+      "target": {
+        "resourceType": "aws_efs_backup_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "EFS backup policy",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the aws_efs_backup_policy resource whose status will be set to DISABLED; only estate-managed policies are listed, and existing recovery points are kept, only future automatic snapshots stop.",
+          "enumSource": "inventory://aws_efs_backup_policy/address",
+          "required": true
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (backup_policy.status → DISABLED)",
+      "group": "protection-backup",
+      "pinned": 3
+    },
+    {
+      "id": "efs-efs-backup-policy-engineer-request",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to EFS backup policy",
+      "summary": "Request any other change to this file share's backup policy; an engineer authors and reviews the Terraform.",
+      "description": "Catch-all for any change to an aws_efs_backup_policy that isn't offered as a bounded self-service form. An engineer authors and reviews the Terraform.",
+      "target": {
+        "attr": "purpose",
+        "resourceType": "aws_efs_backup_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Backup policy",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "enumSource": "inventory://aws_efs_backup_policy/address",
+          "help": "The EFS backup policy this request is about, when the estate already tracks one. Leave blank when describing one that is not tracked yet."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form — an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "protection-backup"
+    },
+    {
+      "id": "efs-set-replication-overwrite-protection",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set replication-overwrite protection",
+      "summary": "Control whether this file share can be overwritten by an incoming replication job. Reversible, no downtime.",
+      "description": "Set protection.replication_overwrite to ENABLED or DISABLED. Controls whether this file system can be overwritten by a replication configuration (as a replication destination). In-place update, reversible, no downtime. Guardrailed because it changes data-protection semantics.",
+      "target": {
+        "resourceType": "aws_efs_file_system",
+        "path": [
+          "protection"
+        ]
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "label": "File system",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EFS file system whose protection.replication_overwrite setting changes; the inventory picker limits this data-protection change to estate-managed file systems.",
+          "enumSource": "inventory://aws_efs_file_system/address",
+          "required": true
+        },
+        {
+          "name": "replication_overwrite",
+          "label": "Replication overwrite",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "help": "DISABLED protects the file system from being overwritten by a replication configuration; ENABLED allows it to be used as a replication destination."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (protection.replication_overwrite)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "efs-set-lifecycle-transition-to-archive",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set lifecycle transition to Archive",
+      "summary": "Move long-idle files into the cheaper Archive storage tier after a chosen period. Needs Infrequent Access tiering set up first.",
+      "consoleLabel": "Transition into Archive",
+      "description": "Set lifecycle_policy.transition_to_archive so idle files move to the Archive storage class after the chosen period. In-place update, reversible, no downtime. Requires transition_to_ia set, Elastic throughput and General Purpose performance mode.",
+      "target": {
+        "resourceType": "aws_efs_file_system",
+        "path": [
+          "lifecycle_policy"
+        ],
+        "matchPresence": {
+          "lifecycle_policy": "transition_to_archive"
+        },
+        "ensurePath": true
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "label": "File system",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EFS file system to add the Archive tiering rule to; only estate-managed file systems are listed, and the target must already have transition_to_ia set with Elastic throughput and General Purpose mode.",
+          "enumSource": "inventory://aws_efs_file_system/address",
+          "required": true
+        },
+        {
+          "name": "transition_to_archive",
+          "label": "Transition to Archive after",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "AFTER_1_DAY",
+              "AFTER_7_DAYS",
+              "AFTER_14_DAYS",
+              "AFTER_30_DAYS",
+              "AFTER_60_DAYS",
+              "AFTER_90_DAYS",
+              "AFTER_180_DAYS",
+              "AFTER_270_DAYS",
+              "AFTER_365_DAYS"
+            ]
+          },
+          "help": "Idle period before files move to Archive. Requires transition_to_ia set, Elastic throughput and General Purpose mode."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (lifecycle_policy.transition_to_archive)",
+      "keywords": [
+        "archive files",
+        "cold storage"
+      ],
+      "group": "availability-lifecycle",
+      "pinned": 3
+    },
+    {
+      "id": "efs-set-lifecycle-transition-to-primary",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set lifecycle transition to primary storage",
+      "summary": "Move tiered files back to standard storage as soon as they're accessed again.",
+      "consoleLabel": "Transition into Standard",
+      "description": "Set lifecycle_policy.transition_to_primary_storage_class so files return to the primary (frequent-access) storage class after first access. In-place update, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_efs_file_system",
+        "path": [
+          "lifecycle_policy"
+        ]
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "label": "File system",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EFS file system whose tiered files should move back to primary (frequent-access) storage after first access; the inventory picker limits the change to estate-managed file systems.",
+          "enumSource": "inventory://aws_efs_file_system/address",
+          "required": true
+        },
+        {
+          "name": "transition_to_primary_storage_class",
+          "label": "Transition to primary after",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "AFTER_1_ACCESS"
+            ]
+          },
+          "help": "EFS supports only AFTER_1_ACCESS for this transition."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (lifecycle_policy.transition_to_primary_storage_class)",
+      "keywords": [
+        "bring files back",
+        "restore from archive tier"
+      ],
+      "group": "availability-lifecycle",
+      "pinned": 4
+    },
+    {
+      "id": "efs-add-tag",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add or update a tag",
+      "summary": "Add or update a tag on this file share. Metadata only — no effect on how it runs.",
+      "description": "Add or update a single entry in the tags map. Cosmetic metadata only, in-place update, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_efs_file_system",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "label": "File system",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EFS file system to tag; the inventory picker keeps this metadata-only change on estate-managed file systems.",
+          "enumSource": "inventory://aws_efs_file_system/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w.:/+@-]{1,128}$",
+            "maxLength": 128
+          },
+          "help": "1-128 chars: letters, numbers, and + - . _ : / @ (no spaces or =)"
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w\\s+=.:/@-]{0,256}$",
+            "maxLength": 256
+          },
+          "help": "Up to 256 chars: letters, numbers, spaces, and + - = . _ : / @"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "tags-naming",
+      "pinned": 5
+    },
+    {
+      "id": "efs-remove-tag",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag",
+      "summary": "Remove a tag from this file share. Metadata only — no effect on how it runs.",
+      "description": "Remove a single entry from the tags map by key. Cosmetic metadata only, in-place update, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_efs_file_system",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "label": "File system",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EFS file system to remove the tag from; the inventory picker keeps the change on estate-managed file systems, and a removed tag can always be re-added.",
+          "enumSource": "inventory://aws_efs_file_system/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w.:/+@-]{1,128}$",
+            "maxLength": 128
+          },
+          "help": "Key of the tag entry to remove."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "tags-naming"
+    },
+    {
+      "id": "efs-efs-file-system-engineer-request",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to EFS file system",
+      "summary": "Request any other change to this file share, including ones that replace it with a new one; an engineer authors the Terraform.",
+      "description": "Catch-all for any EFS file system change not offered as a bounded self-service form — including ForceNew/replacement arguments (encrypted, kms_key_id, performance_mode, availability_zone_name, creation_token). An engineer authors and reviews the Terraform.",
+      "target": {
+        "attr": "purpose",
+        "resourceType": "aws_efs_file_system"
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "label": "File system",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_efs_file_system/address",
+          "required": true,
+          "help": "The file system to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form — an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "scale-performance"
+    },
+    {
+      "id": "efs-mt-update-security-groups",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Replace security groups on a mount target",
+      "summary": "Replace the full set of security groups on this mount target. Applied in place, no downtime.",
+      "consoleLabel": "Security groups",
+      "description": "Set the full list of VPC security groups attached to an EFS mount target. Applied in place via ModifyMountTargetSecurityGroups (no replacement). Up to 5 SGs, all in the same VPC as the mount target's subnet. Reversible, no downtime.",
+      "target": {
+        "attr": "security_groups",
+        "resourceType": "aws_efs_mount_target"
+      },
+      "params": [
+        {
+          "name": "mount_target",
+          "label": "Mount target",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_efs_mount_target/address",
+          "required": true,
+          "help": "Pick the EFS mount target to modify."
+        },
+        {
+          "name": "security_groups",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "role": "reference",
+          "refAttr": "id",
+          "required": true,
+          "help": "Choose up to 5 existing security groups in the subnet's VPC. This becomes the complete attached set.",
+          "bounds": {
+            "maxItems": 5
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (security_groups)",
+      "keywords": [
+        "fix nfs access",
+        "mount target security group",
+        "nfs blocked"
+      ],
+      "group": "connectivity-access",
+      "pinned": 1
+    },
+    {
+      "id": "efs-mt-add-security-group",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Add a security group to a mount target",
+      "summary": "Add one more security group to this mount target's allowed list. Up to five total.",
+      "description": "Attach one additional VPC security group to an EFS mount target's security_groups set. Applied in place (max 5 total, same VPC as the subnet). Reversible, no downtime.",
+      "target": {
+        "attr": "security_groups",
+        "resourceType": "aws_efs_mount_target"
+      },
+      "params": [
+        {
+          "name": "mount_target",
+          "label": "Mount target",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_efs_mount_target/address",
+          "required": true,
+          "help": "Pick the EFS mount target to modify."
+        },
+        {
+          "name": "security_group",
+          "label": "Security group to add",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "help": "Existing security group in the subnet's VPC. Rejected if the set already holds 5."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (security_groups)",
+      "group": "connectivity-access",
+      "pinned": 2
+    },
+    {
+      "id": "efs-mt-remove-security-group",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Remove a security group from a mount target",
+      "summary": "Remove one security group from this mount target. If none are left, AWS falls back to the VPC's default group.",
+      "description": "Detach one VPC security group from an EFS mount target's security_groups set. Applied in place. If no security groups remain, AWS applies the VPC default security group. Reversible, no downtime.",
+      "target": {
+        "attr": "security_groups",
+        "resourceType": "aws_efs_mount_target"
+      },
+      "params": [
+        {
+          "name": "mount_target",
+          "label": "Mount target",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_efs_mount_target/address",
+          "required": true,
+          "help": "Pick the EFS mount target to modify."
+        },
+        {
+          "name": "security_group",
+          "label": "Security group to remove",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "help": "Currently-attached security group to detach from this mount target."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (security_groups)",
+      "group": "connectivity-access",
+      "pinned": 3
+    },
+    {
+      "id": "efs-efs-mount-target-engineer-request",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to EFS mount target",
+      "summary": "Request any other change to this mount target, including ones that replace it with a new one; an engineer authors the Terraform.",
+      "description": "Catch-all for any EFS mount target change not offered as a bounded self-service form — including replacement-forcing edits (subnet_id, file_system_id, ip_address, ip_address_type, ipv6_address). An engineer authors and reviews the Terraform.",
+      "target": {
+        "attr": "purpose",
+        "resourceType": "aws_efs_mount_target"
+      },
+      "params": [
+        {
+          "name": "mount_target",
+          "label": "Mount target",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "enumSource": "inventory://aws_efs_mount_target/address",
+          "help": "The mount target this request is about, when the estate already tracks one. Leave blank when describing one that is not tracked yet."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form — an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "efs-create-filesystem",
+      "service": "efs",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a new file share",
+      "summary": "Request a new encrypted file share with its performance and backup options set; an engineer finalizes and reviews the Terraform.",
+      "description": "Create an encrypted network file share with its throughput mode, cold-file lifecycle and automatic backup decided up front. Mount targets are added per zone afterwards with the add-a-mount-target action. Submitting routes the complete specification to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_efs_file_system"
+      },
+      "params": [
+        {
+          "name": "share_name",
+          "label": "File share name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "creation_token",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._-]{2,60}$"
+          },
+          "help": "Names the share in every console and mount doc."
+        },
+        {
+          "name": "performance_mode",
+          "label": "Performance mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "performance_mode",
+          "group": "throughput",
+          "bounds": {
+            "allowlist": [
+              "generalPurpose",
+              "maxIO"
+            ]
+          },
+          "default": "generalPurpose",
+          "help": "General purpose fits almost everything, including application interfaces. Max I/O only for massively parallel jobs — it cannot be changed later."
+        },
+        {
+          "name": "throughput_mode",
+          "label": "Throughput mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "throughput_mode",
+          "group": "throughput",
+          "bounds": {
+            "allowlist": [
+              "bursting",
+              "provisioned",
+              "elastic"
+            ]
+          },
+          "default": "bursting",
+          "help": "Bursting scales with stored data; Provisioned fixes a rate in MiB per second; Elastic auto-scales and bills per use."
+        },
+        {
+          "name": "provisioned_mibps",
+          "label": "Provisioned throughput (MiB/s)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "provisioned_throughput_in_mibps",
+          "group": "throughput",
+          "bounds": {
+            "min": 1,
+            "max": 1024
+          },
+          "dependsOn": {
+            "param": "throughput_mode",
+            "equals": "provisioned"
+          },
+          "help": "Only for Provisioned mode."
+        },
+        {
+          "name": "encrypted",
+          "label": "Encryption",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "encrypted",
+          "group": "protection",
+          "help": "Always encrypted — every estate file share is; written into the draft, never asked."
+        },
+        {
+          "name": "kms_key",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key_id",
+          "group": "protection",
+          "tier": "advanced",
+          "help": "Only change for key-scoped workloads; blank uses the account default."
+        },
+        {
+          "name": "enable_backups",
+          "label": "Back this share up automatically?",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "group": "protection",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Uses the automatic backup policy for file shares. Turning it off needs a reason a reviewer will read."
+        },
+        {
+          "name": "lifecycle_to_ia",
+          "label": "Move cold files to Infrequent Access after",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "transition_to_ia",
+          "path": [
+            "lifecycle_policy"
+          ],
+          "group": "protection",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              "AFTER_7_DAYS",
+              "AFTER_14_DAYS",
+              "AFTER_30_DAYS",
+              "AFTER_60_DAYS",
+              "AFTER_90_DAYS",
+              "never"
+            ]
+          },
+          "default": "AFTER_30_DAYS",
+          "help": "Cuts storage cost for files nobody reads. Pick never to keep everything on primary storage."
+        },
+        {
+          "name": "resource_name",
+          "label": "Share name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this share holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this share."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new file share",
+        "new nfs share"
+      ],
+      "decisions": [
+        "Add a mount target in each zone after this share exists — one zone per request",
+        "Pick the security group that lets clients reach NFS port 2049"
+      ]
+    }
+  ]
+}

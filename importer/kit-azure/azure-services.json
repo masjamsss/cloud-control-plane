@@ -1,0 +1,396 @@
+{
+  "$comment": [
+    "Resource-type allowlist for importer/kit-azure/kit discovery — the DATA the kit's scripts run on.",
+    "The Azure sibling of importer/kit/services.json. Two structural differences flow from Azure",
+    "having ONE unified read-only inventory API (Azure Resource Graph, ARG) where AWS has many",
+    "per-service describe/list calls:",
+    "",
+    "  1. Discovery is a small FIXED set of `az graph query` captures (graphCaptures below), not a",
+    "     per-type CLI call. discover.sh loops them exactly like the AWS kit loops per-type captures",
+    "     (same AZ_BIN seam, same --dry-run preview, same PARTIAL_CAPTURE accounting), with an",
+    "     added skip-token paging loop (ARG pages at 1000 rows — never silently truncate).",
+    "  2. Classification is by the ARM resource `type` field (Microsoft.Provider/type), which ARG",
+    "     returns uniformly on every row — so the coverage sweep classifies at FULL type granularity",
+    "     (namespace/type), a strict upgrade over the AWS kit's coarser ARN-service-family bucket",
+    "     (importer/kit/README.md 'coverage sweep' documents that AWS compromise).",
+    "",
+    "The downstream manifest shape (resources[] rows: type/id/name/label/service/phase/stateful/",
+    "disposition) is IDENTICAL to the AWS kit, so gen-imports.py / normalize.py / verify.sh are",
+    "faithful ports — only discovery + classification differ, where Azure genuinely differs.",
+    "",
+    "TO EXTEND: add an entry under `types` (schema below), author a fixture row under",
+    "testdata/capture-happy/, and add a test. A type that ARG cannot enumerate as its own top-level",
+    "row (child/proxy resources like subnets; per-scope resources like role assignments or",
+    "diagnostic settings) belongs in `manual` — it is copied verbatim into every manifest as",
+    "manual_followup so it is never silently absent (the 0007 silent-loss lesson).",
+    "",
+    "graphCaptures[] entry schema:",
+    "  capture   basename (no .json) of the recorded ARG output in the capture dir",
+    "  kql       the exact read-only Azure Resource Graph query discover.sh runs (via",
+    "            `az graph query -q <kql> --first 1000` + skip-token paging). MUST NOT contain",
+    "            limit/take/sample — those suppress the skip token and silently cap at 1000 rows",
+    "            (discover.py load refuses a kql containing them).",
+    "  primary   true on the whole-estate inventory query that is BOTH the resource source and the",
+    "            coverage sweep (Azure needs no separate taggable-only sweep — ARG sees all ARM",
+    "            control-plane resources).",
+    "",
+    "types{} entry schema:",
+    "  typeHint     the lowercase ARM resource type (Microsoft.Provider/type) this Terraform type",
+    "               maps to. Unique across types (discover.py refuses a duplicate). ARG's `type`",
+    "               field is matched case-insensitively against it — this is BOTH the extraction",
+    "               filter and the coverage 'covered' key.",
+    "  capture      which graphCapture holds this type's rows (usually 'resources'; resource groups",
+    "               and subscriptions live in 'resourcecontainers').",
+    "  service      the <service>.tf file the resource lands in (mirrors environments/<env>-azure/).",
+    "  id           row field holding the import id — the ARM resource id. Default '.id'.",
+    "  name         display-name resolution: a field path, 'tag:<Key>', or a fallback LIST; final",
+    "               fallback is always the id.",
+    "  providerHint azurerm | azapi — which provider generates this type's HCL body. azurerm is the",
+    "               default (idiomatic typed HCL); azapi is the fallback for types azurerm cannot",
+    "               model. Carried into the manifest so gen-imports/aztfexport pick the right lane.",
+    "  skips        [{field, prefix|equals, reason}] — matching rows go to manifest.ignored WITH the",
+    "               reason, never dropped silently.",
+    "  phase        importer/kit-azure/docs/strategy.md phase (2 low-risk · 3 networking · 4 compute · 5 stateful)",
+    "  stateful     true => normalize.py `guard` inserts lifecycle { prevent_destroy = true } BEFORE import",
+    "",
+    "manual[] group schema additionally carries:",
+    "  typeHints  lowercase ARM types this group's resources appear under, used by the coverage",
+    "             sweep to bucket them as 'manual' rather than 'unrecognized'. May be [] when the",
+    "             types have no independent ARG row (pure child/config resources)."
+  ],
+  "schema": 1,
+  "graphCaptures": [
+    {
+      "capture": "resources",
+      "primary": true,
+      "kql": "Resources | project id, name, type, location, resourceGroup, subscriptionId, kind, tags | order by id asc"
+    },
+    {
+      "capture": "resourcecontainers",
+      "kql": "ResourceContainers | project id, name, type, location, subscriptionId, tags | order by id asc"
+    },
+    {
+      "capture": "authorizationresources",
+      "kql": "AuthorizationResources | project id, name, type | order by id asc"
+    },
+    {
+      "capture": "policyresources",
+      "kql": "PolicyResources | project id, name, type | order by id asc"
+    }
+  ],
+  "types": {
+    "azurerm_resource_group": {
+      "typeHint": "microsoft.resources/resourcegroups",
+      "capture": "resourcecontainers",
+      "service": "resource_groups",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 2,
+      "stateful": false
+    },
+    "azurerm_user_assigned_identity": {
+      "typeHint": "microsoft.managedidentity/userassignedidentities",
+      "capture": "resources",
+      "service": "identity",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 2,
+      "stateful": false
+    },
+    "azurerm_log_analytics_workspace": {
+      "typeHint": "microsoft.operationalinsights/workspaces",
+      "capture": "resources",
+      "service": "monitor",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 2,
+      "stateful": false
+    },
+    "azurerm_application_insights": {
+      "typeHint": "microsoft.insights/components",
+      "capture": "resources",
+      "service": "monitor",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 2,
+      "stateful": false
+    },
+    "azurerm_monitor_action_group": {
+      "typeHint": "microsoft.insights/actiongroups",
+      "capture": "resources",
+      "service": "monitor",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 2,
+      "stateful": false
+    },
+    "azurerm_dns_zone": {
+      "typeHint": "microsoft.network/dnszones",
+      "capture": "resources",
+      "service": "dns",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 2,
+      "stateful": false
+    },
+    "azurerm_container_registry": {
+      "typeHint": "microsoft.containerregistry/registries",
+      "capture": "resources",
+      "service": "containers",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 4,
+      "stateful": false
+    },
+    "azurerm_virtual_network": {
+      "typeHint": "microsoft.network/virtualnetworks",
+      "capture": "resources",
+      "service": "network",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 3,
+      "stateful": false
+    },
+    "azurerm_network_security_group": {
+      "typeHint": "microsoft.network/networksecuritygroups",
+      "capture": "resources",
+      "service": "network",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 3,
+      "stateful": false
+    },
+    "azurerm_route_table": {
+      "typeHint": "microsoft.network/routetables",
+      "capture": "resources",
+      "service": "network",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 3,
+      "stateful": false
+    },
+    "azurerm_public_ip": {
+      "typeHint": "microsoft.network/publicipaddresses",
+      "capture": "resources",
+      "service": "network",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 3,
+      "stateful": false
+    },
+    "azurerm_network_interface": {
+      "typeHint": "microsoft.network/networkinterfaces",
+      "capture": "resources",
+      "service": "network",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 3,
+      "stateful": false
+    },
+    "azurerm_nat_gateway": {
+      "typeHint": "microsoft.network/natgateways",
+      "capture": "resources",
+      "service": "network",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 3,
+      "stateful": false
+    },
+    "azurerm_lb": {
+      "typeHint": "microsoft.network/loadbalancers",
+      "capture": "resources",
+      "service": "network",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 3,
+      "stateful": false
+    },
+    "azurerm_private_dns_zone": {
+      "typeHint": "microsoft.network/privatednszones",
+      "capture": "resources",
+      "service": "network",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 3,
+      "stateful": false
+    },
+    "azurerm_private_endpoint": {
+      "typeHint": "microsoft.network/privateendpoints",
+      "capture": "resources",
+      "service": "network",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 3,
+      "stateful": false
+    },
+    "azurerm_kubernetes_cluster": {
+      "typeHint": "microsoft.containerservice/managedclusters",
+      "capture": "resources",
+      "service": "compute",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 4,
+      "stateful": false
+    },
+    "azurerm_service_plan": {
+      "typeHint": "microsoft.web/serverfarms",
+      "capture": "resources",
+      "service": "appservice",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 4,
+      "stateful": false
+    },
+    "azurerm_storage_account": {
+      "typeHint": "microsoft.storage/storageaccounts",
+      "capture": "resources",
+      "service": "storage",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 5,
+      "stateful": true
+    },
+    "azurerm_key_vault": {
+      "typeHint": "microsoft.keyvault/vaults",
+      "capture": "resources",
+      "service": "keyvault",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 5,
+      "stateful": true
+    },
+    "azurerm_managed_disk": {
+      "typeHint": "microsoft.compute/disks",
+      "capture": "resources",
+      "service": "compute",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 5,
+      "stateful": true
+    },
+    "azurerm_mssql_database": {
+      "typeHint": "microsoft.sql/servers/databases",
+      "capture": "resources",
+      "service": "database",
+      "id": "id",
+      "name": "name",
+      "skips": [
+        { "field": "name", "equals": "master", "reason": "system 'master' database — not a Terraform-managed resource" }
+      ],
+      "providerHint": "azurerm",
+      "phase": 5,
+      "stateful": true
+    },
+    "azurerm_postgresql_flexible_server": {
+      "typeHint": "microsoft.dbforpostgresql/flexibleservers",
+      "capture": "resources",
+      "service": "database",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 5,
+      "stateful": true
+    },
+    "azurerm_mysql_flexible_server": {
+      "typeHint": "microsoft.dbformysql/flexibleservers",
+      "capture": "resources",
+      "service": "database",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 5,
+      "stateful": true
+    },
+    "azurerm_cosmosdb_account": {
+      "typeHint": "microsoft.documentdb/databaseaccounts",
+      "capture": "resources",
+      "service": "database",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 5,
+      "stateful": true
+    },
+    "azurerm_recovery_services_vault": {
+      "typeHint": "microsoft.recoveryservices/vaults",
+      "capture": "resources",
+      "service": "recovery",
+      "id": "id",
+      "name": "name",
+      "providerHint": "azurerm",
+      "phase": 5,
+      "stateful": true
+    }
+  },
+  "manual": [
+    {
+      "types": ["azurerm_linux_virtual_machine", "azurerm_windows_virtual_machine"],
+      "typeHints": ["microsoft.compute/virtualmachines"],
+      "why": "one ARM type (microsoft.compute/virtualmachines) backs two Terraform types; the split is by properties.storageProfile.osDisk.osType, which the default ARG projection omits",
+      "how": "az graph query -q \"Resources | where type =~ 'microsoft.compute/virtualmachines' | project id, name, properties.storageProfile.osDisk.osType\"; map Linux->azurerm_linux_virtual_machine, Windows->azurerm_windows_virtual_machine; import id is the ARM id"
+    },
+    {
+      "types": ["azurerm_linux_virtual_machine_scale_set", "azurerm_windows_virtual_machine_scale_set", "azurerm_orchestrated_virtual_machine_scale_set"],
+      "typeHints": ["microsoft.compute/virtualmachinescalesets"],
+      "why": "one ARM type backs three Terraform types (uniform Linux/Windows vs Flexible orchestration mode)",
+      "how": "disambiguate by properties.orchestrationMode + os profile; import id is the ARM id"
+    },
+    {
+      "types": ["azurerm_linux_web_app", "azurerm_windows_web_app", "azurerm_linux_function_app", "azurerm_windows_function_app"],
+      "typeHints": ["microsoft.web/sites"],
+      "why": "microsoft.web/sites backs web apps AND function apps, Linux AND Windows — distinguished by the 'kind' field (app,linux / functionapp,linux / ...)",
+      "how": "az graph query -q \"Resources | where type =~ 'microsoft.web/sites' | project id, name, kind\"; map by kind; import id is the ARM id"
+    },
+    {
+      "types": ["azurerm_subnet"],
+      "typeHints": ["microsoft.network/virtualnetworks/subnets"],
+      "why": "subnets are child resources of a virtual network and are NOT returned as their own top-level rows in the ARG Resources table",
+      "how": "per vnet: az network vnet subnet list -g <rg> --vnet-name <vnet>; import id is the ARM child id /.../virtualNetworks/<vnet>/subnets/<subnet>"
+    },
+    {
+      "types": ["azurerm_role_assignment"],
+      "typeHints": ["microsoft.authorization/roleassignments"],
+      "why": "role assignments live in the ARG AuthorizationResources table, are per-scope, and their Terraform import id is the assignment's fully-qualified scope+guid",
+      "how": "captured into authorizationresources.json by discover.sh; import id = <scope>/providers/Microsoft.Authorization/roleAssignments/<guid> (surfaced here so it is never a silent gap; wire an auto-extractor once the id/name shape is settled)"
+    },
+    {
+      "types": ["azurerm_monitor_diagnostic_setting"],
+      "typeHints": ["microsoft.insights/diagnosticsettings"],
+      "why": "diagnostic settings are per-target-resource proxy resources, enumerated per scope, not as top-level ARG rows",
+      "how": "per resource: az monitor diagnostic-settings list --resource <id>; import id = <target-resource-id>|<setting-name>"
+    },
+    {
+      "types": ["azurerm_management_lock"],
+      "typeHints": ["microsoft.authorization/locks"],
+      "why": "management locks are per-scope authorization resources; adopt deliberately with their scope-qualified id",
+      "how": "az lock list; import id = <scope>/providers/Microsoft.Authorization/locks/<name>"
+    },
+    {
+      "types": ["azurerm_policy_assignment", "azurerm_subscription_policy_assignment"],
+      "typeHints": ["microsoft.authorization/policyassignments"],
+      "why": "policy assignments live in the ARG PolicyResources table and are scope-qualified",
+      "how": "captured into policyresources.json by discover.sh; import id = <scope>/providers/Microsoft.Authorization/policyAssignments/<name>"
+    }
+  ]
+}

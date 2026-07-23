@@ -1,0 +1,1 @@
+{"service":"s3-outposts","types":{"aws_s3outposts_endpoint":{"attrs":[{"n":"outpost_id","t":"string","r":1},{"n":"security_group_id","t":"string","r":1},{"n":"subnet_id","t":"string","r":1},{"n":"access_type","t":"string"},{"n":"customer_owned_ipv4_pool","t":"string"},{"n":"region","t":"string"}],"blocks":[]}}}

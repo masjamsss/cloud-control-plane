@@ -1,0 +1,109 @@
+{
+  "service": "codeartifact",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_codeartifact_domain"
+  ],
+  "summary": "Provision new CodeArtifact domains. Every stand-up routes to an engineer for review \u2014 day-2 operations on existing domains land in a later wave.",
+  "operations": [
+    {
+      "id": "codeartifact-domain-create",
+      "service": "codeartifact",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new CodeArtifact domain",
+      "summary": "Request a brand-new CodeArtifact domain; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new package-repository domain as a complete specification: name and encryption. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_codeartifact_domain"
+      },
+      "params": [
+        {
+          "name": "domain_name",
+          "label": "Domain name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "domain",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{1,48}[a-z0-9]$"
+          },
+          "help": "Lower-case letters, numbers and dashes, 3-50 chars, like platform-packages. Names the domain in AWS and in the generated draft."
+        },
+        {
+          "name": "encryption_key",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "encryption_key",
+          "group": "security",
+          "tier": "advanced",
+          "help": "Leave blank to use the AWS-managed key for CodeArtifact."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this domain does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this domain."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new codeartifact domain",
+        "provision package domain",
+        "new artifact domain"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Repositories inside the domain, upstream relationships, and external connections (npm/PyPI/Maven Central) are engineer follow-ups after creation",
+        "A domain permissions policy for cross-account sharing is an engineer decision"
+      ]
+    }
+  ]
+}

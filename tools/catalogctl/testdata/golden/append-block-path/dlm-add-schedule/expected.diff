@@ -1,0 +1,23 @@
+--- a/environments/prod/dlm.tf
++++ b/environments/prod/dlm.tf
+@@ -24,5 +24,20 @@
+         count = 7
+       }
+     }
++
++    schedule {
++      name      = "weekly"
++      copy_tags = true
++
++      create_rule {
++        interval      = 168
++        interval_unit = "HOURS"
++        times         = ["23:00"]
++      }
++
++      retain_rule {
++        count = 4
++      }
++    }
+   }
+ }

@@ -1,0 +1,11 @@
+--- a/environments/prod/extra-deleted-tag.tf
++++ b/environments/prod/extra-deleted-tag.tf
+@@ -3,7 +3,6 @@
+   instance_type = "m5.large"
+ 
+   tags = {
+-    Owner      = "platform"
+-    CostCenter = "cc-42"
++    Owner = "platform"
+   }
+ }

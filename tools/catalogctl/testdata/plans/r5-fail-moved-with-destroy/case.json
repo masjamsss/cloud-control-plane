@@ -1,0 +1,1 @@
+{"exitCode": 2, "contains": "VIOLATION moved-zero-delta: aws_instance.doomed_host", "manifests": "testdata/manifests-fx"}

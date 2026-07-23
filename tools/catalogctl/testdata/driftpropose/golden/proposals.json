@@ -1,0 +1,126 @@
+{
+  "schema": "ccp.drift-proposals/v1",
+  "baseCommit": "",
+  "proposals": [
+    {
+      "digest": "933cd98f16e347f49e1cd0e623a24511bbef32987e6e1018dad3dd3e5dfd04c8",
+      "flavor": "adopt",
+      "addresses": [
+        "aws_instance.sample01"
+      ],
+      "attrs": [
+        {
+          "address": "aws_instance.sample01",
+          "path": "tags.Owner",
+          "pathSegments": [
+            "tags",
+            "Owner"
+          ],
+          "liveJson": "bi-team",
+          "codeJson": "platform"
+        }
+      ],
+      "diff": "--- a/environments/prod/main.tf\n+++ b/environments/prod/main.tf\n@@ -3,7 +3,7 @@\n   instance_type = \"m5.xlarge\"\n \n   tags = {\n-    Owner = \"platform\"\n+    Owner = \"bi-team\"\n     Env   = \"prod\"\n   }\n }\n",
+      "requestSkeleton": {
+        "items": [
+          {
+            "operationId": "system-drift-adopt",
+            "targetAddress": "aws_instance.sample01",
+            "params": {
+              "attrs": [
+                {
+                  "address": "aws_instance.sample01",
+                  "path": "tags.Owner",
+                  "pathSegments": [
+                    "tags",
+                    "Owner"
+                  ],
+                  "liveJson": "bi-team",
+                  "codeJson": "platform"
+                }
+              ],
+              "proposalDigest": "933cd98f16e347f49e1cd0e623a24511bbef32987e6e1018dad3dd3e5dfd04c8",
+              "reportVersion": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "digest": "3731130012c5f737816373164277522ae6b6206fda50ea538f4fa52bb332655f",
+      "flavor": "revert",
+      "addresses": [
+        "aws_security_group.sg1"
+      ],
+      "attrs": [
+        {
+          "address": "aws_security_group.sg1",
+          "path": "ingress[0].cidr_blocks",
+          "pathSegments": [
+            "ingress",
+            0,
+            "cidr_blocks"
+          ],
+          "liveJson": [
+            "0.0.0.0/0"
+          ],
+          "codeJson": [
+            "10.0.0.0/16"
+          ]
+        }
+      ],
+      "diff": null,
+      "requestSkeleton": {
+        "items": [
+          {
+            "operationId": "system-drift-revert",
+            "targetAddress": "aws_security_group.sg1",
+            "params": {
+              "attrs": [
+                {
+                  "address": "aws_security_group.sg1",
+                  "path": "ingress[0].cidr_blocks",
+                  "pathSegments": [
+                    "ingress",
+                    0,
+                    "cidr_blocks"
+                  ],
+                  "liveJson": [
+                    "0.0.0.0/0"
+                  ],
+                  "codeJson": [
+                    "10.0.0.0/16"
+                  ]
+                }
+              ],
+              "proposalDigest": "3731130012c5f737816373164277522ae6b6206fda50ea538f4fa52bb332655f",
+              "reportVersion": 0
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "ungenerable": [
+    {
+      "address": "aws_db_instance.db1",
+      "class": "benign_inplace",
+      "reason": "forceNew attribute(s) present — not generable in v1 (see runbook D3b)"
+    },
+    {
+      "address": "aws_db_instance.db2",
+      "class": "benign_inplace",
+      "reason": "attribute \"master_password\" is sensitive or missing a machine (liveJson) value"
+    },
+    {
+      "address": "aws_flow_log.vpc1",
+      "class": "oob_deletion",
+      "reason": "restore proposals are not enabled in this deployment's generation command (--enable-restore) — meanwhile: re-assert code by hand per runbook D4 + docs/runbooks/state-recovery.md"
+    },
+    {
+      "address": "aws_instance.futurebox01",
+      "class": "some_future_class_z",
+      "reason": "unknown class \"some_future_class_z\" — fail-closed, needs-human (the eleven-class D1-D11 enum is closed)"
+    }
+  ]
+}

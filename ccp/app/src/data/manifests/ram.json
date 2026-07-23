@@ -1,0 +1,95 @@
+{
+  "service": "ram",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_ram_resource_share"
+  ],
+  "summary": "Provision AWS Resource Access Manager shares. Creating a share is an engineer-gated form with external principals disabled by default; the trust boundary a share crosses is reviewed before it is populated.",
+  "operations": [
+    {
+      "id": "ram-provision-resource-share",
+      "service": "ram",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a resource share",
+      "summary": "Create a RAM resource share with external principals disabled. Sharing crosses the account trust boundary.",
+      "consoleLabel": "Resource shares",
+      "description": "Create an aws_ram_resource_share. Sharing crosses the account trust boundary, so external principals are disabled by default; the resources and principals a share grants are added as a reviewed follow-up. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_ram_resource_share"
+      },
+      "params": [
+        {
+          "name": "share_name",
+          "label": "Share name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "The name of the resource share (written to the name attribute).",
+          "attr": "name",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{1,144}$"
+          }
+        },
+        {
+          "name": "allow_external_principals",
+          "label": "Allow external principals",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "attr": "allow_external_principals",
+          "const": false,
+          "group": "settings",
+          "help": "Sharing with principals outside the organization is disabled by default; written into the draft, never asked."
+        },
+        {
+          "name": "description_tag",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "help": "A short description recorded as the resource's Description tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "help": "The team or person accountable for this resource, recorded as its PIC tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "resource share",
+        "ram share",
+        "cross account share"
+      ],
+      "decisions": [
+        "A resource share crosses the account trust boundary: sharing with principals outside the organization is disabled by default here, and enabling external principals or adding shared resources and principals is an engineer-reviewed follow-up.",
+        "Confirm which resources and principals the share grants before it is populated; a share with external principals exposes resources outside the account."
+      ]
+    }
+  ]
+}

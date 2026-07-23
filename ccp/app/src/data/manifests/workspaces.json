@@ -1,0 +1,191 @@
+{
+  "service": "workspaces",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_workspaces_workspace"
+  ],
+  "summary": "Provision Amazon WorkSpaces to hand a user a managed cloud desktop. Creating a WorkSpace is an engineer-gated form — it's billed per-user and joins an existing directory, so it isn't blind self-service.",
+  "operations": [
+    {
+      "id": "workspaces-workspace-create",
+      "service": "workspaces",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a new WorkSpace",
+      "summary": "Request a new cloud desktop for a directory user. An engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Specify a new aws_workspaces_workspace: the directory it joins, the user it's assigned to, the bundle (hardware/software image) it launches from, and its running mode. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_workspaces_workspace"
+      },
+      "params": [
+        {
+          "name": "workspace_label",
+          "label": "WorkSpace label",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names this WorkSpace in the generated draft — a WorkSpace has no name field of its own; it's identified by directory + user."
+        },
+        {
+          "name": "directory",
+          "label": "Directory",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_workspaces_directory/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "directory_id",
+          "group": "identity",
+          "help": "The WorkSpaces directory this desktop joins. Register the directory first if the list is empty."
+        },
+        {
+          "name": "user_name",
+          "label": "Directory username",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "user_name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._-]{1,63}$"
+          },
+          "help": "The directory user this WorkSpace is assigned to. Must already exist in the directory."
+        },
+        {
+          "name": "bundle_id",
+          "label": "Bundle",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "bundle_id",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The hardware/software image this desktop launches from. The engineer picks a bundle ID from the account's available catalog during review."
+        },
+        {
+          "name": "running_mode",
+          "label": "Running mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "running_mode",
+          "path": [
+            "workspace_properties"
+          ],
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "AUTO_STOP",
+              "ALWAYS_ON"
+            ]
+          },
+          "default": "AUTO_STOP",
+          "help": "AUTO_STOP stops the desktop after inactivity and bills hourly (cheaper for part-time use); ALWAYS_ON keeps it running and bills monthly."
+        },
+        {
+          "name": "root_volume_encryption_enabled",
+          "label": "Encrypt root volume",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "root_volume_encryption_enabled",
+          "group": "security",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Encrypts the operating-system volume at rest."
+        },
+        {
+          "name": "user_volume_encryption_enabled",
+          "label": "Encrypt user volume",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "user_volume_encryption_enabled",
+          "group": "security",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Encrypts the user's personal data volume at rest."
+        },
+        {
+          "name": "resource_name",
+          "label": "WorkSpace name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "Who this WorkSpace is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this WorkSpace."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new workspace",
+        "cloud desktop",
+        "virtual desktop for a user"
+      ],
+      "decisions": [
+        "The volume_encryption_key (a non-default KMS key for the encrypted volumes) is an engineer decision",
+        "IP access control groups and custom WorkSpaces Web settings are engineer follow-ups after creation",
+        "Registering the directory itself (aws_workspaces_directory), including its VPC/subnet placement, happens before this form is used — this form only assigns a desktop inside an existing directory"
+      ]
+    }
+  ]
+}

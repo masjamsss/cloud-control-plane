@@ -1,0 +1,66 @@
+{
+  "Reservations": [
+    {
+      "ReservationId": "r-0sweephappy0000001",
+      "Instances": [
+        {
+          "InstanceId": "i-happy0000000000001",
+          "InstanceType": "t3.micro",
+          "State": { "Name": "running" },
+          "Tags": [{ "Key": "Name", "Value": "lonely-orphan" }]
+        },
+        {
+          "InstanceId": "i-happy0000000000002",
+          "InstanceType": "t3.micro",
+          "State": { "Name": "running" },
+          "Tags": [{ "Key": "Name", "Value": "root-state-matched" }]
+        },
+        {
+          "InstanceId": "i-happy0000000000003",
+          "InstanceType": "t3.micro",
+          "State": { "Name": "running" },
+          "Tags": [{ "Key": "Name", "Value": "child-state-matched" }]
+        },
+        {
+          "InstanceId": "i-happy0000000000004",
+          "InstanceType": "t3.micro",
+          "State": { "Name": "running" },
+          "Tags": [
+            { "Key": "Name", "Value": "asg-member" },
+            { "Key": "aws:autoscaling:groupName", "Value": "my-asg" }
+          ]
+        },
+        {
+          "InstanceId": "i-happy0000000000005",
+          "InstanceType": "t3.micro",
+          "State": { "Name": "running" },
+          "Tags": [{ "Key": "Name", "Value": "id-ignored-legacy" }]
+        },
+        {
+          "InstanceId": "i-happyPFX000000006",
+          "InstanceType": "t3.micro",
+          "State": { "Name": "running" },
+          "Tags": [{ "Key": "Name", "Value": "prefix-ignored-legacy" }]
+        },
+        {
+          "InstanceId": "i-happy0000000000007",
+          "InstanceType": "t3.micro",
+          "State": { "Name": "running" },
+          "Tags": [{ "Key": "Name", "Value": "twin-bastion" }]
+        },
+        {
+          "InstanceId": "i-happy0000000000008",
+          "InstanceType": "t3.micro",
+          "State": { "Name": "running" },
+          "Tags": [{ "Key": "Name", "Value": "twin-bastion" }]
+        },
+        {
+          "InstanceId": "i-happy0000000000009",
+          "InstanceType": "t3.micro",
+          "State": { "Name": "running" },
+          "Tags": [{ "Key": "Name", "Value": "---" }]
+        }
+      ]
+    }
+  ]
+}

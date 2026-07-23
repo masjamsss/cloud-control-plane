@@ -1,0 +1,1 @@
+{"service":"ip","types":{"azurerm_ip_group_cidr":{"attrs":[{"n":"cidr","t":"string","r":1},{"n":"ip_group_id","t":"string","r":1}],"blocks":[]}}}

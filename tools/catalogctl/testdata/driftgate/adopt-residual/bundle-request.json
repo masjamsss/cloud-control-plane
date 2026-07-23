@@ -1,0 +1,32 @@
+{
+  "id": "REQ-01ARZ3NDEKTSV4RRFFQ69G5FAW",
+  "projectId": "sample",
+  "operationId": "system-drift-adopt",
+  "targetAddress": "aws_instance.sample01",
+  "status": "APPROVED",
+  "approvals": [],
+  "params": {
+    "verdicts": [
+      {
+        "address": "aws_instance.sample01",
+        "type": "aws_instance",
+        "actions": ["update"],
+        "driftEvidence": true,
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "changedAttrs": [
+          {
+            "path": "tags.Owner",
+            "live": "\"bi-team\"",
+            "code": "\"platform\"",
+            "sensitive": false,
+            "liveJson": "bi-team",
+            "codeJson": "platform"
+          }
+        ],
+        "forceNewAttrs": [],
+        "securityHits": []
+      }
+    ]
+  }
+}

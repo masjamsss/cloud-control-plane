@@ -1,0 +1,9 @@
+{
+  // Superset of tsconfig.json that also typechecks scripts/ (vite-node CLIs).
+  // `npm run typecheck` points here so a scripts/ file drifting from a src/
+  // signature (e.g. palette-bench.ts vs buildPaletteSections after RX-1) is a
+  // red gate, not a silently-wrong benchmark. `npm run build` keeps the
+  // src-only tsconfig.json — scripts are never bundled.
+  "extends": "./tsconfig.json",
+  "include": ["src", "scripts"]
+}

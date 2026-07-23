@@ -1,0 +1,42 @@
+{
+  "data": [
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.Network/virtualNetworks/vnet-app",
+      "name": "vnet-app",
+      "type": "microsoft.network/virtualnetworks",
+      "location": "southeastasia",
+      "resourceGroup": "rg-app",
+      "subscriptionId": "00000000-0000-0000-0000-000000000000",
+      "tags": { "env": "prod" }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.Storage/storageAccounts/stappdata001",
+      "name": "stappdata001",
+      "type": "microsoft.storage/storageaccounts",
+      "location": "southeastasia",
+      "resourceGroup": "rg-app",
+      "subscriptionId": "00000000-0000-0000-0000-000000000000",
+      "tags": { "env": "prod" }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.KeyVault/vaults/kv-app-01",
+      "name": "kv-app-01",
+      "type": "microsoft.keyvault/vaults",
+      "location": "southeastasia",
+      "resourceGroup": "rg-app",
+      "subscriptionId": "00000000-0000-0000-0000-000000000000",
+      "tags": {}
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.Compute/virtualMachines/vm-app-01",
+      "name": "vm-app-01",
+      "type": "microsoft.compute/virtualmachines",
+      "location": "southeastasia",
+      "resourceGroup": "rg-app",
+      "subscriptionId": "00000000-0000-0000-0000-000000000000",
+      "tags": {}
+    }
+  ],
+  "count": 4,
+  "total_records": 4
+}

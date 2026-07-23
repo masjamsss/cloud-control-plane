@@ -1,0 +1,184 @@
+{
+  "service": "directory-service",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_directory_service_directory"
+  ],
+  "summary": "Provision AWS Directory Service directories. Creating a directory is an engineer-gated form; the administrator password is set out of band, and the network placement is reviewed.",
+  "operations": [
+    {
+      "id": "directory-service-provision-directory",
+      "service": "directory-service",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a directory",
+      "summary": "Create the directory shell and its network placement. The admin password is set out of band by an engineer.",
+      "consoleLabel": "Directories",
+      "description": "Create an aws_directory_service_directory: the directory type, edition, and VPC placement. The administrator password is NEVER captured here - an engineer sets it out of band. The VPC and subnets are inventory pickers. Submitting drafts the resource and routes it to an engineer to complete and own.",
+      "target": {
+        "resourceType": "aws_directory_service_directory"
+      },
+      "params": [
+        {
+          "name": "directory_name",
+          "label": "Directory name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "The fully-qualified directory DNS name (written to the name attribute), for example corp.example.com.",
+          "attr": "name",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9.-]{1,64}$"
+          }
+        },
+        {
+          "name": "directory_type",
+          "label": "Directory type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "type",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "SimpleAD",
+              "MicrosoftAD",
+              "ADConnector"
+            ]
+          },
+          "default": "MicrosoftAD",
+          "help": "MicrosoftAD is a managed Microsoft AD; SimpleAD is a small Samba-based directory; ADConnector proxies to an on-premises AD."
+        },
+        {
+          "name": "edition",
+          "label": "Edition",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "edition",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "Standard",
+              "Enterprise"
+            ]
+          },
+          "default": "Standard",
+          "help": "The MicrosoftAD edition; Standard suits most workloads, Enterprise scales larger."
+        },
+        {
+          "name": "size",
+          "label": "Size",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "size",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "Small",
+              "Large"
+            ]
+          },
+          "default": "Small",
+          "help": "The SimpleAD size; ignored for MicrosoftAD."
+        },
+        {
+          "name": "admin_password",
+          "label": "Admin password",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "password",
+          "group": "credentials",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The directory administrator password is never captured or typed here; an engineer sets it out of band after the directory shell exists."
+        },
+        {
+          "name": "vpc_id",
+          "label": "VPC",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc_id",
+          "enumSource": "inventory://aws_vpc/address",
+          "group": "network",
+          "help": "The VPC the directory is placed in (the aws_vpc.id it references).",
+          "path": [
+            "vpc_settings"
+          ]
+        },
+        {
+          "name": "subnet_ids",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_ids",
+          "enumSource": "inventory://aws_subnet/address",
+          "group": "network",
+          "help": "Two subnets in different availability zones for the directory (the aws_subnet.id values it references).",
+          "path": [
+            "vpc_settings"
+          ]
+        },
+        {
+          "name": "description_tag",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "help": "A short description recorded as the resource's Description tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "help": "The team or person accountable for this resource, recorded as its PIC tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "directory service",
+        "managed ad",
+        "active directory",
+        "provision directory"
+      ],
+      "decisions": [
+        "The directory administrator password is never captured here; an engineer sets it out of band, so no credential ever passes through the portal. This form provisions the directory shell and its network placement only.",
+        "Confirm the two subnets are in different availability zones in the selected VPC; a directory needs multi-AZ placement to be highly available."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# toolbox-selfcheck — default CMD for ccp-toolbox: proves terraform, the
+# built catalogctl, and git are all present and runnable. catalogctl has no
+# 0-exit `-h`/no-arg path (cli.Run's usage text is a REFUSE-style exit 3), so
+# its PRESENCE is checked explicitly via `command -v`; only a truly missing
+# binary should fail this script under `set -e`.
+set -euo pipefail
+terraform version | head -1
+command -v catalogctl >/dev/null
+{ catalogctl -h || true; } 2>&1 | head -1
+git --version

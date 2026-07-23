@@ -1,0 +1,696 @@
+{
+  "service": "security-groups",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_security_group"
+  ],
+  "summary": "Security groups. Rule changes are security-relevant \u2014 guardrailed with a second approver; public CIDRs are rejected deterministically.",
+  "operations": [
+    {
+      "id": "sg-add-internal-ingress-rule",
+      "service": "security-groups",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add an internal ingress rule",
+      "summary": "Open inbound access on one port from an internal address range. Public ranges are blocked.",
+      "description": "Add one ingress rule from an internal (RFC1918) CIDR. Security-relevant \u2014 guardrailed. Public CIDRs and 0.0.0.0/0 are rejected before submit.",
+      "target": {
+        "resourceType": "aws_security_group",
+        "block": "ingress"
+      },
+      "params": [
+        {
+          "name": "security_group",
+          "label": "Security group",
+          "type": "string",
+          "source": "inventory",
+          "help": "Security group that receives the new ingress rule, chosen from the estate inventory so only a Terraform-managed security group can be opened up.",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true
+        },
+        {
+          "name": "protocol",
+          "label": "Protocol",
+          "type": "string",
+          "source": "allowlist",
+          "help": "IP protocol the rule allows; the allowlist permits only tcp and udp, so a rule authored here can never grant all-protocols (-1) access.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "tcp",
+              "udp"
+            ]
+          }
+        },
+        {
+          "name": "from_port",
+          "label": "From port",
+          "type": "number",
+          "source": "user_input",
+          "help": "First port of the range being opened; 1-65535 is the valid TCP/UDP port space and excludes 0, so a rule cannot silently mean all ports.",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          }
+        },
+        {
+          "name": "to_port",
+          "label": "To port",
+          "type": "number",
+          "source": "user_input",
+          "help": "Last port of the range being opened (set equal to From port for a single port); 1-65535 is the valid TCP/UDP port space, keeping the opening to an explicit, bounded range.",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          }
+        },
+        {
+          "name": "cidr_block",
+          "label": "Source CIDR",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "semantic": "internal cidr only \u2014 RFC1918, no public range, no 0.0.0.0/0",
+            "cidrPolicy": "internal-only"
+          },
+          "help": "e.g. 10.0.0.0/16 \u2014 internal only."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (ingress rule)",
+      "keywords": [
+        "open port",
+        "allow port",
+        "firewall rule",
+        "open access from subnet"
+      ],
+      "group": "create"
+    },
+    {
+      "id": "sg-remove-ingress-rule",
+      "service": "security-groups",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Remove an ingress rule",
+      "summary": "Close an existing inbound rule on this security group. Reversible, it can be re-added, and a second approver signs off.",
+      "description": "Remove an existing ingress rule from a security group. Reversible (it can be re-added), guardrailed with a second approver.",
+      "target": {
+        "resourceType": "aws_security_group",
+        "path": [
+          "ingress"
+        ]
+      },
+      "params": [
+        {
+          "name": "security_group",
+          "label": "Security group",
+          "type": "string",
+          "source": "inventory",
+          "help": "Security group containing the ingress rule to remove, chosen from the estate inventory so only a Terraform-managed security group can be edited.",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true
+        },
+        {
+          "name": "rule_id",
+          "label": "Rule to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "The rule key/description to remove.",
+          "role": "selector",
+          "matchAttr": "description"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy (scoped)",
+      "keywords": [
+        "close port",
+        "remove rule",
+        "revoke access",
+        "temporary rule cleanup"
+      ],
+      "group": "danger-zone"
+    },
+    {
+      "id": "security-groups-set-revoke-rules-on-delete",
+      "service": "security-groups",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle revoking all rules on group delete",
+      "summary": "Set whether deleting this group also revokes all its rules first. Governs the blast radius of a future delete; an engineer reviews it.",
+      "description": "Set the boolean `revoke_rules_on_delete` argument on a security group. When true, Terraform revokes all ingress and egress rules before deleting the group. Engineer-only: this governs the blast radius of a future delete (explicit HIGH criterion). Default is false.",
+      "target": {
+        "attr": "revoke_rules_on_delete",
+        "resourceType": "aws_security_group"
+      },
+      "params": [
+        {
+          "name": "security_group",
+          "label": "Security group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "help": "The security group to change, chosen from live inventory."
+        },
+        {
+          "name": "revoke_rules_on_delete",
+          "label": "Revoke rules on delete",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true = revoke all ingress/egress rules before the group is deleted."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (revoke_rules_on_delete)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "security-groups-add-ingress-rule-from-security-group",
+      "service": "security-groups",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add an ingress rule sourced from another security group",
+      "summary": "Open inbound access on one port from members of another security group.",
+      "description": "Add one ingress (inbound) rule whose source is an existing security group (sets the ingress block's `security_groups`), scoped to a tcp/udp port range. Security-relevant \u2014 guardrailed. The source is bounded to security groups already in inventory (doc: \"A group name can be used relative to the default VPC. Otherwise, group ID\"); no CIDR is involved.",
+      "target": {
+        "resourceType": "aws_security_group",
+        "block": "ingress"
+      },
+      "params": [
+        {
+          "name": "security_group",
+          "label": "Security group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "help": "The security group to change, chosen from live inventory."
+        },
+        {
+          "name": "source_security_group",
+          "label": "Source security group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "help": "An existing security group whose members become the allowed inbound source."
+        },
+        {
+          "name": "protocol",
+          "label": "Protocol",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "tcp",
+              "udp"
+            ]
+          },
+          "help": "Protocol to use; #{protocol} preserves the client's incoming protocol."
+        },
+        {
+          "name": "from_port",
+          "label": "From port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "help": "tcp/udp port (1-65535)."
+        },
+        {
+          "name": "to_port",
+          "label": "To port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "help": "tcp/udp port (1-65535)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (ingress rule, security_groups source)",
+      "keywords": [
+        "allow app tier",
+        "sg to sg",
+        "allow from security group"
+      ],
+      "group": "create"
+    },
+    {
+      "id": "security-groups-add-ingress-rule-self",
+      "service": "security-groups",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a self-referencing ingress rule",
+      "summary": "Let members of this security group reach each other inbound on one port.",
+      "description": "Add one ingress (inbound) rule whose source is the security group itself \u2014 the op sets the ingress block's `self = true` (doc: boolean) \u2014 scoped to a tcp/udp port range. Lets members of the group reach each other inbound. Guardrailed; no external source is involved. self=false would be a sourceless rule, so it is fixed to true.",
+      "target": {
+        "resourceType": "aws_security_group",
+        "block": "ingress"
+      },
+      "params": [
+        {
+          "name": "security_group",
+          "label": "Security group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "help": "The security group to change, chosen from live inventory."
+        },
+        {
+          "name": "protocol",
+          "label": "Protocol",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "tcp",
+              "udp"
+            ]
+          },
+          "help": "Protocol to use; #{protocol} preserves the client's incoming protocol."
+        },
+        {
+          "name": "from_port",
+          "label": "From port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "help": "tcp/udp port (1-65535)."
+        },
+        {
+          "name": "to_port",
+          "label": "To port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "help": "tcp/udp port (1-65535)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (ingress rule, self=true)",
+      "group": "create"
+    },
+    {
+      "id": "security-groups-add-egress-rule-to-security-group",
+      "service": "security-groups",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add an egress rule destined to another security group",
+      "summary": "Open outbound access on one port to members of another security group.",
+      "description": "Add one egress (outbound) rule whose destination is an existing security group (sets the egress block's `security_groups`), scoped to a tcp/udp port range. Guardrailed. Destination bounded to security groups already in inventory (doc: \"A group name can be used relative to the default VPC. Otherwise, group ID\"); no CIDR is involved.",
+      "target": {
+        "resourceType": "aws_security_group",
+        "block": "egress"
+      },
+      "params": [
+        {
+          "name": "security_group",
+          "label": "Security group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "help": "The security group to change, chosen from live inventory."
+        },
+        {
+          "name": "destination_security_group",
+          "label": "Destination security group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "help": "An existing security group that becomes the allowed outbound destination."
+        },
+        {
+          "name": "protocol",
+          "label": "Protocol",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "tcp",
+              "udp"
+            ]
+          },
+          "help": "Protocol to use; #{protocol} preserves the client's incoming protocol."
+        },
+        {
+          "name": "from_port",
+          "label": "From port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "help": "tcp/udp port (1-65535)."
+        },
+        {
+          "name": "to_port",
+          "label": "To port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "help": "tcp/udp port (1-65535)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (egress rule, security_groups destination)",
+      "group": "create"
+    },
+    {
+      "id": "security-groups-add-egress-rule-self",
+      "service": "security-groups",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a self-referencing egress rule",
+      "summary": "Let members of this security group reach each other outbound on one port.",
+      "description": "Add one egress (outbound) rule whose destination is the security group itself \u2014 the op sets the egress block's `self = true` (doc: boolean) \u2014 scoped to a tcp/udp port range. Lets members of the group reach each other outbound. Guardrailed; no external destination is involved. self=false would be a destinationless rule, so it is fixed to true.",
+      "target": {
+        "resourceType": "aws_security_group",
+        "block": "egress"
+      },
+      "params": [
+        {
+          "name": "security_group",
+          "label": "Security group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "help": "The security group to change, chosen from live inventory."
+        },
+        {
+          "name": "protocol",
+          "label": "Protocol",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "tcp",
+              "udp"
+            ]
+          },
+          "help": "Protocol to use; #{protocol} preserves the client's incoming protocol."
+        },
+        {
+          "name": "from_port",
+          "label": "From port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "help": "tcp/udp port (1-65535)."
+        },
+        {
+          "name": "to_port",
+          "label": "To port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "help": "tcp/udp port (1-65535)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (egress rule, self=true)",
+      "group": "create"
+    },
+    {
+      "id": "sg-create-security-group",
+      "service": "security-groups",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a new security group",
+      "summary": "Create a new security group for a tier or service, with an optional starter rule. An engineer finalizes and reviews it before it applies.",
+      "description": "Create a security group for a new tier or service, optionally with one bounded starter rule — more rules ride the existing rule actions afterwards. Submitting routes the complete specification to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_security_group"
+      },
+      "params": [
+        {
+          "name": "group_name",
+          "label": "Group name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9._-]{2,60}$"
+          },
+          "help": "Shown wherever traffic rules are chosen."
+        },
+        {
+          "name": "description",
+          "label": "What this group is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "description",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 255
+          },
+          "help": "AWS requires a description; make it the plain answer to what traffic policy this is."
+        },
+        {
+          "name": "vpc",
+          "label": "Network (VPC)",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_vpc/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc_id",
+          "group": "identity",
+          "help": "Which network the group lives in."
+        },
+        {
+          "name": "first_rule_protocol",
+          "label": "First inbound rule — protocol",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "protocol",
+          "path": [
+            "ingress"
+          ],
+          "group": "starter-rule",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              "tcp",
+              "udp",
+              "none"
+            ]
+          },
+          "default": "none",
+          "help": "Optionally open one port range now; add more later with the rule actions."
+        },
+        {
+          "name": "first_rule_from_port",
+          "label": "First inbound rule — from port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "from_port",
+          "path": [
+            "ingress"
+          ],
+          "group": "starter-rule",
+          "tier": "advanced",
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "dependsOn": {
+            "param": "first_rule_protocol",
+            "notEquals": "none"
+          },
+          "help": "First port of the range being opened — the same bounded port space as every rule form."
+        },
+        {
+          "name": "first_rule_to_port",
+          "label": "First inbound rule — to port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "to_port",
+          "path": [
+            "ingress"
+          ],
+          "group": "starter-rule",
+          "tier": "advanced",
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "dependsOn": {
+            "param": "first_rule_protocol",
+            "notEquals": "none"
+          },
+          "help": "Last port of the range; set equal to the from port for a single port."
+        },
+        {
+          "name": "first_rule_cidr",
+          "label": "First inbound rule — source",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "cidr_blocks",
+          "path": [
+            "ingress"
+          ],
+          "wrap": "list",
+          "group": "starter-rule",
+          "tier": "advanced",
+          "bounds": {
+            "semantic": "internal cidr only — RFC1918, no public range, no 0.0.0.0/0",
+            "cidrPolicy": "internal-only"
+          },
+          "dependsOn": {
+            "param": "first_rule_protocol",
+            "notEquals": "none"
+          },
+          "help": "e.g. 10.0.0.0/16 — internal ranges only; public ranges are never self-service."
+        },
+        {
+          "name": "resource_name",
+          "label": "Group name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this group holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this group."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new security group",
+        "group for new tier"
+      ],
+      "decisions": [
+        "Confirm the outbound rules — the estate default allows all outbound traffic",
+        "Attaching the group to servers or services happens per resource afterwards"
+      ]
+    }
+  ]
+}

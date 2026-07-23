@@ -1,0 +1,9 @@
+schema: ccp.request/v1
+id: REQ-01JZTC4QWERTY0123456789K02
+item: cloudtrail-set-kms-key
+created_at: "2026-07-11T00:00:00Z"
+requester_login: fixture-l1
+params:
+  trail: aws_cloudtrail.main
+  kms_key: aws_kms_key.trail
+justification: "U4 fixture - reference address does not resolve"

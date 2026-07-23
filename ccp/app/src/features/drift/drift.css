@@ -1,0 +1,785 @@
+/* ============================================================
+   Drift surface — the dashboard summary card + the /drift page's
+   verdict table. Tone (clean/drifted/unknown) is carried the SAME way
+   every other status surface in this app carries it: the existing
+   risk tokens (risk-low/risk-med) plus a muted/disabled tone for
+   "not connected" — never a new hue. "Unknown" never borrows the
+   clean tone's color, so absence of data can never read as absence
+   of drift.
+   ============================================================ */
+
+.drift-panel {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-7);
+}
+
+.drift-card {
+  flex: 1 1 auto;
+  min-width: 240px;
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-3);
+  border-left: 3px solid var(--text-disabled);
+  background: var(--surface-1);
+}
+.drift-card--clean {
+  border-left-color: var(--risk-low);
+}
+.drift-card--drifted {
+  border-left-color: var(--risk-med);
+}
+.drift-card--unknown {
+  border-left-color: var(--text-disabled);
+}
+/* Stale: the data stays and keeps rendering — a dashed edge signals
+   "confidence has degraded", never a color swap (that axis stays risk-only). */
+.drift-card--stale {
+  border-left-style: dashed;
+}
+.drift-card--loading {
+  color: var(--text-muted);
+}
+
+.drift-card__headline {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.drift-card--unknown .drift-card__headline {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.drift-card__meta {
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.drift-panel__link {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.drift-panel__link:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+/* --- /drift page shell — same Ledger header treatment as
+   dashboard.css's .dash__head / approvals.css's .apv__head --- */
+.drift-page__head {
+  margin-bottom: var(--space-8);
+}
+.drift-page__title {
+  font-size: clamp(32px, 4vw, 46px);
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  margin: 0;
+  color: var(--text-primary);
+}
+.drift-page__subtitle {
+  margin: var(--space-4) 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-width: 68ch;
+}
+.drift-page__loading,
+.drift-page__empty {
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: var(--space-7) 0;
+}
+.drift-page__footer {
+  margin-top: var(--space-7);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-hairline);
+  font-size: 12.5px;
+  color: var(--text-faint);
+  max-width: 72ch;
+}
+
+/* --- verdict table --- */
+.drift-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  background: var(--surface-1);
+  margin-top: var(--space-6);
+}
+.drift-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.drift-table thead th {
+  text-align: left;
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-default);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.drift-table tbody td {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-hairline);
+  vertical-align: top;
+  color: var(--text-primary);
+}
+.drift-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.drift-row__addr {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  word-break: break-all;
+}
+.drift-row__type {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+.drift-row__class {
+  text-transform: capitalize;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.drift-row__attrs {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+.drift-row__attrval {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.drift-row__evidence {
+  margin-top: var(--space-3);
+}
+.drift-row__evidence ul {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.drift-row__reco {
+  margin: var(--space-3) 0 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  max-width: 52ch;
+}
+
+.drift-absorbed {
+  margin-top: var(--space-6);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.drift-absorbed summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.drift-absorbed ul {
+  margin: var(--space-3) 0 0;
+  padding-left: var(--space-5);
+}
+
+@media (max-width: 640px) {
+  .drift-panel {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* --- per-row proposal chip (the "Fix" column) --- */
+.drift-row__fix {
+  white-space: nowrap;
+}
+.drift-fix-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+/* --- proposal detail drawer: a right-anchored panel over a dim backdrop,
+   the same fixed/z-index/shadow treatment as the command palette --- */
+.drift-drawer__backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--text-primary) 30%, transparent);
+  z-index: 40;
+}
+.drift-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: min(480px, 100vw);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: var(--space-7);
+  background: var(--surface-1);
+  border-left: 1px solid var(--border-strong, var(--border-hover));
+  box-shadow: var(--shadow-3);
+  z-index: 41;
+}
+.drift-drawer__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.drift-drawer__eyebrow {
+  margin: 0 0 var(--space-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.drift-drawer__addr {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+.drift-drawer__close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: var(--space-2);
+}
+.drift-drawer__close:hover {
+  color: var(--text-primary);
+}
+.drift-drawer__attrs {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  margin-bottom: var(--space-6);
+}
+.drift-drawer__attrs th {
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-default);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.drift-drawer__attrs td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+  vertical-align: top;
+}
+.drift-drawer__val {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+.drift-drawer__heading {
+  margin: 0 0 var(--space-4);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+}
+.drift-drawer__diff {
+  margin-bottom: var(--space-6);
+}
+.drift-drawer__noedit {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-6);
+}
+.drift-drawer__blast {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-3);
+  padding: var(--space-4);
+  margin: 0 0 var(--space-6);
+}
+.drift-drawer__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.drift-drawer__field-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.drift-drawer__req {
+  color: var(--brass);
+}
+.drift-drawer__textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface-2);
+  border: 1px solid var(--field-border, var(--border-default));
+  border-radius: var(--radius-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 11px;
+  resize: vertical;
+}
+.drift-drawer__textarea:hover {
+  border-color: var(--border-hover);
+}
+.drift-drawer__textarea:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
+  border-color: var(--brass);
+}
+.drift-drawer__help {
+  margin: var(--space-2) 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.drift-drawer__error {
+  color: var(--risk-high);
+  font-size: 13px;
+  margin: 0;
+}
+.drift-drawer__norole {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .drift-drawer {
+    width: 100vw;
+  }
+}
+
+/* --- C1's dependency/blast-radius caution + CloudTrail pointer (addendum
+   A6) — same muted-panel treatment as .drift-drawer__blast, kept as its
+   own block so the two notes render as clearly separate cautions. --- */
+.drift-drawer__caution {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  border-left: 3px solid var(--risk-high);
+  border-radius: var(--radius-3);
+  padding: var(--space-4);
+  margin: 0 0 var(--space-5);
+}
+.drift-drawer__caution-line {
+  margin: 0;
+}
+.drift-drawer__caution-line + .drift-drawer__caution-line {
+  margin-top: var(--space-3);
+}
+
+/* --- C2's legitimize drawer — same drawer shell, its own eyebrow tone --- */
+.drift-drawer--legitimize .drift-drawer__eyebrow {
+  color: var(--brass);
+}
+.drift-drawer__legitimize-explain {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0 0 var(--space-6);
+}
+.drift-drawer__template {
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-3);
+  padding: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+.drift-drawer__template-heading {
+  margin: 0 0 var(--space-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.drift-drawer__template-text {
+  margin: 0 0 var(--space-3);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.drift-drawer__template-use {
+  background: none;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+  padding: var(--space-2) var(--space-4);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+.drift-drawer__template-use:hover {
+  border-color: var(--border-hover);
+  color: var(--accent-hover);
+}
+
+/* --- drift page header actions: "Start drift check" / "Fix the drift"
+   (addendum A7) — lead/admin only, so this row renders beside the status
+   card without competing with the verdict table below it. --- */
+.drift-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-7);
+  margin: var(--space-6) 0;
+  padding: var(--space-5) 0;
+  border-top: 1px solid var(--border-hairline);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.drift-page__action {
+  flex: 1 1 260px;
+  min-width: 220px;
+}
+.drift-page__action-help {
+  margin: var(--space-2) 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  max-width: 48ch;
+}
+.drift-page__action-status {
+  margin: var(--space-2) 0 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+.drift-page__action-status--disarmed {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.drift-page__action-status--error {
+  color: var(--risk-high);
+}
+
+/* --- the "Fix the drift" resolution flow (addendum A7 / plan B2) --- */
+.resolution {
+  margin-top: var(--space-7);
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  background: var(--surface-1);
+}
+.resolution__head {
+  margin-bottom: var(--space-6);
+}
+.resolution__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.resolution__subtitle {
+  margin: var(--space-2) 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  max-width: 68ch;
+}
+.resolution__empty {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.resolution__section {
+  margin-top: var(--space-7);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-hairline);
+}
+.resolution__section:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+.resolution__section-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.resolution__section-help {
+  margin: var(--space-2) 0 var(--space-4);
+  font-size: 12.5px;
+  color: var(--text-muted);
+  max-width: 68ch;
+}
+.resolution__select-all {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-3);
+  cursor: pointer;
+}
+.resolution__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.resolution__row {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+  background: var(--surface-2);
+}
+.resolution__row-label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  cursor: pointer;
+}
+.resolution__addr {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text-primary);
+  word-break: break-all;
+  margin-right: var(--space-3);
+}
+.resolution__attrs {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.resolution__batch-form {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px dashed var(--border-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 60ch;
+}
+.resolution__row--security {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.resolution__security-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+.resolution__choice-help {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  flex-basis: 100%;
+  max-width: 46ch;
+}
+.resolution__row-norole {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.resolution__reason {
+  margin: var(--space-2) 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  max-width: 68ch;
+}
+
+@media (max-width: 640px) {
+  .drift-page__actions {
+    flex-direction: column;
+  }
+}
+
+/* --- "Unmanaged resources" (out-of-band provisioning spec, UnmanagedResources.tsx)
+   — the account-wide sweep's findings, appended below the verdict table. This
+   block was previously missing entirely: every unmanaged-row__* class rendered
+   with zero rules, so type+name+service (three separate elements with no gap
+   between them) concatenated into one unreadable string (e.g.
+   "aws_instancebastion-2ec2"), and a security-family finding — an out-of-band
+   IAM/security creation — looked identical to a benign row. List/row rhythm
+   mirrors .drift-table (bordered wrap, hairline row dividers, same cell
+   padding); the type tag reuses .macd-tag's neutral mono-on-surface-2 idiom;
+   --security reuses .drift-drawer__caution's left-border + tint caution
+   language so it reads as unmistakably different, never just a subtler badge
+   color. Text below deliberately uses --text-muted, never --text-faint, for
+   anything that can land on --surface-2 or the security tint: --text-faint
+   there computes under AA in dark theme (the same root cause as finding F-09
+   elsewhere on this page) — --text-muted clears 4.5:1 on every surface in
+   both themes, verified. */
+.unmanaged {
+  margin-top: var(--space-8);
+  padding-top: var(--space-7);
+  border-top: 1px solid var(--border-hairline);
+}
+.unmanaged__head {
+  margin-bottom: var(--space-5);
+}
+.unmanaged__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.unmanaged__help {
+  margin: var(--space-2) 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-width: 68ch;
+}
+.unmanaged__not-swept,
+.unmanaged__empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  max-width: 68ch;
+}
+.unmanaged__meta {
+  margin: 0 0 var(--space-5);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.unmanaged__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+
+/* One finding: identity (grows) + state chip (fixed, right-aligned) share the
+   first line; the actor summary and the details disclosure each force their
+   own full-width line below via flex-basis: 100%. */
+.unmanaged-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  column-gap: var(--space-5);
+  row-gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-hairline);
+  border-left: 3px solid transparent;
+}
+.unmanaged__list > .unmanaged-row:last-child {
+  border-bottom: none;
+}
+
+/* Identity: type + name + service as three distinct, gapped tokens — this is
+   the F-01 fix. Previously these three fields had no separator of any kind
+   and rendered as one concatenated string. */
+.unmanaged-row__main {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.unmanaged-row__identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+.unmanaged-row__type {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border-radius: var(--radius-1);
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+.unmanaged-row__name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+.unmanaged-row__service {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.unmanaged-row__actor {
+  flex-basis: 100%;
+  margin: var(--space-2) 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.unmanaged-row__chip {
+  flex: none;
+  margin-left: auto;
+}
+
+/* --security: an out-of-band IAM/security-relevant creation — the row this
+   whole section exists to surface. Same left-border + tint caution language
+   as .drift-drawer__caution so it is visibly distinct from a benign row in
+   both themes, not just a differently colored chip. */
+.unmanaged-row--security {
+  border-left-color: var(--risk-high);
+  background: color-mix(in srgb, var(--risk-high) 6%, transparent);
+}
+
+.unmanaged-row__details {
+  flex-basis: 100%;
+  width: 100%;
+  margin-top: var(--space-2);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.unmanaged-row__details summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.unmanaged-row__reason {
+  margin: var(--space-2) 0 0;
+  max-width: 68ch;
+}
+.unmanaged-row__footer {
+  margin: var(--space-2) 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.unmanaged__coverage {
+  margin: var(--space-4) 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  max-width: 72ch;
+}

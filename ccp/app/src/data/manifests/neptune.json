@@ -1,0 +1,377 @@
+{
+  "service": "neptune",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_neptune_cluster",
+    "aws_neptune_cluster_instance"
+  ],
+  "summary": "Provision brand-new Amazon Neptune graph-database clusters and their cluster instances. No Neptune estate exists yet, so every operation is a first stand-up an engineer reviews before it applies.",
+  "operations": [
+    {
+      "id": "neptune-cluster-create",
+      "service": "neptune",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Neptune cluster",
+      "summary": "Request a brand-new Neptune graph-database cluster; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a graph database as a complete specification: network placement, backups and encryption. This provisions the cluster only; at least one instance is added afterward with the companion cluster-instance form. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_neptune_cluster"
+      },
+      "params": [
+        {
+          "name": "cluster_name",
+          "label": "Cluster identifier",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "cluster_identifier",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,62}$"
+          },
+          "help": "Lower-case name AWS uses for the cluster endpoint."
+        },
+        {
+          "name": "engine",
+          "label": "Engine",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "neptune",
+          "attr": "engine",
+          "group": "engine",
+          "help": "Neptune has one engine value — written into the draft, never asked."
+        },
+        {
+          "name": "engine_version",
+          "label": "Engine version",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "engine_version",
+          "group": "engine",
+          "tier": "advanced",
+          "bounds": {
+            "pattern": "^[0-9][0-9a-z.-]{0,20}$"
+          },
+          "help": "Leave blank for the engineer to pin the version."
+        },
+        {
+          "name": "backup_retention_days",
+          "label": "Keep backups (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "backup_retention_period",
+          "group": "availability",
+          "bounds": {
+            "min": 1,
+            "max": 35
+          },
+          "default": 7,
+          "help": "Days of automatic backups. This baseline never allows zero, which would mean no backups."
+        },
+        {
+          "name": "preferred_backup_window",
+          "label": "Backup window (UTC)",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "preferred_backup_window",
+          "group": "availability",
+          "tier": "advanced",
+          "bounds": {
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d-([01]\\d|2[0-3]):[0-5]\\d$"
+          },
+          "help": "Leave blank for AWS to choose a quiet slot."
+        },
+        {
+          "name": "storage_encrypted",
+          "label": "Storage encryption",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "storage_encrypted",
+          "group": "availability",
+          "help": "Always on from birth — written into the draft, never asked."
+        },
+        {
+          "name": "kms_key",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key_arn",
+          "group": "availability",
+          "tier": "advanced",
+          "help": "Leave blank to use the default AWS-managed key. Pick a key only for a customer-managed CMK."
+        },
+        {
+          "name": "subnet_group",
+          "label": "Network placement",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_neptune_subnet_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "neptune_subnet_group_name",
+          "group": "network",
+          "help": "Which private subnets the cluster lives in. Empty until the estate provisions or imports a Neptune subnet group."
+        },
+        {
+          "name": "security_groups",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc_security_group_ids",
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "help": "Who can reach the cluster's port."
+        },
+        {
+          "name": "deletion_protection",
+          "label": "Deletion protection",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "deletion_protection",
+          "group": "availability",
+          "help": "Always on from birth — written into the draft, never asked."
+        },
+        {
+          "name": "resource_name",
+          "label": "Cluster name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this cluster holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this cluster."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new neptune cluster",
+        "provision graph database"
+      ],
+      "decisions": [
+        "Cluster and instance parameter group choice and tuning",
+        "IAM database authentication and the neptune IAM roles list are engineer decisions",
+        "At least one aws_neptune_cluster_instance is required before the cluster serves traffic — use the companion cluster-instance form after this is approved",
+        "Global cluster membership is an engineer decision"
+      ]
+    },
+    {
+      "id": "neptune-cluster-instance-create",
+      "service": "neptune",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Neptune cluster instance",
+      "summary": "Add a new instance to an existing Neptune cluster; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new cluster instance as a complete specification: which cluster it joins and instance class. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_neptune_cluster_instance"
+      },
+      "params": [
+        {
+          "name": "cluster",
+          "label": "Cluster",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_neptune_cluster/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "cluster_identifier",
+          "attr": "cluster_identifier",
+          "group": "identity",
+          "help": "The Neptune cluster this instance joins. Create the cluster first if the list is empty."
+        },
+        {
+          "name": "identifier",
+          "label": "Instance identifier",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "identifier",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,62}$"
+          },
+          "help": "Lower-case name AWS uses for this instance's own endpoint."
+        },
+        {
+          "name": "engine",
+          "label": "Engine",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "neptune",
+          "attr": "engine",
+          "group": "engine",
+          "help": "Neptune has one engine value — written into the draft, never asked."
+        },
+        {
+          "name": "instance_class",
+          "label": "Instance class",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "instance_class",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "db.t3.medium",
+              "db.r5.large",
+              "db.r5.xlarge",
+              "db.r5.2xlarge",
+              "db.r6g.large",
+              "db.r6g.xlarge"
+            ]
+          },
+          "default": "db.r5.large",
+          "help": "Size class for processor and memory."
+        },
+        {
+          "name": "promotion_tier",
+          "label": "Failover promotion tier",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "promotion_tier",
+          "group": "availability",
+          "bounds": {
+            "min": 0,
+            "max": 15
+          },
+          "default": 1,
+          "help": "Lower tiers are promoted to primary first during failover. 0 is highest priority."
+        },
+        {
+          "name": "publicly_accessible",
+          "label": "Public accessibility",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": false,
+          "attr": "publicly_accessible",
+          "group": "network",
+          "help": "Never public. These instances are internal-only — written into the draft, never asked."
+        },
+        {
+          "name": "resource_name",
+          "label": "Instance name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this instance serves",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this instance."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new neptune instance",
+        "add neptune cluster instance"
+      ],
+      "decisions": [
+        "Custom parameter group is an engineer decision",
+        "Additional read replicas: submit this form again once per extra instance"
+      ]
+    }
+  ]
+}

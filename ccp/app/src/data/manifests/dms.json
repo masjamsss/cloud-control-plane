@@ -1,0 +1,253 @@
+{
+  "service": "dms",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_dms_replication_instance"
+  ],
+  "summary": "Provision new DMS replication instances. Greenfield today (no replication instance exists yet in this estate) \u2014 the create stands up the compute instance driving migration/replication tasks; endpoints and the replication task itself are engineer follow-ups.",
+  "operations": [
+    {
+      "id": "dms-replication-instance-create",
+      "service": "dms",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new DMS replication instance",
+      "summary": "Request a brand-new Database Migration Service replication instance; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a replication instance as a complete specification: instance class, storage, network placement, and Multi-AZ. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_dms_replication_instance"
+      },
+      "params": [
+        {
+          "name": "replication_instance_id",
+          "label": "Instance identifier",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "replication_instance_id",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9-]{0,62}$"
+          },
+          "help": "Names the replication instance in the DMS console and the generated draft."
+        },
+        {
+          "name": "replication_instance_class",
+          "label": "Instance class",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "replication_instance_class",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "dms.t3.micro",
+              "dms.t3.small",
+              "dms.t3.medium",
+              "dms.t3.large",
+              "dms.c5.large",
+              "dms.c5.xlarge",
+              "dms.c5.2xlarge",
+              "dms.r5.large",
+              "dms.r5.xlarge"
+            ]
+          },
+          "default": "dms.t3.medium",
+          "help": "Size class for processor and memory driving the migration/replication tasks this instance will run."
+        },
+        {
+          "name": "engine_version",
+          "label": "Engine version",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "engine_version",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "Left to the engineer at review, since a hand-picked version can go stale as AWS deprecates old DMS engine releases."
+        },
+        {
+          "name": "allocated_storage",
+          "label": "Allocated storage (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "allocated_storage",
+          "group": "identity",
+          "bounds": {
+            "min": 5,
+            "max": 6144
+          },
+          "default": 50,
+          "help": "Storage for replication logs and cached changes."
+        },
+        {
+          "name": "multi_az",
+          "label": "Multi-AZ",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "multi_az",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "default": "false",
+          "help": "Provisions a standby replica in a second Availability Zone for failover."
+        },
+        {
+          "name": "publicly_accessible",
+          "label": "Publicly accessible",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "attr": "publicly_accessible",
+          "group": "network",
+          "const": false,
+          "help": "Never assigned. This instance is internal-only; this guardrail is written into the draft so the reviewer sees it."
+        },
+        {
+          "name": "vpc_security_group_ids",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc_security_group_ids",
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "help": "Who can reach this replication instance."
+        },
+        {
+          "name": "replication_subnet_group_id",
+          "label": "Replication subnet group",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "replication_subnet_group_id",
+          "group": "network",
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9 ._-]{0,254}$"
+          },
+          "help": "An existing aws_dms_replication_subnet_group identifier. Leave blank for the account/region default subnet group, if one exists."
+        },
+        {
+          "name": "kms_key_arn",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key_arn",
+          "group": "identity",
+          "help": "Leave blank for the AWS-managed DMS key."
+        },
+        {
+          "name": "preferred_maintenance_window",
+          "label": "Preferred maintenance window",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "preferred_maintenance_window",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^(mon|tue|wed|thu|fri|sat|sun):([01][0-9]|2[0-3]):[0-5][0-9]-(mon|tue|wed|thu|fri|sat|sun):([01][0-9]|2[0-3]):[0-5][0-9]$"
+          },
+          "help": "ddd:HH:MM-ddd:HH:MM in UTC, e.g. sun:06:00-sun:07:00. Leave blank for an AWS-assigned window."
+        },
+        {
+          "name": "auto_minor_version_upgrade",
+          "label": "Auto minor version upgrade",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "auto_minor_version_upgrade",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "default": "true",
+          "help": "Applies minor engine version upgrades automatically during the maintenance window."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What migration/replication this instance runs",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this replication instance."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new dms instance",
+        "provision replication instance",
+        "database migration",
+        "cdc replication"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "A dedicated replication subnet group (aws_dms_replication_subnet_group) is a prerequisite the engineer confirms or creates first; Kerberos authentication settings are an engineer follow-up.",
+        "Source/target endpoints (aws_dms_endpoint) and the replication task itself are provisioned as engineer follow-ups once this instance exists."
+      ]
+    }
+  ]
+}

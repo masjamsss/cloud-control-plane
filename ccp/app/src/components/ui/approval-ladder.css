@@ -1,0 +1,222 @@
+/* ============================================================================
+   <ApprovalLadder> — the shared approval-progress stepper (UX audit
+   2026-07-21, the ApprovalsQueue deep-dive — F-03/F-04/S-08). Filled/accent
+   dots for a signed step, an accent-ringed hollow dot for the next (active)
+   step, plain hollow dots for further-out steps. Names and "who's next" are
+   first-class text — never the old 12px mono parenthetical. Three size
+   variants share this one file:
+     .ladder--row     MyRequests' compact N/M pill (a <span>, no stepper)
+     .ladder--card     the approvals-queue footer's left slot
+     .ladder--detail   RequestDetail's full APPROVALS box
+   ============================================================================ */
+
+/* ── size='row': the compact pill (replaces .rq-row__count 1:1) ──────────── */
+.ladder--row {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-default);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 600;
+}
+.ladder__row-sep {
+  color: var(--text-faint);
+  padding: 0 1px;
+}
+
+/* ── size='card' / size='detail': the segmented stepper ──────────────────── */
+.ladder--card,
+.ladder--detail {
+  min-width: 0;
+}
+.ladder__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.ladder__seg {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+/* Connector line, behind the dot row — hidden before the first segment
+   ("Submitted" never has an incoming line). Filled (--accent) once the
+   segment it LEADS INTO is itself signed; todo/active segments keep the
+   quiet --border-hover line. */
+.ladder__seg::before {
+  content: '';
+  position: absolute;
+  height: 2px;
+  background: var(--border-hover);
+}
+.ladder__seg:first-child::before {
+  display: none;
+}
+.ladder__seg--done::before {
+  background: var(--accent);
+}
+.ladder__dot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: var(--surface-1);
+  border: 2px solid var(--border-hover);
+}
+.ladder__seg--done .ladder__dot {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.ladder__seg--active .ladder__dot {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent);
+}
+.ladder__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ladder__label {
+  line-height: 1.3;
+  color: var(--text-faint);
+  font-weight: 600;
+}
+.ladder__seg--done .ladder__label {
+  /* Names are first-class text, not a faint parenthetical (F-03). */
+  color: var(--text-secondary);
+}
+.ladder__seg--active .ladder__label {
+  /* The one emphasized label on the whole stepper — semibold text-primary,
+     never the old faint mono treatment. */
+  color: var(--text-primary);
+  font-weight: 700;
+}
+.ladder__sub {
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+/* The "N of M approvals" figure (Ledger data-authority contract: mono,
+   tabular, kept verbatim) + the schedule note, now beside the picture
+   instead of standing alone. */
+.ladder__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+.ladder__count-num {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.ladder__sched {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+.ladder__sched::before {
+  content: '·';
+  margin-right: 10px;
+  color: var(--text-faint);
+}
+
+/* ── size='card': compact — fits the queue footer's left slot beside the
+   Approve/Reject buttons, which stay exactly where they are. ─────────────── */
+.ladder--card .ladder__steps {
+  gap: 0 16px;
+  row-gap: 8px;
+}
+.ladder--card .ladder__seg {
+  padding-top: 13px;
+}
+.ladder--card .ladder__seg::before {
+  top: 3px;
+  left: -16px;
+  width: 16px;
+}
+.ladder--card .ladder__dot {
+  width: 8px;
+  height: 8px;
+}
+.ladder--card .ladder__text {
+  max-width: 150px;
+}
+.ladder--card .ladder__label {
+  font-size: 11.5px;
+}
+.ladder--card .ladder__seg--active .ladder__label {
+  font-size: 12.5px;
+}
+.ladder--card .ladder__sub {
+  font-size: 10.5px;
+}
+.ladder--card .ladder__meta {
+  margin-top: 7px;
+  font-size: 11px;
+}
+
+/* ── size='detail': full-width — replaces RequestDetail's APPROVALS box
+   internals; equal-width slots + edge-to-edge connectors, the same
+   proportional technique as the page's own lifecycle .stepper. ──────────── */
+.ladder--detail .ladder__steps {
+  gap: 0;
+}
+.ladder--detail .ladder__seg {
+  flex: 1 1 0;
+  min-width: 96px;
+  padding-top: 20px;
+  padding-right: var(--space-5);
+}
+.ladder--detail .ladder__seg::before {
+  top: 5px;
+  left: -50%;
+  width: 100%;
+}
+.ladder--detail .ladder__dot {
+  width: 12px;
+  height: 12px;
+}
+.ladder--detail .ladder__text {
+  max-width: none;
+}
+.ladder--detail .ladder__label {
+  font-size: 13px;
+}
+.ladder--detail .ladder__seg--active .ladder__label {
+  font-size: 14px;
+}
+.ladder--detail .ladder__sub {
+  font-size: 12px;
+}
+.ladder--detail .ladder__meta {
+  margin-top: 16px;
+  font-size: 13px;
+}
+
+/* Narrow screens: the fixed-stub card connector reads oddly once segments
+   wrap onto their own lines (F-08's shell floor means every screen already
+   scrolls some at true phone widths, but ~720px is this app's own
+   feature-level breakpoint — see approvals.css/requests.css) — drop it and
+   let each wrapped segment stand alone with its dot. */
+@media (max-width: 720px) {
+  .ladder--card .ladder__seg::before,
+  .ladder--detail .ladder__seg::before {
+    display: none;
+  }
+  .ladder--detail .ladder__seg {
+    flex: 1 1 auto;
+  }
+}

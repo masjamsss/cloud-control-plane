@@ -1,0 +1,1 @@
+{"service":"advisor","types":{"azurerm_advisor_suppression":{"attrs":[{"n":"name","t":"string","r":1},{"n":"recommendation_id","t":"string","r":1},{"n":"resource_id","t":"string","r":1},{"n":"ttl","t":"string"}],"blocks":[]}}}

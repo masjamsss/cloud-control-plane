@@ -1,0 +1,10 @@
+--- a/environments/prod/dlm.tf
++++ b/environments/prod/dlm.tf
+@@ -12,6 +12,7 @@
+ 
+       tags_to_add = {
+         Environment = "prod"
++        Team        = "ERP-BASIS"
+       }
+     }
+ 

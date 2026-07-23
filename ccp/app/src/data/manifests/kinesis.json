@@ -1,0 +1,180 @@
+{
+  "service": "kinesis",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_kinesis_stream"
+  ],
+  "summary": "Provision a brand-new Kinesis data stream. No curated Kinesis estate exists yet, so this is a first stand-up an engineer reviews before it applies.",
+  "operations": [
+    {
+      "id": "kinesis-stream-create",
+      "service": "kinesis",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Kinesis data stream",
+      "summary": "Request a brand-new Kinesis data stream; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a data stream as a complete specification: capacity mode, retention, and encryption. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_kinesis_stream"
+      },
+      "params": [
+        {
+          "name": "stream_name",
+          "label": "Stream name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._-]{1,128}$"
+          },
+          "help": "Names the stream producers and consumers connect to."
+        },
+        {
+          "name": "stream_mode",
+          "label": "Capacity mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "stream_mode",
+          "path": [
+            "stream_mode_details"
+          ],
+          "group": "capacity",
+          "bounds": {
+            "allowlist": [
+              "ON_DEMAND",
+              "PROVISIONED"
+            ]
+          },
+          "default": "ON_DEMAND",
+          "help": "ON_DEMAND scales automatically and bills per throughput; PROVISIONED uses a fixed shard count below."
+        },
+        {
+          "name": "shard_count",
+          "label": "Shard count",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "shard_count",
+          "group": "capacity",
+          "dependsOn": {
+            "param": "stream_mode",
+            "equals": "PROVISIONED"
+          },
+          "bounds": {
+            "min": 1,
+            "max": 200
+          },
+          "default": 2,
+          "help": "Only applies in PROVISIONED mode; on-demand scales automatically."
+        },
+        {
+          "name": "retention_hours",
+          "label": "Retention (hours)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "retention_period",
+          "group": "capacity",
+          "bounds": {
+            "min": 24,
+            "max": 8760
+          },
+          "default": 24,
+          "help": "How long records stay in the stream, 24 hours to 365 days."
+        },
+        {
+          "name": "encryption_type",
+          "label": "Server-side encryption",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "encryption_type",
+          "group": "security",
+          "bounds": {
+            "allowlist": [
+              "KMS",
+              "NONE"
+            ]
+          },
+          "default": "KMS",
+          "help": "KMS encrypts records at rest. Only turn this off for a legacy, unencrypted stream."
+        },
+        {
+          "name": "kms_key",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key_id",
+          "group": "security",
+          "tier": "advanced",
+          "help": "Only applies when encryption is KMS. Leave blank to use the alias/aws/kinesis AWS-managed key; pick a key only for a customer-managed CMK."
+        },
+        {
+          "name": "resource_name",
+          "label": "Stream name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this stream carries",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this stream."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new kinesis stream",
+        "provision data stream"
+      ],
+      "decisions": [
+        "Enhanced fan-out consumers are an engineer follow-up after creation",
+        "Shard-level metrics beyond the defaults are an engineer decision",
+        "Warm throughput (provisioned capacity floor) is an engineer decision"
+      ]
+    }
+  ]
+}

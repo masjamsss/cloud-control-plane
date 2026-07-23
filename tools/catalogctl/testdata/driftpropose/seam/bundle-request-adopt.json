@@ -1,0 +1,48 @@
+{
+  "id": "REQ-01ARZ3NDEKTSV4RRFFQ69G5FC1",
+  "projectId": "sample",
+  "operationId": "system-drift-adopt",
+  "targetAddress": "aws_instance.sample01",
+  "status": "APPROVED",
+  "approvals": [
+    { "approver": "alice", "approved_at": "2026-07-20T04:00:00Z", "policy_version": "1", "decision": "approve" },
+    { "approver": "bob", "approved_at": "2026-07-20T04:05:00Z", "policy_version": "1", "decision": "approve" }
+  ],
+  "params": {
+    "attrs": [
+      {
+        "address": "aws_instance.sample01",
+        "path": "tags.Owner",
+        "pathSegments": ["tags", "Owner"],
+        "liveJson": "bi-team",
+        "codeJson": "platform"
+      }
+    ],
+    "verdicts": [
+      {
+        "address": "aws_instance.sample01",
+        "type": "aws_instance",
+        "actions": ["update"],
+        "driftEvidence": true,
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          {
+            "path": "tags.Owner",
+            "live": "\"bi-team\"",
+            "code": "\"platform\"",
+            "sensitive": false,
+            "liveJson": "bi-team",
+            "codeJson": "platform",
+            "pathSegments": ["tags", "Owner"]
+          }
+        ]
+      }
+    ],
+    "diff": "--- a/environments/prod/main.tf\n+++ b/environments/prod/main.tf\n@@ -3,7 +3,7 @@\n   instance_type = \"m5.xlarge\"\n \n   tags = {\n-    Owner = \"platform\"\n+    Owner = \"bi-team\"\n     Env   = \"prod\"\n   }\n }\n",
+    "proposalDigest": "933cd98f16e347f49e1cd0e623a24511bbef32987e6e1018dad3dd3e5dfd04c8",
+    "reportVersion": 12
+  }
+}

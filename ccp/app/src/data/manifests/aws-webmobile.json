@@ -1,0 +1,620 @@
+{
+  "service": "aws-webmobile",
+  "scope": "expansion",
+  "resourceTypes": [
+    "aws_amplify_app",
+    "aws_amplify_branch",
+    "aws_devicefarm_device_pool",
+    "aws_devicefarm_instance_profile",
+    "aws_devicefarm_network_profile",
+    "aws_devicefarm_project",
+    "aws_devicefarm_test_grid_project",
+    "aws_location_geofence_collection",
+    "aws_location_map",
+    "aws_location_place_index",
+    "aws_location_route_calculator",
+    "aws_location_tracker",
+    "aws_pinpoint_app"
+  ],
+  "summary": "Tag management across Front-End Web & Mobile AWS resources (auto-generated comprehensive tag surface — 13 resource types).",
+  "operations": [
+    {
+      "id": "aws-tag-amplify-app",
+      "service": "aws-webmobile",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Amplify App tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Amplify App (aws_amplify_app). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_amplify_app",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Amplify App",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_amplify_app/address",
+          "help": "The Amplify App to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-amplify-branch",
+      "service": "aws-webmobile",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Amplify Branch tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Amplify Branch (aws_amplify_branch). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_amplify_branch",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Amplify Branch",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_amplify_branch/address",
+          "help": "The Amplify Branch to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-devicefarm-device-pool",
+      "service": "aws-webmobile",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Devicefarm Device Pool tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Devicefarm Device Pool (aws_devicefarm_device_pool). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_devicefarm_device_pool",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Devicefarm Device Pool",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_devicefarm_device_pool/address",
+          "help": "The Devicefarm Device Pool to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-devicefarm-instance-profile",
+      "service": "aws-webmobile",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Devicefarm Instance Profile tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Devicefarm Instance Profile (aws_devicefarm_instance_profile). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_devicefarm_instance_profile",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Devicefarm Instance Profile",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_devicefarm_instance_profile/address",
+          "help": "The Devicefarm Instance Profile to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-devicefarm-network-profile",
+      "service": "aws-webmobile",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Devicefarm Network Profile tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Devicefarm Network Profile (aws_devicefarm_network_profile). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_devicefarm_network_profile",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Devicefarm Network Profile",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_devicefarm_network_profile/address",
+          "help": "The Devicefarm Network Profile to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-devicefarm-project",
+      "service": "aws-webmobile",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Devicefarm Project tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Devicefarm Project (aws_devicefarm_project). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_devicefarm_project",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Devicefarm Project",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_devicefarm_project/address",
+          "help": "The Devicefarm Project to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-devicefarm-test-grid-project",
+      "service": "aws-webmobile",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Devicefarm Test Grid Project tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Devicefarm Test Grid Project (aws_devicefarm_test_grid_project). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_devicefarm_test_grid_project",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Devicefarm Test Grid Project",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_devicefarm_test_grid_project/address",
+          "help": "The Devicefarm Test Grid Project to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-location-geofence-collection",
+      "service": "aws-webmobile",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Location Geofence Collection tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Location Geofence Collection (aws_location_geofence_collection). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_location_geofence_collection",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Location Geofence Collection",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_location_geofence_collection/address",
+          "help": "The Location Geofence Collection to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-location-map",
+      "service": "aws-webmobile",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Location Map tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Location Map (aws_location_map). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_location_map",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Location Map",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_location_map/address",
+          "help": "The Location Map to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-location-place-index",
+      "service": "aws-webmobile",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Location Place Index tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Location Place Index (aws_location_place_index). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_location_place_index",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Location Place Index",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_location_place_index/address",
+          "help": "The Location Place Index to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-location-route-calculator",
+      "service": "aws-webmobile",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Location Route Calculator tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Location Route Calculator (aws_location_route_calculator). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_location_route_calculator",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Location Route Calculator",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_location_route_calculator/address",
+          "help": "The Location Route Calculator to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-location-tracker",
+      "service": "aws-webmobile",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Location Tracker tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Location Tracker (aws_location_tracker). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_location_tracker",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Location Tracker",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_location_tracker/address",
+          "help": "The Location Tracker to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "aws-tag-pinpoint-app",
+      "service": "aws-webmobile",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Pinpoint App tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Pinpoint App (aws_pinpoint_app). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive AWS tag surface). AWS tag keys are case-sensitive.",
+      "target": {
+        "resourceType": "aws_pinpoint_app",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Pinpoint App",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_pinpoint_app/address",
+          "help": "The Pinpoint App to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    }
+  ]
+}

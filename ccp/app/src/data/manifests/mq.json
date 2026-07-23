@@ -1,0 +1,335 @@
+{
+  "service": "mq",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_mq_broker"
+  ],
+  "summary": "Provision new Amazon MQ brokers \u2014 ActiveMQ or RabbitMQ. Greenfield today (no broker exists yet in this estate) \u2014 the create stands up the broker and its first user; additional users, LDAP auth, and a custom engine configuration are engineer follow-ups.",
+  "operations": [
+    {
+      "id": "mq-broker-create",
+      "service": "mq",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Amazon MQ broker",
+      "summary": "Request a brand-new ActiveMQ or RabbitMQ message broker; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a broker as a complete specification: engine, sizing, network placement, and its first user. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_mq_broker"
+      },
+      "params": [
+        {
+          "name": "broker_name",
+          "label": "Broker name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "broker_name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._-]{1,50}$"
+          },
+          "help": "Names the broker in the Amazon MQ console and the generated draft."
+        },
+        {
+          "name": "engine_type",
+          "label": "Engine",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "engine_type",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "ActiveMQ",
+              "RabbitMQ"
+            ]
+          },
+          "default": "ActiveMQ",
+          "help": "The message broker engine. Determines which deployment modes and instance types are valid."
+        },
+        {
+          "name": "engine_version",
+          "label": "Engine version",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "engine_version",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "Left to the engineer at review, since a hand-picked version can go stale as AWS deprecates old broker engine releases."
+        },
+        {
+          "name": "host_instance_type",
+          "label": "Broker instance type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "host_instance_type",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "mq.t3.micro",
+              "mq.m5.large",
+              "mq.m5.xlarge",
+              "mq.m5.2xlarge",
+              "mq.m5.4xlarge"
+            ]
+          },
+          "default": "mq.t3.micro",
+          "help": "Size class for the broker's processor and memory."
+        },
+        {
+          "name": "deployment_mode",
+          "label": "Deployment mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "deployment_mode",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "SINGLE_INSTANCE",
+              "ACTIVE_STANDBY_MULTI_AZ",
+              "CLUSTER_MULTI_AZ"
+            ]
+          },
+          "default": "SINGLE_INSTANCE",
+          "help": "ACTIVE_STANDBY_MULTI_AZ is ActiveMQ-only; CLUSTER_MULTI_AZ is RabbitMQ-only \u2014 confirmed against the engine at review."
+        },
+        {
+          "name": "storage_type",
+          "label": "Storage type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "storage_type",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "EFS",
+              "EBS"
+            ]
+          },
+          "help": "EFS is only valid for a single-instance ActiveMQ broker; EBS applies to the other deployment modes."
+        },
+        {
+          "name": "publicly_accessible",
+          "label": "Publicly accessible",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "attr": "publicly_accessible",
+          "group": "network",
+          "const": false,
+          "help": "Never assigned. This broker is internal-only; this guardrail is written into the draft so the reviewer sees it."
+        },
+        {
+          "name": "subnet_ids",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_ids",
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "help": "One subnet for SINGLE_INSTANCE, two (different AZs) for a Multi-AZ deployment mode."
+        },
+        {
+          "name": "security_groups",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "security_groups",
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "help": "Who can reach the broker's protocol endpoints."
+        },
+        {
+          "name": "user_username",
+          "label": "First user \u2014 username",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "username",
+          "path": [
+            "user"
+          ],
+          "group": "access",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9_\\-.@]{2,100}$"
+          },
+          "help": "Every broker needs at least one user; more can be added as an engineer follow-up."
+        },
+        {
+          "name": "user_password",
+          "label": "First user \u2014 password",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "password",
+          "path": [
+            "user"
+          ],
+          "group": "access",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "sensitive": true,
+          "help": "Never entered here \u2014 the engineer sets this through the secrets manager during review."
+        },
+        {
+          "name": "user_console_access",
+          "label": "First user \u2014 console access",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "console_access",
+          "path": [
+            "user"
+          ],
+          "group": "access",
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "default": "false",
+          "help": "Grants this user access to the broker's web console."
+        },
+        {
+          "name": "auto_minor_version_upgrade",
+          "label": "Auto minor version upgrade",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "auto_minor_version_upgrade",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "default": "true",
+          "help": "Applies minor engine version upgrades automatically during the maintenance window."
+        },
+        {
+          "name": "apply_immediately",
+          "label": "Apply changes immediately",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "apply_immediately",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "default": "false",
+          "help": "Whether future changes to this broker apply right away instead of during its maintenance window."
+        },
+        {
+          "name": "encryption_kms_key_id",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key_id",
+          "path": [
+            "encryption_options"
+          ],
+          "group": "identity",
+          "help": "Leave blank for an AWS-owned key."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this broker is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this broker."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new mq broker",
+        "provision message broker",
+        "activemq",
+        "rabbitmq"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Additional broker users beyond the one authored here (the user block, a set) are an engineer follow-up.",
+        "LDAP authentication, a custom broker engine configuration (aws_mq_configuration), and cross-region data replication are engineer follow-ups after creation."
+      ]
+    }
+  ]
+}

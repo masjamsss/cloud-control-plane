@@ -1,0 +1,11 @@
+--- a/environments/prod/dlm.tf
++++ b/environments/prod/dlm.tf
+@@ -8,7 +8,7 @@
+ 
+     schedule {
+       schedule_name = "Daily"
+-      copy_tags     = false
++      copy_tags     = true
+ 
+       tags_to_add = {
+         Environment = "prod"

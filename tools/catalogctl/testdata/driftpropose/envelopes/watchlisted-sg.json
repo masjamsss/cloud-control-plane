@@ -1,0 +1,51 @@
+{
+  "schema": "ccp.drift/v1",
+  "projectId": "sample",
+  "environment": "prod",
+  "capturedAt": "2026-07-20T03:17:04Z",
+  "runId": "16234567891",
+  "commit": "1370355bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "cadenceHours": 6,
+  "planExitCode": 2,
+  "report": {
+    "meta": { "format_version": "1.2", "terraform_version": "1.9.0", "provider_tag": "aws-v6.53.0" },
+    "counts": { "security_posture": 1 },
+    "absorbed": [],
+    "invisible_to_plan": "out-of-band CREATED resources — detection is the importer-kit account sweep (resourcegroupstaggingapi), disposition import-and-adopt or delete-in-AWS (human)",
+    "verdicts": [
+      {
+        "address": "aws_security_group.sg1",
+        "type": "aws_security_group",
+        "actions": ["update"],
+        "actionReason": null,
+        "driftEvidence": true,
+        "class": "security_posture",
+        "riskTier": "high",
+        "recommendation": "Watchlisted security surface changed out-of-band. Capture evidence, then default to reverting the change in AWS.",
+        "neverDo": "NEVER silently adopt into code.",
+        "executor": "human (revert in AWS); adopting needs explicit owner sign-off",
+        "forceNewAttrs": [],
+        "securityHits": [
+          { "path": "ingress[0].cidr_blocks", "why": "network reachability — ingress/egress rules, description swaps hiding rule edits (319 SGs in the estate)" }
+        ],
+        "computedUnknown": [],
+        "notes": [],
+        "changedAttrs": [
+          {
+            "path": "ingress[0].cidr_blocks",
+            "live": "[\"0.0.0.0/0\"]",
+            "code": "[\"10.0.0.0/16\"]",
+            "forceNew": "in_place",
+            "forceNewWhy": "chain-OR over the walked dump nodes",
+            "noiseEqual": false,
+            "churn": "",
+            "sensitive": false,
+            "liveJson": ["0.0.0.0/0"],
+            "codeJson": ["10.0.0.0/16"],
+            "pathSegments": ["ingress", 0, "cidr_blocks"]
+          }
+        ]
+      }
+    ]
+  }
+}

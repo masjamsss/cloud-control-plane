@@ -1,0 +1,291 @@
+{
+  "service": "azure-ai",
+  "scope": "expansion",
+  "resourceTypes": [
+    "azurerm_bot_channels_registration",
+    "azurerm_bot_service_azure_bot",
+    "azurerm_bot_web_app",
+    "azurerm_cognitive_account",
+    "azurerm_cognitive_account_project",
+    "azurerm_search_service"
+  ],
+  "summary": "Tag management across AI & Search Azure resources (auto-generated comprehensive tag surface — 6 resource types).",
+  "operations": [
+    {
+      "id": "azure-tag-bot-channels-registration",
+      "service": "azure-ai",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Bot Channels Registration tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Bot Channels Registration (azurerm_bot_channels_registration). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_bot_channels_registration",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Bot Channels Registration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_bot_channels_registration/address",
+          "help": "The Bot Channels Registration to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-bot-service-azure-bot",
+      "service": "azure-ai",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Bot Service Azure Bot tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Bot Service Azure Bot (azurerm_bot_service_azure_bot). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_bot_service_azure_bot",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Bot Service Azure Bot",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_bot_service_azure_bot/address",
+          "help": "The Bot Service Azure Bot to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-bot-web-app",
+      "service": "azure-ai",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Bot Web App tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Bot Web App (azurerm_bot_web_app). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_bot_web_app",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Bot Web App",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_bot_web_app/address",
+          "help": "The Bot Web App to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-cognitive-account",
+      "service": "azure-ai",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Cognitive Account tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Cognitive Account (azurerm_cognitive_account). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_cognitive_account",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Cognitive Account",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_cognitive_account/address",
+          "help": "The Cognitive Account to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-cognitive-account-project",
+      "service": "azure-ai",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Cognitive Account Project tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Cognitive Account Project (azurerm_cognitive_account_project). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_cognitive_account_project",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Cognitive Account Project",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_cognitive_account_project/address",
+          "help": "The Cognitive Account Project to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-search-service",
+      "service": "azure-ai",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Search Service tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Search Service (azurerm_search_service). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_search_service",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Search Service",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_search_service/address",
+          "help": "The Search Service to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    }
+  ]
+}

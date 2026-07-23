@@ -1,0 +1,3124 @@
+{
+  "service": "dlm",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_dlm_lifecycle_policy"
+  ],
+  "summary": "Tune the Data Lifecycle Manager policies that automate EBS snapshot creation and retention for tagged volumes: retention, schedule timing, enable/disable, adding schedules or tags, and retiring a policy.",
+  "operations": [
+    {
+      "id": "dlm-set-retention-count",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change snapshot retention count",
+      "summary": "Set how many automated snapshots are kept per volume before the oldest is deleted. More snapshots means higher storage cost.",
+      "description": "Adjusts how many automated snapshots DLM keeps per volume before rotating out the oldest; raising this increases EBS snapshot storage cost.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "retain_rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "DLM policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "help": "Name of the schedule block within the policy (policies usually have one schedule).",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "new_count",
+          "label": "New retention count",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 1000,
+            "semantic": "number of snapshots retained per volume"
+          },
+          "help": "How many snapshots to keep before the oldest is deleted (AWS allows 1-1000)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "snapshot retention",
+        "keep snapshots"
+      ],
+      "group": "protection-backup",
+      "pinned": 1
+    },
+    {
+      "id": "dlm-set-schedule-time",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Change snapshot schedule time and interval",
+      "summary": "Change when and how often automated snapshots run, for example moving them outside a busy batch-job window.",
+      "description": "Retimes when the automated snapshot window runs and how often, e.g. shifting the nightly snapshot out of the batch-job window or moving from 24h to 12h intervals.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "create_rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "DLM policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "help": "Name of the schedule block within the policy.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "new_interval",
+          "label": "New interval (hours)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              24
+            ]
+          },
+          "help": "How often snapshots are taken; AWS only permits these interval values."
+        },
+        {
+          "name": "new_times",
+          "label": "New start time (UTC, on the hour)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^([01][0-9]|2[0-3]):00Z$",
+            "semantic": "UTC time, minutes must be 00"
+          },
+          "help": "DLM only supports on-the-hour start times, e.g. 03:00Z.",
+          "wrap": "list"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup",
+      "pinned": 2
+    },
+    {
+      "id": "dlm-toggle-policy-state",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable a DLM policy",
+      "summary": "Turn this backup policy on or off. Turning it off immediately stops new automated snapshots until it's re-enabled.",
+      "description": "Switches the policy between ENABLED and DISABLED; disabling immediately stops all future automated snapshots for volumes it covers, so existing snapshots are unaffected but backup coverage gaps until re-enabled.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "DLM policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The lifecycle policy to enable or disable."
+        },
+        {
+          "name": "new_state",
+          "label": "New state",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "help": "DISABLED stops the policy from creating or deleting snapshots until re-enabled."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-add-schedule",
+      "service": "dlm",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a new snapshot schedule to a policy",
+      "summary": "Add a new snapshot schedule to this policy. Applying recreates the whole policy under a new ID, and an engineer reviews it first.",
+      "description": "Adds an additional schedule block to an existing policy, e.g. a weekly long-retention schedule alongside the daily one, without disturbing the current schedule.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details"
+        ],
+        "block": "schedule"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "DLM policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The lifecycle policy to add a schedule to."
+        },
+        {
+          "name": "schedule_name",
+          "label": "New schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{3,60}$"
+          },
+          "help": "Descriptive name for the new schedule, e.g. 'Weekly Long Retention'.",
+          "attr": "name",
+          "role": "key"
+        },
+        {
+          "name": "new_interval",
+          "label": "Interval (hours)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "default": 24,
+          "bounds": {
+            "allowlist": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              24
+            ]
+          },
+          "help": "How often this schedule runs.",
+          "path": [
+            "create_rule"
+          ]
+        },
+        {
+          "name": "interval_unit",
+          "label": "Interval unit",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "help": "DLM interval-style schedules are always specified in hours.",
+          "role": "const",
+          "const": "HOURS",
+          "path": [
+            "create_rule"
+          ]
+        },
+        {
+          "name": "new_times",
+          "label": "Start time (UTC, on the hour)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "default": "03:00",
+          "bounds": {
+            "pattern": "^([01][0-9]|2[0-3]):00$",
+            "semantic": "UTC time, minutes must be 00"
+          },
+          "help": "DLM only supports on-the-hour start times, written as \"HH:00\" with no trailing Z (e.g. \"03:00\").",
+          "attr": "times",
+          "wrap": "list",
+          "path": [
+            "create_rule"
+          ]
+        },
+        {
+          "name": "new_count",
+          "label": "Retention count",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "default": 7,
+          "bounds": {
+            "min": 1,
+            "max": 1000,
+            "semantic": "number of snapshots retained per volume"
+          },
+          "help": "How many snapshots this schedule keeps before rotating out the oldest.",
+          "attr": "count",
+          "path": [
+            "retain_rule"
+          ]
+        },
+        {
+          "name": "copy_tags",
+          "label": "Copy source volume tags",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "default": true,
+          "help": "Whether snapshots inherit tags from the source EBS volume."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "dlm-add-tag",
+      "service": "dlm",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a DLM policy",
+      "summary": "Add a tag to this policy for cost tracking or ownership. Metadata only, it doesn't change snapshot behavior.",
+      "description": "Adds a key/value tag to the policy resource for cost allocation or ownership tracking; does not affect snapshot behaviour.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "DLM policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The lifecycle policy to tag."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9:_-]{0,127}$"
+          },
+          "help": "Tag key, e.g. CostCentre or Environment."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._:/-]{0,256}$"
+          },
+          "help": "Tag value, e.g. prod-app."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "create"
+    },
+    {
+      "id": "dlm-delete-policy",
+      "service": "dlm",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete a DLM lifecycle policy",
+      "summary": "Permanently delete this backup policy; can't be undone. Volumes lose automated snapshots unless replaced. An engineer reviews first.",
+      "description": "Permanently removes the policy so DLM stops managing snapshots for the volumes it covers; existing snapshots already taken are not deleted, but no new automated snapshots or retention rotation will occur, so this must not be done for a volume without a replacement backup arrangement.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "DLM policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The lifecycle policy to delete."
+        },
+        {
+          "name": "confirm_no_replacement",
+          "label": "Confirm no replacement backup policy exists",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "default": false,
+          "help": "Must be confirmed true to proceed; ensures the volumes covered will not be left without automated backups."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "dlm-set-description",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Edit policy description",
+      "summary": "Edit the free-text description on this backup policy. Cosmetic only, no effect on snapshots.",
+      "description": "Update the free-text description of a DLM lifecycle policy. Updates in place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "help": "The DLM lifecycle policy whose description you are editing, chosen from Terraform-managed policies so the text change targets a known policy.",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true
+        },
+        {
+          "name": "description",
+          "label": "Policy description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[0-9A-Za-z _.-]{1,500}$",
+            "maxLength": 500
+          },
+          "help": "Up to 500 chars. DLM allows only [0-9A-Za-z _.-]."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (description)",
+      "group": "tags-naming",
+      "pinned": 3
+    },
+    {
+      "id": "dlm-set-create-interval",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set snapshot create interval",
+      "summary": "Set how many days between automated snapshots, from 1 to 7. Existing snapshots are unaffected.",
+      "description": "Change how often snapshots are created (policy_details.create_interval), in days. Bounded 1-7, updates in place, reversible, no downtime. Does not delete existing snapshots.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "help": "The DLM lifecycle policy whose snapshot creation frequency you are changing, selected from Terraform inventory; existing snapshots are not affected.",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true
+        },
+        {
+          "name": "create_interval",
+          "label": "Create interval (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 7
+          },
+          "help": "Snapshot creation frequency in days. AWS allows 1-7."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (policy_details.create_interval)",
+      "group": "protection-backup",
+      "pinned": 4
+    },
+    {
+      "id": "dlm-set-retain-interval",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set snapshot retain interval",
+      "summary": "Set how many days snapshots are kept, from 2 to 14. Shortening this can delete snapshots older than the new window.",
+      "description": "Change how long snapshots are retained (policy_details.retain_interval), in days. Bounded 2-14, updates in place. Reducing this can prune existing snapshots, so it is guardrailed.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "help": "The DLM lifecycle policy whose snapshot retention you are changing, selected from Terraform-managed policies so this guardrailed change (shortening retention can prune snapshots) applies only to a known policy.",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true
+        },
+        {
+          "name": "retain_interval",
+          "label": "Retain interval (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 2,
+            "max": 14
+          },
+          "help": "Snapshot retention in days. AWS allows 2-14. Lowering this may delete snapshots already past the new window."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.retain_interval)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-resource-types",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target resource types",
+      "summary": "Choose whether this policy backs up volumes, instances, or both. Changes which resources get automated snapshots.",
+      "description": "Change which resource types the policy targets (policy_details.resource_types). Enum allowlist VOLUME/INSTANCE, updates in place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "help": "The DLM lifecycle policy whose target resource types you are changing, picked from Terraform inventory so the retargeting applies to a known policy.",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true
+        },
+        {
+          "name": "resource_types",
+          "label": "Resource types",
+          "type": "list",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "VOLUME",
+              "INSTANCE"
+            ]
+          },
+          "help": "Which resource type this EBS snapshot policy manages."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.resource_types)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-resource-locations",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set target resource locations",
+      "summary": "Choose where the resources this policy covers are located: the main Region, a Local Zone, or an Outpost.",
+      "description": "Change where the policy's target resources live (policy_details.resource_locations). Enum allowlist CLOUD/LOCAL_ZONE/OUTPOST, updates in place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "help": "The DLM lifecycle policy whose target resource locations you are changing, picked from Terraform inventory so the retargeting applies to a known policy.",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true
+        },
+        {
+          "name": "resource_locations",
+          "label": "Resource locations",
+          "type": "list",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "CLOUD",
+              "LOCAL_ZONE",
+              "OUTPOST"
+            ]
+          },
+          "help": "Where the targeted resources are located."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.resource_locations)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-execution-role",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change execution IAM role",
+      "summary": "Change which IAM role this policy uses to create and manage snapshots. A permissions change, so it's guardrailed.",
+      "description": "Point the policy at a different IAM role that DLM assumes to manage snapshots (execution_role_arn). Bounded to existing roles via inventory picker, updates in place, reversible, no downtime. Guardrailed because it is a permissions change.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "help": "The DLM lifecycle policy whose execution role you are re-pointing, chosen from Terraform-managed policies so this permissions change applies only to a known policy.",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true
+        },
+        {
+          "name": "execution_role_arn",
+          "label": "Execution IAM role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "help": "Existing IAM role DLM will assume to create and manage snapshots.",
+          "role": "reference",
+          "refAttr": "arn"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (execution_role_arn)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-remove-tag",
+      "service": "dlm",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag",
+      "summary": "Remove one tag from this policy. Metadata only, and reversible by adding the tag back.",
+      "description": "Remove a single key from the policy's tags map. Updates in place, reversible (re-add the tag), no downtime.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "help": "The DLM lifecycle policy to remove the tag from, selected from Terraform inventory so only a managed policy's metadata changes.",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w .:/=+@-]{1,128}$",
+            "maxLength": 128
+          },
+          "help": "Key of the tag to remove from the policy."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "dlm-dlm-lifecycle-policy-engineer-request",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to DLM Lifecycle Policy",
+      "summary": "Request any other change to this backup policy that isn't covered by a specific form. An engineer authors and reviews the Terraform.",
+      "description": "Catch-all: request any DLM lifecycle policy change not offered as a bounded self-service form. An engineer authors and reviews the Terraform.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The lifecycle policy to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-default-copy-tags",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle default-policy tag copying",
+      "summary": "Turn on or off whether a default policy copies the source's tags onto its snapshots or AMIs. Cosmetic only.",
+      "description": "Set policy_details.copy_tags \u2014 whether a default policy copies tags from the source volume/instance onto the created snapshot or AMI. Cosmetic tag inheritance; doc default false.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "copy_tags",
+          "label": "Copy source tags to snapshots/AMIs",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true copies source-resource tags onto created snapshots/AMIs. Doc default false."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (policy_details.copy_tags)",
+      "group": "tags-naming",
+      "pinned": 5
+    },
+    {
+      "id": "dlm-set-extend-deletion",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set retention extension on source deletion",
+      "summary": "Choose whether snapshots and AMIs stay protected if the source or this policy is deleted. Turning it off removes a safety net.",
+      "description": "Set policy_details.extend_deletion \u2014 whether a default policy extends snapshot/AMI retention when the source volume/instance is deleted or the policy enters error/disabled/deleted state. Turning it off removes a retention safety net; doc default false.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "extend_deletion",
+          "label": "Extend retention on source deletion",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true keeps snapshots/AMIs retained if the source or policy is deleted/disabled."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.extend_deletion)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-default-policy-kind",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set default policy kind (VOLUME/INSTANCE)",
+      "summary": "Set whether this account-wide default policy covers volumes or instances. Applies broadly, so review carefully.",
+      "description": "Set the top-level default_policy argument \u2014 the type of AWS-managed default policy (VOLUME or INSTANCE) that applies account-wide without tag targeting. Broad blast radius.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "default_policy",
+          "label": "Default policy kind",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "VOLUME",
+              "INSTANCE"
+            ]
+          },
+          "help": "Type of default policy: VOLUME or INSTANCE."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_policy)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-default-resource-type",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set default-policy resource type",
+      "summary": "Choose whether this default policy's snapshots target volumes or instances. Changes which resources are covered.",
+      "description": "Set policy_details.resource_type (singular) \u2014 whether a default policy targets VOLUME or INSTANCE resources. Moderate coverage-scope blast radius.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "resource_type",
+          "label": "Default-policy resource type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "VOLUME",
+              "INSTANCE"
+            ]
+          },
+          "help": "Resource type a default policy targets."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.resource_type)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-policy-language",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set policy language (SIMPLIFIED/STANDARD)",
+      "summary": "Switch this policy between a simplified default style and a fully custom one. This can break the current setup.",
+      "description": "Set policy_details.policy_language \u2014 SIMPLIFIED for a default policy, STANDARD for a custom policy. Switching restructures which other arguments apply and can break the live configuration.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "policy_language",
+          "label": "Policy language",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "SIMPLIFIED",
+              "STANDARD"
+            ]
+          },
+          "help": "SIMPLIFIED = default policy, STANDARD = custom policy."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.policy_language)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-policy-type",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set policy type",
+      "summary": "Change what kind of thing this policy manages: EBS snapshots, machine images, or event-triggered actions.",
+      "description": "Set policy_details.policy_type \u2014 EBS_SNAPSHOT_MANAGEMENT, IMAGE_MANAGEMENT, or EVENT_BASED_POLICY. Changes what the policy manages entirely; broad blast radius. Doc default EBS_SNAPSHOT_MANAGEMENT.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "policy_type",
+          "label": "Policy type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "EBS_SNAPSHOT_MANAGEMENT",
+              "IMAGE_MANAGEMENT",
+              "EVENT_BASED_POLICY"
+            ]
+          },
+          "help": "What the policy manages: EBS snapshots, EBS-backed AMIs, or event-based actions."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.policy_type)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-param-exclude-boot-volume",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle root-volume exclusion (CreateSnapshots)",
+      "summary": "Choose whether the root volume is skipped when this policy snapshots a multi-volume instance.",
+      "description": "Set policy_details.parameters.exclude_boot_volume \u2014 exclude the root volume from multi-volume instance snapshots created via CreateSnapshots. Narrow capture-scope toggle; doc default false.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "parameters"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "exclude_boot_volume",
+          "label": "Exclude root volume",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true excludes the root volume from CreateSnapshots-based snapshots. Doc default false."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (policy_details.parameters.exclude_boot_volume)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-param-no-reboot",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle instance reboot on AMI capture",
+      "summary": "Choose whether instances are rebooted when this policy captures an image. Allowing a reboot causes a brief disruption each run.",
+      "description": "Set policy_details.parameters.no_reboot \u2014 true means targeted instances are NOT rebooted when an AMI policy runs; false reboots them (brief instance disruption at run time). Doc default true.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "parameters"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "no_reboot",
+          "label": "Do not reboot instances",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true = instances not rebooted on AMI capture (default). false reboots instances at each policy run."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.parameters.no_reboot)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-exclude-boot-volumes",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle boot-volume exclusion (default policy)",
+      "summary": "Choose whether boot volumes are excluded from this default policy's backup coverage.",
+      "description": "Set policy_details.exclusions.exclude_boot_volumes \u2014 exclude volumes attached as an instance boot volume from a default policy's coverage. Narrow capture-scope toggle; doc default false.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "exclusions"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "exclude_boot_volumes",
+          "label": "Exclude boot volumes",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true excludes instance boot volumes from a default policy. Doc default false."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (policy_details.exclusions.exclude_boot_volumes)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-add-exclusion-tag",
+      "service": "dlm",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a volume/instance exclusion tag",
+      "summary": "Add a tag that excludes matching volumes or instances from this default policy's backups. Can silently change what's covered.",
+      "description": "Add one key/value entry to policy_details.exclusions.exclude_tags \u2014 a default policy excludes resources carrying this tag. Changing exclusions can silently drop or add volumes from backup coverage.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "exclusions"
+        ],
+        "block": "exclude_tags"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "tag_key",
+          "label": "Exclusion tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9:_-]{0,127}$"
+          },
+          "help": "Tag key identifying resources to exclude."
+        },
+        {
+          "name": "tag_value",
+          "label": "Exclusion tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._:/-]{0,256}$"
+          },
+          "help": "Tag value identifying resources to exclude."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.exclusions.exclude_tags)",
+      "group": "create"
+    },
+    {
+      "id": "dlm-add-target-tag",
+      "service": "dlm",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a target tag",
+      "summary": "Add a tag that determines which volumes or instances this policy backs up. Changes what's covered.",
+      "description": "Add one key/value entry to policy_details.target_tags \u2014 resources matching resource_types and tagged with ANY target tag are backed up. Adjusting targeting changes which volumes are covered.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details"
+        ],
+        "block": "target_tags"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "tag_key",
+          "label": "Target tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9:_-]{0,127}$"
+          },
+          "help": "Tag key resources must carry to be targeted."
+        },
+        {
+          "name": "tag_value",
+          "label": "Target tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._:/-]{0,256}$"
+          },
+          "help": "Tag value resources must carry to be targeted."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.target_tags)",
+      "group": "create"
+    },
+    {
+      "id": "dlm-set-action-name",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set event action name",
+      "summary": "Rename the action label on this event-based policy. Cosmetic only, no functional effect.",
+      "description": "Set policy_details.action.name \u2014 the descriptive label for an event-based policy's action. Cosmetic, no functional effect.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "action"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "action_name",
+          "label": "Action name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[0-9A-Za-z _.-]{1,120}$",
+            "maxLength": 120
+          },
+          "help": "Descriptive label for the event action (safe charset).",
+          "attr": "name"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (policy_details.action.name)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-action-copy-encrypted",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle event cross-region copy encryption",
+      "summary": "Turn on encryption for a cross-region snapshot copy made when the source wasn't encrypted. A security change reviewed by an engineer.",
+      "description": "Set policy_details.action.cross_region_copy.encryption_configuration.encrypted \u2014 enable encryption for an unencrypted-source cross-region copy made by an event-based action. Direct security boundary.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "action",
+          "cross_region_copy",
+          "encryption_configuration"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "encrypted",
+          "label": "Encrypt copied snapshot",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true encrypts an unencrypted-source cross-region copy."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (action.cross_region_copy.encryption_configuration.encrypted)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-action-copy-cmk",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set event cross-region copy KMS key",
+      "summary": "Choose the encryption key used for event-triggered cross-region snapshot copies. A security-sensitive change.",
+      "description": "Set policy_details.action.cross_region_copy.encryption_configuration.cmk_arn — the KMS key encrypting event-based cross-region snapshot copies. Encryption-key security boundary.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "action",
+          "cross_region_copy",
+          "encryption_configuration"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "cmk_arn",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": true,
+          "help": "Existing KMS key used to encrypt the copied snapshot.",
+          "role": "reference",
+          "refAttr": "arn"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (action.cross_region_copy.encryption_configuration.cmk_arn)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-action-copy-retention",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Set event cross-region copy retention",
+      "summary": "Set how long event-triggered cross-region snapshot copies are kept. Shortening this permanently deletes copies sooner.",
+      "description": "Set policy_details.action.cross_region_copy.retain_rule interval and interval_unit \u2014 how long event-based cross-region snapshot copies are retained before permanent deletion. Shrinking permanently deletes copies sooner. Max 100 years.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "action",
+          "cross_region_copy",
+          "retain_rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "interval_unit",
+          "label": "Retention unit",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "DAYS",
+              "WEEKS",
+              "MONTHS",
+              "YEARS"
+            ]
+          },
+          "help": "Unit of time for the retention interval."
+        },
+        {
+          "name": "interval",
+          "label": "Retention interval",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 36500,
+            "semantic": "<=100 years: 36500 days / 5200 weeks / 1200 months / 100 years depending on unit"
+          },
+          "help": "Retention amount; effective max is 100 years in the chosen unit."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (action.cross_region_copy.retain_rule.interval)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-event-snapshot-owners",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set event-source trusted snapshot owners",
+      "summary": "Choose which other accounts' shared snapshots can trigger this policy. A trust-boundary change, reviewed by an engineer.",
+      "description": "Set policy_details.event_source.parameters.snapshot_owner \u2014 the list of AWS account IDs whose snapshot-sharing can trigger the event-based policy. Direct trust boundary.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "event_source",
+          "parameters"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "account_ids",
+          "label": "Trusted AWS account IDs",
+          "type": "list",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[0-9]{12}$",
+            "semantic": "each entry is a 12-digit AWS account ID"
+          },
+          "help": "12-digit AWS account IDs permitted to trigger this policy.",
+          "attr": "snapshot_owner"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.event_source.parameters.snapshot_owner)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-create-location",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set snapshot creation location",
+      "summary": "Choose where scheduled snapshots are kept: in the same Region, or on the same Outpost.",
+      "description": "Set policy_details.schedule.create_rule.location \u2014 CLOUD (same Region as source) or OUTPOST_LOCAL (same Outpost). Affects data-residency/durability posture. Doc default CLOUD.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "create_rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit (policies usually have one schedule).",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "location",
+          "label": "Creation location",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "CLOUD",
+              "OUTPOST_LOCAL"
+            ]
+          },
+          "help": "Where snapshots are created."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.schedule.create_rule.location)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-script-handler",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set pre/post script SSM handler",
+      "summary": "Choose the AWS-managed script that runs before or after each snapshot; it executes commands on the instance, so an engineer reviews it.",
+      "description": "Set policy_details.schedule.create_rule.scripts.execution_handler to a documented AWS-managed SSM document \u2014 one of the values offered in the allowlist. Command-execution surface; custom SSM documents are not offered here and route to the engineer catch-all.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "create_rule",
+          "scripts"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "execution_handler",
+          "label": "Script handler (managed SSM document)",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "AWS_VSS_BACKUP",
+              "AWSSystemsManagerSAP-CreateDLMSnapshotForSAPHANA"
+            ]
+          },
+          "help": "AWS-managed handler: VSS backups or application-consistent snapshots."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (scripts.execution_handler)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-script-stages",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set pre/post script stages",
+      "summary": "Choose whether the pre-snapshot script, post-snapshot script, or both run. Skipping one can downgrade snapshots to crash-consistent.",
+      "description": "Set policy_details.schedule.create_rule.scripts.stages \u2014 which script phases DLM runs (PRE, POST, or both). Disabling a stage can downgrade an application-consistent snapshot to crash-consistent. Doc default both.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "create_rule",
+          "scripts"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "stages",
+          "label": "Script stages",
+          "type": "list",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "PRE",
+              "POST"
+            ]
+          },
+          "help": "Which script phases DLM runs on target instances."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (scripts.stages)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-script-failure-fallback",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle crash-consistent fallback on script failure",
+      "summary": "Choose whether a crash-consistent snapshot is still taken if the pre-snapshot script fails. Turning this off risks a failed snapshot.",
+      "description": "Set policy_details.schedule.create_rule.scripts.execute_operation_on_script_failure \u2014 whether DLM falls back to a crash-consistent snapshot if the pre-script fails. Disabling risks a failed/incomplete snapshot. Doc default true.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "create_rule",
+          "scripts"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "execute_operation_on_script_failure",
+          "label": "Fall back to crash-consistent snapshot",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true (default) takes a crash-consistent snapshot if the pre-script fails."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (scripts.execute_operation_on_script_failure)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-script-retry-count",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set script retry count",
+      "summary": "Set how many times a failed pre or post snapshot script is retried, from 0 to 3 attempts.",
+      "description": "Set policy_details.schedule.create_rule.scripts.maximum_retry_count \u2014 number of times DLM retries failed pre/post scripts. Integer 0-3, doc default 0.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "create_rule",
+          "scripts"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "maximum_retry_count",
+          "label": "Maximum retry count",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 3
+          },
+          "help": "Retries for failed scripts; integer 0-3 (doc default 0)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (scripts.maximum_retry_count)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-add-snapshot-tag",
+      "service": "dlm",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a static snapshot/AMI tag",
+      "summary": "Add a fixed tag applied to every snapshot or AMI this schedule creates. Cosmetic only.",
+      "description": "Add one key/value entry to policy_details.schedule.tags_to_add \u2014 extra static tags applied to snapshots/AMIs created by this schedule. Cosmetic.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule"
+        ],
+        "block": "tags_to_add",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9:_-]{0,127}$"
+          },
+          "help": "Tag key applied to created snapshots/AMIs."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._:/-]{0,256}$"
+          },
+          "help": "Tag value applied to created snapshots/AMIs."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (policy_details.schedule.tags_to_add)",
+      "group": "create"
+    },
+    {
+      "id": "dlm-add-variable-tag",
+      "service": "dlm",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a variable snapshot tag",
+      "summary": "Add a tag whose value fills in automatically, such as the instance ID or run timestamp, when the snapshot is created.",
+      "description": "Add one key/value entry to policy_details.schedule.variable_tags \u2014 dynamic tags whose value resolves at execution time. Value must be $(instance-id) or $(timestamp); usable only when resource_types is INSTANCE.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule"
+        ],
+        "block": "variable_tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "tag_key",
+          "label": "Variable tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9:_-]{0,127}$"
+          },
+          "help": "Tag key for the dynamic value."
+        },
+        {
+          "name": "tag_value",
+          "label": "Variable value",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "$(instance-id)",
+              "$(timestamp)"
+            ]
+          },
+          "help": "Only $(instance-id) or $(timestamp) are valid values."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (policy_details.schedule.variable_tags)",
+      "group": "create"
+    },
+    {
+      "id": "dlm-set-schedule-retain-interval",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Set time-based snapshot retention",
+      "summary": "Set how long this schedule's snapshots are kept, by time instead of count. Shortening it permanently deletes older ones sooner.",
+      "description": "Set policy_details.schedule.retain_rule interval and interval_unit \u2014 time-based retention for the schedule's snapshots (alternative to count). Shrinking permanently deletes older snapshots sooner. Max 100 years.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "retain_rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "interval_unit",
+          "label": "Retention unit",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "DAYS",
+              "WEEKS",
+              "MONTHS",
+              "YEARS"
+            ]
+          },
+          "help": "Unit of time for time-based retention."
+        },
+        {
+          "name": "interval",
+          "label": "Retention interval",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 36500,
+            "semantic": "<=100 years: 36500 days / 5200 weeks / 1200 months / 100 years depending on unit"
+          },
+          "help": "Retention amount; effective max is 100 years in the chosen unit."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.schedule.retain_rule.interval)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-deprecate-count",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set AMI deprecation count",
+      "summary": "Set how many of the oldest AMIs get marked deprecated. Deprecation only hides them, it doesn't delete anything.",
+      "description": "Set policy_details.schedule.deprecate_rule.count \u2014 number of oldest AMIs to deprecate. Deprecation hides (does not delete) AMIs. Integer 1-1000.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "deprecate_rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "count",
+          "label": "AMIs to deprecate",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 1000
+          },
+          "help": "Number of oldest AMIs to deprecate; integer 1-1000."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.schedule.deprecate_rule.count)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-deprecate-interval",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Set AMI deprecation interval (days)",
+      "summary": "Set how many days after creation an AMI is marked deprecated. Deprecation only hides it, it doesn't delete anything.",
+      "description": "Set policy_details.schedule.deprecate_rule interval and interval_unit \u2014 time after which AMIs created by this schedule are deprecated. This op sets a day-based interval (1-36500 days = up to 100 years); other units use the engineer catch-all. Deprecation hides, not deletes.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "deprecate_rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "interval_unit",
+          "label": "Deprecation unit",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "DAYS"
+            ]
+          },
+          "help": "Fixed to DAYS so the day count is precisely bounded."
+        },
+        {
+          "name": "interval",
+          "label": "Deprecation interval (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 36500,
+            "semantic": "days; 36500 days = 100 years (doc max)"
+          },
+          "help": "Days after which AMIs are deprecated; 1-36500."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.schedule.deprecate_rule.interval)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-fast-restore-count",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set fast-restore snapshot count",
+      "summary": "Set how many of the newest snapshots get fast restore enabled. More snapshots with this on costs more.",
+      "description": "Set policy_details.schedule.fast_restore_rule.count \u2014 number of snapshots to enable with fast snapshot restore. Cost/performance implication. Integer 1-1000.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "fast_restore_rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "count",
+          "label": "Snapshots with fast restore",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 1000
+          },
+          "help": "Number of snapshots enabled with fast restore; integer 1-1000."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.schedule.fast_restore_rule.count)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-fast-restore-interval",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Set fast-restore duration (days)",
+      "summary": "Set how many days fast restore stays turned on for each snapshot. Longer durations cost more.",
+      "description": "Set policy_details.schedule.fast_restore_rule interval and interval_unit \u2014 how long fast snapshot restore stays enabled on created snapshots. Day-based (1-36500 days); other units use the engineer catch-all. Cost/performance implication.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "fast_restore_rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "interval_unit",
+          "label": "Duration unit",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "DAYS"
+            ]
+          },
+          "help": "Fixed to DAYS so the day count is precisely bounded."
+        },
+        {
+          "name": "interval",
+          "label": "Fast-restore duration (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 36500,
+            "semantic": "days; 36500 days = 100 years (doc max)"
+          },
+          "help": "Days fast restore stays enabled; 1-36500."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.schedule.fast_restore_rule.interval)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-share-target-accounts",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set snapshot sharing target accounts",
+      "summary": "Choose which other AWS accounts this schedule's snapshots are shared with. A data-exposure change reviewed by an engineer.",
+      "description": "Set policy_details.schedule.share_rule.target_accounts \u2014 the list of AWS account IDs the schedule's snapshots are shared with. Direct data-exposure/security boundary.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "share_rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "account_ids",
+          "label": "Share-with AWS account IDs",
+          "type": "list",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[0-9]{12}$",
+            "semantic": "each entry is a 12-digit AWS account ID"
+          },
+          "help": "12-digit AWS account IDs to share snapshots with.",
+          "attr": "target_accounts"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (policy_details.schedule.share_rule.target_accounts)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-archive-tier-count",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set archive-tier snapshot count",
+      "summary": "Set how many archived snapshots are kept per volume in the low-cost archive tier. Lowering this permanently deletes older ones.",
+      "description": "Set policy_details.schedule.archive_rule.archive_retain_rule.retention_archive_tier.count \u2014 max snapshots retained in the EBS Snapshots Archive tier per volume. Lowering permanently deletes older archived snapshots. Integer 1-1000.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "archive_rule",
+          "archive_retain_rule",
+          "retention_archive_tier"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "count",
+          "label": "Archived snapshots per volume",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 1000
+          },
+          "help": "Max snapshots kept in the archive tier per volume; integer 1-1000."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (retention_archive_tier.count)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-archive-tier-interval",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Set archive-tier retention interval",
+      "summary": "Set how long snapshots stay in the low-cost archive tier before permanent deletion. Shortening this deletes archived ones sooner.",
+      "description": "Set policy_details.schedule.archive_rule.archive_retain_rule.retention_archive_tier interval and interval_unit \u2014 how long snapshots stay in the archive tier before permanent deletion. Shrinking permanently deletes archived snapshots sooner. Max 100 years.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "archive_rule",
+          "archive_retain_rule",
+          "retention_archive_tier"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "interval_unit",
+          "label": "Archive retention unit",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "DAYS",
+              "WEEKS",
+              "MONTHS",
+              "YEARS"
+            ]
+          },
+          "help": "Unit of time for archive-tier retention."
+        },
+        {
+          "name": "interval",
+          "label": "Archive retention interval",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 36500,
+            "semantic": "<=100 years: 36500 days / 5200 weeks / 1200 months / 100 years depending on unit"
+          },
+          "help": "Archive-tier retention amount; effective max is 100 years in the chosen unit."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (retention_archive_tier.interval)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-crr-encrypted",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle cross-region copy encryption",
+      "summary": "Turn on encryption for a cross-region snapshot copy when the source wasn't encrypted. A security change reviewed by an engineer.",
+      "description": "Set policy_details.schedule.cross_region_copy_rule.encrypted \u2014 enable encryption for an unencrypted-source cross-region copy. Security boundary. When the schedule has multiple cross-region copy rules the engineer targets the correct one.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "cross_region_copy_rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "encrypted",
+          "label": "Encrypt cross-region copy",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true encrypts an unencrypted-source cross-region copy."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (cross_region_copy_rule.encrypted)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-crr-cmk",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set cross-region copy KMS key",
+      "summary": "Choose the encryption key used for cross-region snapshot copies. A security-sensitive change handled by an engineer.",
+      "description": "Set policy_details.schedule.cross_region_copy_rule.cmk_arn — the KMS key encrypting cross-region snapshot copies. Encryption-key security boundary. When the schedule has multiple cross-region copy rules the engineer targets the correct one.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "cross_region_copy_rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "cmk_arn",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": true,
+          "help": "Existing KMS key used to encrypt cross-region copies.",
+          "role": "reference",
+          "refAttr": "arn"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (cross_region_copy_rule.cmk_arn)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-set-crr-retention",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Set cross-region copy retention",
+      "summary": "Set how long cross-region snapshot copies are kept. Shortening this permanently deletes copies sooner, and can't be undone.",
+      "description": "Set policy_details.schedule.cross_region_copy_rule.retain_rule interval and interval_unit \u2014 how long cross-region snapshot copies are retained before permanent deletion. Shrinking permanently deletes copies sooner. Max 100 years.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule",
+          "cross_region_copy_rule",
+          "retain_rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Lifecycle policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dlm_lifecycle_policy/address",
+          "required": true,
+          "help": "The DLM lifecycle policy to modify."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Daily Snapshots",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,120}$"
+          },
+          "help": "Name of the schedule block to edit.",
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "interval_unit",
+          "label": "Retention unit",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "DAYS",
+              "WEEKS",
+              "MONTHS",
+              "YEARS"
+            ]
+          },
+          "help": "Unit of time for the retention interval."
+        },
+        {
+          "name": "interval",
+          "label": "Retention interval",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 36500,
+            "semantic": "<=100 years: 36500 days / 5200 weeks / 1200 months / 100 years depending on unit"
+          },
+          "help": "Retention amount; effective max is 100 years in the chosen unit."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (cross_region_copy_rule.retain_rule.interval)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dlm-create-policy",
+      "service": "dlm",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new DLM lifecycle policy",
+      "summary": "Request a brand-new EBS snapshot policy; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new Data Lifecycle Manager policy as a complete specification: which volumes it targets, its snapshot schedule, and retention. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy"
+      },
+      "params": [
+        {
+          "name": "policy_name",
+          "label": "Policy name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,50}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the policy in the generated draft."
+        },
+        {
+          "name": "description",
+          "label": "Policy description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "description",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[0-9A-Za-z _.-]{1,500}$",
+            "maxLength": 500
+          },
+          "help": "Up to 500 chars. DLM allows only [0-9A-Za-z _.-]."
+        },
+        {
+          "name": "execution_role",
+          "label": "Execution IAM role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "execution_role_arn",
+          "group": "identity",
+          "help": "Existing IAM role DLM will assume to create and manage snapshots."
+        },
+        {
+          "name": "state",
+          "label": "Initial state",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "state",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "default": "ENABLED",
+          "help": "DISABLED stops the policy from creating or deleting snapshots until it is turned on."
+        },
+        {
+          "name": "resource_types",
+          "label": "Target resource type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "resource_types",
+          "path": [
+            "policy_details"
+          ],
+          "group": "targeting",
+          "wrap": "list",
+          "bounds": {
+            "allowlist": [
+              "VOLUME",
+              "INSTANCE"
+            ]
+          },
+          "default": "VOLUME",
+          "help": "Which resource type this EBS snapshot policy manages."
+        },
+        {
+          "name": "target_tags_note",
+          "label": "Target tags",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "target_tags",
+          "path": [
+            "policy_details"
+          ],
+          "group": "targeting",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "Which existing tag key/value on the estate's volumes this policy should match — an engineer fills this in from the estate's tagging convention."
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "name",
+          "path": [
+            "policy_details",
+            "schedule"
+          ],
+          "group": "schedule",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{3,60}$"
+          },
+          "default": "Daily Snapshots",
+          "help": "Policies hold schedules; start with one."
+        },
+        {
+          "name": "new_interval",
+          "label": "Interval (hours)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "attr": "interval",
+          "path": [
+            "policy_details",
+            "schedule",
+            "create_rule"
+          ],
+          "group": "schedule",
+          "bounds": {
+            "allowlist": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              24
+            ]
+          },
+          "default": 24,
+          "help": "How often this schedule runs."
+        },
+        {
+          "name": "interval_unit",
+          "label": "Interval unit",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "HOURS",
+          "attr": "interval_unit",
+          "path": [
+            "policy_details",
+            "schedule",
+            "create_rule"
+          ],
+          "group": "schedule",
+          "help": "DLM interval-style schedules are always specified in hours — written into the draft, never asked."
+        },
+        {
+          "name": "new_times",
+          "label": "Start time (UTC, on the hour)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "times",
+          "wrap": "list",
+          "path": [
+            "policy_details",
+            "schedule",
+            "create_rule"
+          ],
+          "group": "schedule",
+          "bounds": {
+            "pattern": "^([01][0-9]|2[0-3]):00$",
+            "semantic": "UTC time, minutes must be 00"
+          },
+          "default": "03:00",
+          "help": "DLM only supports on-the-hour start times, written as \"HH:00\" with no trailing Z (e.g. \"03:00\")."
+        },
+        {
+          "name": "retention_count",
+          "label": "Retention count",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "count",
+          "path": [
+            "policy_details",
+            "schedule",
+            "retain_rule"
+          ],
+          "group": "schedule",
+          "bounds": {
+            "min": 1,
+            "max": 1000,
+            "semantic": "number of snapshots retained per volume"
+          },
+          "default": 7,
+          "help": "How many snapshots to keep before the oldest is deleted."
+        },
+        {
+          "name": "copy_tags",
+          "label": "Copy source volume tags",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "attr": "copy_tags",
+          "path": [
+            "policy_details",
+            "schedule"
+          ],
+          "group": "schedule",
+          "default": true,
+          "help": "Whether snapshots inherit tags from the source EBS volume."
+        },
+        {
+          "name": "resource_name",
+          "label": "Policy name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this policy protects",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this policy."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new dlm policy",
+        "provision backup policy",
+        "new snapshot policy",
+        "set up automated snapshots"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "The attribute block(s) declaring the target-tag key/value pair are an engineer decision, matched to the estate's existing tagging convention",
+        "Image-management and event-based policy types are an engineer decision — this form covers the common EBS-snapshot-management case",
+        "Cross-region copy, exclusions, and a second schedule are engineer follow-ups after creation"
+      ]
+    }
+  ]
+}

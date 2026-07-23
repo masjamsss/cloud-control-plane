@@ -1,0 +1,11 @@
+{
+  "DBInstances": [
+    {
+      "DBInstanceIdentifier": "appdb-postgres",
+      "Engine": "postgres",
+      "EngineVersion": "16.4",
+      "DBInstanceClass": "db.t3.medium",
+      "MultiAZ": false
+    }
+  ]
+}

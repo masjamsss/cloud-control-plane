@@ -1,0 +1,65 @@
+{
+  "service": "vpn",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_vpn_connection"
+  ],
+  "summary": "VPN tunnel PSK rotation via 0013b M0/M1 dynamic ATTR resolution (discriminator segments).",
+  "operations": [
+    {
+      "id": "vpn-rotate-tunnel-psk",
+      "service": "vpn",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Rotate a VPN tunnel pre-shared key",
+      "description": "Write a new pre-shared key to the tunnel selected by tunnel_number. The attribute name (tunnel1_preshared_key / tunnel2_preshared_key) is resolved from the tunnel_number discriminator's segments map — the request value is never emitted as a name.",
+      "target": {
+        "resourceType": "aws_vpn_connection"
+      },
+      "params": [
+        {
+          "name": "connection",
+          "label": "VPN connection",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "tunnel_number",
+          "label": "Tunnel",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "role": "discriminator",
+          "bounds": {
+            "allowlist": [
+              1,
+              2
+            ]
+          },
+          "segments": {
+            "1": "tunnel1_preshared_key",
+            "2": "tunnel2_preshared_key"
+          }
+        },
+        {
+          "name": "preshared_key",
+          "label": "New pre-shared key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "{param:tunnel_number}",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._]{8,64}$"
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "terraformCapability": "~ rotate-tunnel-psk"
+    }
+  ]
+}

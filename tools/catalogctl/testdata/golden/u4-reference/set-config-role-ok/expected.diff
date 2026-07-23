@@ -1,0 +1,10 @@
+--- a/environments/prod/main.tf
++++ b/environments/prod/main.tf
+@@ -3,5 +3,6 @@
+ }
+ 
+ resource "aws_config_configuration_recorder" "main" {
+-  name = "default"
++  name     = "default"
++  role_arn = aws_iam_role.application_migration.arn
+ }

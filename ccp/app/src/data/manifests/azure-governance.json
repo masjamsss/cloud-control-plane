@@ -1,0 +1,860 @@
+{
+  "service": "azure-governance",
+  "scope": "expansion",
+  "resourceTypes": [
+    "azurerm_management_group",
+    "azurerm_management_group_subscription_association",
+    "azurerm_management_group_policy_assignment",
+    "azurerm_management_group_policy_remediation",
+    "azurerm_policy_definition",
+    "azurerm_policy_set_definition",
+    "azurerm_subscription_policy_assignment",
+    "azurerm_resource_group_policy_assignment",
+    "azurerm_role_assignment",
+    "azurerm_role_definition",
+    "azurerm_management_lock",
+    "azurerm_monitor_diagnostic_setting"
+  ],
+  "summary": "Provision Azure Cloud Adoption Framework platform-governance resources through structured, engineer-gated create forms — management groups, custom role and policy definitions, role assignments, subscription and management-group policy assignments, resource locks, and diagnostic settings. Each form bounds the privilege and blast-radius fields to least-privilege choices or an engineer-decides sentinel, drafts the Terraform, and hands an engineer a review checklist. These decide who can do what, what is allowed, and what is protected, so none is ever blind self-service.",
+  "operations": [
+    {
+      "id": "azure-governance-add-role-assignment",
+      "service": "azure-governance",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a role assignment",
+      "summary": "Grant a least-privilege built-in role to a principal at a resource-group scope. An engineer reviews the drafted grant first.",
+      "consoleLabel": "Access control (IAM)",
+      "description": "Create an azurerm_role_assignment granting a built-in role to a user, group, service principal, or managed identity at a resource-group scope. The role is chosen from a least-privilege, read-only allowlist; Owner, Contributor, and User Access Administrator are never offered here, and a subscription- or management-group-wide scope is an engineer decision. Submitting drafts the resource and routes the complete specification to an engineer to review and finish.",
+      "target": {
+        "resourceType": "azurerm_role_assignment"
+      },
+      "params": [
+        {
+          "name": "assignment_label",
+          "label": "Assignment label",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "A short label for this grant. It names the Terraform block only and is not written to Azure."
+        },
+        {
+          "name": "role_definition_name",
+          "label": "Role",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "role_definition_name",
+          "group": "access",
+          "bounds": {
+            "allowlist": [
+              "Reader",
+              "Reader and Data Access",
+              "Storage Blob Data Reader",
+              "Key Vault Secrets User",
+              "Monitoring Reader",
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The built-in role to grant. Limited to least-privilege, read-only built-ins; Owner, Contributor, and User Access Administrator are never offered here. Leave it as engineer-decides if none fit and the engineer will choose."
+        },
+        {
+          "name": "scope",
+          "label": "Scope (resource group)",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "scope",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "group": "access",
+          "help": "The resource group this grant applies to. A subscription- or management-group-wide scope is broader than self-service allows — the engineer sets that during review."
+        },
+        {
+          "name": "principal_id",
+          "label": "Principal ID",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "principal_id",
+          "group": "access",
+          "bounds": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "help": "The Azure AD object ID (a GUID) of the user, group, service principal, or managed identity receiving the role."
+        },
+        {
+          "name": "principal_type",
+          "label": "Principal type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "principal_type",
+          "group": "access",
+          "bounds": {
+            "allowlist": ["User", "Group", "ServicePrincipal"]
+          },
+          "default": "Group",
+          "help": "What kind of Azure AD object the principal ID refers to."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "audit",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "A short audit note recorded on the assignment: why this grant exists and who approved it."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["role assignment", "grant a role", "rbac grant"],
+      "decisions": [
+        "Over-broad access is a standing escalation path: a role wider than the read-only allowlist, or a scope wider than the chosen resource group, is authored by an engineer and never self-service.",
+        "Confirm the principal ID names the intended identity — a role granted to the wrong object ID is silent over-permission until someone audits it.",
+        "A subscription- or management-group-wide scope multiplies the blast radius across every resource beneath it; widen the scope only with a reviewed reason."
+      ]
+    },
+    {
+      "id": "azure-governance-author-role-definition",
+      "service": "azure-governance",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Author a custom role definition",
+      "summary": "Define a custom role from an explicit action list with no wildcards. An engineer reviews the actions and scopes before it applies.",
+      "consoleLabel": "Roles",
+      "description": "Create an azurerm_role_definition — a custom role whose action list is the ceiling every assignment of it inherits. Allowed actions and not-actions are captured as explicit lists; the management scope the role is created at and the scopes it can be assigned within are engineer decisions. Submitting drafts the resource and routes the complete specification to an engineer to review and finish.",
+      "target": {
+        "resourceType": "azurerm_role_definition"
+      },
+      "params": [
+        {
+          "name": "role_name",
+          "label": "Role name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,64}$"
+          },
+          "help": "The display name of the custom role."
+        },
+        {
+          "name": "scope",
+          "label": "Scope",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "scope",
+          "group": "scope",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The management scope (a subscription or management group) the role is created at. Set by the engineer during review."
+        },
+        {
+          "name": "actions",
+          "label": "Allowed actions",
+          "type": "list",
+          "source": "user_input",
+          "required": true,
+          "attr": "actions",
+          "path": ["permissions"],
+          "group": "permissions",
+          "help": "The control-plane actions this role permits, for example Microsoft.Storage/storageAccounts/read. Each entry is one specific action string — never a wildcard."
+        },
+        {
+          "name": "not_actions",
+          "label": "Denied actions",
+          "type": "list",
+          "source": "user_input",
+          "required": false,
+          "attr": "not_actions",
+          "path": ["permissions"],
+          "group": "permissions",
+          "help": "Actions explicitly subtracted from the allowed set. Optional; leave empty if none."
+        },
+        {
+          "name": "assignable_scopes",
+          "label": "Assignable scopes",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "assignable_scopes",
+          "group": "scope",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The scopes this role can be assigned within — subscriptions or management groups. Set by the engineer during review."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "audit",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "A short audit note describing the role's purpose."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["custom role definition", "define a custom role"],
+      "decisions": [
+        "No wildcard: a custom role's action list is the ceiling every assignment of it inherits, so confirm no action or data-action is `*` (all access) before it is authored.",
+        "Keep the action list minimal — each action added here is granted to every future assignment of the role, everywhere it is assignable.",
+        "The management scope the role is created at and its assignable scopes decide how far it can spread; the engineer sets both to the narrowest that works."
+      ]
+    },
+    {
+      "id": "azure-governance-author-policy-definition",
+      "service": "azure-governance",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Author a policy definition",
+      "summary": "Define a custom policy: its mode, type, and the rule logic an engineer authors. Reviewed before it can be assigned anywhere.",
+      "consoleLabel": "Policy definitions",
+      "description": "Create an azurerm_policy_definition — a custom policy whose rule logic decides what every assignment of it allows, denies, or audits. Name, display name, mode, and policy type are captured here; the policy_rule and parameters JSON are authored by the engineer during review. Submitting drafts the resource and routes the complete specification to an engineer to finish.",
+      "target": {
+        "resourceType": "azurerm_policy_definition"
+      },
+      "params": [
+        {
+          "name": "policy_name",
+          "label": "Policy name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,64}$"
+          },
+          "help": "The internal name of the policy definition."
+        },
+        {
+          "name": "display_name",
+          "label": "Display name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "display_name",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 128
+          },
+          "help": "The human-readable name shown in the Azure portal."
+        },
+        {
+          "name": "policy_type",
+          "label": "Policy type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "policy_type",
+          "group": "settings",
+          "bounds": {
+            "allowlist": ["Custom"]
+          },
+          "default": "Custom",
+          "help": "Always Custom for a portal-authored policy; built-in policies are managed by Azure."
+        },
+        {
+          "name": "mode",
+          "label": "Mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "mode",
+          "group": "settings",
+          "bounds": {
+            "allowlist": ["All", "Indexed"]
+          },
+          "default": "All",
+          "help": "All evaluates every resource type; Indexed evaluates only resources that support tags and location."
+        },
+        {
+          "name": "policy_rule",
+          "label": "Policy rule",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "policy_rule",
+          "group": "rule",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The policy rule logic, a JSON document. Authored by the engineer during review."
+        },
+        {
+          "name": "parameters",
+          "label": "Parameters",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "parameters",
+          "group": "rule",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "Optional policy parameters, a JSON document. Authored by the engineer during review if the rule is parameterized."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "audit",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "A short audit note describing what the policy enforces."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["policy definition", "custom policy definition"],
+      "decisions": [
+        "Engineer-authored rule logic: a policy definition is code that decides what every assignment of it allows or denies, so the policy_rule JSON is written and reviewed by an engineer, never self-service.",
+        "Confirm the mode: All evaluates every resource type, Indexed only those that carry tags and a location — the wrong mode silently skips resources you meant to govern.",
+        "A definition does nothing until it is assigned; the assignment, and its enforce-versus-audit choice, is a separate reviewed step."
+      ]
+    },
+    {
+      "id": "azure-governance-assign-subscription-policy",
+      "service": "azure-governance",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Assign a policy to a subscription",
+      "summary": "Assign a policy or initiative across a subscription, choosing enforce or audit. An engineer reviews the blast radius first.",
+      "consoleLabel": "Policy assignment",
+      "description": "Create an azurerm_subscription_policy_assignment — binding a policy or initiative to a whole subscription. The enforcement mode decides whether it blocks non-compliant changes (Default) or only reports them (DoNotEnforce). The subscription is set at onboarding, so it is an engineer decision here. Submitting drafts the resource and routes the complete specification to an engineer to review and finish.",
+      "target": {
+        "resourceType": "azurerm_subscription_policy_assignment"
+      },
+      "params": [
+        {
+          "name": "assignment_name",
+          "label": "Assignment name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,64}$"
+          },
+          "help": "The name of this policy assignment."
+        },
+        {
+          "name": "policy_definition_id",
+          "label": "Policy definition",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "policy_definition_id",
+          "enumSource": "inventory://azurerm_policy_definition/address",
+          "group": "settings",
+          "help": "The policy or initiative definition to assign."
+        },
+        {
+          "name": "subscription_id",
+          "label": "Subscription",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "subscription_id",
+          "group": "scope",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The subscription this assignment scopes to. Set from the project's onboarding subscription by the engineer during review."
+        },
+        {
+          "name": "enforcement_mode",
+          "label": "Enforcement mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "enforcement_mode",
+          "group": "settings",
+          "bounds": {
+            "allowlist": ["Default", "DoNotEnforce"]
+          },
+          "default": "DoNotEnforce",
+          "help": "Default blocks non-compliant resource changes; DoNotEnforce only audits and reports them. Start with audit and confirm before enforcing."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "audit",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "A short audit note describing the intent of this assignment."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["subscription policy assignment", "assign a policy to a subscription"],
+      "decisions": [
+        "Enforce versus audit is the blocking-versus-advisory decision: Default denies non-compliant changes across the whole subscription, DoNotEnforce only reports them — confirm which you intend.",
+        "A subscription assignment's blast radius is every resource in the subscription; confirm the policy has been tested in audit mode before it enforces.",
+        "The subscription is the one set at onboarding — the engineer confirms the assignment targets the right subscription."
+      ]
+    },
+    {
+      "id": "azure-governance-assign-management-group-policy",
+      "service": "azure-governance",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Assign a policy to a management group",
+      "summary": "Assign a policy or initiative across a management group, choosing enforce or audit. An engineer reviews the inherited blast radius.",
+      "consoleLabel": "Policy assignment",
+      "description": "Create an azurerm_management_group_policy_assignment — binding a policy or initiative to a management group, inherited by every subscription beneath it. The enforcement mode decides whether it blocks non-compliant changes (Default) or only reports them (DoNotEnforce). Submitting drafts the resource and routes the complete specification to an engineer to review and finish.",
+      "target": {
+        "resourceType": "azurerm_management_group_policy_assignment"
+      },
+      "params": [
+        {
+          "name": "assignment_name",
+          "label": "Assignment name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,64}$"
+          },
+          "help": "The name of this policy assignment."
+        },
+        {
+          "name": "policy_definition_id",
+          "label": "Policy definition",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "policy_definition_id",
+          "enumSource": "inventory://azurerm_policy_definition/address",
+          "group": "settings",
+          "help": "The policy or initiative definition to assign."
+        },
+        {
+          "name": "management_group_id",
+          "label": "Management group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "management_group_id",
+          "enumSource": "inventory://azurerm_management_group/address",
+          "group": "scope",
+          "help": "The management group this assignment scopes to; the policy is inherited by every subscription beneath it."
+        },
+        {
+          "name": "enforcement_mode",
+          "label": "Enforcement mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "enforcement_mode",
+          "group": "settings",
+          "bounds": {
+            "allowlist": ["Default", "DoNotEnforce"]
+          },
+          "default": "DoNotEnforce",
+          "help": "Default blocks non-compliant resource changes; DoNotEnforce only audits and reports them. Start with audit and confirm before enforcing."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "audit",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "A short audit note describing the intent of this assignment."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["management group policy assignment", "assign a policy to a management group"],
+      "decisions": [
+        "Enforce versus audit is the blocking-versus-advisory decision, and a management-group assignment is inherited by every subscription in the group — its blast radius is the whole branch of the hierarchy.",
+        "Confirm the policy has run in audit mode across the group before switching it to enforce.",
+        "Placement matters: the higher the management group, the more subscriptions inherit this assignment."
+      ]
+    },
+    {
+      "id": "azure-governance-request-management-group",
+      "service": "azure-governance",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a management group",
+      "summary": "Create a management group and place it in the hierarchy. Its position sets policy and role inheritance, so an engineer reviews it.",
+      "consoleLabel": "Management groups",
+      "description": "Create an azurerm_management_group — a new node in the governance hierarchy. Its display name and management-group ID are captured here; where it sits (its parent) is an engineer decision, because a management group's position sets the policy and role inheritance for every subscription placed beneath it. Submitting drafts the resource and routes the complete specification to an engineer to review and finish.",
+      "target": {
+        "resourceType": "azurerm_management_group"
+      },
+      "params": [
+        {
+          "name": "management_group_id",
+          "label": "Management group ID",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._()-]{1,90}$"
+          },
+          "help": "The immutable ID of the management group — letters, numbers, and . - _ ( ) up to 90 characters. Chosen once; it cannot be changed later."
+        },
+        {
+          "name": "display_name",
+          "label": "Display name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "display_name",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 90
+          },
+          "help": "The human-readable name shown in the Azure portal."
+        },
+        {
+          "name": "parent_management_group_id",
+          "label": "Parent management group",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "parent_management_group_id",
+          "group": "scope",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "Where this group sits in the hierarchy. The engineer sets the parent during review; the position decides what policy and roles it inherits."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["provision a management group", "new management group"],
+      "decisions": [
+        "Placement sets inheritance: a management group's parent decides the policy and role assignments every subscription beneath it inherits, so the engineer places it consciously.",
+        "The management-group ID is immutable — it cannot be renamed after creation, so confirm it before applying.",
+        "This provisions an empty group; placing subscriptions into it is a separate, reviewed change that re-evaluates their inherited policy and roles."
+      ]
+    },
+    {
+      "id": "azure-governance-apply-management-lock",
+      "service": "azure-governance",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Apply a resource lock",
+      "summary": "Lock a scope against deletion or all changes. An engineer confirms the scope and that removing it later is a separate reviewed step.",
+      "consoleLabel": "Locks",
+      "description": "Create an azurerm_management_lock — a CanNotDelete or ReadOnly lock on a resource-group scope. CanNotDelete blocks deletion but allows changes; ReadOnly blocks all changes and deletion. Locking a subscription-wide scope is an engineer decision. Submitting drafts the resource and routes the complete specification to an engineer to review and finish.",
+      "target": {
+        "resourceType": "azurerm_management_lock"
+      },
+      "params": [
+        {
+          "name": "lock_name",
+          "label": "Lock name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,64}$"
+          },
+          "help": "The name of this lock."
+        },
+        {
+          "name": "lock_level",
+          "label": "Lock level",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "lock_level",
+          "group": "settings",
+          "bounds": {
+            "allowlist": ["CanNotDelete", "ReadOnly"]
+          },
+          "default": "CanNotDelete",
+          "help": "CanNotDelete blocks deletion but allows changes; ReadOnly blocks all changes and deletion."
+        },
+        {
+          "name": "scope",
+          "label": "Scope (resource group)",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "scope",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "group": "scope",
+          "help": "The resource group this lock protects. A subscription-wide lock is broader than self-service allows — the engineer sets that during review."
+        },
+        {
+          "name": "notes",
+          "label": "Notes",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "notes",
+          "group": "audit",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "A short audit note: why this lock exists and who to contact before removing it."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["resource lock", "management lock", "cannotdelete lock"],
+      "decisions": [
+        "A lock changes what is protected: ReadOnly blocks every change in scope and CanNotDelete blocks deletions — both can halt legitimate operations if mis-scoped, so the engineer confirms the scope.",
+        "Removing this lock later removes the protection — that removal is its own reviewed change; confirm nothing depends on the lock staying in place.",
+        "A ReadOnly lock can block operations that look like reads but write underneath (some list or connection actions); confirm the workload tolerates it."
+      ]
+    },
+    {
+      "id": "azure-governance-configure-diagnostic-setting",
+      "service": "azure-governance",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Configure a diagnostic setting",
+      "summary": "Route a resource's audit logs and metrics to an approved sink. An engineer confirms the destination is access-controlled.",
+      "consoleLabel": "Diagnostic settings",
+      "description": "Create an azurerm_monitor_diagnostic_setting — routing a resource's platform logs and metrics to an approved destination (a Log Analytics workspace, storage account, or event hub). Diagnostic routing underpins audit and detection, so the destination must be an approved, access-controlled sink. Submitting drafts the resource and routes the complete specification to an engineer to review and finish.",
+      "target": {
+        "resourceType": "azurerm_monitor_diagnostic_setting"
+      },
+      "params": [
+        {
+          "name": "setting_name",
+          "label": "Setting name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "The name of this diagnostic setting."
+        },
+        {
+          "name": "target_resource_id",
+          "label": "Target resource",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "target_resource_id",
+          "enumSource": "inventory://azurerm_key_vault/address",
+          "group": "target",
+          "help": "The resource whose logs and metrics this setting routes. Shown here for key vaults; the engineer can retarget it to any monitored resource during review."
+        },
+        {
+          "name": "log_analytics_workspace_id",
+          "label": "Log Analytics workspace",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "log_analytics_workspace_id",
+          "enumSource": "inventory://azurerm_log_analytics_workspace/address",
+          "group": "destination",
+          "help": "The central Log Analytics workspace to send logs and metrics to. Choose one destination — a workspace, a storage account, or an event hub."
+        },
+        {
+          "name": "storage_account_id",
+          "label": "Storage account",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "storage_account_id",
+          "enumSource": "inventory://azurerm_storage_account/address",
+          "group": "destination",
+          "help": "An alternative destination: a storage account to archive logs to. Leave blank if using a workspace or event hub."
+        },
+        {
+          "name": "eventhub_authorization_rule_id",
+          "label": "Event hub authorization rule",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "eventhub_authorization_rule_id",
+          "enumSource": "inventory://azurerm_eventhub_namespace_authorization_rule/address",
+          "group": "destination",
+          "help": "An alternative destination: an event hub authorization rule to stream logs to. Leave blank if using a workspace or storage account."
+        },
+        {
+          "name": "log_category",
+          "label": "Log category",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "category",
+          "path": ["enabled_log"],
+          "group": "categories",
+          "bounds": {
+            "allowlist": ["AuditEvent", "AzurePolicyEvaluationDetails"]
+          },
+          "default": "AuditEvent",
+          "help": "Which log category to collect. AuditEvent is the key vault audit log; the engineer adjusts categories to match the retargeted resource."
+        },
+        {
+          "name": "metric_category",
+          "label": "Metric category",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "category",
+          "path": ["metric"],
+          "group": "categories",
+          "bounds": {
+            "allowlist": ["AllMetrics"]
+          },
+          "default": "AllMetrics",
+          "help": "Which metric category to collect. AllMetrics captures the resource's platform metrics."
+        },
+        {
+          "name": "metric_enabled",
+          "label": "Metrics enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "enabled",
+          "path": ["metric"],
+          "group": "categories",
+          "help": "Always on when a metric category is collected — written into the draft, never asked."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["diagnostic setting", "route logs to a workspace"],
+      "decisions": [
+        "Audit redirection is a security-sensitive change: sending a resource's logs to the wrong sink can hide activity from detection, so the destination must be an approved, access-controlled workspace, storage account, or event hub.",
+        "At least one destination is required — the engineer confirms which approved sink receives these logs.",
+        "Confirm the log and metric categories match the target resource; a retargeted setting needs categories that resource actually emits."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1864 @@
+{
+  "service": "vpc",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_vpc",
+    "aws_subnet",
+    "aws_route_table",
+    "aws_vpc_endpoint",
+    "aws_network_acl",
+    "aws_default_network_acl",
+    "aws_internet_gateway",
+    "aws_nat_gateway",
+    "aws_eip",
+    "aws_vpc_peering_connection",
+    "aws_vpc_dhcp_options",
+    "aws_flow_log"
+  ],
+  "summary": "Day-2 VPC operations: self-service tagging of subnets and route tables, guardrailed DNS-hostname toggling and bounded S3/DynamoDB gateway endpoints, and engineer-only authoring or removal of network ACL rules. Structural changes — new VPCs or subnets, interface endpoints, route-table associations, full NACL creation — stay engineer-only in the separate legacy VPC/routing catalog.",
+  "operations": [
+    {
+      "id": "vpc-tag-subnet",
+      "service": "vpc",
+      "macd": "Change",
+      "codemodOp": "append_foreach_entry",
+      "title": "Update subnet tags",
+      "summary": "Add or update a tag on this subnet for tracking and cost reporting. No effect on routing or reachability.",
+      "description": "Add or change a tag (e.g. cost-centre, application, environment) on an existing subnet for inventory and cost-allocation accuracy. Tag-only edit with no effect on routing, NACLs, or reachability.",
+      "target": {
+        "resourceType": "aws_subnet",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "subnet",
+          "label": "Subnet",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "help": "The subnet to tag"
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9 _.:/=+@-]{0,127}$"
+          },
+          "help": "AWS tag key, max 128 characters"
+        },
+        {
+          "name": "new_tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{0,256}$"
+          },
+          "help": "New value for the tag, max 256 characters"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "pinned": 1
+    },
+    {
+      "id": "vpc-tag-route-table",
+      "service": "vpc",
+      "macd": "Change",
+      "codemodOp": "append_foreach_entry",
+      "title": "Update route table tags",
+      "summary": "Add or update a tag on this route table for tracking and cost reporting. Routes and subnet links are untouched.",
+      "description": "Add or change a tag on an existing route table for inventory and cost-allocation purposes. Does not touch routes or subnet associations.",
+      "target": {
+        "resourceType": "aws_route_table",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "route_table",
+          "label": "Route table",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route_table/address",
+          "required": true,
+          "help": "The route table to tag"
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9 _.:/=+@-]{0,127}$"
+          },
+          "help": "AWS tag key, max 128 characters"
+        },
+        {
+          "name": "new_tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{0,256}$"
+          },
+          "help": "New value for the tag, max 256 characters"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "pinned": 2
+    },
+    {
+      "id": "vpc-toggle-dns-hostnames",
+      "service": "vpc",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle DNS hostnames for a VPC",
+      "summary": "Turn automatic DNS hostnames on or off for this VPC; turning it off can break hostname-based connections. Reviewed first.",
+      "description": "Enable or disable automatic DNS hostname assignment (enable_dns_hostnames) for a VPC. Disabling can break hostname-based resolution that application and database servers rely on for AD/SSM connectivity, so this needs a peer review before applying.",
+      "target": {
+        "resourceType": "aws_vpc"
+      },
+      "params": [
+        {
+          "name": "vpc",
+          "label": "VPC",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_vpc/address",
+          "required": true,
+          "help": "The VPC to change"
+        },
+        {
+          "name": "new_enable_dns_hostnames",
+          "label": "Enable DNS hostnames",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "help": "true assigns DNS hostnames to instances launched in the VPC; false disables it"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "connectivity-access",
+      "pinned": 1
+    },
+    {
+      "id": "vpc-add-gateway-endpoint",
+      "service": "vpc",
+      "macd": "Add",
+      "codemodOp": "instantiate_module",
+      "title": "Add an S3 or DynamoDB gateway VPC endpoint",
+      "summary": "Add a private connection so S3 or DynamoDB traffic skips the internet and NAT gateway. Reviewed before applying.",
+      "description": "Create a new gateway VPC endpoint for S3 or DynamoDB in an existing VPC and attach it to a route table, keeping that traffic off the NAT gateway/internet path. Limited to the two AWS-managed gateway services; interface endpoints and arbitrary service names remain engineer-authored elsewhere in this estate.",
+      "target": {
+        "resourceType": "aws_vpc_endpoint"
+      },
+      "params": [
+        {
+          "name": "vpc",
+          "label": "VPC",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_vpc/address",
+          "required": true,
+          "help": "VPC the endpoint will be created in"
+        },
+        {
+          "name": "service",
+          "label": "Endpoint service",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "com.amazonaws.ap-southeast-5.s3",
+              "com.amazonaws.ap-southeast-5.dynamodb"
+            ]
+          },
+          "help": "Only S3 and DynamoDB gateway endpoints are self-serviceable"
+        },
+        {
+          "name": "route_table",
+          "label": "Route table to attach",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route_table/address",
+          "required": true,
+          "help": "Existing route table that receives the endpoint's prefix-list route"
+        },
+        {
+          "name": "name_tag",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "",
+          "bounds": {
+            "pattern": "^.{0,128}$"
+          },
+          "help": "Optional Name tag for the new endpoint"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "vpc-add-nacl-rule",
+      "service": "vpc",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a network ACL rule",
+      "summary": "Add a firewall rule to this network ACL; a mistake can open or block traffic for an entire subnet, so an engineer reviews it first.",
+      "description": "Append a new ingress or egress rule (rule number, protocol, action, CIDR, port range) to an existing network ACL. NACL rules are stateless subnet-level firewall entries and rule-number ordering matters; an incorrectly authored rule can open or block an entire subnet's traffic, so this is engineer-authored and reviewed.",
+      "target": {
+        "resourceType": "aws_network_acl",
+        "block": "ingress/egress"
+      },
+      "params": [
+        {
+          "name": "nacl",
+          "label": "Network ACL",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_network_acl/address",
+          "required": true,
+          "help": "The NACL to add a rule to"
+        },
+        {
+          "name": "direction",
+          "label": "Direction",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ingress",
+              "egress"
+            ]
+          },
+          "help": "Whether the rule applies to inbound or outbound traffic"
+        },
+        {
+          "name": "rule_no",
+          "label": "Rule number",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 32766
+          },
+          "help": "Evaluation order; lower numbers are evaluated first and must not collide with an existing rule"
+        },
+        {
+          "name": "protocol",
+          "label": "Protocol",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "tcp",
+              "udp",
+              "icmp",
+              "-1"
+            ]
+          },
+          "help": "-1 means all protocols"
+        },
+        {
+          "name": "rule_action",
+          "label": "Action",
+          "type": "string",
+          "source": "allowlist",
+          "help": "Whether traffic matching this rule is permitted or blocked; AWS network ACL entries support exactly two actions, so the allow/deny allowlist covers the complete valid set.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "allow",
+              "deny"
+            ]
+          }
+        },
+        {
+          "name": "cidr_block",
+          "label": "CIDR block",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$",
+            "semantic": "internal cidr only",
+            "cidrPolicy": "internal-only"
+          },
+          "help": "Source/destination CIDR for the rule; restricted to internal ranges"
+        },
+        {
+          "name": "from_port",
+          "label": "From port",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "default": 0,
+          "bounds": {
+            "min": 0,
+            "max": 65535
+          },
+          "help": "Start of port range (0 for all ports on ICMP/-1)"
+        },
+        {
+          "name": "to_port",
+          "label": "To port",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "default": 0,
+          "bounds": {
+            "min": 0,
+            "max": 65535
+          },
+          "help": "End of port range"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (append block)",
+      "group": "create"
+    },
+    {
+      "id": "vpc-remove-nacl-rule",
+      "service": "vpc",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a network ACL rule",
+      "summary": "Remove a firewall rule from this network ACL; this can immediately open or close traffic for every subnet it protects. Engineer-reviewed.",
+      "description": "Delete an existing ingress or egress rule from a network ACL by rule number. Removing a rule can immediately open or close traffic for every subnet associated with that NACL, so this is engineer-authored and reviewed.",
+      "target": {
+        "resourceType": "aws_network_acl",
+        "block": "ingress/egress"
+      },
+      "params": [
+        {
+          "name": "nacl",
+          "label": "Network ACL",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_network_acl/address",
+          "required": true,
+          "help": "The NACL to remove a rule from"
+        },
+        {
+          "name": "direction",
+          "label": "Direction",
+          "type": "string",
+          "source": "allowlist",
+          "help": "Whether the rule being removed sits in the NACL's inbound (ingress) or outbound (egress) list; NACLs keep the two lists separate, so the rule number alone does not identify a rule without this.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ingress",
+              "egress"
+            ]
+          }
+        },
+        {
+          "name": "rule_no",
+          "label": "Rule number",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 32766
+          },
+          "help": "Rule number to remove"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (remove block)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "vpc-tag-default-network-acl",
+      "service": "vpc",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to the default network ACL",
+      "summary": "Add a tag to the default network ACL. Metadata only - no effect on traffic filtering.",
+      "description": "Add a single key/value entry to the tags map of an aws_default_network_acl. Metadata only — no effect on traffic filtering. Reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_default_network_acl",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "network_acl",
+          "label": "Default network ACL",
+          "type": "string",
+          "source": "inventory",
+          "help": "The default network ACL that receives the tag, chosen from the estate inventory so only a Terraform-managed aws_default_network_acl can be selected; tagging never changes traffic filtering.",
+          "enumSource": "inventory://aws_default_network_acl/address",
+          "required": true
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w+=.:/@ -]{1,128}$"
+          },
+          "help": "1–128 chars: letters, digits, spaces and + - = . _ : / @"
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w+=.:/@ -]{0,256}$"
+          },
+          "help": "0–256 chars: letters, digits, spaces and + - = . _ : / @"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "create"
+    },
+    {
+      "id": "vpc-untag-default-network-acl",
+      "service": "vpc",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag from the default network ACL",
+      "summary": "Remove a tag from the default network ACL. Metadata only - no effect on traffic filtering.",
+      "description": "Remove a key from the tags map of an aws_default_network_acl. Metadata only — no effect on traffic filtering. Reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_default_network_acl",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "network_acl",
+          "label": "Default network ACL",
+          "type": "string",
+          "source": "inventory",
+          "help": "The default network ACL whose tag is removed, chosen from the estate inventory so only a Terraform-managed aws_default_network_acl can be selected; removing a tag never changes traffic filtering.",
+          "enumSource": "inventory://aws_default_network_acl/address",
+          "required": true
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w+=.:/@ -]{1,128}$"
+          },
+          "help": "Exact key of an existing tag entry to remove."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "vpc-associate-subnet-default-network-acl",
+      "service": "vpc",
+      "macd": "Add",
+      "codemodOp": "append_list_entry",
+      "title": "Associate a subnet with the default network ACL",
+      "summary": "Move a subnet under the default network ACL's protection; this changes which firewall filters its traffic. Reviewed first.",
+      "description": "Add one subnet to the subnet_ids list of an aws_default_network_acl so that subnet is filtered by this ACL. Changes which stateless firewall applies to the subnet, so it is approval-gated. Reversible; no resource restart.",
+      "target": {
+        "resourceType": "aws_default_network_acl",
+        "block": "subnet_ids"
+      },
+      "params": [
+        {
+          "name": "network_acl",
+          "label": "Default network ACL",
+          "type": "string",
+          "source": "inventory",
+          "help": "The default network ACL that will start filtering the chosen subnet's traffic, selected from the estate inventory so only a Terraform-managed aws_default_network_acl can be targeted.",
+          "enumSource": "inventory://aws_default_network_acl/address",
+          "required": true
+        },
+        {
+          "name": "subnet",
+          "label": "Subnet to associate",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^subnet-[0-9a-f]{8,17}$"
+          },
+          "help": "Literal subnet ID like subnet-0abc12345def67890, matching how the estate authors these association lists — copy it from the ticket or the subnet's page."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (subnet_ids)",
+      "group": "create"
+    },
+    {
+      "id": "vpc-disassociate-subnet-default-network-acl",
+      "service": "vpc",
+      "macd": "Delete",
+      "codemodOp": "remove_list_entry",
+      "title": "Disassociate a subnet from the default network ACL",
+      "summary": "Move a subnet off the default network ACL's protection; this changes which firewall filters its traffic. Reviewed first.",
+      "description": "Remove one subnet from the subnet_ids list of an aws_default_network_acl. Changes which stateless firewall applies to the subnet, so it is approval-gated. Reversible; no resource restart.",
+      "target": {
+        "resourceType": "aws_default_network_acl",
+        "block": "subnet_ids"
+      },
+      "params": [
+        {
+          "name": "network_acl",
+          "label": "Default network ACL",
+          "type": "string",
+          "source": "inventory",
+          "help": "The default network ACL the subnet is being removed from, selected from the estate inventory so only a Terraform-managed aws_default_network_acl can be targeted.",
+          "enumSource": "inventory://aws_default_network_acl/address",
+          "required": true
+        },
+        {
+          "name": "subnet",
+          "label": "Subnet to disassociate",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^subnet-[0-9a-f]{8,17}$"
+          },
+          "help": "Literal subnet ID like subnet-0abc12345def67890, matching how the estate authors these association lists — copy it from the ticket or the subnet's page."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (subnet_ids)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "vpc-default-network-acl-engineer-request",
+      "service": "vpc",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to default network ACL",
+      "summary": "Request any other change to the default network ACL; an engineer writes and reviews the Terraform before it applies.",
+      "description": "Catch-all for any change to an aws_default_network_acl not offered as a bounded self-service form — e.g. editing ingress/egress rule fields, protocol/port ranges, or ForceNew attributes. An engineer authors and reviews the Terraform.",
+      "target": {
+        "resourceType": "aws_default_network_acl"
+      },
+      "params": [
+        {
+          "name": "network_acl",
+          "label": "Default network ACL",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_default_network_acl/address",
+          "required": true,
+          "help": "The default network ACL to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form — an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "vpc-eip-add-tag",
+      "service": "vpc",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to an Elastic IP",
+      "summary": "Add a tag to this Elastic IP. Metadata only - the address and its association are unaffected.",
+      "description": "Append one key/value entry to the aws_eip tags map. Cosmetic metadata only; fully reversible, no downtime, no replacement.",
+      "target": {
+        "resourceType": "aws_eip",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "eip",
+          "label": "Elastic IP",
+          "type": "string",
+          "source": "inventory",
+          "help": "Elastic IP that receives the new tag, chosen from the estate inventory so only a Terraform-managed aws_eip can be modified; tags are metadata and never change the address or its association.",
+          "enumSource": "inventory://aws_eip/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9 _.:/=+@-]{1,128}$"
+          },
+          "help": "AWS tag key: up to 128 chars from letters, numbers, spaces and _.:/=+-@"
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9 _.:/=+@-]{0,256}$"
+          },
+          "help": "AWS tag value: up to 256 chars from letters, numbers, spaces and _.:/=+-@"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "create"
+    },
+    {
+      "id": "vpc-eip-remove-tag",
+      "service": "vpc",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag from an Elastic IP",
+      "summary": "Remove a tag from this Elastic IP. Metadata only - the address and its association are unaffected.",
+      "description": "Remove one key from the aws_eip tags map by key. Cosmetic metadata only; fully reversible, no downtime, no replacement.",
+      "target": {
+        "resourceType": "aws_eip",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "eip",
+          "label": "Elastic IP",
+          "type": "string",
+          "source": "inventory",
+          "help": "Elastic IP whose tag is removed, chosen from the estate inventory so only a Terraform-managed aws_eip can be modified; removing a tag never changes the address or its association.",
+          "enumSource": "inventory://aws_eip/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9 _.:/=+@-]{1,128}$"
+          },
+          "help": "Exact key of the existing tag entry to drop."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "vpc-eip-associate-instance",
+      "service": "vpc",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Associate Elastic IP with an EC2 instance",
+      "summary": "Point this Elastic IP at a server, giving it a public address; reviewed first since it changes internet exposure.",
+      "description": "Point an allocated Elastic IP at an EC2 instance by setting `instance`. Provider re-associates in place (no replacement). Reversible; assigns a public IP so it changes internet exposure — guardrail/approval required.",
+      "target": {
+        "resourceType": "aws_eip"
+      },
+      "params": [
+        {
+          "name": "eip",
+          "label": "Elastic IP",
+          "type": "string",
+          "source": "inventory",
+          "help": "The already-allocated Elastic IP to attach, chosen from the estate inventory so only a Terraform-managed aws_eip — never an arbitrary public address — can be pointed at an instance.",
+          "enumSource": "inventory://aws_eip/address",
+          "required": true
+        },
+        {
+          "name": "instance",
+          "label": "Target EC2 instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "Instance to receive the Elastic IP. Cannot be set together with network_interface.",
+          "role": "reference",
+          "refAttr": "id"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (instance)",
+      "group": "connectivity-access",
+      "pinned": 1
+    },
+    {
+      "id": "vpc-eip-associate-network-interface",
+      "service": "vpc",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Associate Elastic IP with a network interface",
+      "summary": "Point this Elastic IP at a network interface, giving it a public address; reviewed first since it changes internet exposure.",
+      "description": "Point an allocated Elastic IP at an elastic network interface by setting `network_interface`. Provider re-associates in place (no replacement). Reversible; assigns a public IP so it changes internet exposure — guardrail/approval required.",
+      "target": {
+        "resourceType": "aws_eip"
+      },
+      "params": [
+        {
+          "name": "eip",
+          "label": "Elastic IP",
+          "type": "string",
+          "source": "inventory",
+          "help": "The already-allocated Elastic IP to attach, chosen from the estate inventory so only a Terraform-managed aws_eip — never an arbitrary public address — can be pointed at a network interface.",
+          "enumSource": "inventory://aws_eip/address",
+          "required": true
+        },
+        {
+          "name": "network_interface",
+          "label": "Target network interface",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_network_interface/address",
+          "required": true,
+          "help": "ENI to receive the Elastic IP. Cannot be set together with instance.",
+          "role": "reference",
+          "refAttr": "id"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (network_interface)",
+      "group": "connectivity-access",
+      "pinned": 2
+    },
+    {
+      "id": "vpc-eip-disassociate",
+      "service": "vpc",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Disassociate an Elastic IP",
+      "summary": "Detach this Elastic IP from whatever it's attached to; anything relying on that public address briefly loses reachability. Reviewed first.",
+      "description": "Detach the Elastic IP from whatever it points at by clearing the chosen association attribute. Updates in place (no replacement) and is reversible, but severs public reachability so anything depending on the public IP sees a brief interruption — guardrail/approval required.",
+      "target": {
+        "resourceType": "aws_eip"
+      },
+      "params": [
+        {
+          "name": "eip",
+          "label": "Elastic IP",
+          "type": "string",
+          "source": "inventory",
+          "help": "Elastic IP whose association is being cleared, chosen from the estate inventory so only a Terraform-managed aws_eip can be detached; the address itself stays allocated to the account and can be re-associated later.",
+          "enumSource": "inventory://aws_eip/address",
+          "required": true
+        },
+        {
+          "name": "detach_target",
+          "label": "Association to clear",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "instance",
+              "network_interface"
+            ]
+          },
+          "help": "Which association attribute to null out on this Elastic IP."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "brief",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (instance/network_interface → null)",
+      "group": "connectivity-access",
+      "pinned": 3
+    },
+    {
+      "id": "vpc-eip-engineer-request",
+      "service": "vpc",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to Elastic IP",
+      "summary": "Request any other change to this Elastic IP; an engineer writes and reviews the Terraform before it applies.",
+      "description": "Catch-all for any Elastic IP change not offered as a bounded form — for example allocation-time attributes that force replacement (address, domain, public_ipv4_pool, customer_owned_ipv4_pool, network_border_group, ipam_pool_id) or associate_with_private_ip. An engineer authors and reviews the Terraform.",
+      "target": {
+        "resourceType": "aws_eip"
+      },
+      "params": [
+        {
+          "name": "eip",
+          "label": "Elastic IP",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_eip/address",
+          "required": true,
+          "help": "The Elastic IP to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form — an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "vpc-create-vpc",
+      "service": "vpc",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new VPC",
+      "summary": "Request a brand-new isolated network; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new VPC as a complete specification: its primary IPv4 CIDR block and DNS settings. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review. Subnets, gateways and route tables are separate follow-up steps once the VPC exists.",
+      "target": {
+        "resourceType": "aws_vpc"
+      },
+      "params": [
+        {
+          "name": "vpc_name",
+          "label": "VPC name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the VPC in the generated draft \u2014 a VPC has no name field of its own."
+        },
+        {
+          "name": "cidr_block",
+          "label": "Primary IPv4 CIDR block",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "cidr_block",
+          "group": "network",
+          "bounds": {
+            "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$",
+            "semantic": "internal cidr only \u2014 RFC1918, no public range, no 0.0.0.0/0",
+            "cidrPolicy": "internal-only"
+          },
+          "help": "e.g. 10.3.0.0/16 \u2014 internal ranges only; a public block is never self-service."
+        },
+        {
+          "name": "enable_dns_support",
+          "label": "DNS resolution",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "enable_dns_support",
+          "group": "network",
+          "help": "Always on for a new VPC \u2014 required for private DNS and VPC endpoints, written into the draft, never asked."
+        },
+        {
+          "name": "enable_dns_hostnames",
+          "label": "DNS hostnames",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "enable_dns_hostnames",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Assigns DNS hostnames to instances launched in the VPC. Can be changed later with the existing toggle action."
+        },
+        {
+          "name": "resource_name",
+          "label": "VPC name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this VPC is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this VPC."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new vpc",
+        "provision vpc",
+        "new network",
+        "new isolated network"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Instance tenancy defaults to shared; dedicated tenancy is an engineer decision",
+        "IPv6 CIDR association, IPAM pool sourcing, and network-address-usage metrics are engineer decisions",
+        "Subnets, an internet gateway, NAT gateways and route tables are created as separate follow-up steps \u2014 an empty VPC has no reachability of its own either way"
+      ]
+    },
+    {
+      "id": "vpc-create-subnet",
+      "service": "vpc",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new subnet",
+      "summary": "Request a brand-new subnet inside an existing VPC; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new subnet as a complete specification: its VPC, CIDR block, Availability Zone, and whether it auto-assigns public IPs. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_subnet"
+      },
+      "params": [
+        {
+          "name": "subnet_name",
+          "label": "Subnet name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the subnet in the generated draft \u2014 a subnet has no name field of its own."
+        },
+        {
+          "name": "vpc",
+          "label": "VPC",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_vpc/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc_id",
+          "group": "network",
+          "help": "The VPC this subnet is carved out of."
+        },
+        {
+          "name": "cidr_block",
+          "label": "IPv4 CIDR block",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "cidr_block",
+          "group": "network",
+          "bounds": {
+            "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$",
+            "semantic": "internal cidr only, must sit inside the chosen VPC's CIDR",
+            "cidrPolicy": "internal-only"
+          },
+          "help": "Must be a range inside the VPC's own CIDR block and not overlap an existing subnet."
+        },
+        {
+          "name": "availability_zone",
+          "label": "Availability Zone",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "availability_zone",
+          "group": "network",
+          "bounds": {
+            "pattern": "^[a-z]{2}-[a-z]+-\\d[a-z]$"
+          },
+          "help": "e.g. ap-southeast-5a \u2014 the zone this subnet lives in."
+        },
+        {
+          "name": "map_public_ip_on_launch",
+          "label": "Auto-assign public IPv4",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "map_public_ip_on_launch",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": false,
+          "help": "Off by default (private subnet). On means every instance launched here without an explicit override receives a public IP."
+        },
+        {
+          "name": "resource_name",
+          "label": "Subnet name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this subnet is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this subnet."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new subnet",
+        "provision subnet",
+        "carve out a subnet"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Auto-assign public IPv4 defaults to off; turning it on means this subnet is meant to be internet-facing \u2014 confirm it will have a route to an internet gateway before flipping it, and that this is the intended reachability change",
+        "Route table association is a separate follow-up step (the routing service's associate-a-subnet action) \u2014 an unassociated subnet uses the VPC's main route table",
+        "IPv6 CIDR association, customer-owned IP pools, and outpost placement are engineer decisions"
+      ]
+    },
+    {
+      "id": "vpc-create-internet-gateway",
+      "service": "vpc",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new internet gateway",
+      "summary": "Request a brand-new internet gateway attached to a VPC; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new internet gateway and attach it to an existing VPC. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review. Attaching it is what makes a public route (0.0.0.0/0 via this gateway) possible; it is not reachable until a route table actually points at it.",
+      "target": {
+        "resourceType": "aws_internet_gateway"
+      },
+      "params": [
+        {
+          "name": "igw_name",
+          "label": "Internet gateway name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the gateway in the generated draft \u2014 an internet gateway has no name field of its own."
+        },
+        {
+          "name": "vpc",
+          "label": "VPC to attach",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_vpc/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc_id",
+          "group": "network",
+          "help": "The VPC this gateway attaches to."
+        },
+        {
+          "name": "resource_name",
+          "label": "Internet gateway name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this gateway is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this gateway."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new internet gateway",
+        "provision igw",
+        "attach internet gateway"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Attaching an internet gateway to a VPC is what makes a public route to 0.0.0.0/0 possible for any subnet whose route table points at it \u2014 confirm that reachability change is intended before it is wired into a route table",
+        "Pointing a route table at this gateway is a separate follow-up step (the routing service's add-a-route action) \u2014 attaching alone does not make any subnet reachable"
+      ]
+    },
+    {
+      "id": "vpc-create-nat-gateway",
+      "service": "vpc",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new NAT gateway",
+      "summary": "Request a brand-new NAT gateway in a subnet; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new NAT gateway as a complete specification: its subnet, connectivity type, and (for a public gateway) the Elastic IP it uses. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_nat_gateway"
+      },
+      "params": [
+        {
+          "name": "nat_name",
+          "label": "NAT gateway name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the gateway in the generated draft \u2014 a NAT gateway has no name field of its own."
+        },
+        {
+          "name": "subnet",
+          "label": "Subnet",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_id",
+          "group": "network",
+          "help": "The subnet this NAT gateway lives in \u2014 public for a public gateway, private for a private one."
+        },
+        {
+          "name": "connectivity_type",
+          "label": "Connectivity type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "connectivity_type",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              "public",
+              "private"
+            ]
+          },
+          "default": "public",
+          "help": "public routes outbound traffic to the internet via an Elastic IP; private only routes between VPCs/on-prem."
+        },
+        {
+          "name": "allocation",
+          "label": "Elastic IP",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_eip/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "allocation_id",
+          "group": "network",
+          "dependsOn": {
+            "param": "connectivity_type",
+            "equals": "public"
+          },
+          "help": "Required for a public NAT gateway \u2014 the already-allocated address it advertises. Not used for a private gateway."
+        },
+        {
+          "name": "resource_name",
+          "label": "NAT gateway name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this gateway is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this gateway."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new nat gateway",
+        "provision nat gateway",
+        "outbound internet for private subnet"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Secondary allocation IDs and secondary private IP address ranges are engineer decisions",
+        "Pointing a private subnet's route table at this gateway is a separate follow-up step (the routing service's add-a-route action)"
+      ]
+    },
+    {
+      "id": "vpc-create-eip",
+      "service": "vpc",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Elastic IP",
+      "summary": "Request a brand-new Elastic IP address; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Allocate a new Elastic IP address, unassociated. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review. Associating it with an instance, network interface, or NAT gateway is a separate follow-up step.",
+      "target": {
+        "resourceType": "aws_eip"
+      },
+      "params": [
+        {
+          "name": "eip_name",
+          "label": "Elastic IP name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the address in the generated draft \u2014 an Elastic IP has no name field of its own."
+        },
+        {
+          "name": "domain",
+          "label": "Domain",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "vpc",
+          "attr": "domain",
+          "group": "network",
+          "help": "Always vpc \u2014 EC2-Classic is retired, written into the draft, never asked."
+        },
+        {
+          "name": "resource_name",
+          "label": "Elastic IP name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this address is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this address."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new elastic ip",
+        "allocate eip",
+        "new public ip"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Associating this address with an instance, network interface, or NAT gateway is a separate follow-up step (the existing associate actions)",
+        "A specific public IPv4 pool, customer-owned IP pool, or fixed network border group are engineer decisions"
+      ]
+    },
+    {
+      "id": "vpc-create-endpoint",
+      "service": "vpc",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new VPC endpoint",
+      "summary": "Request a brand-new VPC endpoint (Gateway or Interface); an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new VPC endpoint as a complete specification: its type, target service, and network placement. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review. Broader than the existing self-service S3/DynamoDB gateway-endpoint action: this form also covers Interface endpoints and other AWS-managed gateway services.",
+      "target": {
+        "resourceType": "aws_vpc_endpoint"
+      },
+      "params": [
+        {
+          "name": "endpoint_name",
+          "label": "Endpoint name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the endpoint in the generated draft \u2014 a VPC endpoint has no name field of its own."
+        },
+        {
+          "name": "vpc",
+          "label": "VPC",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_vpc/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc_id",
+          "group": "network",
+          "help": "The VPC this endpoint serves."
+        },
+        {
+          "name": "vpc_endpoint_type",
+          "label": "Endpoint type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "vpc_endpoint_type",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              "Gateway",
+              "Interface"
+            ]
+          },
+          "default": "Interface",
+          "help": "Gateway endpoints (S3, DynamoDB) attach to route tables; Interface endpoints place an ENI in chosen subnets."
+        },
+        {
+          "name": "service_name",
+          "label": "Service name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "service_name",
+          "group": "network",
+          "bounds": {
+            "pattern": "^com\\.amazonaws\\.[a-z0-9-]+\\.[a-z0-9.-]+$"
+          },
+          "help": "The full AWS PrivateLink service name, e.g. com.amazonaws.ap-southeast-5.ssm."
+        },
+        {
+          "name": "route_tables",
+          "label": "Route tables to attach",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route_table/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "route_table_ids",
+          "group": "network",
+          "dependsOn": {
+            "param": "vpc_endpoint_type",
+            "equals": "Gateway"
+          },
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 20
+          },
+          "help": "Required for a Gateway endpoint \u2014 every route table that should receive its prefix-list route (typically every private route table that needs this path)."
+        },
+        {
+          "name": "subnets",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_ids",
+          "group": "network",
+          "dependsOn": {
+            "param": "vpc_endpoint_type",
+            "equals": "Interface"
+          },
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "help": "Required for an Interface endpoint \u2014 one subnet per Availability Zone to place its network interfaces in."
+        },
+        {
+          "name": "private_dns_enabled",
+          "label": "Private DNS",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "private_dns_enabled",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "dependsOn": {
+            "param": "vpc_endpoint_type",
+            "equals": "Interface"
+          },
+          "help": "On resolves the service's public DNS name to the endpoint's private IP inside this VPC \u2014 the common case for Interface endpoints."
+        },
+        {
+          "name": "security_groups",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "security_group_ids",
+          "group": "network",
+          "dependsOn": {
+            "param": "vpc_endpoint_type",
+            "equals": "Interface"
+          },
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "help": "Required for an Interface endpoint \u2014 who can reach its network interface. Pick one to five groups."
+        },
+        {
+          "name": "resource_name",
+          "label": "VPC endpoint name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this endpoint is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this endpoint."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new vpc endpoint",
+        "privatelink",
+        "interface endpoint",
+        "gateway endpoint"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "An Interface endpoint's security groups gate who can reach it; confirm the chosen groups match the intended reachability before this endpoint goes live \u2014 a permissive choice quietly opens a private-network shortcut to the service",
+        "For the S3/DynamoDB-only self-service path, the existing add-a-gateway-endpoint action stays available; use this form for Interface endpoints or other gateway services",
+        "A resource policy restricting who may use the endpoint, and IP address type, are engineer decisions"
+      ]
+    },
+    {
+      "id": "vpc-create-peering-connection",
+      "service": "vpc",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new VPC peering connection",
+      "summary": "Request a brand-new VPC peering connection; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new VPC peering connection between this account's VPC and a peer VPC. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review. A peering connection alone routes nothing; the route table entries on both sides are a required follow-up.",
+      "target": {
+        "resourceType": "aws_vpc_peering_connection"
+      },
+      "params": [
+        {
+          "name": "peering_name",
+          "label": "Peering connection name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the connection in the generated draft \u2014 a peering connection has no name field of its own."
+        },
+        {
+          "name": "vpc",
+          "label": "Requester VPC",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_vpc/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc_id",
+          "group": "network",
+          "help": "This account's VPC that initiates the peering request."
+        },
+        {
+          "name": "peer_vpc_id",
+          "label": "Peer VPC ID",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "peer_vpc_id",
+          "group": "network",
+          "bounds": {
+            "pattern": "^vpc-[0-9a-f]{8,17}$"
+          },
+          "help": "Literal VPC ID of the peer, e.g. vpc-0abc12345def67890 \u2014 copy it from the ticket or the peer account's console; a same-account peer would instead be picked from inventory, so this stays a literal ID for the common cross-account/cross-region case."
+        },
+        {
+          "name": "peer_region",
+          "label": "Peer region",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "peer_region",
+          "group": "network",
+          "bounds": {
+            "pattern": "^[a-z]{2}-[a-z]+-\\d+$"
+          },
+          "help": "Only needed for a cross-region peering; leave blank for a peer VPC in this same region."
+        },
+        {
+          "name": "auto_accept",
+          "label": "Auto-accept",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": false,
+          "attr": "auto_accept",
+          "group": "network",
+          "help": "Never auto-accepted \u2014 a cross-account or cross-region peer must accept explicitly, written into the draft, never asked."
+        },
+        {
+          "name": "resource_name",
+          "label": "Peering connection name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this connection is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this connection."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new vpc peering",
+        "provision peering connection",
+        "peer two vpcs"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Peering two VPCs whose CIDR blocks are not disjoint fails at apply \u2014 confirm the ranges do not overlap before submitting",
+        "Route table entries on BOTH sides pointing at the peering connection are a required follow-up (the routing service's add-a-route action) \u2014 an unrouted peering connection reaches nothing",
+        "DNS resolution across the peering (allow_remote_vpc_dns_resolution on the accepter/requester blocks) is an engineer decision"
+      ]
+    }
+  ]
+}

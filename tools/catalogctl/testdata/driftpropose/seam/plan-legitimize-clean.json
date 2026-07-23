@@ -1,0 +1,13 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_security_group.sg1",
+      "change": {
+        "actions": ["no-op"],
+        "before": { "ingress": [ { "from_port": 443, "to_port": 443, "protocol": "tcp", "cidr_blocks": ["0.0.0.0/0"] } ] },
+        "after": { "ingress": [ { "from_port": 443, "to_port": 443, "protocol": "tcp", "cidr_blocks": ["0.0.0.0/0"] } ] }
+      }
+    }
+  ]
+}

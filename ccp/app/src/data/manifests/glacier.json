@@ -1,0 +1,146 @@
+{
+  "service": "glacier",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_glacier_vault"
+  ],
+  "summary": "Provision new Glacier vaults for long-term archival storage. Greenfield today (no vault exists yet in this estate) \u2014 the create stands up the vault and its optional event notifications; a vault access policy and Vault Lock compliance policy are engineer follow-ups.",
+  "operations": [
+    {
+      "id": "glacier-vault-create",
+      "service": "glacier",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Glacier vault",
+      "summary": "Request a brand-new archival storage vault; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a Glacier vault as a complete specification: name and, optionally, event notifications. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_glacier_vault"
+      },
+      "params": [
+        {
+          "name": "vault_name",
+          "label": "Vault name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9_.-]{1,255}$"
+          },
+          "help": "Names the vault in the Glacier console and the generated draft."
+        },
+        {
+          "name": "access_policy",
+          "label": "Access policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "access_policy",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The vault's IAM access policy JSON is authored and reviewed by an engineer, never typed into this form. Leave blank for no vault-level policy."
+        },
+        {
+          "name": "notification_events",
+          "label": "Notify on",
+          "type": "list",
+          "source": "allowlist",
+          "required": false,
+          "attr": "events",
+          "path": [
+            "notification"
+          ],
+          "group": "notification",
+          "bounds": {
+            "allowlist": [
+              "ArchiveRetrievalCompleted",
+              "InventoryRetrievalCompleted"
+            ]
+          },
+          "help": "Which vault events publish a notification. Leave blank for no notifications."
+        },
+        {
+          "name": "notification_sns_topic",
+          "label": "Notification SNS topic",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sns_topic/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "sns_topic",
+          "path": [
+            "notification"
+          ],
+          "group": "notification",
+          "help": "Required together with the events above \u2014 an engineer reconciles a half-filled notification config at review."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this vault archives",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this vault."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new glacier vault",
+        "provision archive storage",
+        "cold storage vault"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "The vault access policy (IAM JSON) is authored and reviewed by an engineer, never captured from this form.",
+        "Vault Lock (aws_glacier_vault_lock, a one-way compliance policy) is a separate, deliberate engineer follow-up \u2014 never enabled by default."
+      ]
+    }
+  ]
+}

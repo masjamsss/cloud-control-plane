@@ -1,0 +1,1350 @@
+{
+  "service": "azure-network",
+  "scope": "expansion",
+  "resourceTypes": [
+    "azurerm_dns_a_record",
+    "azurerm_dns_aaaa_record",
+    "azurerm_dns_caa_record",
+    "azurerm_dns_cname_record",
+    "azurerm_dns_mx_record",
+    "azurerm_dns_ns_record",
+    "azurerm_dns_ptr_record",
+    "azurerm_dns_srv_record",
+    "azurerm_dns_txt_record",
+    "azurerm_dns_zone",
+    "azurerm_lb",
+    "azurerm_network_connection_monitor",
+    "azurerm_network_function_azure_traffic_collector",
+    "azurerm_network_interface",
+    "azurerm_network_profile",
+    "azurerm_public_ip",
+    "azurerm_subnet",
+    "azurerm_virtual_network"
+  ],
+  "summary": "Operate the network-safe corner of the Azure estate: tag hygiene on virtual networks, public IPs, network interfaces, load balancers, and DNS zones, plus DNS record TTL tuning. Security groups, firewall rules, routes, VPN/ExpressRoute, peerings, and private endpoints are reachability-affecting and are not covered here — an engineer curates those separately.",
+  "operations": [
+    {
+      "id": "azure-network-vnet-update-tags",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update virtual network tags",
+      "summary": "Set or update this virtual network's tags. Only the tags you list change; others are left alone. No effect on addressing or connectivity.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on the virtual network. Non-disruptive, takes effect immediately, and has no effect on the address space, subnets, or anything attached to it.",
+      "target": {
+        "resourceType": "azurerm_virtual_network",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "vnet",
+          "label": "Virtual network",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_virtual_network/address",
+          "help": "The virtual network to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-network-public-ip-update-tags",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update public IP tags",
+      "summary": "Set or update this public IP's tags. Only the tags you list change; others are left alone. No effect on the address or how it's used.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on the public IP address. Non-disruptive, takes effect immediately, and has no effect on the allocated address or what it is attached to.",
+      "target": {
+        "resourceType": "azurerm_public_ip",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "public_ip",
+          "label": "Public IP address",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_public_ip/address",
+          "help": "The public IP address resource to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-network-nic-update-tags",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update network interface tags",
+      "summary": "Set or update this network interface's tags. Only the tags you list change; others are left alone. No effect on IP configuration.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on the network interface. Non-disruptive, takes effect immediately, and has no effect on its IP configuration or the virtual machine it is attached to.",
+      "target": {
+        "resourceType": "azurerm_network_interface",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "network_interface",
+          "label": "Network interface",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_network_interface/address",
+          "help": "The network interface to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-network-lb-update-tags",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update load balancer tags",
+      "summary": "Set or update this load balancer's tags. Only the tags you list change; others are left alone. No effect on traffic or rules.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on the load balancer. Non-disruptive, takes effect immediately, and has no effect on frontend IPs, backend pools, or load-balancing rules.",
+      "target": {
+        "resourceType": "azurerm_lb",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "load_balancer",
+          "label": "Load balancer",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_lb/address",
+          "help": "The load balancer to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-network-dns-zone-update-tags",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update DNS zone tags",
+      "summary": "Set or update this DNS zone's tags. Only the tags you list change; others are left alone. No effect on records or resolution.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on the DNS zone. Non-disruptive, takes effect immediately, and has no effect on the zone's records or name resolution.",
+      "target": {
+        "resourceType": "azurerm_dns_zone",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "dns_zone",
+          "label": "DNS zone",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_dns_zone/address",
+          "help": "The DNS zone to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-network-dns-a-record-update-tags",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update DNS A record tags",
+      "summary": "Set or update this A record's tags. Only the tags you list change; others are left alone. No effect on resolution.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on the DNS A record. Non-disruptive, takes effect immediately, and has no effect on the record's value or resolution.",
+      "target": {
+        "resourceType": "azurerm_dns_a_record",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "A record",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_dns_a_record/address",
+          "help": "The A record to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-network-dns-a-record-set-ttl",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a DNS A record's TTL",
+      "summary": "Change how long resolvers cache this A record. Lowering it first makes a later value change take effect faster.",
+      "consoleLabel": "TTL",
+      "description": "Adjusts how long resolvers cache this A record's answer, in seconds. In-place and reversible; a common pre-cutover step is lowering the TTL ahead of a planned value change so the switch propagates faster.",
+      "target": {
+        "resourceType": "azurerm_dns_a_record",
+        "attr": "ttl"
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "A record",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_dns_a_record/address",
+          "help": "The A record whose TTL will change."
+        },
+        {
+          "name": "ttl",
+          "label": "New TTL (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 2147483647
+          },
+          "help": "Cache lifetime in seconds. 300 (5 minutes) suits a record you may change again soon; 3600 (1 hour) or more suits a stable record."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (ttl)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "azure-network-dns-cname-record-update-tags",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update DNS CNAME record tags",
+      "summary": "Set or update this CNAME record's tags. Only the tags you list change; others are left alone. No effect on resolution.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on the DNS CNAME record. Non-disruptive, takes effect immediately, and has no effect on the record's value or resolution.",
+      "target": {
+        "resourceType": "azurerm_dns_cname_record",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "CNAME record",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_dns_cname_record/address",
+          "help": "The CNAME record to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-network-dns-cname-record-set-ttl",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a DNS CNAME record's TTL",
+      "summary": "Change how long resolvers cache this CNAME record. Lowering it first makes a later value change take effect faster.",
+      "consoleLabel": "TTL",
+      "description": "Adjusts how long resolvers cache this CNAME record's answer, in seconds. In-place and reversible; a common pre-cutover step is lowering the TTL ahead of a planned value change so the switch propagates faster.",
+      "target": {
+        "resourceType": "azurerm_dns_cname_record",
+        "attr": "ttl"
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "CNAME record",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_dns_cname_record/address",
+          "help": "The CNAME record whose TTL will change."
+        },
+        {
+          "name": "ttl",
+          "label": "New TTL (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 2147483647
+          },
+          "help": "Cache lifetime in seconds. 300 (5 minutes) suits a record you may change again soon; 3600 (1 hour) or more suits a stable record."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (ttl)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "azure-tag-dns-aaaa-record",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Dns Aaaa Record tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Dns Aaaa Record (azurerm_dns_aaaa_record). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_dns_aaaa_record",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Dns Aaaa Record",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_dns_aaaa_record/address",
+          "help": "The Dns Aaaa Record to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-dns-caa-record",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Dns Caa Record tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Dns Caa Record (azurerm_dns_caa_record). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_dns_caa_record",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Dns Caa Record",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_dns_caa_record/address",
+          "help": "The Dns Caa Record to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-dns-mx-record",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Dns Mx Record tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Dns Mx Record (azurerm_dns_mx_record). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_dns_mx_record",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Dns Mx Record",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_dns_mx_record/address",
+          "help": "The Dns Mx Record to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-dns-ns-record",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Dns Ns Record tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Dns Ns Record (azurerm_dns_ns_record). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_dns_ns_record",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Dns Ns Record",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_dns_ns_record/address",
+          "help": "The Dns Ns Record to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-dns-ptr-record",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Dns Ptr Record tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Dns Ptr Record (azurerm_dns_ptr_record). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_dns_ptr_record",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Dns Ptr Record",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_dns_ptr_record/address",
+          "help": "The Dns Ptr Record to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-dns-srv-record",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Dns Srv Record tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Dns Srv Record (azurerm_dns_srv_record). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_dns_srv_record",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Dns Srv Record",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_dns_srv_record/address",
+          "help": "The Dns Srv Record to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-dns-txt-record",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Dns Txt Record tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Dns Txt Record (azurerm_dns_txt_record). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_dns_txt_record",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Dns Txt Record",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_dns_txt_record/address",
+          "help": "The Dns Txt Record to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-network-connection-monitor",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Network Connection Monitor tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Network Connection Monitor (azurerm_network_connection_monitor). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_network_connection_monitor",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Network Connection Monitor",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_network_connection_monitor/address",
+          "help": "The Network Connection Monitor to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-network-function-azure-traffic-collector",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Network Function Azure Traffic Collector tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Network Function Azure Traffic Collector (azurerm_network_function_azure_traffic_collector). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_network_function_azure_traffic_collector",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Network Function Azure Traffic Collector",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_network_function_azure_traffic_collector/address",
+          "help": "The Network Function Azure Traffic Collector to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-network-profile",
+      "service": "azure-network",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Network Profile tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Network Profile (azurerm_network_profile). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_network_profile",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Network Profile",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_network_profile/address",
+          "help": "The Network Profile to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-network-vnet-provision",
+      "service": "azure-network",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new virtual network",
+      "summary": "Request a new virtual network with its own address space; an engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Create a virtual network as a complete specification: name, resource group, region and address space. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "azurerm_virtual_network"
+      },
+      "params": [
+        {
+          "name": "vnet_name",
+          "label": "Virtual network name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{1,62}[a-zA-Z0-9_]$"
+          },
+          "help": "2-64 characters; letters, numbers, periods, underscores and hyphens. Names the virtual network in the generated draft."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group this virtual network is created in."
+        },
+        {
+          "name": "address_space",
+          "label": "Address space",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "address_space",
+          "wrap": "list",
+          "group": "network",
+          "bounds": {
+            "semantic": "internal cidr only — RFC1918, no public range, no 0.0.0.0/0",
+            "cidrPolicy": "internal-only"
+          },
+          "help": "e.g. 10.20.0.0/16 — internal only. Additional ranges can be added by an engineer afterward."
+        },
+        {
+          "name": "resource_name",
+          "label": "Virtual network name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this virtual network is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this virtual network."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": ["new virtual network", "new vnet", "provision network"],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Additional address ranges or custom DNS servers beyond the one submitted",
+        "Peering to an existing hub or other virtual networks"
+      ]
+    },
+    {
+      "id": "azure-network-subnet-provision",
+      "service": "azure-network",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new subnet",
+      "summary": "Request a new subnet inside an existing virtual network; an engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Create a subnet as a complete specification: name, parent virtual network and its own address prefix. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "azurerm_subnet"
+      },
+      "params": [
+        {
+          "name": "subnet_name",
+          "label": "Subnet name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{1,62}[a-zA-Z0-9_]$"
+          },
+          "help": "2-64 characters; letters, numbers, periods, underscores and hyphens. Names the subnet in the generated draft."
+        },
+        {
+          "name": "virtual_network",
+          "label": "Virtual network",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_virtual_network/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "virtual_network_name",
+          "group": "identity",
+          "help": "The virtual network this subnet belongs to. Its address space must contain the subnet's own address prefix."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group this subnet is created in — Azure requires this to match the picked virtual network's own resource group."
+        },
+        {
+          "name": "address_prefix",
+          "label": "Address prefix",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "address_prefixes",
+          "wrap": "list",
+          "group": "network",
+          "bounds": {
+            "semantic": "internal cidr only — RFC1918, no public range, no 0.0.0.0/0",
+            "cidrPolicy": "internal-only"
+          },
+          "help": "e.g. 10.20.1.0/24 — internal only, and must fall inside the virtual network's address space."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": ["new subnet", "provision subnet", "network segment"],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Confirm the resource group matches the picked virtual network's own resource group — Azure requires a subnet to live alongside its parent virtual network",
+        "Route table, NAT gateway or service-endpoint attachment happens afterward",
+        "Attaching a network security group to this subnet happens afterward"
+      ]
+    },
+    {
+      "id": "azure-network-public-ip-provision",
+      "service": "azure-network",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new public IP",
+      "summary": "Request a new public IP address; an engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Create a public IP address as a complete specification: name, resource group, region, allocation method and SKU. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "azurerm_public_ip"
+      },
+      "params": [
+        {
+          "name": "public_ip_name",
+          "label": "Public IP name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{1,62}[a-zA-Z0-9_]$"
+          },
+          "help": "2-64 characters; letters, numbers, periods, underscores and hyphens. Names the address in the generated draft."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group this public IP is created in."
+        },
+        {
+          "name": "sku",
+          "label": "SKU",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku",
+          "group": "network",
+          "bounds": {
+            "allowlist": ["Standard", "Basic"]
+          },
+          "default": "Standard",
+          "help": "Standard is the modern, recommended choice and the only SKU compatible with a Standard load balancer; Basic is being retired by Microsoft and stays only for pairing with existing legacy resources."
+        },
+        {
+          "name": "allocation_method",
+          "label": "Allocation method",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "Static",
+          "attr": "allocation_method",
+          "group": "network",
+          "help": "Always static — the address never changes once assigned, and it is the only allocation method a Standard SKU accepts."
+        },
+        {
+          "name": "resource_name",
+          "label": "Public IP name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this public IP is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this public IP address."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": ["new public ip", "new address", "provision public ip"],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Attaching this address to a load balancer, NAT gateway or network interface happens afterward",
+        "A DNS name label, if the address needs a stable hostname"
+      ]
+    },
+    {
+      "id": "azure-network-lb-provision",
+      "service": "azure-network",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new load balancer",
+      "summary": "Request a new public-facing load balancer with its first frontend; an engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Create a load balancer for a new public-facing service, with its first frontend wired to an existing public IP — the same depth the target-group action offers for backends. Submitting routes the complete specification to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "azurerm_lb"
+      },
+      "params": [
+        {
+          "name": "lb_name",
+          "label": "Load balancer name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{1,62}[a-zA-Z0-9_]$"
+          },
+          "help": "2-64 characters; letters, numbers, periods, underscores and hyphens. Names the load balancer in the generated draft."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group this load balancer is created in."
+        },
+        {
+          "name": "sku",
+          "label": "SKU",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku",
+          "group": "identity",
+          "bounds": {
+            "allowlist": ["Standard", "Basic"]
+          },
+          "default": "Standard",
+          "help": "Standard is the modern, recommended choice and requires a Standard SKU public IP; Basic is being retired by Microsoft and stays only for pairing with existing legacy resources."
+        },
+        {
+          "name": "frontend_name",
+          "label": "Frontend name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "name",
+          "path": ["frontend_ip_configuration"],
+          "group": "frontend",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{1,62}[a-zA-Z0-9_]$"
+          },
+          "default": "primary",
+          "help": "Names this frontend inside the load balancer; referenced when wiring up rules afterward."
+        },
+        {
+          "name": "frontend_public_ip",
+          "label": "Frontend public IP",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_public_ip/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "public_ip_address_id",
+          "path": ["frontend_ip_configuration"],
+          "group": "frontend",
+          "help": "The public IP address this load balancer's frontend uses to receive traffic. Its SKU and region must match this load balancer's own."
+        },
+        {
+          "name": "resource_name",
+          "label": "Load balancer name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this load balancer is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this load balancer."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": ["new load balancer", "provision load balancer", "new lb"],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Confirm the picked public IP's SKU and region match this load balancer's own — Azure requires the pairing to align",
+        "Backend pools, health probes and load-balancing rules are wired up afterward",
+        "An internal (private) load balancer is a separate engineer-authored variant"
+      ]
+    }
+  ]
+}

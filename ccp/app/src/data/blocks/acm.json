@@ -1,0 +1,7 @@
+{
+ "aws_acm_certificate.wildcard": {
+  "file": "ccp/app/fixtures-estate/acm.tf",
+  "line": 3,
+  "source": "resource \"aws_acm_certificate\" \"wildcard\" {\n  domain_name       = \"*.example.com\"\n  validation_method = \"DNS\"\n\n  lifecycle {\n    create_before_destroy = true\n  }\n\n  tags = {\n    Name = \"example-com-wildcard\"\n    PIC  = \"user01@example.com\"\n  }\n}"
+ }
+}

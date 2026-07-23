@@ -1,0 +1,1486 @@
+{
+  "service": "azure-compute",
+  "scope": "estate",
+  "resourceTypes": [
+    "azurerm_availability_set",
+    "azurerm_gallery_application",
+    "azurerm_gallery_application_version",
+    "azurerm_image",
+    "azurerm_linux_virtual_machine",
+    "azurerm_linux_virtual_machine_scale_set",
+    "azurerm_managed_disk",
+    "azurerm_windows_virtual_machine",
+    "azurerm_windows_virtual_machine_scale_set"
+  ],
+  "summary": "Azure compute: virtual machines, scale sets, managed disks, and availability sets. Provisioning a new virtual machine or managed disk is engineer-reviewed; tag updates are self-service; resizing a virtual machine is guardrailed and briefly restarts it; scale-set instance count, disk growth, and disk storage-type changes are guardrailed.",
+  "operations": [
+    {
+      "id": "azure-compute-linux-vm-update-tags",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update tags on a Linux virtual machine",
+      "summary": "Set or update this virtual machine's tags. Only the tags you list change; others are left alone. No effect on how it runs.",
+      "description": "Sets or merges cost-allocation and ownership tags on the virtual machine via the `tags` map. Non-disruptive, takes effect immediately, no impact on the running workload.",
+      "target": {
+        "resourceType": "azurerm_linux_virtual_machine",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "virtual_machine",
+          "label": "Virtual machine",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_linux_virtual_machine/address",
+          "help": "The Linux virtual machine to tag, chosen from the estate inventory so only a Terraform-managed host can be targeted."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["tag virtual machine", "retag vm", "vm handover"],
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-compute-windows-vm-update-tags",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update tags on a Windows virtual machine",
+      "summary": "Set or update this virtual machine's tags. Only the tags you list change; others are left alone. No effect on how it runs.",
+      "description": "Sets or merges cost-allocation and ownership tags on the virtual machine via the `tags` map. Non-disruptive, takes effect immediately, no impact on the running workload.",
+      "target": {
+        "resourceType": "azurerm_windows_virtual_machine",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "virtual_machine",
+          "label": "Virtual machine",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_windows_virtual_machine/address",
+          "help": "The Windows virtual machine to tag, chosen from the estate inventory so only a Terraform-managed host can be targeted."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["tag virtual machine", "retag vm", "vm handover"],
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-compute-linux-vm-resize",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Resize a Linux virtual machine",
+      "summary": "Resize this virtual machine to an approved size. Applying deallocates and restarts it, so expect downtime.",
+      "consoleLabel": "Size",
+      "description": "Change the `size` argument — the Azure VM SKU that fixes vCPU and memory — to an allowlisted value. Applied in place; Terraform does not replace the virtual machine, but Azure deallocates and restarts it to move it onto the new size, so the workload is briefly unavailable.",
+      "target": {
+        "attr": "size",
+        "resourceType": "azurerm_linux_virtual_machine"
+      },
+      "params": [
+        {
+          "name": "virtual_machine",
+          "label": "Virtual machine",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_linux_virtual_machine/address",
+          "help": "Select the virtual machine to resize; the picker only lists virtual machines already tracked in inventory, so the change cannot target an unmanaged host."
+        },
+        {
+          "name": "size",
+          "label": "New size",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "Standard_B2s",
+              "Standard_B2ms",
+              "Standard_D2s_v5",
+              "Standard_D4s_v5",
+              "Standard_E2s_v5",
+              "Standard_F2s_v2"
+            ]
+          },
+          "help": "The Azure VM size (SKU) that fixes the host's vCPU and memory; the list is a curated set of common sizes, and applying the change deallocates and restarts the virtual machine."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "deallocate and restart",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (size)",
+      "keywords": [
+        "resize vm",
+        "resize virtual machine",
+        "upsize host",
+        "bigger vm",
+        "more cpu",
+        "more memory"
+      ],
+      "group": "scale-performance",
+      "decisions": [
+        "Applying this resize deallocates and restarts the virtual machine — schedule it for a maintenance window",
+        "Confirm the target size is available in the virtual machine's region and is compatible with its current disk and network configuration before applying"
+      ]
+    },
+    {
+      "id": "azure-compute-windows-vm-resize",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Resize a Windows virtual machine",
+      "summary": "Resize this virtual machine to an approved size. Applying deallocates and restarts it, so expect downtime.",
+      "consoleLabel": "Size",
+      "description": "Change the `size` argument — the Azure VM SKU that fixes vCPU and memory — to an allowlisted value. Applied in place; Terraform does not replace the virtual machine, but Azure deallocates and restarts it to move it onto the new size, so the workload is briefly unavailable.",
+      "target": {
+        "attr": "size",
+        "resourceType": "azurerm_windows_virtual_machine"
+      },
+      "params": [
+        {
+          "name": "virtual_machine",
+          "label": "Virtual machine",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_windows_virtual_machine/address",
+          "help": "Select the virtual machine to resize; the picker only lists virtual machines already tracked in inventory, so the change cannot target an unmanaged host."
+        },
+        {
+          "name": "size",
+          "label": "New size",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "Standard_B2s",
+              "Standard_B2ms",
+              "Standard_D2s_v5",
+              "Standard_D4s_v5",
+              "Standard_E2s_v5",
+              "Standard_F2s_v2"
+            ]
+          },
+          "help": "The Azure VM size (SKU) that fixes the host's vCPU and memory; the list is a curated set of common sizes, and applying the change deallocates and restarts the virtual machine."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "deallocate and restart",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (size)",
+      "keywords": [
+        "resize vm",
+        "resize virtual machine",
+        "upsize host",
+        "bigger vm",
+        "more cpu",
+        "more memory"
+      ],
+      "group": "scale-performance",
+      "decisions": [
+        "Applying this resize deallocates and restarts the virtual machine — schedule it for a maintenance window",
+        "Confirm the target size is available in the virtual machine's region and is compatible with its current disk and network configuration before applying"
+      ]
+    },
+    {
+      "id": "azure-compute-linux-vmss-update-tags",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update tags on a Linux scale set",
+      "summary": "Set or update this scale set's tags. Only the tags you list change; others are left alone. No effect on how it runs.",
+      "description": "Sets or merges cost-allocation and ownership tags on the virtual machine scale set via the `tags` map. Non-disruptive, takes effect immediately, no impact on running instances.",
+      "target": {
+        "resourceType": "azurerm_linux_virtual_machine_scale_set",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "scale_set",
+          "label": "Scale set",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_linux_virtual_machine_scale_set/address",
+          "help": "The Linux scale set to tag, chosen from the estate inventory so only a Terraform-managed scale set can be targeted."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["tag scale set", "retag vmss", "scale set handover"],
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-compute-windows-vmss-update-tags",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update tags on a Windows scale set",
+      "summary": "Set or update this scale set's tags. Only the tags you list change; others are left alone. No effect on how it runs.",
+      "description": "Sets or merges cost-allocation and ownership tags on the virtual machine scale set via the `tags` map. Non-disruptive, takes effect immediately, no impact on running instances.",
+      "target": {
+        "resourceType": "azurerm_windows_virtual_machine_scale_set",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "scale_set",
+          "label": "Scale set",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_windows_virtual_machine_scale_set/address",
+          "help": "The Windows scale set to tag, chosen from the estate inventory so only a Terraform-managed scale set can be targeted."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["tag scale set", "retag vmss", "scale set handover"],
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-compute-linux-vmss-set-instance-count",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set instance count on a Linux scale set",
+      "summary": "Scale this scale set to a specific number of instances. Affects running cost and capacity immediately.",
+      "consoleLabel": "Instance count",
+      "description": "Change the `instances` argument — the number of virtual machine instances Terraform maintains in the scale set. Applied in place with no resource replacement; Azure adds or removes instances to match. Affects cost and capacity immediately, and scaling down terminates the instances Azure selects for removal.",
+      "target": {
+        "attr": "instances",
+        "resourceType": "azurerm_linux_virtual_machine_scale_set"
+      },
+      "params": [
+        {
+          "name": "scale_set",
+          "label": "Scale set",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_linux_virtual_machine_scale_set/address",
+          "help": "Select the Linux scale set to resize; the picker only lists scale sets already tracked in inventory."
+        },
+        {
+          "name": "instances",
+          "label": "Instance count",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 1000
+          },
+          "help": "The number of instances the scale set should run. If an autoscale rule also targets this scale set, that rule's next evaluation can move the count away from what is set here."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (instances)",
+      "keywords": [
+        "scale out",
+        "scale in",
+        "scale set capacity",
+        "instance count",
+        "add instances",
+        "remove instances"
+      ],
+      "group": "scale-performance",
+      "decisions": [
+        "Scaling down chooses which instances Azure terminates — confirm no instance holds irreplaceable local state before applying",
+        "If this scale set is also targeted by an autoscale rule, that rule can move the count away from what is set here on its next evaluation"
+      ]
+    },
+    {
+      "id": "azure-compute-windows-vmss-set-instance-count",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set instance count on a Windows scale set",
+      "summary": "Scale this scale set to a specific number of instances. Affects running cost and capacity immediately.",
+      "consoleLabel": "Instance count",
+      "description": "Change the `instances` argument — the number of virtual machine instances Terraform maintains in the scale set. Applied in place with no resource replacement; Azure adds or removes instances to match. Affects cost and capacity immediately, and scaling down terminates the instances Azure selects for removal.",
+      "target": {
+        "attr": "instances",
+        "resourceType": "azurerm_windows_virtual_machine_scale_set"
+      },
+      "params": [
+        {
+          "name": "scale_set",
+          "label": "Scale set",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_windows_virtual_machine_scale_set/address",
+          "help": "Select the Windows scale set to resize; the picker only lists scale sets already tracked in inventory."
+        },
+        {
+          "name": "instances",
+          "label": "Instance count",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 1000
+          },
+          "help": "The number of instances the scale set should run. If an autoscale rule also targets this scale set, that rule's next evaluation can move the count away from what is set here."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (instances)",
+      "keywords": [
+        "scale out",
+        "scale in",
+        "scale set capacity",
+        "instance count",
+        "add instances",
+        "remove instances"
+      ],
+      "group": "scale-performance",
+      "decisions": [
+        "Scaling down chooses which instances Azure terminates — confirm no instance holds irreplaceable local state before applying",
+        "If this scale set is also targeted by an autoscale rule, that rule can move the count away from what is set here on its next evaluation"
+      ]
+    },
+    {
+      "id": "azure-compute-managed-disk-update-tags",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update tags on a managed disk",
+      "summary": "Set or update this disk's tags. Only the tags you list change; others are left alone. No effect on how it runs.",
+      "description": "Sets or merges cost-allocation and ownership tags on the managed disk via the `tags` map. Non-disruptive, takes effect immediately, no impact on the attached workload.",
+      "target": {
+        "resourceType": "azurerm_managed_disk",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "managed_disk",
+          "label": "Managed disk",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_managed_disk/address",
+          "help": "The managed disk to tag, chosen from the estate inventory so only a Terraform-managed disk can be targeted."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["tag disk", "retag managed disk", "disk handover"],
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-compute-managed-disk-grow",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Grow a managed disk",
+      "summary": "Increase this disk's size. Storage can only grow, never shrink, so this can't be undone.",
+      "consoleLabel": "Size (GiB)",
+      "description": "Increase a managed disk's size via the `disk_size_gb` argument. Grow-only — an Azure managed disk cannot be shrunk, so this is irreversible.",
+      "target": {
+        "attr": "disk_size_gb",
+        "resourceType": "azurerm_managed_disk"
+      },
+      "params": [
+        {
+          "name": "managed_disk",
+          "label": "Managed disk",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_managed_disk/address",
+          "help": "Select the managed disk to enlarge; the picker lists only estate-managed disks from inventory, and the size field separately enforces grow-only since a managed disk can never be shrunk."
+        },
+        {
+          "name": "disk_size_gb",
+          "label": "New size (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 32767,
+            "growOnly": true
+          },
+          "help": "Must exceed the current size in GiB; a managed disk cannot be shrunk."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (disk_size_gb)",
+      "keywords": ["disk full", "extend disk", "grow disk", "increase disk size", "out of space"],
+      "group": "scale-performance",
+      "decisions": [
+        "Some virtual machine generations and disk/performance-tier combinations require the virtual machine to be deallocated before a grow takes effect — confirm the target disk supports online resize before applying"
+      ]
+    },
+    {
+      "id": "azure-compute-managed-disk-storage-account-type",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a managed disk's storage type",
+      "summary": "Change this disk's storage type, e.g. standard HDD to premium SSD. Affects cost and performance; some transitions need it offline.",
+      "consoleLabel": "Account type",
+      "description": "Change the `storage_account_type` argument — the managed disk's storage tier and redundancy combination. Affects cost and performance.",
+      "target": {
+        "attr": "storage_account_type",
+        "resourceType": "azurerm_managed_disk"
+      },
+      "params": [
+        {
+          "name": "managed_disk",
+          "label": "Managed disk",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_managed_disk/address",
+          "help": "Select the managed disk whose storage type changes; the picker lists only estate-managed disks from inventory."
+        },
+        {
+          "name": "storage_account_type",
+          "label": "Storage type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "Standard_LRS",
+              "StandardSSD_LRS",
+              "Premium_LRS",
+              "StandardSSD_ZRS",
+              "Premium_ZRS"
+            ]
+          },
+          "help": "The disk's storage tier and redundancy. Standard_LRS is cheapest and slowest; Premium_LRS is fastest; the ZRS variants add zone redundancy at extra cost."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (storage_account_type)",
+      "keywords": [
+        "disk performance",
+        "premium disk",
+        "disk cost",
+        "change disk tier",
+        "faster disk"
+      ],
+      "group": "scale-performance",
+      "decisions": [
+        "Switching storage tier changes cost and performance — confirm the target tier matches the workload's IOPS/throughput needs",
+        "Converting to or from a premium tier on a disk attached to a running virtual machine can require the disk to be detached or the virtual machine deallocated first, depending on VM series — confirm compatibility before applying"
+      ]
+    },
+    {
+      "id": "azure-compute-availability-set-update-tags",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update tags on an availability set",
+      "summary": "Set or update this availability set's tags. Only the tags you list change; others are left alone. No effect on how it runs.",
+      "description": "Sets or merges cost-allocation and ownership tags on the availability set via the `tags` map. Non-disruptive, takes effect immediately, no impact on member virtual machines.",
+      "target": {
+        "resourceType": "azurerm_availability_set",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "availability_set",
+          "label": "Availability set",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_availability_set/address",
+          "help": "The availability set to tag, chosen from the estate inventory so only a Terraform-managed availability set can be targeted."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["tag availability set", "retag availability set"],
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-gallery-application",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Gallery Application tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Gallery Application (azurerm_gallery_application). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_gallery_application",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Gallery Application",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_gallery_application/address",
+          "help": "The Gallery Application to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-gallery-application-version",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Gallery Application Version tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Gallery Application Version (azurerm_gallery_application_version). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_gallery_application_version",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Gallery Application Version",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_gallery_application_version/address",
+          "help": "The Gallery Application Version to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-image",
+      "service": "azure-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Image tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Image (azurerm_image). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_image",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Image",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_image/address",
+          "help": "The Image to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-compute-linux-vm-provision",
+      "service": "azure-compute",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Linux virtual machine",
+      "summary": "Request a brand-new Linux virtual machine; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new Linux host as a complete specification: size, image approach, network placement, access, OS disk and tags. Submitting routes it to an engineer with a draft Terraform block — the virtual machine and its network interface — to review and finish. Nothing is applied without review.",
+      "target": {
+        "resourceType": "azurerm_linux_virtual_machine"
+      },
+      "params": [
+        {
+          "name": "host_name",
+          "label": "Host name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z][a-zA-Z0-9-]{1,63}$"
+          },
+          "help": "Letters, numbers and dashes, starting with a letter, up to 64 characters. Names the virtual machine in Azure and in the generated draft."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "group": "identity",
+          "help": "The resource group this virtual machine is created in. Its region is reused automatically for the virtual machine and its network interface, so it is never asked twice."
+        },
+        {
+          "name": "size",
+          "label": "Size",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "size",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "Standard_B2s",
+              "Standard_B2ms",
+              "Standard_D2s_v5",
+              "Standard_D4s_v5",
+              "Standard_E2s_v5",
+              "Standard_F2s_v2"
+            ]
+          },
+          "default": "Standard_D2s_v5",
+          "help": "The Azure VM size (SKU) that fixes vCPU and memory — the same curated list the resize action offers."
+        },
+        {
+          "name": "zone",
+          "label": "Availability zone",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "zone",
+          "group": "compute",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": ["1", "2", "3"]
+          },
+          "help": "Optional availability zone to pin the virtual machine to; leave blank to let Azure place it automatically."
+        },
+        {
+          "name": "image",
+          "label": "Machine image",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "source_image_reference",
+          "group": "compute",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The engineer picks and validates the marketplace or gallery image during review — approved images follow the account standard."
+        },
+        {
+          "name": "admin_username",
+          "label": "Admin username",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "admin_username",
+          "group": "compute",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+          },
+          "help": "The first sign-in account created on the virtual machine. Avoid reserved names like root or admin — Azure rejects a handful of common ones."
+        },
+        {
+          "name": "ssh_public_key",
+          "label": "SSH public key",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "admin_ssh_key",
+          "group": "compute",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The operator never pastes key material here — the engineer attaches the account's approved public key during review."
+        },
+        {
+          "name": "disable_password_authentication",
+          "label": "Password sign-in",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "disable_password_authentication",
+          "group": "compute",
+          "help": "Always off for a new Linux host — SSH key sign-in only. Written into the draft, never asked."
+        },
+        {
+          "name": "subnet",
+          "label": "Subnet",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_id",
+          "enumSource": "inventory://azurerm_subnet/address",
+          "group": "network",
+          "help": "Where the virtual machine's network interface lives. The picker shows each subnet's address range."
+        },
+        {
+          "name": "nsg",
+          "label": "Network security group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "network_security_group_id",
+          "enumSource": "inventory://azurerm_network_security_group/address",
+          "group": "network",
+          "help": "Who can reach this virtual machine. Attached to its network interface."
+        },
+        {
+          "name": "os_disk_size_gb",
+          "label": "OS disk size (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "disk_size_gb",
+          "path": ["os_disk"],
+          "group": "storage",
+          "bounds": {
+            "min": 30,
+            "max": 1024
+          },
+          "default": 128,
+          "help": "OS disk size. Data disks are added afterwards as separate managed disks."
+        },
+        {
+          "name": "os_disk_type",
+          "label": "OS disk type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "storage_account_type",
+          "path": ["os_disk"],
+          "group": "storage",
+          "bounds": {
+            "allowlist": [
+              "Standard_LRS",
+              "StandardSSD_LRS",
+              "Premium_LRS",
+              "StandardSSD_ZRS",
+              "Premium_ZRS"
+            ]
+          },
+          "default": "Premium_LRS",
+          "help": "The OS disk's storage tier — the same list the managed-disk storage-type action offers. Premium_LRS is the recommended default for consistent boot and application performance."
+        },
+        {
+          "name": "os_disk_caching",
+          "label": "OS disk caching",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "ReadWrite",
+          "attr": "caching",
+          "path": ["os_disk"],
+          "group": "storage",
+          "help": "Standard caching mode for an OS disk — written into the draft, never asked."
+        },
+        {
+          "name": "resource_name",
+          "label": "Host name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What runs here",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this host."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new linux vm",
+        "new linux server",
+        "provision virtual machine",
+        "new app server"
+      ],
+      "decisions": [
+        "Machine image choice and validation",
+        "SSH public key material is attached by the engineer during review",
+        "Confirm the subnet and network security group together satisfy the workload's connectivity needs",
+        "Confirm the chosen size is available in the resource group's region"
+      ]
+    },
+    {
+      "id": "azure-compute-windows-vm-provision",
+      "service": "azure-compute",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Windows virtual machine",
+      "summary": "Request a brand-new Windows virtual machine; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new Windows host as a complete specification: size, image approach, network placement, access, OS disk and tags. Submitting routes it to an engineer with a draft Terraform block — the virtual machine and its network interface — to review and finish. Nothing is applied without review.",
+      "target": {
+        "resourceType": "azurerm_windows_virtual_machine"
+      },
+      "params": [
+        {
+          "name": "host_name",
+          "label": "Host name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z][a-zA-Z0-9-]{0,14}$"
+          },
+          "help": "Letters, numbers and dashes, starting with a letter, up to 15 characters — Windows derives its in-guest computer name from this, and that name is capped at 15 characters."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "group": "identity",
+          "help": "The resource group this virtual machine is created in. Its region is reused automatically for the virtual machine and its network interface, so it is never asked twice."
+        },
+        {
+          "name": "size",
+          "label": "Size",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "size",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "Standard_B2s",
+              "Standard_B2ms",
+              "Standard_D2s_v5",
+              "Standard_D4s_v5",
+              "Standard_E2s_v5",
+              "Standard_F2s_v2"
+            ]
+          },
+          "default": "Standard_D2s_v5",
+          "help": "The Azure VM size (SKU) that fixes vCPU and memory — the same curated list the resize action offers."
+        },
+        {
+          "name": "zone",
+          "label": "Availability zone",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "zone",
+          "group": "compute",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": ["1", "2", "3"]
+          },
+          "help": "Optional availability zone to pin the virtual machine to; leave blank to let Azure place it automatically."
+        },
+        {
+          "name": "image",
+          "label": "Machine image",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "source_image_reference",
+          "group": "compute",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The engineer picks and validates the marketplace or gallery image during review — approved images follow the account standard."
+        },
+        {
+          "name": "admin_username",
+          "label": "Admin username",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "admin_username",
+          "group": "compute",
+          "bounds": {
+            "pattern": "^[a-zA-Z][a-zA-Z0-9._-]{0,18}$"
+          },
+          "help": "The first sign-in account created on the virtual machine, up to 20 characters. Azure rejects reserved names like administrator or admin."
+        },
+        {
+          "name": "admin_password",
+          "label": "Administrator password",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "admin_password",
+          "group": "compute",
+          "sensitive": true,
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The operator never sets a password here — the engineer sets it during review, per the account's credential-handling standard."
+        },
+        {
+          "name": "subnet",
+          "label": "Subnet",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_id",
+          "enumSource": "inventory://azurerm_subnet/address",
+          "group": "network",
+          "help": "Where the virtual machine's network interface lives. The picker shows each subnet's address range."
+        },
+        {
+          "name": "nsg",
+          "label": "Network security group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "network_security_group_id",
+          "enumSource": "inventory://azurerm_network_security_group/address",
+          "group": "network",
+          "help": "Who can reach this virtual machine. Attached to its network interface."
+        },
+        {
+          "name": "os_disk_size_gb",
+          "label": "OS disk size (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "disk_size_gb",
+          "path": ["os_disk"],
+          "group": "storage",
+          "bounds": {
+            "min": 30,
+            "max": 1024
+          },
+          "default": 128,
+          "help": "OS disk size. Data disks are added afterwards as separate managed disks."
+        },
+        {
+          "name": "os_disk_type",
+          "label": "OS disk type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "storage_account_type",
+          "path": ["os_disk"],
+          "group": "storage",
+          "bounds": {
+            "allowlist": [
+              "Standard_LRS",
+              "StandardSSD_LRS",
+              "Premium_LRS",
+              "StandardSSD_ZRS",
+              "Premium_ZRS"
+            ]
+          },
+          "default": "Premium_LRS",
+          "help": "The OS disk's storage tier — the same list the managed-disk storage-type action offers. Premium_LRS is the recommended default for consistent boot and application performance."
+        },
+        {
+          "name": "os_disk_caching",
+          "label": "OS disk caching",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "ReadWrite",
+          "attr": "caching",
+          "path": ["os_disk"],
+          "group": "storage",
+          "help": "Standard caching mode for an OS disk — written into the draft, never asked."
+        },
+        {
+          "name": "resource_name",
+          "label": "Host name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What runs here",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this host."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new windows vm",
+        "new windows server",
+        "provision virtual machine",
+        "new app server"
+      ],
+      "decisions": [
+        "Machine image choice and validation",
+        "Administrator password is set by the engineer during review, per the account's credential-handling standard",
+        "Confirm the subnet and network security group together satisfy the workload's connectivity needs",
+        "Confirm the chosen size is available in the resource group's region"
+      ]
+    },
+    {
+      "id": "azure-compute-managed-disk-create",
+      "service": "azure-compute",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a new managed disk",
+      "summary": "Request a brand-new managed disk; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Create a new Azure managed disk, encrypted at rest by default, on a curated storage tier, with estate tags. Submitting routes the complete specification to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "azurerm_managed_disk"
+      },
+      "params": [
+        {
+          "name": "disk_name",
+          "label": "Disk name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{1,78}$"
+          },
+          "help": "Letters, numbers, periods, underscores and dashes, 2-80 characters. Names the disk in Azure and in the generated draft."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "group": "identity",
+          "help": "The resource group this disk is created in. Its region is reused automatically for the disk."
+        },
+        {
+          "name": "create_option",
+          "label": "Create option",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "Empty",
+          "attr": "create_option",
+          "group": "capacity",
+          "help": "Always a blank new disk — written into the draft, never asked. Restoring from a snapshot uses the field below instead."
+        },
+        {
+          "name": "size_gb",
+          "label": "Size (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "disk_size_gb",
+          "group": "capacity",
+          "bounds": {
+            "min": 4,
+            "max": 32767
+          },
+          "default": 100,
+          "help": "Can grow later without downtime; a managed disk can never shrink."
+        },
+        {
+          "name": "storage_account_type",
+          "label": "Storage type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "storage_account_type",
+          "group": "capacity",
+          "bounds": {
+            "allowlist": [
+              "Standard_LRS",
+              "StandardSSD_LRS",
+              "Premium_LRS",
+              "StandardSSD_ZRS",
+              "Premium_ZRS"
+            ]
+          },
+          "default": "StandardSSD_LRS",
+          "help": "The disk's storage tier and redundancy — the same list the storage-type change action offers. StandardSSD_LRS is a balanced default for general-purpose data disks."
+        },
+        {
+          "name": "zone",
+          "label": "Availability zone",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "zone",
+          "group": "capacity",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": ["1", "2", "3"]
+          },
+          "help": "Optional availability zone; match the virtual machine this disk will attach to, or leave blank."
+        },
+        {
+          "name": "disk_encryption_set",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "disk_encryption_set_id",
+          "enumSource": "inventory://azurerm_disk_encryption_set/address",
+          "group": "encryption",
+          "tier": "advanced",
+          "help": "Only set this if the workload needs its own customer-managed key; every managed disk is encrypted at rest by Azure regardless, so leaving this blank still means encrypted."
+        },
+        {
+          "name": "source_snapshot",
+          "label": "Start from a snapshot",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "source_resource_id",
+          "enumSource": "inventory://azurerm_snapshot/address",
+          "group": "capacity",
+          "tier": "advanced",
+          "help": "Restore data by creating the disk from this snapshot. Leave blank for an empty disk."
+        },
+        {
+          "name": "resource_name",
+          "label": "Disk name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this disk holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this disk."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new managed disk", "new azure disk", "add disk to server", "extra disk"],
+      "decisions": [
+        "Attaching this disk to a virtual machine is a separate, follow-up step",
+        "Confirm the disk's zone (if set) matches the virtual machine it will attach to",
+        "Confirm the encryption key choice if the workload is key-scoped"
+      ]
+    }
+  ]
+}

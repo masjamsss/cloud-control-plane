@@ -1,0 +1,213 @@
+{
+  "service": "athena",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_athena_workgroup"
+  ],
+  "summary": "Provision a brand-new Athena workgroup to isolate a team's queries, cost, and results location. No curated Athena estate exists yet, so this is a first stand-up an engineer reviews before it applies.",
+  "operations": [
+    {
+      "id": "athena-workgroup-create",
+      "service": "athena",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Athena workgroup",
+      "summary": "Request a brand-new Athena workgroup with its own results location and cost guardrail; an engineer reviews the Terraform before it applies.",
+      "description": "Stand up a workgroup as a complete specification: state, enforced settings, cost controls, and where query results land in S3. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_athena_workgroup"
+      },
+      "params": [
+        {
+          "name": "workgroup_name",
+          "label": "Workgroup name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._-]{1,128}$"
+          },
+          "help": "Names the workgroup queries select in the console or the JDBC/ODBC driver."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 1024
+          },
+          "help": "What this workgroup is for."
+        },
+        {
+          "name": "state",
+          "label": "State",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "state",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "default": "ENABLED",
+          "help": "DISABLED stops the workgroup from running any query until it is turned on."
+        },
+        {
+          "name": "output_location",
+          "label": "Query results location (S3)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "output_location",
+          "path": [
+            "configuration",
+            "result_configuration"
+          ],
+          "group": "results",
+          "bounds": {
+            "pattern": "^s3://[a-z0-9.-]{3,63}(/.*)?$"
+          },
+          "help": "S3 URI where every query's results land, e.g. s3://my-bucket/athena-results/."
+        },
+        {
+          "name": "enforce_workgroup_configuration",
+          "label": "Enforce workgroup settings",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "attr": "enforce_workgroup_configuration",
+          "path": [
+            "configuration"
+          ],
+          "group": "results",
+          "default": true,
+          "help": "When on, every query in this workgroup uses these settings — a client cannot override the results location or cost cutoff."
+        },
+        {
+          "name": "bytes_scanned_cutoff_per_query",
+          "label": "Per-query data-scan cutoff (bytes)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "bytes_scanned_cutoff_per_query",
+          "path": [
+            "configuration"
+          ],
+          "group": "cost",
+          "tier": "advanced",
+          "bounds": {
+            "min": 10485760
+          },
+          "help": "Cancels a query once it would scan more than this many bytes. Leave blank for no cutoff. Minimum 10 MiB (AWS floor)."
+        },
+        {
+          "name": "publish_cloudwatch_metrics_enabled",
+          "label": "Publish CloudWatch metrics",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "attr": "publish_cloudwatch_metrics_enabled",
+          "path": [
+            "configuration"
+          ],
+          "group": "cost",
+          "default": true,
+          "help": "Publishes per-query metrics (data scanned, execution time) to CloudWatch."
+        },
+        {
+          "name": "requester_pays_enabled",
+          "label": "Requester pays",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "attr": "requester_pays_enabled",
+          "path": [
+            "configuration"
+          ],
+          "group": "cost",
+          "default": false,
+          "help": "Turn on only when this workgroup queries requester-pays S3 buckets outside this account."
+        },
+        {
+          "name": "force_destroy",
+          "label": "Allow delete while queries exist",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "attr": "force_destroy",
+          "group": "identity",
+          "tier": "advanced",
+          "default": false,
+          "help": "When off (default), the workgroup cannot be deleted while it still holds saved queries."
+        },
+        {
+          "name": "resource_name",
+          "label": "Workgroup name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this workgroup is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this workgroup."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new athena workgroup",
+        "provision query workgroup"
+      ],
+      "decisions": [
+        "Query-results encryption configuration (SSE-KMS) is an engineer decision",
+        "Engine version pinning and Spark/notebook workgroup configuration are engineer decisions",
+        "Identity Center and S3 access-grants integration are engineer follow-ups after creation"
+      ]
+    }
+  ]
+}

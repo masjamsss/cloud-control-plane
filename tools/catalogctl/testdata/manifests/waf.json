@@ -1,0 +1,48 @@
+{
+  "service": "waf",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_wafv2_web_acl"
+  ],
+  "summary": "WAFv2 web ACL rule removal via 0010 U1 (keyed nested-block remove).",
+  "operations": [
+    {
+      "id": "waf-delete-rule",
+      "service": "waf",
+      "macd": "Change",
+      "codemodOp": "remove_block",
+      "title": "Delete one rule from a WAFv2 web ACL",
+      "description": "Remove the single rule named by the selector, leaving the ACL and sibling rules intact.",
+      "target": {
+        "resourceType": "aws_wafv2_web_acl",
+        "path": [
+          "rule"
+        ]
+      },
+      "params": [
+        {
+          "name": "web_acl",
+          "label": "Web ACL",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "selector",
+          "matchAttr": "name"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "terraformCapability": "- rule[selected]"
+    }
+  ]
+}

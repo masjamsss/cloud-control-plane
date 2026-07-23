@@ -1,0 +1,31 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.15.7",
+  "resource_changes": [
+    {
+      "address": "aws_ebs_volume.app01_sdb",
+      "mode": "managed",
+      "type": "aws_ebs_volume",
+      "name": "app01_sdb",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["delete", "create"],
+        "before": {
+          "encrypted": false,
+          "size": 100,
+          "id": "vol-0c0c0c0c0c0c0c002"
+        },
+        "after": {
+          "encrypted": true,
+          "size": 100
+        },
+        "after_unknown": {
+          "id": true
+        },
+        "before_sensitive": {},
+        "after_sensitive": {},
+        "replace_paths": [["encrypted"]]
+      }
+    }
+  ]
+}

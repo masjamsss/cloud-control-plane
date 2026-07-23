@@ -1,0 +1,1 @@
+{"service":"ssh-keys","types":{"azurerm_ssh_public_key":{"attrs":[{"n":"location","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"public_key","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"tags","t":"map"}],"blocks":[]}}}

@@ -1,0 +1,130 @@
+# One-command bring-up of the REAL (non-demo) Cloud Control Plane: the ccp-api backend
+# (durable store bind-mounted from /data/ccp/store) + the SPA built in authoritative/api mode.
+#
+#   cp .env.example .env   &&   edit .env      # set the secrets + public URLs
+#   docker compose up -d --build               # first boot: see docs/go-live.md
+#
+# ── TLS / REVERSE PROXY (read this) ──────────────────────────────────────────
+# Neither service terminates TLS. Per api/src/deploy.ts the api speaks PLAIN HTTP
+# and its Secure session cookie is env-driven — an EXTERNAL reverse proxy
+# (nginx / Caddy / Traefik / ALB) that you run IN FRONT of this stack terminates
+# HTTPS. That proxy MUST:
+#   • terminate HTTPS for the app's public host;
+#   • forward browser page loads to the `app` service (static SPA, :8800);
+#   • forward the api's public URL (VITE_API_BASE) to the `api` service (:8801),
+#     preserving the Origin header so credentialed CORS works.
+# The browser must ONLY ever speak HTTPS to the proxy, so the Secure cookie is sent.
+#
+# ── Two supported topologies (pick one in .env; see docs/go-live.md) ──────────
+#   A) SAME-ORIGIN  — proxy serves the SPA at https://HOST/ and routes
+#      https://HOST/api/* → api.  VITE_API_BASE=https://HOST/api, CCP_SAME_ORIGIN=1.
+#   B) SPLIT-ORIGIN — SPA at https://HOST, api at https://api.HOST.
+#      VITE_API_BASE=https://api.HOST, CCP_CORS_ORIGIN=https://HOST,
+#      CCP_COOKIE_SAMESITE=None.
+
+name: ccp
+
+services:
+  # api + app carry NO `profiles:` key — they are the implicit "core" profile, so
+  # the bare `docker compose up -d --build` used by install.sh and self-update.sh
+  # keeps working on every existing host with zero flag changes. `runner` and
+  # `toolbox` below are opt-in via `--profile` / COMPOSE_PROFILES (.env.example).
+  api:
+    build:
+      context: .                 # ccp/ — the api image vendors the app/src slice
+      dockerfile: api/Dockerfile  # it resolves at runtime (see api/Dockerfile header)
+    image: ccp-api:local
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-8801}
+      CCP_DATA_DIR: /var/lib/ccp            # matches the mounted volume below
+      # ── operator-provided / secrets (from .env) ──
+      CCP_TOTP_KEY: ${CCP_TOTP_KEY:?set CCP_TOTP_KEY in .env — see .env.example}
+      CCP_SECURE_COOKIES: ${CCP_SECURE_COOKIES:-1}
+      CCP_COOKIE_SAMESITE: ${CCP_COOKIE_SAMESITE:-Lax}
+      CCP_CORS_ORIGIN: ${CCP_CORS_ORIGIN:-}
+      CCP_SAME_ORIGIN: ${CCP_SAME_ORIGIN:-}
+      # First boot ONLY — seeds the admin + prints a one-time password, then MUST be
+      # unset. It is refused (container exits 1) once the store exists. See go-live.md.
+      CCP_BOOTSTRAP: ${CCP_BOOTSTRAP:-}
+      # ADR-0023 — read ONLY during that same first boot, to seed the runtime
+      # instance-identity store item (empty ⇒ the generic default; a later
+      # Settings rename never needs this knob touched again).
+      CCP_INSTANCE_NAME: ${CCP_INSTANCE_NAME:-}
+      CCP_INSTANCE_TAGLINE: ${CCP_INSTANCE_TAGLINE:-}
+    volumes:
+      # DURABLE store: accounts, TOTP, audit chain. Bind (not a named volume) —
+      # created + chowned by `scripts/setup.sh data`; an existing host on the old
+      # named volume migrates via `scripts/migrate-data.sh`.
+      - /data/ccp/store:/var/lib/ccp
+    ports:
+      # Loopback-only: only a same-host reverse proxy reaches it. Do NOT expose the
+      # api raw to the internet. Adjust the bind address for your proxy's network.
+      - "127.0.0.1:${PORT:-8801}:${PORT:-8801}"
+
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      args:
+        # Baked into the bundle at build time → REAL mode. Empty ⇒ demo/mock SPA, so
+        # this is required for a real deploy. Rebuild (--build) to change it.
+        VITE_API_BASE: ${VITE_API_BASE:?set VITE_API_BASE in .env — the api's public URL}
+        # ADR-0023 — the SAME CCP_INSTANCE_NAME/TAGLINE the api reads above,
+        # baked as the SPA's generic-default fallback (empty ⇒ "Cloud Control
+        # Plane"). A later Settings rename repaints instantly without a
+        # rebuild; this only converges the BAKED layer at the next rebuild.
+        VITE_INSTANCE_NAME: ${CCP_INSTANCE_NAME:-}
+        VITE_INSTANCE_TAGLINE: ${CCP_INSTANCE_TAGLINE:-}
+    image: ccp-app:local
+    restart: unless-stopped
+    depends_on:
+      - api                       # start ordering only; the SPA is static and needs no live api to serve
+    ports:
+      - "127.0.0.1:${APP_PORT:-8800}:8080"
+
+  # ── CI runner (opt-in, profile: runner) ──────────────────────────────────────
+  # Self-hosted GitHub Actions runner for this repo. Every workflow already says
+  # `runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}`, so bringing this online
+  # with label `ccp` + setting the repo variable CI_RUNNER=ccp is the whole
+  # cutover (rollback: delete the variable) — see ccp/docs/go-live.md → "CI runner".
+  # No docker socket (verified: no workflow in .github/workflows/ uses docker), no
+  # published ports, unprivileged user (see runner/Dockerfile + entrypoint.sh).
+  runner:
+    build: { context: ./runner }
+    image: ccp-runner:local
+    profiles: ["runner"]
+    restart: unless-stopped
+    stop_grace_period: 2m          # let an in-flight CI job wind down
+    environment:
+      RUNNER_REPO_URL: ${RUNNER_REPO_URL:-}   # e.g. https://github.com/<owner>/<repo>
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}         # ephemeral registration token — NEVER stored in .env
+      RUNNER_NAME: ${RUNNER_NAME:-}           # default in entrypoint: ccp-<hostname>
+      RUNNER_LABELS: ${RUNNER_LABELS:-ccp}
+    volumes:
+      - /data/runner:/runner
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "Runner.Listener"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+  # ── Toolbox (opt-in, profile: toolbox) ───────────────────────────────────────
+  # Pinned Terraform + the built catalogctl, for armed-lane operator commands (see
+  # docker-compose.armed.yml + ccp/docs/go-live.md → "Toolbox + armed lanes").
+  # A run-on-demand image, not a daemon: the profile keeps it out of `up`;
+  # `docker compose --profile toolbox build toolbox` builds it,
+  # `docker compose run --rm toolbox …` or `docker run --rm ccp-toolbox:local …`
+  # uses it. No healthcheck: `toolbox-selfcheck` (its default command, and what
+  # doctor.sh invokes) IS the health proof — a long-running healthcheck is
+  # meaningless for a one-shot tool image.
+  toolbox:
+    build:
+      context: ..                       # repo root — builds catalogctl from tools/catalogctl
+      dockerfile: ccp/toolbox/Dockerfile
+    image: ccp-toolbox:local
+    profiles: ["toolbox"]
+    restart: "no"
+    command: ["toolbox-selfcheck"]      # one-shot: prints terraform/catalogctl/git versions

@@ -1,0 +1,1 @@
+{"service":"swf","types":{"aws_swf_domain":{"attrs":[{"n":"workflow_execution_retention_period_in_days","t":"string","r":1},{"n":"description","t":"string"},{"n":"name","t":"string"},{"n":"name_prefix","t":"string"},{"n":"region","t":"string"},{"n":"tags","t":"map"}],"blocks":[]}}}

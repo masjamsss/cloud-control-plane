@@ -1,0 +1,41 @@
+{
+  "_README": "SPA v1 localStorage export (spec §9). Shapes mirror gerbang/app/src/lib/{accounts,teams,policy,riskOverrides,audit}.ts. The pbkdf2 credential for password 'test-password-1' was generated the SAME way accounts.ts hashPassword does — PBKDF2-SHA256, 210000 iterations, 16-byte salt, 256-bit key, base64: node -e 'const{pbkdf2Sync}=require(\"node:crypto\");const salt=Buffer.from(\"gerbang-v1-salt!\");console.log(salt.toString(\"base64\"), pbkdf2Sync(\"test-password-1\",salt,210000,32,\"sha256\").toString(\"base64\"))'.",
+  "ccp.accounts.v1": [
+    {
+      "id": "dewi",
+      "username": "dewi",
+      "displayName": "Dewi",
+      "role": "requester",
+      "teamId": "app-platform",
+      "passwordHash": "pkN8cm0PnTybI4WLJapsmL8I/vFMXdDB+H9Or8xVgjc=",
+      "salt": "Z2VyYmFuZy12MS1zYWx0IQ==",
+      "iterations": 210000,
+      "status": "active",
+      "createdAt": "2026-06-01T00:00:00.000Z",
+      "createdBy": "system",
+      "mustChangePassword": false
+    },
+    {
+      "id": "rizky",
+      "username": "rizky",
+      "displayName": "Rizky",
+      "role": "requester",
+      "teamId": "app-platform",
+      "passwordHash": "pkN8cm0PnTybI4WLJapsmL8I/vFMXdDB+H9Or8xVgjc=",
+      "salt": "Z2VyYmFuZy12MS1zYWx0IQ==",
+      "iterations": 210000,
+      "status": "active",
+      "createdAt": "2026-06-01T00:00:00.000Z",
+      "createdBy": "system"
+    }
+  ],
+  "ccp.teams.v1": [
+    { "id": "app-platform", "name": "App Platform", "serviceSlugs": ["ec2", "ebs", "cloudwatch"] }
+  ],
+  "ccp.policy.v1": { "low": 1, "medium": 1, "high": 2, "deleteMin": 2 },
+  "ccp.risk-overrides.v1": { "ebs-grow": "HIGH" },
+  "ccp.audit.v1": [
+    { "id": "v1-audit-1", "at": "2026-06-01T09:00:00.000Z", "actor": "dewi", "action": "Requested change", "summary": "Grew EBS volume dwh01 to 250 GiB" },
+    { "id": "v1-audit-2", "at": "2026-06-01T10:00:00.000Z", "actor": "rizky", "action": "Approved change", "summary": "Approved the EBS grow" }
+  ]
+}

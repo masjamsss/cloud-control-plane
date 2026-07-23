@@ -1,0 +1,45 @@
+# Terraform state / plans (never committed)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.tfstate.lock.info
+*.tfplan
+
+# Estate configuration — an operator's real values live here, never in git.
+# The public safety gate (scripts/publish-gate.sh) reads this in private CI.
+.estate-denylist.json
+
+# Environment files (real values; *.env.example templates stay tracked)
+.env
+.env.local
+**/.env
+**/.env.local
+
+# Node
+node_modules/
+dist/
+build/
+coverage/
+*.log
+.vite/
+
+# Go
+*.test
+*.out
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# AI-assistant instruction files — local working notes for LLM sessions, never published.
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+.claude/
+
+# Python bytecode
+__pycache__/
+*.pyc

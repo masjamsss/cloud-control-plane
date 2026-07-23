@@ -1,0 +1,1 @@
+{"service":"data-share","types":{"azurerm_data_share_account":{"attrs":[{"n":"location","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"tags","t":"map"}],"blocks":[{"n":"identity","m":"single","attrs":[{"n":"type","t":"string","r":1}],"blocks":[]}]}}}

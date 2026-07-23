@@ -1,0 +1,17 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_ebs_volume.scratch_sdx",
+      "change": {
+        "actions": [
+          "delete"
+        ],
+        "before": {
+          "size": 100
+        },
+        "after": null
+      }
+    }
+  ]
+}

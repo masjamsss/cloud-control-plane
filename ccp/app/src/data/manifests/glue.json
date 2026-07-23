@@ -1,0 +1,542 @@
+{
+  "service": "glue",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_glue_catalog_database",
+    "aws_glue_job",
+    "aws_glue_crawler"
+  ],
+  "summary": "Provision brand-new Glue catalog databases, ETL jobs, and crawlers. No curated Glue estate exists yet, so every operation is a first stand-up an engineer reviews before it applies.",
+  "operations": [
+    {
+      "id": "glue-catalog-database-create",
+      "service": "glue",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Glue catalog database",
+      "summary": "Request a brand-new Glue Data Catalog database; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a catalog database as a complete specification: name, description, and the default S3 location new tables use. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_glue_catalog_database"
+      },
+      "params": [
+        {
+          "name": "database_name",
+          "label": "Database name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9_]{2,254}$"
+          },
+          "help": "Lower-case letters, numbers and underscores. Names the database in the Glue Data Catalog."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 2048
+          },
+          "help": "What this database holds."
+        },
+        {
+          "name": "location_uri",
+          "label": "Default table location (S3)",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "location_uri",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^s3://[a-z0-9.-]{3,63}(/.*)?$"
+          },
+          "help": "Default S3 location new tables in this database use when none is given. Leave blank to require a location per table."
+        },
+        {
+          "name": "resource_name",
+          "label": "Database name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this database holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this database."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new glue catalog database",
+        "provision glue database"
+      ],
+      "decisions": [
+        "Cross-account or federated database sharing (target_database / federated_database) is an engineer decision",
+        "Default table-creation permissions (create_table_default_permission) are an engineer decision"
+      ]
+    },
+    {
+      "id": "glue-job-create",
+      "service": "glue",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Glue ETL job",
+      "summary": "Request a brand-new Glue Spark ETL job; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up an ETL job as a complete specification: script location, worker size and count, and timeout. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_glue_job"
+      },
+      "params": [
+        {
+          "name": "job_name",
+          "label": "Job name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,255}$"
+          },
+          "help": "Names the job in the Glue console and the generated draft."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 2048
+          },
+          "help": "What this job does."
+        },
+        {
+          "name": "role_arn",
+          "label": "IAM role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "role_arn",
+          "group": "identity",
+          "help": "The role Glue assumes to run this job — needs read/write access to its sources, targets, and script location."
+        },
+        {
+          "name": "script_location",
+          "label": "Script location (S3)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "script_location",
+          "path": [
+            "command"
+          ],
+          "group": "script",
+          "bounds": {
+            "pattern": "^s3://[a-z0-9.-]{3,63}/.+$"
+          },
+          "help": "S3 path to the ETL script this job runs."
+        },
+        {
+          "name": "command_name",
+          "label": "Job type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "glueetl",
+          "attr": "name",
+          "path": [
+            "command"
+          ],
+          "group": "script",
+          "help": "Always the standard Spark ETL job type — written into the draft, never asked."
+        },
+        {
+          "name": "glue_version",
+          "label": "Glue version",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "glue_version",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "5.0",
+              "4.0",
+              "3.0",
+              "engineer-decides"
+            ]
+          },
+          "default": "4.0",
+          "help": "The Glue/Spark runtime version this job runs on."
+        },
+        {
+          "name": "worker_type",
+          "label": "Worker type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "worker_type",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "G.025X",
+              "G.1X",
+              "G.2X",
+              "G.4X",
+              "G.8X"
+            ]
+          },
+          "default": "G.1X",
+          "help": "Size class for processor and memory on every worker."
+        },
+        {
+          "name": "number_of_workers",
+          "label": "Number of workers",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "number_of_workers",
+          "group": "compute",
+          "bounds": {
+            "min": 2,
+            "max": 299
+          },
+          "default": 2,
+          "help": "How many workers this job run requests."
+        },
+        {
+          "name": "timeout_minutes",
+          "label": "Timeout (minutes)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "timeout",
+          "group": "compute",
+          "bounds": {
+            "min": 1,
+            "max": 10080
+          },
+          "default": 2880,
+          "help": "Minutes before a run is forcibly stopped."
+        },
+        {
+          "name": "max_retries",
+          "label": "Max retries",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "max_retries",
+          "group": "compute",
+          "bounds": {
+            "min": 0,
+            "max": 10
+          },
+          "default": 0,
+          "help": "How many times a failed run is automatically retried."
+        },
+        {
+          "name": "resource_name",
+          "label": "Job name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this job does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this job."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new glue job",
+        "provision etl job"
+      ],
+      "decisions": [
+        "Python-shell and streaming job types (command.name) are engineer decisions — this form provisions the standard Spark ETL type",
+        "Job arguments (default_arguments), connections, and a security configuration are engineer decisions",
+        "Triggers and workflow membership are engineer follow-ups after creation"
+      ]
+    },
+    {
+      "id": "glue-crawler-create",
+      "service": "glue",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Glue crawler",
+      "summary": "Request a brand-new Glue crawler over an S3 location; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a crawler as a complete specification: the catalog database it populates, the IAM role it runs as, and the S3 location it scans. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_glue_crawler"
+      },
+      "params": [
+        {
+          "name": "crawler_name",
+          "label": "Crawler name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{1,255}$"
+          },
+          "help": "Names the crawler in the Glue console and the generated draft."
+        },
+        {
+          "name": "database",
+          "label": "Catalog database",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_glue_catalog_database/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "database_name",
+          "group": "identity",
+          "help": "The catalog database this crawler writes discovered tables into. Create the database first if the list is empty."
+        },
+        {
+          "name": "role",
+          "label": "IAM role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "role",
+          "group": "identity",
+          "help": "The role Glue assumes to crawl the target and write to the catalog."
+        },
+        {
+          "name": "s3_target_path",
+          "label": "S3 target path",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "path",
+          "path": [
+            "s3_target"
+          ],
+          "group": "target",
+          "bounds": {
+            "pattern": "^s3://[a-z0-9.-]{3,63}(/.*)?$"
+          },
+          "help": "The S3 location this crawler scans. Additional targets are an engineer follow-up."
+        },
+        {
+          "name": "schedule",
+          "label": "Schedule (cron)",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "schedule",
+          "group": "target",
+          "bounds": {
+            "pattern": "^cron\\([^)]+\\)$"
+          },
+          "help": "Leave blank to run on demand only. AWS cron syntax, e.g. cron(0 0 * * ? *)."
+        },
+        {
+          "name": "table_prefix",
+          "label": "Table name prefix",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "table_prefix",
+          "group": "target",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "help": "Prepended to every table this crawler creates. Leave blank for no prefix."
+        },
+        {
+          "name": "schema_update_behavior",
+          "label": "On schema change",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "update_behavior",
+          "path": [
+            "schema_change_policy"
+          ],
+          "group": "target",
+          "bounds": {
+            "allowlist": [
+              "UPDATE_IN_DATABASE",
+              "LOG"
+            ]
+          },
+          "default": "UPDATE_IN_DATABASE",
+          "help": "Whether a detected schema change updates the catalog table or only logs it."
+        },
+        {
+          "name": "schema_delete_behavior",
+          "label": "On deleted object",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "delete_behavior",
+          "path": [
+            "schema_change_policy"
+          ],
+          "group": "target",
+          "bounds": {
+            "allowlist": [
+              "LOG",
+              "DEPRECATE_IN_DATABASE",
+              "DELETE_FROM_DATABASE"
+            ]
+          },
+          "default": "DEPRECATE_IN_DATABASE",
+          "help": "What happens to a catalog table whose underlying data has disappeared."
+        },
+        {
+          "name": "resource_name",
+          "label": "Crawler name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this crawler scans",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this crawler."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new glue crawler",
+        "provision data crawler"
+      ],
+      "decisions": [
+        "Additional crawl targets (more S3 prefixes, JDBC, DynamoDB, Delta, Iceberg, Hudi, MongoDB) are an engineer follow-up — this form provisions the single most common S3 target",
+        "Classifiers and a security configuration are engineer decisions",
+        "Lake Formation credential mode and lineage settings are engineer decisions"
+      ]
+    }
+  ]
+}

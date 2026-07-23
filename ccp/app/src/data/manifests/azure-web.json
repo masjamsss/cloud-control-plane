@@ -1,0 +1,993 @@
+{
+  "service": "azure-web",
+  "scope": "estate",
+  "resourceTypes": [
+    "azurerm_service_plan",
+    "azurerm_linux_web_app",
+    "azurerm_windows_web_app",
+    "azurerm_linux_function_app",
+    "azurerm_windows_function_app"
+  ],
+  "summary": "Azure App Service plans, Linux/Windows web apps, and Linux/Windows function apps. Tag updates and plan-tier scaling are self-service; enforcing HTTPS-only is a one-way hardening move that stays guardrailed.",
+  "operations": [
+    {
+      "id": "azure-web-service-plan-update-tags",
+      "service": "azure-web",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update App Service plan tags",
+      "summary": "Set or update this plan's tags. Only the tags you list change; others are left alone.",
+      "description": "Sets or merges tags on the App Service plan \u2014 the compute tier shared by every web or function app hosted on it. Non-disruptive, takes effect immediately, no impact on the hosted apps.",
+      "target": {
+        "resourceType": "azurerm_service_plan",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "service_plan",
+          "label": "App Service plan",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_service_plan/address",
+          "help": "The App Service plan to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Azure tag names cannot contain < > % & \\ ? /."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag plan", "plan handover", "cost allocation tag"],
+      "group": "tags-naming",
+      "decisions": [
+        "Tags are metadata only \u2014 cost-neutral and freely reversible \u2014 so this stays LOW risk, matching every other tag_update op in the catalog."
+      ]
+    },
+    {
+      "id": "azure-web-service-plan-resize-sku",
+      "service": "azure-web",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Resize the App Service plan tier",
+      "summary": "Change this plan's pricing/compute tier. Every app hosted on the plan shares the new tier immediately.",
+      "description": "Sets sku_name on the App Service plan, moving it to a different Basic/Standard/PremiumV3 tier. Every web or function app hosted on this plan shares the change immediately; Azure applies plan-tier scaling online without taking the hosted apps offline. Free, Shared, Consumption (Y1), Elastic Premium (EP*), and Isolated (App Service Environment) tiers are out of scope here \u2014 they change the plan's architecture rather than just its size, so a move to or from one of them routes to an engineer.",
+      "target": {
+        "attr": "sku_name",
+        "resourceType": "azurerm_service_plan"
+      },
+      "params": [
+        {
+          "name": "service_plan",
+          "label": "App Service plan",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_service_plan/address",
+          "help": "The App Service plan to resize."
+        },
+        {
+          "name": "new_sku_name",
+          "label": "New tier",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku_name",
+          "bounds": {
+            "allowlist": ["B1", "B2", "B3", "S1", "S2", "S3", "P1v3", "P2v3", "P3v3"]
+          },
+          "help": "Target Basic/Standard/PremiumV3 tier. Free, Shared, Consumption (Y1), Elastic Premium (EP*), and Isolated tiers change the plan's architecture and are engineer-only."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (sku_name)",
+      "keywords": [
+        "scale app service plan",
+        "upsize plan",
+        "resize hosting tier",
+        "app service plan pricing"
+      ],
+      "group": "scale-performance",
+      "decisions": [
+        "Cost-changing \u2014 the plan's compute tier drives the App Service bill \u2014 so MEDIUM floor.",
+        "Azure applies plan-tier scaling online; hosted apps are not taken offline, so downtime stays none.",
+        "Free/Shared/Consumption/Elastic Premium/Isolated tiers are excluded from the allowlist \u2014 they are architecture changes, not same-shape resizes, and route to an engineer instead."
+      ]
+    },
+    {
+      "id": "azure-web-linux-app-update-tags",
+      "service": "azure-web",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Linux web app tags",
+      "summary": "Set or update this web app's tags. Only the tags you list change; others are left alone.",
+      "description": "Sets or merges tags on a Linux web app. Non-disruptive, takes effect immediately, no impact on the running app.",
+      "target": {
+        "resourceType": "azurerm_linux_web_app",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "web_app",
+          "label": "Linux web app",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_linux_web_app/address",
+          "help": "The Linux web app to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Azure tag names cannot contain < > % & \\ ? /."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag web app", "linux app handover"],
+      "group": "tags-naming",
+      "decisions": [
+        "Tags are metadata only \u2014 cost-neutral and freely reversible \u2014 so this stays LOW risk."
+      ]
+    },
+    {
+      "id": "azure-web-linux-app-enforce-https",
+      "service": "azure-web",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enforce HTTPS-only on a Linux web app",
+      "summary": "Reject plain HTTP and require HTTPS for this web app. One-way hardening; loosening it back needs an engineer.",
+      "description": "Sets https_only to true on a Linux web app, so Azure redirects plain-HTTP requests instead of serving them. Tightening-only \u2014 this op can only turn the setting on. Azure applies the change without restarting the app.",
+      "target": {
+        "attr": "https_only",
+        "resourceType": "azurerm_linux_web_app"
+      },
+      "params": [
+        {
+          "name": "web_app",
+          "label": "Linux web app",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_linux_web_app/address",
+          "help": "The Linux web app to change."
+        },
+        {
+          "name": "https_only",
+          "label": "Require HTTPS",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "https_only",
+          "bounds": {
+            "allowlist": [true]
+          },
+          "help": "Set to true to require HTTPS; App Service terminates TLS at the platform, so every app already supports it. This op cannot be used to turn the requirement back off."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (https_only)",
+      "keywords": ["require https", "force ssl"],
+      "group": "connectivity-access",
+      "decisions": [
+        "Tighten-only posture \u2014 the allowlist offers only true \u2014 matching the shared contract's rule for one-way hardening ops.",
+        "Security-tightening rather than reachability-opening, so MEDIUM rather than HIGH; loosening back to plain HTTP is not offered here and needs an engineer.",
+        "Azure applies the flag without restarting the app, so downtime stays none."
+      ]
+    },
+    {
+      "id": "azure-web-windows-app-update-tags",
+      "service": "azure-web",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Windows web app tags",
+      "summary": "Set or update this web app's tags. Only the tags you list change; others are left alone.",
+      "description": "Sets or merges tags on a Windows web app. Non-disruptive, takes effect immediately, no impact on the running app.",
+      "target": {
+        "resourceType": "azurerm_windows_web_app",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "web_app",
+          "label": "Windows web app",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_windows_web_app/address",
+          "help": "The Windows web app to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Azure tag names cannot contain < > % & \\ ? /."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag web app", "windows app handover"],
+      "group": "tags-naming",
+      "decisions": [
+        "Tags are metadata only \u2014 cost-neutral and freely reversible \u2014 so this stays LOW risk."
+      ]
+    },
+    {
+      "id": "azure-web-windows-app-enforce-https",
+      "service": "azure-web",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enforce HTTPS-only on a Windows web app",
+      "summary": "Reject plain HTTP and require HTTPS for this web app. One-way hardening; loosening it back needs an engineer.",
+      "description": "Sets https_only to true on a Windows web app, so Azure redirects plain-HTTP requests instead of serving them. Tightening-only \u2014 this op can only turn the setting on. Azure applies the change without restarting the app.",
+      "target": {
+        "attr": "https_only",
+        "resourceType": "azurerm_windows_web_app"
+      },
+      "params": [
+        {
+          "name": "web_app",
+          "label": "Windows web app",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_windows_web_app/address",
+          "help": "The Windows web app to change."
+        },
+        {
+          "name": "https_only",
+          "label": "Require HTTPS",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "https_only",
+          "bounds": {
+            "allowlist": [true]
+          },
+          "help": "Set to true to require HTTPS; App Service terminates TLS at the platform, so every app already supports it. This op cannot be used to turn the requirement back off."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (https_only)",
+      "keywords": ["require https", "force ssl"],
+      "group": "connectivity-access",
+      "decisions": [
+        "Tighten-only posture \u2014 the allowlist offers only true \u2014 matching the shared contract's rule for one-way hardening ops.",
+        "Security-tightening rather than reachability-opening, so MEDIUM rather than HIGH; loosening back to plain HTTP is not offered here and needs an engineer.",
+        "Azure applies the flag without restarting the app, so downtime stays none."
+      ]
+    },
+    {
+      "id": "azure-web-linux-function-update-tags",
+      "service": "azure-web",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Linux function app tags",
+      "summary": "Set or update this function app's tags. Only the tags you list change; others are left alone.",
+      "description": "Sets or merges tags on a Linux function app. Non-disruptive, takes effect immediately, no impact on running functions.",
+      "target": {
+        "resourceType": "azurerm_linux_function_app",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "function_app",
+          "label": "Linux function app",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_linux_function_app/address",
+          "help": "The Linux function app to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Azure tag names cannot contain < > % & \\ ? /."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag function app", "linux function handover"],
+      "group": "tags-naming",
+      "decisions": [
+        "Tags are metadata only \u2014 cost-neutral and freely reversible \u2014 so this stays LOW risk."
+      ]
+    },
+    {
+      "id": "azure-web-linux-function-enforce-https",
+      "service": "azure-web",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enforce HTTPS-only on a Linux function app",
+      "summary": "Reject plain HTTP and require HTTPS for this function app. One-way hardening; loosening it back needs an engineer.",
+      "description": "Sets https_only to true on a Linux function app, so Azure redirects plain-HTTP requests instead of serving them. Tightening-only \u2014 this op can only turn the setting on. Azure applies the change without restarting the function app.",
+      "target": {
+        "attr": "https_only",
+        "resourceType": "azurerm_linux_function_app"
+      },
+      "params": [
+        {
+          "name": "function_app",
+          "label": "Linux function app",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_linux_function_app/address",
+          "help": "The Linux function app to change."
+        },
+        {
+          "name": "https_only",
+          "label": "Require HTTPS",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "https_only",
+          "bounds": {
+            "allowlist": [true]
+          },
+          "help": "Set to true to require HTTPS; App Service terminates TLS at the platform, so every function app already supports it. This op cannot be used to turn the requirement back off."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (https_only)",
+      "keywords": ["reject http", "https only"],
+      "group": "connectivity-access",
+      "decisions": [
+        "Tighten-only posture \u2014 the allowlist offers only true \u2014 matching the shared contract's rule for one-way hardening ops.",
+        "Security-tightening rather than reachability-opening, so MEDIUM rather than HIGH; loosening back to plain HTTP is not offered here and needs an engineer.",
+        "Azure applies the flag without restarting the app, so downtime stays none."
+      ]
+    },
+    {
+      "id": "azure-web-windows-function-update-tags",
+      "service": "azure-web",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Windows function app tags",
+      "summary": "Set or update this function app's tags. Only the tags you list change; others are left alone.",
+      "description": "Sets or merges tags on a Windows function app. Non-disruptive, takes effect immediately, no impact on running functions.",
+      "target": {
+        "resourceType": "azurerm_windows_function_app",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "function_app",
+          "label": "Windows function app",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_windows_function_app/address",
+          "help": "The Windows function app to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Azure tag names cannot contain < > % & \\ ? /."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag function app", "windows function handover"],
+      "group": "tags-naming",
+      "decisions": [
+        "Tags are metadata only \u2014 cost-neutral and freely reversible \u2014 so this stays LOW risk."
+      ]
+    },
+    {
+      "id": "azure-web-windows-function-enforce-https",
+      "service": "azure-web",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enforce HTTPS-only on a Windows function app",
+      "summary": "Reject plain HTTP and require HTTPS for this function app. One-way hardening; loosening it back needs an engineer.",
+      "description": "Sets https_only to true on a Windows function app, so Azure redirects plain-HTTP requests instead of serving them. Tightening-only \u2014 this op can only turn the setting on. Azure applies the change without restarting the function app.",
+      "target": {
+        "attr": "https_only",
+        "resourceType": "azurerm_windows_function_app"
+      },
+      "params": [
+        {
+          "name": "function_app",
+          "label": "Windows function app",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_windows_function_app/address",
+          "help": "The Windows function app to change."
+        },
+        {
+          "name": "https_only",
+          "label": "Require HTTPS",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "https_only",
+          "bounds": {
+            "allowlist": [true]
+          },
+          "help": "Set to true to require HTTPS; App Service terminates TLS at the platform, so every function app already supports it. This op cannot be used to turn the requirement back off."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (https_only)",
+      "keywords": ["reject http", "https only"],
+      "group": "connectivity-access",
+      "decisions": [
+        "Tighten-only posture \u2014 the allowlist offers only true \u2014 matching the shared contract's rule for one-way hardening ops.",
+        "Security-tightening rather than reachability-opening, so MEDIUM rather than HIGH; loosening back to plain HTTP is not offered here and needs an engineer.",
+        "Azure applies the flag without restarting the app, so downtime stays none."
+      ]
+    },
+    {
+      "id": "azure-web-service-plan-provision",
+      "service": "azure-web",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create an App Service plan",
+      "summary": "Request a new App Service plan, the shared compute tier web and function apps run on; an engineer finalizes and reviews the Terraform.",
+      "description": "Specify a new App Service plan: name, resource group, region, operating system, and pricing/compute tier. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "azurerm_service_plan"
+      },
+      "params": [
+        {
+          "name": "plan_name",
+          "label": "Plan name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9-]{1,40}$"
+          },
+          "help": "Letters, numbers and dashes, up to 40 characters. Names the plan in the generated draft."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "group": "identity",
+          "help": "The resource group this plan belongs to."
+        },
+        {
+          "name": "os_type",
+          "label": "Operating system",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "os_type",
+          "group": "compute",
+          "bounds": {
+            "allowlist": ["Linux", "Windows"]
+          },
+          "default": "Linux",
+          "help": "The plan's operating system. Every app hosted on it must match \u2014 a Linux web app needs a Linux plan."
+        },
+        {
+          "name": "sku_name",
+          "label": "Hosting tier",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku_name",
+          "group": "compute",
+          "bounds": {
+            "allowlist": ["B1", "B2", "B3", "S1", "S2", "S3", "P1v3", "P2v3", "P3v3"]
+          },
+          "default": "S1",
+          "help": "Pricing/compute tier \u2014 the same list the plan-resize action offers. Every app hosted on the plan shares this tier."
+        },
+        {
+          "name": "resource_name",
+          "label": "App Service plan name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this App Service plan is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this App Service plan."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new app service plan", "new hosting plan"],
+      "decisions": [
+        "Zone balancing and per-site scaling are left at their defaults \u2014 enable them explicitly afterward if the workload needs them.",
+        "An isolated (App Service Environment) plan is a separate, engineer-authored path \u2014 not offered by this form."
+      ]
+    },
+    {
+      "id": "azure-web-linux-webapp-provision",
+      "service": "azure-web",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a Linux web app",
+      "summary": "Request a new Linux web app on an existing App Service plan; an engineer finalizes and reviews the Terraform.",
+      "description": "Specify a new Linux web app: name, resource group, region, hosting plan, and the baseline site security settings. The application_stack (language/runtime and version, or a container image), custom domains, and app settings are always finished by the engineer, never uploaded here. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "azurerm_linux_web_app"
+      },
+      "params": [
+        {
+          "name": "app_name",
+          "label": "Web app name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9-]{2,60}$"
+          },
+          "help": "Letters, numbers and dashes, 2-60 characters. Becomes part of the app's default <name>.azurewebsites.net address."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "group": "identity",
+          "help": "The resource group this web app belongs to."
+        },
+        {
+          "name": "service_plan",
+          "label": "App Service plan",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "service_plan_id",
+          "enumSource": "inventory://azurerm_service_plan/address",
+          "group": "compute",
+          "help": "The App Service plan that hosts this app. Must be a Linux plan."
+        },
+        {
+          "name": "runtime_stack",
+          "label": "Runtime stack",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "application_stack",
+          "path": ["site_config"],
+          "group": "compute",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The language/runtime and version (or container image) the app runs. Too many valid combinations to offer as a fixed list \u2014 the engineer sets the exact block during review."
+        },
+        {
+          "name": "https_only",
+          "label": "Require HTTPS",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "https_only",
+          "group": "security",
+          "help": "Always on for a new web app \u2014 written into the draft, never asked. Plain HTTP requests are redirected."
+        },
+        {
+          "name": "minimum_tls_version",
+          "label": "Minimum TLS version",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "1.2",
+          "attr": "minimum_tls_version",
+          "path": ["site_config"],
+          "group": "security",
+          "help": "Always TLS 1.2 for a new web app \u2014 written into the draft, never asked."
+        },
+        {
+          "name": "ftps_state",
+          "label": "FTP/FTPS access",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "ftps_state",
+          "path": ["site_config"],
+          "group": "security",
+          "bounds": {
+            "allowlist": ["Disabled", "FtpsOnly"]
+          },
+          "default": "Disabled",
+          "help": "Disabled turns FTP deployment off entirely (the safest default); FtpsOnly allows encrypted FTPS only. Plain unencrypted FTP is never offered."
+        },
+        {
+          "name": "resource_name",
+          "label": "Web app name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this web app is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this web app."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new web app", "new linux web app"],
+      "decisions": [
+        "Confirm the chosen region matches the target App Service plan's own region \u2014 Azure requires them to align.",
+        "The application_stack (language/runtime and version, or a container image) inside site_config \u2014 the engineer sets the exact block during review.",
+        "Custom domains, TLS certificate bindings, and deployment slots are configured separately after creation.",
+        "App settings and connection strings are deliberately excluded here \u2014 they can carry secrets and are added by the engineer after review."
+      ]
+    },
+    {
+      "id": "azure-web-function-app-provision",
+      "service": "azure-web",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a Linux function app",
+      "summary": "Request a new Linux function app on an existing App Service plan; an engineer finalizes and reviews the Terraform.",
+      "description": "Specify a new Linux function app: name, resource group, region, hosting plan, backing storage account, and the baseline site security settings. The application_stack (language/runtime and version, or a container image), the code package, and app settings are always finished by the engineer, never uploaded here. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "azurerm_linux_function_app"
+      },
+      "params": [
+        {
+          "name": "app_name",
+          "label": "Function app name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9-]{2,60}$"
+          },
+          "help": "Letters, numbers and dashes, 2-60 characters. Becomes part of the app's default <name>.azurewebsites.net address."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "group": "identity",
+          "help": "The resource group this function app belongs to."
+        },
+        {
+          "name": "service_plan",
+          "label": "App Service plan",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "service_plan_id",
+          "enumSource": "inventory://azurerm_service_plan/address",
+          "group": "compute",
+          "help": "The App Service plan that hosts this app. Must be a Linux plan."
+        },
+        {
+          "name": "storage_account",
+          "label": "Storage account",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "storage_account_name",
+          "enumSource": "inventory://azurerm_storage_account/address",
+          "group": "storage",
+          "help": "The storage account the function app uses for its own code and state. Every function app needs one."
+        },
+        {
+          "name": "storage_uses_managed_identity",
+          "label": "Use managed identity for storage access",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "storage_uses_managed_identity",
+          "group": "storage",
+          "help": "Always on for a new function app \u2014 written into the draft, never asked. Authenticates to the storage account without a shared access key; the engineer still needs to grant the app's managed identity the right role on the storage account."
+        },
+        {
+          "name": "runtime_stack",
+          "label": "Runtime stack",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "application_stack",
+          "path": ["site_config"],
+          "group": "compute",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The language/runtime and version (or container image) the app runs. Too many valid combinations to offer as a fixed list \u2014 the engineer sets the exact block during review."
+        },
+        {
+          "name": "https_only",
+          "label": "Require HTTPS",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "https_only",
+          "group": "security",
+          "help": "Always on for a new function app \u2014 written into the draft, never asked. Plain HTTP requests are redirected."
+        },
+        {
+          "name": "minimum_tls_version",
+          "label": "Minimum TLS version",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "1.2",
+          "attr": "minimum_tls_version",
+          "path": ["site_config"],
+          "group": "security",
+          "help": "Always TLS 1.2 for a new function app \u2014 written into the draft, never asked."
+        },
+        {
+          "name": "ftps_state",
+          "label": "FTP/FTPS access",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "Disabled",
+          "attr": "ftps_state",
+          "path": ["site_config"],
+          "group": "security",
+          "help": "FTP deployment is turned off entirely for a new function app \u2014 written into the draft, never asked."
+        },
+        {
+          "name": "resource_name",
+          "label": "Function app name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this function app is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this function app."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new function app", "new linux function app", "new serverless app"],
+      "decisions": [
+        "Confirm the chosen region matches the target App Service plan's own region \u2014 Azure requires them to align.",
+        "Grant the function app's managed identity the appropriate role (for example Storage Blob Data Owner) on the storage account, and confirm the app carries an identity block \u2014 required for storage_uses_managed_identity to actually authenticate.",
+        "The application_stack (language/runtime and version, or a container image) inside site_config \u2014 the engineer sets the exact block during review.",
+        "The code package and its triggers are always delivered by the engineer, never uploaded here.",
+        "App settings and connection strings are deliberately excluded here \u2014 they can carry secrets and are added by the engineer after review."
+      ]
+    }
+  ]
+}

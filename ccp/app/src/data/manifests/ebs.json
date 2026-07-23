@@ -1,0 +1,865 @@
+{
+  "service": "ebs",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_ebs_volume",
+    "aws_volume_attachment"
+  ],
+  "summary": "EBS volumes and the attachments binding them to instances. Grow is guardrailed and irreversible; gp2 \u2192 gp3 is a self-service, auto-eligible cost save; attachments are read-only in the console (attach/detach is engineer work).",
+  "operations": [
+    {
+      "id": "ebs-grow",
+      "service": "ebs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Grow an EBS volume",
+      "summary": "Increase this volume's size. Storage can only grow, never shrink, so this can't be undone.",
+      "consoleLabel": "Size (GiB)",
+      "description": "Increase a volume's size. Grow-only \u2014 you cannot shrink an EBS volume, so this is irreversible. No downtime. Taking a snapshot first? Use \"Create a volume snapshot\".",
+      "target": {
+        "attr": "size",
+        "resourceType": "aws_ebs_volume"
+      },
+      "params": [
+        {
+          "name": "volume",
+          "label": "Volume",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EBS volume to enlarge; the picker lists only estate-managed volumes from inventory, and the size field separately enforces grow-only since EBS volumes can never be shrunk.",
+          "enumSource": "inventory://aws_ebs_volume/address",
+          "required": true
+        },
+        {
+          "name": "new_size_gib",
+          "label": "New size (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 16384,
+            "growOnly": true
+          },
+          "help": "Must exceed the current size; a volume cannot be shrunk."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (grow-only)",
+      "keywords": [
+        "disk full",
+        "extend disk",
+        "grow disk",
+        "increase disk size",
+        "out of space"
+      ],
+      "group": "scale-performance",
+      "pinned": 3
+    },
+    {
+      "id": "ebs-gp2-to-gp3",
+      "service": "ebs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Migrate a volume gp2 \u2192 gp3",
+      "summary": "Switch this volume from gp2 to gp3: cheaper, with the same or better performance. Reversible, no downtime.",
+      "description": "Switch a gp2 volume to gp3 (cheaper, same or better baseline). Reversible, no downtime.",
+      "target": {
+        "attr": "type",
+        "resourceType": "aws_ebs_volume"
+      },
+      "params": [
+        {
+          "name": "volume",
+          "label": "Volume (gp2)",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the gp2 volume to migrate; the inventory picker restricts the choice to EBS volumes already managed in the estate.",
+          "enumSource": "inventory://aws_ebs_volume/address",
+          "required": true
+        },
+        {
+          "name": "target_type",
+          "label": "Target type",
+          "type": "string",
+          "source": "allowlist",
+          "help": "The EBS volume type to convert to, fixed by the allowlist to gp3 because this form is exactly the gp2-to-gp3 cost migration; any other type change must go through the change-volume-type operation instead.",
+          "required": false,
+          "default": "gp3",
+          "attr": "type",
+          "bounds": {
+            "allowlist": [
+              "gp3"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (type)",
+      "keywords": [
+        "slow disk",
+        "iops starved",
+        "disk performance",
+        "gp2 to gp3",
+        "storage cost"
+      ],
+      "group": "scale-performance",
+      "pinned": 1
+    },
+    {
+      "id": "ebs-create-snapshot",
+      "service": "ebs",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Create a volume snapshot",
+      "summary": "Take a point-in-time backup of this volume — the standard safety step before a risky change. Costs storage until deleted.",
+      "description": "Adds a new aws_ebs_snapshot resource capturing a point-in-time copy of the volume — the standard safety step before a risky change, and a restore source afterwards. Additive and reversible; snapshot storage cost accrues until it is deleted.",
+      "target": {
+        "resourceType": "aws_ebs_volume",
+        "block": "aws_ebs_snapshot"
+      },
+      "params": [
+        {
+          "name": "volume",
+          "label": "Volume",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_ebs_volume/address",
+          "help": "The volume to copy. The snapshot is crash-consistent, not application-quiesced."
+        },
+        {
+          "name": "snapshot_name",
+          "label": "Snapshot name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,80}$"
+          },
+          "help": "Name it after the change it protects, like \"pre kernel patch data disk\", so it is findable later."
+        },
+        {
+          "name": "description_tag",
+          "label": "Why this snapshot",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "Recorded on the snapshot so it can be safely cleaned up later."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "keywords": [
+        "snapshot before change",
+        "snapshot the volume",
+        "backup the disk",
+        "pre-change snapshot",
+        "copy of the disk"
+      ],
+      "group": "create"
+    },
+    {
+      "id": "ebs-delete-volume",
+      "service": "ebs",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete an EBS volume",
+      "summary": "Permanently delete this volume. Data is lost and this can't be undone, so detach it first; an engineer reviews the change.",
+      "description": "Destroy an EBS volume. Irreversible \u2014 data is lost, so detach it first. High blast radius; an engineer authors and reviews the change.",
+      "target": {
+        "resourceType": "aws_ebs_volume"
+      },
+      "params": [
+        {
+          "name": "volume",
+          "label": "Volume",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EBS volume to destroy; the inventory picker limits deletion to estate-managed volumes, and because data loss is irreversible an engineer still authors and reviews the change.",
+          "enumSource": "inventory://aws_ebs_volume/address",
+          "required": true
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "keywords": [
+        "decommission volume",
+        "remove disk",
+        "delete disk"
+      ],
+      "group": "danger-zone"
+    },
+    {
+      "id": "ebs-change-volume-type",
+      "service": "ebs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change EBS volume type",
+      "summary": "Change this volume's type. Applies with no downtime, but AWS enforces about a six-hour cooldown before the next change.",
+      "consoleLabel": "Volume type",
+      "description": "Change the volume type (standard/gp2/gp3/io1/io2/sc1/st1) via online ModifyVolume. Stateful config change, no downtime; AWS enforces a ~6h cooldown between modifications and the target type must be compatible with any provisioned iops/throughput. Reversible.",
+      "target": {
+        "attr": "type",
+        "resourceType": "aws_ebs_volume"
+      },
+      "params": [
+        {
+          "name": "volume",
+          "label": "Volume",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EBS volume whose type changes; the inventory picker limits the change to estate-managed volumes, and AWS applies it online via ModifyVolume with no downtime.",
+          "enumSource": "inventory://aws_ebs_volume/address",
+          "required": true
+        },
+        {
+          "name": "type",
+          "label": "Volume type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "standard",
+              "gp2",
+              "gp3",
+              "io1",
+              "io2",
+              "sc1",
+              "st1"
+            ]
+          },
+          "help": "gp3 supports independent iops/throughput; io1/io2 are provisioned-IOPS; sc1/st1 are throughput HDD."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (type)",
+      "keywords": [
+        "change volume type",
+        "io1",
+        "io2",
+        "faster disk"
+      ],
+      "group": "scale-performance",
+      "pinned": 4
+    },
+    {
+      "id": "ebs-set-iops",
+      "service": "ebs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set provisioned IOPS",
+      "summary": "Set how many IOPS this volume can provision. No downtime to apply, but it affects cost and must fit the volume type's ratio to size.",
+      "consoleLabel": "IOPS",
+      "description": "Set provisioned iops for io1/io2/gp3 volumes via online ModifyVolume. Must respect the type's IOPS:GiB ratio (gp3 \u226416000; io1/io2 up to 64000). No downtime, reversible; affects cost.",
+      "target": {
+        "attr": "iops",
+        "resourceType": "aws_ebs_volume"
+      },
+      "params": [
+        {
+          "name": "volume",
+          "label": "Volume",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EBS volume to provision IOPS on; the inventory picker limits the change to estate-managed volumes, and the volume must be of type io1, io2, or gp3 for iops to apply.",
+          "enumSource": "inventory://aws_ebs_volume/address",
+          "required": true
+        },
+        {
+          "name": "iops",
+          "label": "Provisioned IOPS",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 100,
+            "max": 64000
+          },
+          "help": "Only valid for type io1, io2 or gp3. Value must satisfy the type's IOPS:GiB ratio."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (iops)",
+      "keywords": [
+        "more iops",
+        "disk speed",
+        "io starved"
+      ],
+      "group": "scale-performance",
+      "pinned": 5
+    },
+    {
+      "id": "ebs-set-throughput",
+      "service": "ebs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set throughput (gp3)",
+      "summary": "Set this gp3 volume's throughput in MiB per second. No downtime, reversible, but it affects cost.",
+      "consoleLabel": "Throughput (MiB/s)",
+      "description": "Set throughput in MiB/s for gp3 volumes via online ModifyVolume. No downtime, reversible; affects cost.",
+      "target": {
+        "attr": "throughput",
+        "resourceType": "aws_ebs_volume"
+      },
+      "params": [
+        {
+          "name": "volume",
+          "label": "Volume",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the gp3 volume whose throughput changes; the inventory picker limits the change to estate-managed volumes, and AWS applies it online with no downtime.",
+          "enumSource": "inventory://aws_ebs_volume/address",
+          "required": true
+        },
+        {
+          "name": "throughput",
+          "label": "Throughput (MiB/s)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 125,
+            "max": 1000
+          },
+          "help": "Only valid for type gp3."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (throughput)",
+      "keywords": [
+        "disk throughput",
+        "faster transfers"
+      ],
+      "group": "scale-performance"
+    },
+    {
+      "id": "ebs-toggle-final-snapshot",
+      "service": "ebs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle final snapshot on delete",
+      "summary": "Turn on or off taking an automatic snapshot when this volume is eventually deleted. Only affects future deletes, not the live volume.",
+      "description": "Enable/disable final_snapshot \u2014 whether a snapshot is captured when the volume is destroyed. Affects delete-time behavior only; no change to the live volume. Reversible, no downtime.",
+      "target": {
+        "attr": "final_snapshot",
+        "resourceType": "aws_ebs_volume"
+      },
+      "params": [
+        {
+          "name": "volume",
+          "label": "Volume",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the volume whose delete-time snapshot setting changes; the inventory picker limits the change to estate-managed volumes, and the live volume itself is not modified.",
+          "enumSource": "inventory://aws_ebs_volume/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Final snapshot",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "Sets final_snapshot: true makes a snapshot get captured automatically if the volume is ever destroyed, preserving a last-chance recovery copy, while false skips it; a strict true/false toggle that changes delete-time behavior only.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (final_snapshot)",
+      "group": "protection-backup",
+      "pinned": 2
+    },
+    {
+      "id": "ebs-add-tag",
+      "service": "ebs",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag",
+      "summary": "Add a tag to this volume. Metadata only — no effect on how it runs.",
+      "description": "Add a key/value tag to the volume. Cosmetic metadata; reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_ebs_volume",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "volume",
+          "label": "Volume",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EBS volume to tag; the inventory picker keeps this metadata-only change on estate-managed volumes.",
+          "enumSource": "inventory://aws_ebs_volume/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w.:/+@-]{1,128}$"
+          },
+          "help": "1-128 chars; letters, numbers, and _ . : / + @ - (no spaces or =)."
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w\\s.:/=+@-]{0,256}$"
+          },
+          "help": "Up to 256 chars."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "keywords": [
+        "tag volume",
+        "add to backup scheme",
+        "backup tag"
+      ],
+      "group": "create"
+    },
+    {
+      "id": "ebs-remove-tag",
+      "service": "ebs",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag",
+      "summary": "Remove a tag from this volume. Metadata only, and it can always be added back.",
+      "description": "Remove a tag by key from the volume. Reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_ebs_volume",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "volume",
+          "label": "Volume",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EBS volume to remove the tag from; the inventory picker keeps the change on estate-managed volumes, and a removed tag can always be re-added.",
+          "enumSource": "inventory://aws_ebs_volume/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w.:/+@-]{1,128}$"
+          },
+          "help": "Exact key of the tag to remove."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "ebs-ebs-volume-engineer-request",
+      "service": "ebs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to EBS volume",
+      "summary": "Request any other change to this volume, including ones that replace it, like encryption. An engineer authors and reviews the Terraform.",
+      "description": "Catch-all for any aws_ebs_volume change not offered as a bounded form above \u2014 including ForceNew/replacement fields (encrypted, kms_key_id, availability_zone, snapshot_id, outpost_arn, multi_attach_enabled, volume_initialization_rate) and anything else. An engineer authors and reviews the Terraform.",
+      "target": {
+        "attr": "purpose",
+        "resourceType": "aws_ebs_volume"
+      },
+      "params": [
+        {
+          "name": "volume",
+          "label": "Volume",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_ebs_volume/address",
+          "required": true,
+          "help": "The volume to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "scale-performance"
+    },
+    {
+      "id": "ebs-set-encrypted",
+      "service": "ebs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set EBS volume encryption",
+      "summary": "Turn encryption on or off for this volume. Applying REPLACES it, so data is lost unless you snapshot first; an engineer reviews this.",
+      "consoleLabel": "Encryption",
+      "description": "Set the `encrypted` argument (true/false) on an existing EBS volume. Encryption is a creation-time property on aws_ebs_volume: changing it forces Terraform to destroy and recreate the volume (ForceNew), losing existing data unless the volume is snapshotted first. High blast radius \u2014 an engineer authors and reviews the Terraform.",
+      "target": {
+        "attr": "encrypted",
+        "resourceType": "aws_ebs_volume"
+      },
+      "params": [
+        {
+          "name": "volume",
+          "label": "Volume",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_ebs_volume/address",
+          "required": true,
+          "help": "The volume to change, chosen from live inventory."
+        },
+        {
+          "name": "encrypted",
+          "label": "Encrypted",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true encrypts the disk. Changing this forces volume replacement (ForceNew); snapshot first to preserve data."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "volume replaced (destroy/recreate)",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (encrypted)",
+      "keywords": [
+        "encrypt volume",
+        "unencrypted volume",
+        "encryption finding"
+      ],
+      "group": "danger-zone"
+    },
+    {
+      "id": "ebs-set-multi-attach",
+      "service": "ebs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set EBS Multi-Attach",
+      "summary": "Turn Multi-Attach on or off (io1/io2 only). Applying REPLACES the volume, losing data unless snapshotted first; an engineer reviews this.",
+      "consoleLabel": "Multi-Attach",
+      "description": "Set the `multi_attach_enabled` argument (true/false) to enable or disable Amazon EBS Multi-Attach. Supported on io1 and io2 volumes only. This is a creation-time property: changing it forces Terraform to destroy and recreate the volume (ForceNew) \u2014 data is lost unless snapshotted first \u2014 and it changes concurrent-attach semantics with data-corruption potential. An engineer authors and reviews the Terraform.",
+      "target": {
+        "attr": "multi_attach_enabled",
+        "resourceType": "aws_ebs_volume"
+      },
+      "params": [
+        {
+          "name": "volume",
+          "label": "Volume",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_ebs_volume/address",
+          "required": true,
+          "help": "The volume to change, chosen from live inventory."
+        },
+        {
+          "name": "multi_attach_enabled",
+          "label": "Multi-Attach enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Enable EBS Multi-Attach (io1/io2 volumes only). Changing this forces volume replacement (ForceNew); snapshot first to preserve data."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "volume replaced (destroy/recreate)",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (multi_attach_enabled)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "ebs-create-volume",
+      "service": "ebs",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a new volume",
+      "summary": "Request a brand-new volume attached to a server; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Create a new data volume in the same zone as the server it attaches to, encrypted, on gp3, with the estate's tags. Submitting routes the complete specification to an engineer with a draft Terraform block — the volume and its attachment — to review and finish.",
+      "target": {
+        "resourceType": "aws_ebs_volume"
+      },
+      "params": [
+        {
+          "name": "volume_name",
+          "label": "Volume name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "tags.Name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Becomes the name tag and the Terraform name."
+        },
+        {
+          "name": "attach_to",
+          "label": "Attach to server",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "group": "placement",
+          "help": "The volume is created in this server's availability zone and attached to it."
+        },
+        {
+          "name": "device_name",
+          "label": "Device name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "group": "placement",
+          "bounds": {
+            "pattern": "^/dev/sd[b-p]$"
+          },
+          "help": "The Linux device this volume appears as, like /dev/sdd. Pick the next free letter on the host."
+        },
+        {
+          "name": "size_gib",
+          "label": "Size (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "size",
+          "group": "capacity",
+          "bounds": {
+            "min": 8,
+            "max": 16384
+          },
+          "default": 100,
+          "help": "Can grow later without downtime; can never shrink."
+        },
+        {
+          "name": "volume_type",
+          "label": "Volume type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "type",
+          "group": "capacity",
+          "bounds": {
+            "allowlist": [
+              "gp3"
+            ]
+          },
+          "default": "gp3",
+          "help": "New volumes start on gp3 — faster baseline and cheaper per GiB than gp2."
+        },
+        {
+          "name": "iops",
+          "label": "Extra speed (IOPS)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "iops",
+          "group": "capacity",
+          "tier": "advanced",
+          "bounds": {
+            "min": 3000,
+            "max": 16000
+          },
+          "default": 3000,
+          "help": "Leave as-is unless the database team asked for more."
+        },
+        {
+          "name": "throughput_mibps",
+          "label": "Throughput (MiB/s)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "throughput",
+          "group": "capacity",
+          "tier": "advanced",
+          "bounds": {
+            "min": 125,
+            "max": 1000
+          },
+          "default": 125,
+          "help": "Leave as-is unless a throughput figure was requested."
+        },
+        {
+          "name": "encrypted",
+          "label": "Encryption",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "encrypted",
+          "group": "capacity",
+          "help": "Always encrypted — written into the draft, never asked."
+        },
+        {
+          "name": "kms_key",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key_id",
+          "group": "capacity",
+          "tier": "advanced",
+          "help": "Only change if the workload has its own key; blank uses the account default."
+        },
+        {
+          "name": "snapshot",
+          "label": "Start from a snapshot",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "snapshot_id",
+          "group": "capacity",
+          "tier": "advanced",
+          "bounds": {
+            "pattern": "^snap-[0-9a-f]{8,17}$"
+          },
+          "help": "Restore data by creating the volume from this snapshot. Leave blank for an empty volume."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this volume holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this volume."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new volume",
+        "new disk",
+        "add disk to server",
+        "extra disk"
+      ],
+      "decisions": [
+        "Confirm the device name is free on the host",
+        "Confirm the encryption key choice if the workload is key-scoped"
+      ]
+    }
+  ]
+}

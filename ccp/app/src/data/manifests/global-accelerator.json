@@ -1,0 +1,129 @@
+{
+  "service": "global-accelerator",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_globalaccelerator_accelerator"
+  ],
+  "summary": "Provision a new Global Accelerator. Greenfield today (none exists yet in this estate) \u2014 the create stands up the accelerator shell with its static anycast IPs; listeners and endpoint groups are engineer follow-ups.",
+  "operations": [
+    {
+      "id": "global-accelerator-create",
+      "service": "global-accelerator",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Global Accelerator",
+      "summary": "Request a brand-new Global Accelerator; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new aws_globalaccelerator_accelerator as a complete specification: name, enabled state and IP address type. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review. This provisions the accelerator shell with its static anycast IPs; nothing is routed to until listeners and endpoint groups are added.",
+      "target": {
+        "resourceType": "aws_globalaccelerator_accelerator"
+      },
+      "params": [
+        {
+          "name": "accelerator_name",
+          "label": "Accelerator name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes."
+        },
+        {
+          "name": "enabled",
+          "label": "Enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "enabled",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Whether the accelerator routes traffic once created."
+        },
+        {
+          "name": "ip_address_type",
+          "label": "IP address type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "ip_address_type",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              "IPV4",
+              "DUAL_STACK"
+            ]
+          },
+          "default": "IPV4",
+          "help": "DUAL_STACK additionally advertises IPv6 anycast addresses."
+        },
+        {
+          "name": "resource_name",
+          "label": "Accelerator name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this accelerator is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this accelerator."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new global accelerator",
+        "provision accelerator",
+        "anycast ip"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Listeners and endpoint groups are engineer follow-ups \u2014 this form provisions the accelerator shell with its two static anycast IPs, nothing routed to yet",
+        "Flow-log destination (S3 bucket/prefix) and bring-your-own IP address ranges are engineer decisions"
+      ]
+    }
+  ]
+}

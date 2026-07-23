@@ -1,0 +1,1 @@
+{"service":"trusted-signing","types":{"azurerm_trusted_signing_account":{"attrs":[{"n":"location","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"sku_name","t":"string","r":1},{"n":"tags","t":"map"}],"blocks":[]}}}

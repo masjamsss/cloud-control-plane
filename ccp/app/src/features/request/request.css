@@ -1,0 +1,1271 @@
+/* ============================================================================
+   Request form components — RequestForm, ErrorSummary, SchedulePicker,
+   ReviewStep, ImpactPanel. Co-located, token-driven. Risk is the only
+   colored axis; exposure is steel.
+   ============================================================================ */
+
+.rq {
+  max-width: 1080px;
+}
+
+.rq-loading {
+  color: var(--text-muted);
+}
+
+/* ── Breadcrumbs ───────────────────────────────────────── */
+.rq-crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  font-size: 13px;
+  margin-bottom: var(--space-6);
+}
+.rq-crumbs a {
+  color: var(--text-muted);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.rq-crumbs a:hover {
+  color: var(--brass);
+}
+.rq-crumbs [aria-current='page'] {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.rq-crumbs__sep {
+  color: var(--text-faint);
+}
+
+/* ── Heading + transparency strip ──────────────────────── */
+/* Ledger title scale — a single-purpose leaf page, one rank below the
+   service console (matches login.css's .login__title tier). Also the ONE
+   definition of .rq-title now — a second, shadowing 18px/650 block used to
+   live further down (the dead "merged service page" section) and always
+   won the cascade; consolidated here so the rule that actually renders is
+   the one that's easy to find. */
+.rq-title {
+  margin: 0 0 var(--space-3);
+  font-size: clamp(24px, 3vw, 30px);
+  line-height: 1.05;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+.rq-desc {
+  margin: 0 0 var(--space-5);
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.5;
+  max-width: 68ch;
+}
+.rq-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding-bottom: var(--space-6);
+  margin-bottom: var(--space-7);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.rq-strip__fact {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* ── Two-column layout ─────────────────────────────────── */
+.rq-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--space-9);
+  align-items: start;
+}
+.rq-main {
+  max-width: 640px;
+  min-width: 0;
+}
+
+/* ── Justification + generic field ─────────────────────── */
+.rq-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-7);
+}
+.rq-field__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.rq-field__req {
+  color: var(--brass);
+}
+.rq-field__optional {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+.rq-field__textarea,
+.rq-field__input {
+  background: var(--surface-2);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 11px;
+  width: 100%;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.rq-field__textarea {
+  resize: vertical;
+}
+.rq-field__textarea:hover,
+.rq-field__input:hover {
+  border-color: var(--border-hover);
+}
+.rq-field__textarea:focus-visible,
+.rq-field__input:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
+  border-color: var(--brass);
+}
+.rq-field__textarea[aria-invalid='true'],
+.rq-field__input[aria-invalid='true'] {
+  border-color: var(--risk-high);
+}
+/* --- kind radio group (beyond-catalog form; Task 1) --- */
+.rq-field__radios {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.rq-field__radio {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.rq-field__radio input {
+  accent-color: var(--brass);
+}
+.rq-field__help {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.rq-field__error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--risk-high);
+  font-weight: 500;
+}
+
+/* ── Soft warnings (non-blocking, distinct from error) ─── */
+.rq-warnings {
+  list-style: none;
+  margin: var(--space-6) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.rq-warnings__item {
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--risk-med) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--risk-med) 35%, transparent);
+  border-radius: var(--radius-2);
+  padding: var(--space-4) var(--space-5);
+}
+
+/* ── Submit bar / cancel ───────────────────────────────── */
+.rq-submitbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin-top: var(--space-8);
+}
+.rq-cancel {
+  color: var(--text-muted);
+  font-size: 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.rq-cancel:hover {
+  color: var(--text-primary);
+}
+
+/* ── Error summary (GOV.UK) ────────────────────────────── */
+.rq-errsum {
+  border: 2px solid var(--risk-high);
+  border-radius: var(--radius-2);
+  padding: var(--space-5) var(--space-6);
+  margin-bottom: var(--space-7);
+}
+.rq-errsum:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+.rq-errsum__heading {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--risk-high);
+  margin: 0 0 var(--space-4);
+}
+.rq-errsum__list {
+  margin: 0;
+  padding-left: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.rq-errsum__link {
+  color: var(--risk-high);
+  text-decoration: underline;
+  font-size: 13px;
+}
+.rq-errsum__link:hover {
+  color: var(--text-primary);
+}
+
+/* ── Impact panel (sticky facts) ─────────────────────────
+   Ledger contract #3 — a hairline top rule, not a boxed card; the facts
+   sit directly on the canvas like every other divider-separated surface. */
+.rq-impact {
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border-hairline);
+  border-radius: 0;
+  padding: var(--space-6) 0 0;
+  position: sticky;
+  top: 72px;
+}
+.rq-impact__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 600;
+  margin: 0 0 var(--space-5);
+}
+.rq-impact__facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-4) var(--space-5);
+  margin: 0;
+  font-size: 13px;
+  align-items: center;
+}
+.rq-impact__facts dt {
+  color: var(--text-muted);
+}
+.rq-impact__facts dd {
+  margin: 0;
+  color: var(--text-primary);
+  text-align: right;
+  justify-self: end;
+}
+.rq-impact__warnval {
+  color: var(--risk-med);
+}
+.rq-impact__mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.rq-impact__change {
+  margin-top: var(--space-6);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-hairline);
+}
+.rq-impact__change .rq-impact__eyebrow {
+  margin-bottom: var(--space-3);
+}
+.rq-impact__diff {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.rq-impact__attr {
+  color: var(--text-muted);
+}
+.rq-impact__new {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.rq-impact__note {
+  margin: var(--space-6) 0 0;
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-hairline);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* ── Review step ───────────────────────────────────────── */
+.rq-review {
+  max-width: 760px;
+}
+.rq-review__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+.rq-review__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 600;
+  margin: 0 0 var(--space-3);
+}
+.rq-review__title {
+  font-size: clamp(22px, 2.8vw, 28px);
+  line-height: 1.05;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  margin: 0;
+}
+.rq-review__lede {
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: var(--space-5) 0 var(--space-8);
+  max-width: 68ch;
+}
+.rq-review__section {
+  border-top: 1px solid var(--border-hairline);
+  padding: var(--space-6) 0;
+}
+.rq-review__section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+.rq-review__section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-4);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.rq-review__edit {
+  background: none;
+  border: none;
+  color: var(--brass);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+}
+.rq-review__edit:hover {
+  color: var(--brass-hover);
+}
+.rq-review__dl {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.rq-review__row {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: var(--space-5);
+  align-items: baseline;
+}
+.rq-review__row dt {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.rq-review__row dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.rq-review__exp-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.rq-review__just {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.rq-review__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin-top: var(--space-8);
+}
+
+/* ── Request record (YAML) ─────────────────────────────── */
+.rq-record {
+  margin-top: var(--space-6);
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+  padding: var(--space-5) var(--space-6);
+}
+.rq-record__summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brass);
+}
+.rq-record__note {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: var(--space-4) 0;
+}
+.rq-record__note code {
+  font-family: var(--font-mono);
+}
+.rq-record__pre {
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+  padding: var(--space-5);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* ── Acknowledgement (HIGH / forcesReplace) ────────────── */
+.rq-ack {
+  margin-top: var(--space-6);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid color-mix(in srgb, var(--risk-high) 40%, transparent);
+  border-radius: var(--radius-2);
+  background: color-mix(in srgb, var(--risk-high) 8%, transparent);
+}
+.rq-ack--error {
+  border-color: var(--risk-high);
+}
+.rq-ack__label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.45;
+}
+.rq-ack__label input {
+  margin-top: 3px;
+  flex: none;
+}
+
+/* ── Destroy-and-recreate danger gate (forcesReplace) ──── */
+.rq-danger {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  border-color: var(--risk-high);
+  background: color-mix(in srgb, var(--risk-high) 10%, transparent);
+}
+.rq-danger__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--risk-high);
+  line-height: 1.35;
+}
+.rq-danger__lede {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+.rq-danger__lede code,
+.rq-danger__label code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--risk-high) 12%, transparent);
+  padding: 0 4px;
+  border-radius: var(--radius-1);
+  word-break: break-all;
+}
+.rq-danger__consequence {
+  border-left: 3px solid var(--risk-high);
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--surface-1) 70%, transparent);
+  border-radius: var(--radius-1);
+}
+.rq-danger__consequence-head {
+  margin: 0 0 var(--space-2);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.rq-danger__data-badge {
+  color: var(--risk-high);
+  font-weight: 700;
+}
+.rq-danger__consequence-list {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+.rq-danger__generic {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.rq-danger__approvals {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+.rq-danger__label {
+  margin-top: var(--space-2);
+  font-weight: 600;
+}
+.rq-danger__input {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--risk-high);
+  border-radius: var(--radius-2);
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.rq-danger__input:focus-visible {
+  outline: 2px solid var(--risk-high);
+  outline-offset: 1px;
+}
+.rq-danger__help {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.rq-danger__help--ok {
+  color: var(--ok, var(--text-secondary));
+  font-weight: 600;
+}
+
+/* ── Not found ─────────────────────────────────────────── */
+.rq-notfound {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  color: var(--text-muted);
+}
+.rq-notfound__title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+.rq-notfound code {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+/* ── Engineer handoff ──────────────────────────────────── */
+.rq-handoff {
+  max-width: 680px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.rq-handoff__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+.rq-handoff__title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+.rq-handoff__lede {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+.rq-handoff__desc {
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+.rq-handoff__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin-top: var(--space-3);
+}
+
+/* ── Responsive: collapse to single column ─────────────── */
+@media (max-width: 900px) {
+  .rq-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-7);
+  }
+  .rq-impact {
+    position: static;
+    order: -1;
+  }
+  .rq-review__row {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rq-crumbs a,
+  .rq-cancel,
+  .rq-field__textarea {
+    transition: none;
+  }
+}
+
+/* ============================================================================
+   RequestForm rebuild — engineer note · plain summary · generated Terraform
+   · schedule picker · approvals note. Clean neutral; Risk stays the only hue.
+   ============================================================================ */
+
+/* ── Engineer-only note (still requestable) ────────────── */
+.rq-note-engineer {
+  margin: 0 0 var(--space-7);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--steel);
+  border-radius: var(--radius-2);
+  background: var(--surface-2);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  max-width: 68ch;
+}
+
+/* ── Plain-English summary (top of Review) ───────────────
+   Dividers, not a boxed callout (Ledger contract #3) — a hairline rule below
+   it separates the summary from the diff that follows; accent stays off a
+   passive info line (contract #5 reserves it for primary/interactive use). */
+.rq-summary {
+  margin: var(--space-6) 0 var(--space-7);
+  padding: 0 0 var(--space-6);
+  border: none;
+  border-bottom: 1px solid var(--border-hairline);
+  background: none;
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--text-primary);
+  max-width: 72ch;
+}
+
+/* ── Generated Terraform panel ─────────────────────────── */
+.rq-diff__note {
+  margin: 0 0 var(--space-4);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-width: 68ch;
+}
+.rq-diff {
+  margin: 0;
+  padding: var(--space-5) var(--space-6);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre;
+  tab-size: 2;
+}
+.rq-review__section code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+/* ── Schedule picker ───────────────────────────────────── */
+.sched {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 560px;
+}
+.sched__opt {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+  background: var(--surface-1);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard);
+}
+.sched__opt:hover {
+  border-color: var(--border-hover);
+}
+.sched__opt--on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface-1));
+}
+.sched__opt input[type='radio'] {
+  margin-top: 3px;
+  flex: none;
+  accent-color: var(--accent);
+}
+.sched__opt-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.sched__opt-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.sched__opt-help {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.sched__when {
+  margin-top: var(--space-3);
+  align-self: flex-start;
+  background: var(--surface-2);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  padding: 7px 10px;
+}
+.sched__when:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+/* --- window date/time + duration select (0024 §4.1) --- */
+.sched__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+.sched__row .sched__when {
+  margin-top: 0;
+}
+.sched__duration {
+  background: var(--surface-2);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  padding: 7px 10px;
+}
+.sched__duration:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+.sched__preview {
+  display: block;
+  margin-top: var(--space-3);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── Approvals-needed note (Review) ──────────────────────
+   A hairline rule, not a boxed note (Ledger contract #3) — this is neutral
+   fact, not a risk warning (rq-quorum-warn below stays boxed/tinted: it
+   carries the warn/risk hue, which is sacred and untouched). */
+.rq-approvals {
+  margin: var(--space-7) 0 0;
+  padding: var(--space-5) 0 0;
+  border: none;
+  border-top: 1px solid var(--border-hairline);
+  background: none;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.rq-approvals strong {
+  color: var(--text-primary);
+}
+.rq-quorum-warn {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border-default));
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius-2);
+  background: color-mix(in srgb, var(--warn) 8%, var(--surface-1));
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sched__opt {
+    transition: none;
+  }
+}
+
+/* Full-block vs changes-only toggle on the review diff */
+.rq-blocktoggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+}
+.rq-blocktoggle__btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.rq-blocktoggle__btn.is-on {
+  background: var(--surface-1);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-1);
+}
+.rq-blocktoggle__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ============================================================================
+   0034 W4 — beyond-catalog v2 (A11), request-again prefill note (D15),
+   SG current-rules panel (D13).
+   ============================================================================ */
+
+/* ── A11 step 1: the technology chooser ─────────────────── */
+.bc-chooser__section {
+  margin: 0 0 var(--space-7);
+}
+.bc-chooser__category {
+  margin: 0 0 var(--space-4);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.bc-chooser__tail {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.bc-back {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.bc-back:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+/* OP-5: the persistent describe-it anchor, above the fold on the provider
+   catalog — a real bordered button (not a small text link) so it reads as
+   an equally valid path alongside the tile grid below it, not an
+   afterthought buried at the foot of ~200 service cards. */
+.bc-describe-anchor {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0 var(--space-7);
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bc-describe-anchor:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-3);
+  color: var(--accent);
+}
+.bc-describe-anchor:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* LD-4: the page-entry freeze notice — same soft-warning look as
+   .rq-warnings__item (non-blocking, distinct from a hard error). */
+.bc-frozen-notice {
+  margin: 0 0 var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid color-mix(in srgb, var(--risk-med) 35%, transparent);
+  border-radius: var(--radius-2);
+  background: color-mix(in srgb, var(--risk-med) 10%, transparent);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  max-width: 68ch;
+}
+
+/* ── A11: the cataloged-service redirect banner ─────────── */
+.bc-redirect {
+  margin: 0 0 var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border-default));
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-2);
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface-1));
+}
+.bc-redirect__text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+
+/* ── A11: sizing row (numbers, not prose) ───────────────── */
+.bc-sizing__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+.bc-sizing__cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1 1 140px;
+}
+
+/* ── D15 prefill notes (shared look, two forms) ─────────── */
+.bc-prefill,
+.rq-refill {
+  margin: 0 0 var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--steel);
+  border-radius: var(--radius-2);
+  background: var(--surface-2);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* ── D13: the SG current-rules panel ────────────────────── */
+.sg-rules {
+  margin: 0 0 var(--space-7);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  background: var(--surface-2);
+}
+.sg-rules__title {
+  margin: 0 0 var(--space-3);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.sg-rules__provenance {
+  margin: 0 0 var(--space-4);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.sg-rules__provenance code {
+  font-family: var(--font-mono);
+}
+.sg-rules__group {
+  margin: 0 0 var(--space-4);
+}
+.sg-rules__direction {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.sg-rules__count {
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  border: 1px solid var(--border-hairline);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.sg-rules__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.sg-rules__rule {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+  background: var(--surface-1);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.sg-rules__ports {
+  font-weight: 600;
+}
+.sg-rules__desc {
+  display: block;
+  color: var(--text-muted);
+}
+.sg-rules__empty {
+  margin: 0;
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--text-faint);
+}
+.sg-rules__addr {
+  display: block;
+  margin-top: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+/* ── Bulk change form (Phase B) ──────────────────────────────────────────── */
+.rq-lede {
+  margin: var(--space-3) 0 var(--space-5);
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.rq-blocked {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-2);
+  border-left: 3px solid var(--crit);
+  border-radius: var(--radius-1);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.rq-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+/* A hairline-topped fact block, not a boxed card (Ledger contract #3) — same
+   treatment as the request form's own .rq-impact sticky panel. */
+.rq-side__card {
+  padding: var(--space-5) 0 0;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border-hairline);
+  border-radius: 0;
+}
+.rq-side__title {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.rq-side__req {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.rq-side__note {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.rq-side__targets {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.rq-side__target {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.rq-side__target-name {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.rq-side__target-addr {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+/* ── Provision catalog + per-service provision pages ─────────────────────── */
+
+.pv-meta {
+  margin: 0 0 var(--space-4);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  letter-spacing: 0.01em;
+}
+
+.pv-search {
+  margin-bottom: var(--space-5);
+  max-width: 460px;
+}
+
+.pv-count {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.pv-picker {
+  margin-top: var(--space-3);
+}
+
+.pv-typelist {
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 720px;
+}
+
+.pv-typecard {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 12px 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+  color: inherit;
+  text-decoration: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
+}
+
+.pv-typecard:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-2);
+}
+
+.pv-typecard:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.pv-typecard__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pv-typecard__label {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 550;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.pv-typecard__type {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.pv-typecard__meta {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.pv-chip {
+  font-size: 10.5px;
+  font-weight: 550;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+}
+
+.pv-chip--estate {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .pv-typecard {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .pv-typecard__meta {
+    white-space: normal;
+  }
+}

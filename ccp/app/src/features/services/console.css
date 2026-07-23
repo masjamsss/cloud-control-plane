@@ -1,0 +1,711 @@
+/* ============================================================================
+   Service console (/services/:service) — Ledger: display header + firm rule,
+   "Your resources" grouped by type as divider rows, and "Add new". Risk is
+   the only colored axis; the accent is the one interactive hue.
+   ============================================================================ */
+
+.console {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.console__loading,
+.console__empty {
+  padding: var(--space-9) 0;
+  color: var(--text-muted);
+  font-size: 15px;
+}
+
+/* ── Header — display title + firm rule (Ledger contract #1), matching
+   catalog's page-header treatment (catalog.css .catalog__head): a two-column
+   grid (title block + right-aligned mono meta) closed by a firm rule. ────── */
+.console__header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: var(--space-7);
+  border-bottom: 2px solid var(--text-primary);
+  padding-bottom: var(--space-7);
+}
+.console__head-main {
+  min-width: 0;
+}
+.console__head-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.console__title {
+  margin: 0;
+  font-size: clamp(32px, 4vw, 46px);
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+.console__summary {
+  margin: var(--space-4) 0 0;
+  max-width: 74ch;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+/* Data-authority header meta (Ledger contract #4) — the baseline's vintage/
+   freshness and the estate total, right-aligned mono, same treatment as
+   catalog.css's .catalog__headmeta. Wraps (not nowrap) — the vintage string
+   can run long ("Baseline as of <ISO> · <sha>"). */
+.console__headmeta {
+  text-align: right;
+  max-width: 320px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-faint);
+  line-height: 1.9;
+}
+.console__headmeta b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* ── In-page section anchors (Task 4) ─────────────────────────────────────────
+   A slim sticky sub-nav under the shell header, same sticky-under-the-bar
+   pattern as the catalog's search row (catalog.css .catalog__controls: sticky,
+   top under the 60px shell bar, canvas background, hairline border). Only
+   rendered when there is more than one section to jump between. */
+.console__subnav {
+  position: sticky;
+  top: 56px;
+  z-index: 5;
+  display: flex;
+  gap: var(--space-6);
+  padding: var(--space-3) 0;
+  background: var(--bg-canvas);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.console__subnav-link {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.console__subnav-link:hover {
+  color: var(--accent);
+  text-decoration: none;
+}
+.console__subnav-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-1);
+}
+/* Anchor jumps must clear BOTH the 60px sticky shell bar and this sticky
+   sub-nav, not land underneath them (same rule as #main-content in
+   AppShell.css, sized for the extra bar). */
+#your-resources,
+#add-new {
+  scroll-margin-top: 112px;
+}
+
+/* ── Orientation (D16) — the one-line task header above "Your resources" ──────
+   Quiet by design: it orients, it never competes with the resources it points
+   at. Secondary text weight, no box (a second boxed note above the read-only
+   note would stack noisily). */
+.console__orientation {
+  margin: 0;
+  max-width: 74ch;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* ── Read-only note (browsing another team's service) ───────────────────────── */
+.console__readonly {
+  margin: 0;
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ── Sections ───────────────────────────────────────────────────────────────── */
+.console__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.console__section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.console__section-head--tools {
+  align-items: center;
+}
+.console__section-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+.console__section-note {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+/* ── Resource filter (only when the estate is large) — pill-shaped like the
+   shell search (AppShell.css .shell__search), not the squarer field radius
+   the rest of the form vocabulary uses. ─────────────────────────────────── */
+.console__filter {
+  position: relative;
+  margin-left: auto;
+  flex: 0 1 260px;
+  min-width: 180px;
+}
+.console__filter-icon {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  font-size: 14px;
+  pointer-events: none;
+}
+.console__filter-input {
+  width: 100%;
+  background: var(--surface-1);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-pill);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 14px 7px 32px;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.console__filter-input::placeholder {
+  color: var(--text-faint);
+}
+.console__filter-input:hover {
+  border-color: var(--border-hover);
+}
+.console__filter-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* ── Resource groups ────────────────────────────────────────────────────────── */
+.console__groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+}
+.console__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.console__group-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+.console__group-title {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.console__group-count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  /* F-10: this is a real resource count, not a disabled control — 2.23:1
+     (light) / 3.22:1 (dark) on --text-disabled failed AA. --text-muted is
+     the correct informational tone and clears the gate. */
+  color: var(--text-muted);
+}
+.console__group-empty {
+  padding: var(--space-5) var(--space-6);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-3);
+  color: var(--text-faint);
+  font-size: 13px;
+}
+/* Honest note above a config-type group whose entries could not be matched to
+   exactly one parent resource (so they stay listed rather than rolled up). */
+.console__group-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+  max-width: 64ch;
+}
+/* Divider rows, not a boxed list (Ledger contract #3) — the rows themselves
+   (.rr below) carry the hairline separators; this is just the flex column
+   that holds them, same shape as catalog.css's .catalog__rows. */
+.console__rows {
+  display: flex;
+  flex-direction: column;
+}
+.console__group-more {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: var(--space-2) var(--space-1);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+.console__group-more:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+.console__group-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── ResourceRow ────────────────────────────────────────────────────────────── */
+.rr {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-5);
+  /* Flush against the canvas now that .console__rows carries no box (Ledger
+     contract #3) — same reduced horizontal inset as catalog.css's row. */
+  padding: var(--space-5) var(--space-2);
+  border-top: 1px solid var(--border-hairline);
+}
+.rr:first-child {
+  border-top: none;
+}
+/* The row's main area is a link to the resource detail page. It inherits the
+   row's text colours (not a raw blue link) and only reveals its affordance on
+   hover/focus, so the row reads exactly as before until you interact with it. */
+.rr__open {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius-1);
+}
+.rr__open:hover .rr__name {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.rr__open:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.rr__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.rr__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.rr__addr {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  word-break: break-all;
+}
+.rr__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+}
+.rr__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px 8px;
+  border-radius: var(--radius-1);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.rr__chip-k {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.rr__chip-v {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+/* The rolled-up config summary ("Includes Versioning · Policy …") — one quiet
+   line that says what drilling into the row will show. */
+.rr__includes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.rr__includes-label {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.rr__includes-item + .rr__includes-item::before {
+  content: '·';
+  margin-right: var(--space-3);
+  color: var(--text-disabled);
+}
+
+/* ── Row actions menu ───────────────────────────────────────────────────────── */
+.rr__actions {
+  flex: 0 0 auto;
+}
+/* Read-only status stands in the Actions slot: same box height so its label
+   lands on the Actions label's line across rows; legible (AA) muted, not disabled. */
+.rr__noactions {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.rr__menu {
+  position: relative;
+}
+.rr__menu-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-2);
+  border: 1px solid var(--border-default);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.rr__menu-btn::-webkit-details-marker {
+  display: none;
+}
+.rr__menu-btn:hover {
+  background: var(--surface-2);
+  border-color: var(--border-hover);
+}
+.rr__menu-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.rr__menu-caret {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.rr__menu-list {
+  /* Positioning is handled by Radix's popper (portalled — it escapes the row's
+     overflow, which is what makes list virtualization safe later). */
+  z-index: 40;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-2);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+  animation: menu-pop var(--dur-base) var(--ease-emphasized);
+}
+@media (prefers-reduced-motion: reduce) {
+  .rr__menu-list {
+    animation: none;
+  }
+}
+.rr__menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3);
+  border-radius: var(--radius-1);
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+}
+.rr__menu-item:hover,
+.rr__menu-item[data-highlighted] {
+  background: var(--surface-2);
+}
+.rr__menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.rr__menu-item-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+/* 0008 §4 Task 3 — the ≤5 "Common" pinned shortlist above the always-present
+   "All actions… (N)" item that opens the full scoped picker. */
+.rr__menu-label {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.rr__menu-item--all {
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+/* ── Add new ────────────────────────────────────────────────────────────────── */
+.console__add-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-5);
+}
+/* The Provision / Attach & annotate split headers inside "Add new": real
+   provisioning baselines never render beside tag-adds as equal cards. Mono
+   uppercase, matching the rail/group-label idiom used everywhere else. */
+.console__add-subtitle {
+  margin: var(--space-6) 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.console__add-subtitle:first-of-type {
+  margin-top: var(--space-4);
+}
+/* A grid of "add" affordances can't become divider rows (Ledger contract #3
+   is a list-row rule; a wrapping multi-column grid needs its own cell
+   boundary to stay legible) — quieted instead: a hairline border with no
+   resting fill, same idiom as .rr__chip. Kept in sync with catalog.css's
+   identical co-located block (the "Request something new" escape hatch
+   shares this exact class family — Task 2 deliberately left it for Task 3). */
+.console__add-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+  background: none;
+  text-decoration: none;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard);
+}
+.console__add-card:hover {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+.console__add-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.console__add-glyph {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-2);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+.console__add-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.console__add-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.console__add-desc {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .rr {
+    flex-direction: column;
+  }
+  .rr__actions {
+    align-self: flex-start;
+  }
+  .rr__menu-list {
+    right: auto;
+    left: 0;
+  }
+  /* When the section head wraps, the filter fills its own line like the catalog search. */
+  .console__filter {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .console__add-card {
+    transition: none;
+  }
+}
+
+/* Subtle stale hint while the deferred filter catches up (estate-scale typing). */
+.console__groups--stale {
+  opacity: 0.6;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+@media (prefers-reduced-motion: reduce) {
+  .console__groups--stale {
+    transition: none;
+  }
+}
+
+/* Virtualized rows scroll container (UIUX-4). The portalled Radix actions menu
+   escapes this overflow, so windowing is safe. */
+.console__vscroll {
+  max-height: 560px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ── Bulk multi-select (Phase B) ─────────────────────────────────────────── */
+.rr__select {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 2px;
+}
+.rr__select-box {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.rr--selected {
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.console__group-select {
+  display: inline-flex;
+  align-items: center;
+}
+.console__group-select-box {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.bulkbar {
+  position: sticky;
+  bottom: var(--space-4);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  margin-top: var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-2);
+}
+.bulkbar__count {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.bulkbar__count strong {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.bulkbar__note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  flex: 1 1 auto;
+}
+.bulkbar__pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+}
+.bulkbar__label {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.bulkbar__select {
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-1);
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+.bulkbar__clear {
+  margin-left: auto;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: 13px;
+}
+.bulkbar__clear:hover {
+  color: var(--text-primary);
+}

@@ -1,0 +1,3 @@
+{
+  "QueueUrls": ["https://sqs.ap-southeast-5.amazonaws.com/111111111111/jobs-queue"]
+}

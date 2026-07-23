@@ -1,0 +1,7 @@
+{
+  "aws_iam_role.ci": {
+    "file": "example-bootstrap/iam.tf",
+    "line": 1,
+    "source": "resource \"aws_iam_role\" \"ci\" {\n  name = \"example-ci-role\"\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect    = \"Allow\"\n      Principal = { Federated = \"arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com\" }\n      Action    = \"sts:AssumeRoleWithWebIdentity\"\n      Condition = {\n        StringEquals = { \"token.actions.githubusercontent.com:aud\" = \"sts.amazonaws.com\" }\n        StringLike   = { \"token.actions.githubusercontent.com:sub\" = \"repo:example-org/example-bootstrap:*\" }\n      }\n    }]\n  })\n\n  tags = {\n    Name = \"ci\"\n  }\n}"
+  }
+}

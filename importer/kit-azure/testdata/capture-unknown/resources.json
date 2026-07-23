@@ -1,0 +1,24 @@
+{
+  "data": [
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.Network/virtualNetworks/vnet-app",
+      "name": "vnet-app",
+      "type": "microsoft.network/virtualnetworks",
+      "location": "southeastasia",
+      "resourceGroup": "rg-app",
+      "subscriptionId": "00000000-0000-0000-0000-000000000000",
+      "tags": {}
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.Cache/Redis/redis-app",
+      "name": "redis-app",
+      "type": "microsoft.cache/redis",
+      "location": "southeastasia",
+      "resourceGroup": "rg-app",
+      "subscriptionId": "00000000-0000-0000-0000-000000000000",
+      "tags": {}
+    }
+  ],
+  "count": 2,
+  "total_records": 2
+}

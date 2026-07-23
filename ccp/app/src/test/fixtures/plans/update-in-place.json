@@ -1,0 +1,29 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.15.7",
+  "resource_changes": [
+    {
+      "address": "aws_instance.app01",
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "app01",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["update"],
+        "before": {
+          "instance_type": "r6i.large",
+          "monitoring": false,
+          "tags": { "Name": "APP01" }
+        },
+        "after": {
+          "instance_type": "r6i.xlarge",
+          "monitoring": true,
+          "tags": { "Name": "APP01" }
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    }
+  ]
+}

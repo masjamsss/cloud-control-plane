@@ -1,0 +1,1 @@
+{"service":"ad-b2c","types":{"azurerm_aadb2c_directory":{"attrs":[{"n":"data_residency_location","t":"string","r":1},{"n":"domain_name","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"sku_name","t":"string","r":1},{"n":"country_code","t":"string"},{"n":"display_name","t":"string"},{"n":"tags","t":"map"}],"blocks":[]}}}

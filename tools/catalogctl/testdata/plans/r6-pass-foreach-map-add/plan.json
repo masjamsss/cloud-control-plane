@@ -1,0 +1,36 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_instance.app",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "root_block_device": [
+            {
+              "volume_size": 100,
+              "volume_type": "gp3",
+              "tags": {
+                "Name": "root"
+              }
+            }
+          ]
+        },
+        "after": {
+          "root_block_device": [
+            {
+              "volume_size": 100,
+              "volume_type": "gp3",
+              "tags": {
+                "Name": "root",
+                "Snap": "daily"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

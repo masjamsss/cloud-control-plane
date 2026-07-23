@@ -1,0 +1,12 @@
+{
+ "aws_security_group.app": {
+  "file": "ccp/app/fixtures-estate/security-groups.tf",
+  "line": 3,
+  "source": "resource \"aws_security_group\" \"app\" {\n  name        = \"app-tier\"\n  description = \"Application tier — inbound HTTPS from the load balancer\"\n  vpc_id      = aws_vpc.main.id\n\n  ingress {\n    description = \"HTTPS from the VPC\"\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"10.0.0.0/16\"]\n  }\n\n  egress {\n    description = \"All outbound\"\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n\n  tags = {\n    Name = \"app-tier\"\n    PIC  = \"user01@example.com\"\n  }\n}"
+ },
+ "aws_security_group.db": {
+  "file": "ccp/app/fixtures-estate/security-groups.tf",
+  "line": 30,
+  "source": "resource \"aws_security_group\" \"db\" {\n  name        = \"db-tier\"\n  description = \"Database tier — inbound Postgres from the app tier only\"\n  vpc_id      = aws_vpc.main.id\n\n  ingress {\n    description     = \"Postgres from the app tier\"\n    from_port       = 5432\n    to_port         = 5432\n    protocol        = \"tcp\"\n    security_groups = [aws_security_group.app.id]\n  }\n\n  egress {\n    description = \"All outbound\"\n    from_port   = 0\n    to_port     = 0\n    protocol    = \"-1\"\n    cidr_blocks = [\"0.0.0.0/0\"]\n  }\n\n  tags = {\n    Name = \"db-tier\"\n    PIC  = \"user02@example.com\"\n  }\n}"
+ }
+}

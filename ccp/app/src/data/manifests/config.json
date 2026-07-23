@@ -1,0 +1,1215 @@
+{
+  "service": "config",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_config_delivery_channel",
+    "aws_config_config_rule",
+    "aws_config_configuration_recorder"
+  ],
+  "summary": "Keep AWS Config recording useful: tune snapshot delivery frequency, deploy and tune AWS-managed guardrail rules, retag rules, and retire a rule. Enabling or disabling the recorder and rewriting the recording strategy stay engineer-only — they govern account-wide compliance capture.",
+  "operations": [
+    {
+      "id": "config-set-snapshot-frequency",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change Config snapshot delivery frequency",
+      "summary": "Change how often AWS Config writes a full configuration snapshot to S3.",
+      "description": "Update how often AWS Config writes a full configuration snapshot to the awsconfig-baseline-config bucket by setting snapshot_delivery_properties.delivery_frequency on the delivery channel. Purely a cadence change — no impact on continuous change recording or on config-rule evaluation.",
+      "target": {
+        "resourceType": "aws_config_delivery_channel",
+        "path": [
+          "snapshot_delivery_properties"
+        ]
+      },
+      "params": [
+        {
+          "name": "channel",
+          "label": "Config delivery channel",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_config_delivery_channel/address",
+          "required": true,
+          "help": "The account's AWS Config delivery channel to retune."
+        },
+        {
+          "name": "new_delivery_frequency",
+          "label": "Snapshot delivery frequency",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "How often a full config snapshot is delivered to S3. More frequent snapshots increase S3 object volume and cost.",
+          "bounds": {
+            "allowlist": [
+              "One_Hour",
+              "Three_Hours",
+              "Six_Hours",
+              "Twelve_Hours",
+              "TwentyFour_Hours"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup",
+      "pinned": 1
+    },
+    {
+      "id": "config-add-managed-rule",
+      "service": "config",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Deploy an AWS-managed Config guardrail rule",
+      "summary": "Add an AWS-managed compliance rule. It only reports non-compliant resources — it doesn't fix or block anything.",
+      "description": "Add a new aws_config_config_rule backed by an AWS-managed source identifier (e.g. S3_BUCKET_PUBLIC_READ_PROHIBITED) so the recorder starts evaluating that guardrail across the estate. Adds a compliance control only — it reports NON_COMPLIANT resources but does not remediate or block anything on its own.",
+      "target": {
+        "resourceType": "aws_config_config_rule",
+        "block": "environments/prod/config.tf"
+      },
+      "params": [
+        {
+          "name": "recorder",
+          "label": "Configuration recorder",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_config_configuration_recorder/address",
+          "required": true,
+          "help": "The active recorder the new rule evaluates against; Config must be recording for the rule to produce results."
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Terraform-safe, unique rule name. Lowercase-with-hyphens recommended, max 128 chars.",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9_-]{1,128}$"
+          }
+        },
+        {
+          "name": "source_identifier",
+          "label": "Managed rule",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "AWS-managed rule to deploy. Restricted to a vetted guardrail set for this estate.",
+          "bounds": {
+            "allowlist": [
+              "S3_BUCKET_PUBLIC_READ_PROHIBITED",
+              "S3_BUCKET_PUBLIC_WRITE_PROHIBITED",
+              "S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED",
+              "ENCRYPTED_VOLUMES",
+              "EC2_EBS_ENCRYPTION_BY_DEFAULT",
+              "IAM_PASSWORD_POLICY",
+              "ROOT_ACCOUNT_MFA_ENABLED",
+              "RESTRICTED_INCOMING_TRAFFIC",
+              "INCOMING_SSH_DISABLED",
+              "CLOUD_TRAIL_ENABLED",
+              "VPC_FLOW_LOGS_ENABLED"
+            ]
+          }
+        },
+        {
+          "name": "input_parameters",
+          "label": "Rule parameters (JSON)",
+          "type": "map",
+          "source": "user_input",
+          "required": false,
+          "default": {},
+          "help": "Optional managed-rule parameters as a JSON object, e.g. {\"blockedPort1\":\"22\"}. Leave empty for rules that take none.",
+          "bounds": {
+            "semantic": "json",
+            "pattern": "^[\\x20-\\x7E]{1,256}$"
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "config-set-rule-parameters",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Retune a Config rule's parameters",
+      "summary": "Retune a compliance rule's parameters, like a tighter threshold. Only changes what counts as compliant, not the resources.",
+      "description": "Update the input_parameters on an existing managed Config rule (for example tightening maxAccessKeyAge or a required tag key). Changes only which resources evaluate as compliant; the resources themselves are untouched.",
+      "target": {
+        "resourceType": "aws_config_config_rule",
+        "block": "aws_config_config_rule.iam_password_policy"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Config rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_config_config_rule/address",
+          "required": true,
+          "help": "The managed Config rule whose parameters you want to change."
+        },
+        {
+          "name": "new_input_parameters",
+          "label": "New rule parameters (JSON)",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "help": "Full replacement JSON object of parameter keys/values for this rule, e.g. {\"maxAccessKeyAge\":\"90\"}. Replaces the existing parameter set.",
+          "bounds": {
+            "semantic": "json",
+            "pattern": "^[\\x20-\\x7E]{1,256}$"
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup",
+      "pinned": 4
+    },
+    {
+      "id": "config-update-rule-tags",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update tags on a Config rule",
+      "summary": "Update this rule's tags. Metadata only — no effect on how it evaluates compliance.",
+      "description": "Set or replace the tags map on an existing Config rule for ownership, cost and governance attribution. Metadata-only change with no effect on rule evaluation or compliance results.",
+      "target": {
+        "resourceType": "aws_config_config_rule",
+        "block": "aws_config_config_rule.s3_bucket_public_read_prohibited"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Config rule",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_config_config_rule/address",
+          "required": true,
+          "help": "The Config rule to retag."
+        },
+        {
+          "name": "new_tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "help": "Full replacement set of key/value tags, e.g. {\"Owner\":\"SecOps\",\"CostCenter\":\"Platform\"}.",
+          "bounds": {
+            "semantic": "key_value_tags",
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "pinned": 1
+    },
+    {
+      "id": "config-remove-managed-rule",
+      "service": "config",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Retire a Config guardrail rule",
+      "summary": "Permanently retire this compliance rule and its history. This can't be undone, so a second approver signs off first.",
+      "description": "Destroy an existing aws_config_config_rule, permanently stopping its evaluations and dropping its compliance history for the estate. Removing a security/compliance guardrail is not reversible by simply re-adding — historical evaluation data is lost — so it needs two approvals.",
+      "target": {
+        "resourceType": "aws_config_config_rule",
+        "block": "aws_config_config_rule.ec2_ebs_encryption_by_default"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Config rule to remove",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_config_config_rule/address",
+          "required": true,
+          "help": "The managed Config rule to permanently delete. Its compliance history is not recoverable."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "config-toggle-all-supported",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle recording of all supported resource types",
+      "summary": "Turn recording on or off for every supported resource type. Narrowing coverage can leave compliance gaps.",
+      "description": "Enable or disable recording_group.all_supported so the recorder captures every supported resource type. In-place, reversible config change with no downtime; narrowing coverage may create a compliance gap, hence guardrails.",
+      "target": {
+        "resourceType": "aws_config_configuration_recorder",
+        "path": [
+          "recording_group"
+        ]
+      },
+      "params": [
+        {
+          "name": "recorder",
+          "label": "Configuration recorder",
+          "type": "string",
+          "source": "inventory",
+          "help": "The account's AWS Config configuration recorder to update, picked from the estate inventory so only the existing Terraform-managed recorder can be selected.",
+          "enumSource": "inventory://aws_config_configuration_recorder/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Record all supported types",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "true makes the recorder capture configuration changes for every resource type AWS Config supports; false narrows recording coverage, which can create compliance gaps — a bounded true/false toggle that is reversible.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "attr": "all_supported"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (recording_group.all_supported)",
+      "group": "protection-backup",
+      "pinned": 1
+    },
+    {
+      "id": "config-toggle-global-resource-types",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle recording of global resource types",
+      "summary": "Turn on or off recording of account-wide resources like IAM, in addition to regional ones.",
+      "description": "Enable or disable recording_group.include_global_resource_types so the recorder captures global resources (IAM, WAF, etc.). In-place, reversible config change with no downtime.",
+      "target": {
+        "resourceType": "aws_config_configuration_recorder",
+        "path": [
+          "recording_group"
+        ]
+      },
+      "params": [
+        {
+          "name": "recorder",
+          "label": "Configuration recorder",
+          "type": "string",
+          "source": "inventory",
+          "help": "The account's AWS Config configuration recorder to update, picked from the estate inventory of Terraform-managed recorders.",
+          "enumSource": "inventory://aws_config_configuration_recorder/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Record global resource types",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "true also records global (non-regional) resource types such as IAM into this recorder's configuration history; false skips them — a bounded true/false toggle that is fully reversible.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "attr": "include_global_resource_types"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (recording_group.include_global_resource_types)",
+      "group": "protection-backup",
+      "pinned": 2
+    },
+    {
+      "id": "config-set-recording-frequency",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set recorder recording frequency",
+      "summary": "Set whether AWS Config records changes continuously or once a day. Daily cuts cost but is less detailed.",
+      "description": "Set recording_mode.recording_frequency to CONTINUOUS or DAILY, controlling how often Config records configuration changes. In-place, reversible, no downtime; DAILY reduces cost and recording granularity.",
+      "target": {
+        "resourceType": "aws_config_configuration_recorder",
+        "path": [
+          "recording_mode"
+        ]
+      },
+      "params": [
+        {
+          "name": "recorder",
+          "label": "Configuration recorder",
+          "type": "string",
+          "source": "inventory",
+          "help": "The account's AWS Config configuration recorder whose recording cadence to change, picked from the estate inventory.",
+          "enumSource": "inventory://aws_config_configuration_recorder/address",
+          "required": true
+        },
+        {
+          "name": "frequency",
+          "label": "Recording frequency",
+          "type": "string",
+          "source": "allowlist",
+          "help": "How often AWS Config records configuration changes: CONTINUOUS captures each change as it happens, while DAILY batches them once a day for lower cost at coarser granularity — restricted to these two AWS-supported modes.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "CONTINUOUS",
+              "DAILY"
+            ]
+          },
+          "attr": "recording_frequency"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (recording_mode.recording_frequency)",
+      "group": "protection-backup",
+      "pinned": 3
+    },
+    {
+      "id": "config-set-role-arn",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change the IAM service role used by the recorder",
+      "summary": "Point the recorder at a different IAM role. If that role can't be assumed by Config, recording stalls.",
+      "description": "Point role_arn at a different existing IAM role (picked from inventory) that Config assumes to record configuration. In-place and reversible with no downtime; the chosen role must trust config.amazonaws.com or recording will stall, hence guardrails.",
+      "target": {
+        "resourceType": "aws_config_configuration_recorder"
+      },
+      "params": [
+        {
+          "name": "recorder",
+          "label": "Configuration recorder",
+          "type": "string",
+          "source": "inventory",
+          "help": "The account's AWS Config configuration recorder whose service role to change, picked from the estate inventory.",
+          "enumSource": "inventory://aws_config_configuration_recorder/address",
+          "required": true
+        },
+        {
+          "name": "role",
+          "label": "IAM service role",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing IAM role AWS Config assumes to read and record resource configurations, picked from inventory so no new role or policy can be minted here; the role must trust config.amazonaws.com or recording will stall.",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (role_arn)",
+      "group": "protection-backup",
+      "pinned": 4
+    },
+    {
+      "id": "config-config-configuration-recorder-engineer-request",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to AWS Config configuration recorder",
+      "summary": "Request any other change to the configuration recorder; an engineer authors and reviews the Terraform.",
+      "description": "Escalation path for any change to the configuration recorder not offered as a bounded self-service form — e.g. editing recording_group.resource_types, exclusion_by_resource_types, recording_strategy.use_only, recording_mode_override blocks, name (replacement), or the region override. An engineer authors and applies the Terraform.",
+      "target": {
+        "resourceType": "aws_config_configuration_recorder"
+      },
+      "params": [
+        {
+          "name": "recorder",
+          "label": "Configuration recorder",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_config_configuration_recorder/address",
+          "required": true,
+          "help": "The configuration recorder to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form — an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "protection-backup"
+    },
+    {
+      "id": "config-set-description",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Edit rule description",
+      "summary": "Edit this rule's description. Just documentation — it doesn't change what the rule evaluates.",
+      "description": "Update the free-text description of a Config rule. Cosmetic metadata only, no effect on evaluation behaviour. In-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_config_config_rule"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Config rule",
+          "type": "string",
+          "source": "inventory",
+          "help": "The Config rule whose description to edit, picked from the estate inventory; the description is documentation only and does not change what the rule evaluates.",
+          "enumSource": "inventory://aws_config_config_rule/address",
+          "required": true
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Up to 256 characters. Purely descriptive; does not change what the rule evaluates.",
+          "bounds": {
+            "pattern": "^.{0,256}$",
+            "maxLength": 256
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (description)",
+      "group": "tags-naming",
+      "pinned": 2
+    },
+    {
+      "id": "config-set-rule-max-execution-frequency",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set rule maximum execution frequency",
+      "summary": "Set how often this rule re-checks compliance, from hourly up to once a day.",
+      "description": "Set maximum_execution_frequency for a periodic Config rule to a bounded AWS enum. Controls how often the rule re-evaluates; reversible, no downtime. (Applies to periodic-trigger rules.)",
+      "target": {
+        "resourceType": "aws_config_config_rule"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Config rule",
+          "type": "string",
+          "source": "inventory",
+          "help": "The periodic-trigger Config rule to retune, picked from the estate inventory so only existing Terraform-managed rules can be selected.",
+          "enumSource": "inventory://aws_config_config_rule/address",
+          "required": true
+        },
+        {
+          "name": "frequency",
+          "label": "Maximum execution frequency",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "How often AWS Config re-evaluates the rule.",
+          "bounds": {
+            "allowlist": [
+              "One_Hour",
+              "Three_Hours",
+              "Six_Hours",
+              "Twelve_Hours",
+              "TwentyFour_Hours"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (maximum_execution_frequency)",
+      "group": "protection-backup",
+      "pinned": 3
+    },
+    {
+      "id": "config-set-evaluation-mode",
+      "service": "config",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add an evaluation mode",
+      "summary": "Set whether this rule checks resources only after they deploy, or beforehand too. Not every rule supports both.",
+      "description": "Append an evaluation_mode block (DETECTIVE or PROACTIVE) to a Config rule. In-place, reversible; some rules only support DETECTIVE, so apply may error harmlessly if the mode is unsupported. Guarded.",
+      "target": {
+        "resourceType": "aws_config_config_rule",
+        "block": "evaluation_mode"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Config rule",
+          "type": "string",
+          "source": "inventory",
+          "help": "The Config rule to add the evaluation mode to, picked from the estate inventory of Terraform-managed rules.",
+          "enumSource": "inventory://aws_config_config_rule/address",
+          "required": true
+        },
+        {
+          "name": "mode",
+          "label": "Evaluation mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "DETECTIVE evaluates deployed resources; PROACTIVE evaluates before deployment (only supported by some managed rules).",
+          "bounds": {
+            "allowlist": [
+              "DETECTIVE",
+              "PROACTIVE"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (evaluation_mode)",
+      "group": "create"
+    },
+    {
+      "id": "config-add-rule-tag",
+      "service": "config",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a Config rule",
+      "summary": "Add a tag to this rule. Metadata only — no effect on how it runs.",
+      "description": "Add a single key/value entry to the rule's tags map. Cosmetic metadata, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_config_config_rule",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Config rule",
+          "type": "string",
+          "source": "inventory",
+          "help": "The Config rule to tag, picked from the estate inventory; tags are metadata only and never change rule evaluation or compliance results.",
+          "enumSource": "inventory://aws_config_config_rule/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "1-128 chars: letters, numbers, and _ . : / + - @ (no spaces or =)",
+          "bounds": {
+            "pattern": "^[\\w.:/+@-]{1,128}$",
+            "maxLength": 128
+          }
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "0-256 chars: letters, numbers, spaces and _ . : / = + - @",
+          "bounds": {
+            "pattern": "^[\\w\\s.:/=+@-]{0,256}$",
+            "maxLength": 256
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "create"
+    },
+    {
+      "id": "config-remove-rule-tag",
+      "service": "config",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag from a Config rule",
+      "summary": "Remove a tag from this rule. Metadata only — no effect on how it runs.",
+      "description": "Remove a single key from the rule's tags map by key. Cosmetic metadata, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_config_config_rule",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Config rule",
+          "type": "string",
+          "source": "inventory",
+          "help": "The Config rule whose tag to remove, picked from the estate inventory; removing a tag is metadata-only and reversible.",
+          "enumSource": "inventory://aws_config_config_rule/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Exact key of the tag entry to delete.",
+          "bounds": {
+            "pattern": "^[\\w.:/+@-]{1,128}$",
+            "maxLength": 128
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "config-config-config-rule-engineer-request",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to Config rule",
+      "summary": "Request any other change to this compliance rule; an engineer authors and reviews the Terraform.",
+      "description": "Catch-all for any change not offered as a bounded form (e.g. source/source_identifier, scope resource-type filters, input_parameters JSON, or a rule rename). An engineer authors and reviews the Terraform.",
+      "target": {
+        "resourceType": "aws_config_config_rule"
+      },
+      "params": [
+        {
+          "name": "rule",
+          "label": "Config rule",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "enumSource": "inventory://aws_config_config_rule/address",
+          "help": "The Config rule this request is about, when the estate already tracks one. Leave blank when describing one that is not tracked yet."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form — an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "protection-backup"
+    },
+    {
+      "id": "config-set-delivery-frequency",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set config snapshot delivery frequency",
+      "summary": "Change how often this delivery channel exports a full configuration snapshot to S3.",
+      "description": "Update snapshot_delivery_properties.delivery_frequency on an AWS Config delivery channel. Bounded enum, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_config_delivery_channel",
+        "path": [
+          "snapshot_delivery_properties"
+        ]
+      },
+      "params": [
+        {
+          "name": "channel",
+          "label": "Delivery channel",
+          "type": "string",
+          "source": "inventory",
+          "help": "The AWS Config delivery channel to retune, picked from the estate inventory (the account runs a single channel writing snapshots to the baseline S3 bucket).",
+          "enumSource": "inventory://aws_config_delivery_channel/address",
+          "required": true
+        },
+        {
+          "name": "delivery_frequency",
+          "label": "Snapshot delivery frequency",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "One_Hour",
+              "Three_Hours",
+              "Six_Hours",
+              "Twelve_Hours",
+              "TwentyFour_Hours"
+            ]
+          },
+          "help": "How often AWS Config delivers configuration snapshots. Higher frequency means more deliveries."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (snapshot_delivery_properties.delivery_frequency)",
+      "group": "protection-backup",
+      "pinned": 2
+    },
+    {
+      "id": "config-set-delivery-s3-key-prefix",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set delivery channel S3 key prefix",
+      "summary": "Change the folder prefix used for this channel's exported snapshots in S3.",
+      "description": "Update s3_key_prefix — the object key prefix under the destination bucket. Pattern-bounded string, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_config_delivery_channel"
+      },
+      "params": [
+        {
+          "name": "channel",
+          "label": "Delivery channel",
+          "type": "string",
+          "source": "inventory",
+          "help": "The AWS Config delivery channel whose S3 key prefix to change, picked from the estate inventory so only the existing Terraform-managed channel can be selected.",
+          "enumSource": "inventory://aws_config_delivery_channel/address",
+          "required": true
+        },
+        {
+          "name": "s3_key_prefix",
+          "label": "S3 key prefix",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9!_.*'()/-]{0,1024}$"
+          },
+          "help": "Object key prefix under the destination bucket. Alphanumerics and !_.*'()/- , up to 1024 chars."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (s3_key_prefix)",
+      "group": "protection-backup",
+      "pinned": 3
+    },
+    {
+      "id": "config-set-delivery-s3-bucket",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set delivery channel destination S3 bucket",
+      "summary": "Point this delivery channel at a different S3 bucket. That bucket must allow AWS Config to write to it.",
+      "description": "Update s3_bucket_name to a different existing bucket for configuration history/snapshots. Bounded by inventory picker, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_config_delivery_channel"
+      },
+      "params": [
+        {
+          "name": "channel",
+          "label": "Delivery channel",
+          "type": "string",
+          "source": "inventory",
+          "help": "The AWS Config delivery channel whose destination bucket to change, picked from the estate inventory of Terraform-managed channels.",
+          "enumSource": "inventory://aws_config_delivery_channel/address",
+          "required": true
+        },
+        {
+          "name": "s3_bucket_name",
+          "label": "Destination S3 bucket",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_s3_bucket/address",
+          "required": true,
+          "help": "Existing S3 bucket that receives AWS Config snapshots. Bucket policy must permit AWS Config delivery.",
+          "role": "reference",
+          "refAttr": "bucket"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (s3_bucket_name)",
+      "group": "protection-backup",
+      "pinned": 4
+    },
+    {
+      "id": "config-set-delivery-sns-topic",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set delivery channel SNS notification topic",
+      "summary": "Change which SNS topic gets notified by this delivery channel.",
+      "description": "Update sns_topic_arn — the SNS topic AWS Config publishes notifications to. Bounded by inventory picker, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_config_delivery_channel"
+      },
+      "params": [
+        {
+          "name": "channel",
+          "label": "Delivery channel",
+          "type": "string",
+          "source": "inventory",
+          "help": "The AWS Config delivery channel whose notification topic to change, picked from the estate inventory of Terraform-managed channels.",
+          "enumSource": "inventory://aws_config_delivery_channel/address",
+          "required": true
+        },
+        {
+          "name": "sns_topic_arn",
+          "label": "SNS topic",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sns_topic/address",
+          "required": true,
+          "help": "Existing SNS topic that receives AWS Config notifications.",
+          "role": "reference",
+          "refAttr": "arn"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (sns_topic_arn)",
+      "group": "protection-backup",
+      "pinned": 5
+    },
+    {
+      "id": "config-config-delivery-channel-engineer-request",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to AWS Config delivery channel",
+      "summary": "Request any other change to this delivery channel; an engineer authors and reviews the Terraform.",
+      "description": "Catch-all for any AWS Config delivery channel change not offered as a bounded form (e.g. s3_kms_key_arn, name/region replacement). An engineer authors the Terraform.",
+      "target": {
+        "resourceType": "aws_config_delivery_channel"
+      },
+      "params": [
+        {
+          "name": "channel",
+          "label": "Delivery channel",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_config_delivery_channel/address",
+          "required": true,
+          "help": "The delivery channel to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form — an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "protection-backup"
+    },
+    {
+      "id": "config-provision-recorder",
+      "service": "config",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a configuration recorder",
+      "summary": "Create the AWS Config recorder using a chosen service role. Narrowing or disabling it blinds compliance.",
+      "consoleLabel": "Recorder",
+      "description": "Create an aws_config_configuration_recorder recording all supported resource types with an IAM role chosen from inventory. Config recording underpins compliance detection, so the recording group is set to all-supported and the role's read coverage is confirmed at review. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_config_configuration_recorder"
+      },
+      "params": [
+        {
+          "name": "recorder_name",
+          "label": "Recorder name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "The name of the recorder (written to the name attribute); AWS Config conventionally uses one recorder named default.",
+          "attr": "name",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{1,256}$"
+          }
+        },
+        {
+          "name": "role_arn",
+          "label": "Config role",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "role_arn",
+          "enumSource": "inventory://aws_iam_role/address",
+          "group": "access",
+          "help": "The IAM role Config assumes to read resource configuration (the aws_iam_role.arn it references)."
+        },
+        {
+          "name": "all_supported",
+          "label": "All supported",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "attr": "all_supported",
+          "const": true,
+          "group": "recording",
+          "help": "Record every supported resource type; written into the draft's recording_group.",
+          "path": [
+            "recording_group"
+          ]
+        },
+        {
+          "name": "include_global_resource_types",
+          "label": "Include global resource types",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "attr": "include_global_resource_types",
+          "const": true,
+          "group": "recording",
+          "help": "Include global resource types (such as IAM) in recording; written into the draft's recording_group.",
+          "path": [
+            "recording_group"
+          ]
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "config recorder",
+        "configuration recorder",
+        "enable config"
+      ],
+      "decisions": [
+        "Config records with the selected role: confirm the role grants read access to every resource type in scope, since a narrower role silently skips resources from compliance evaluation.",
+        "Disabling or narrowing the recorder blinds compliance detection across the account; scope changes are engineer-reviewed, never self-service."
+      ]
+    },
+    {
+      "id": "config-deploy-managed-rule",
+      "service": "config",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Deploy a managed Config rule",
+      "summary": "Deploy an AWS-managed Config guardrail rule. Custom Guard policy rules are out of self-service reach.",
+      "consoleLabel": "Rules",
+      "description": "Create an aws_config_config_rule that evaluates resources against an AWS-managed rule (source owner AWS). A custom-policy rule that runs engineer-authored Guard policy text is never offered here. The managed rule identifier is chosen from a short allowlist of common guardrails. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_config_config_rule"
+      },
+      "params": [
+        {
+          "name": "rule_name",
+          "label": "Rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "The name of the rule (written to the name attribute).",
+          "attr": "name",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{1,128}$"
+          }
+        },
+        {
+          "name": "source_owner",
+          "label": "Rule owner",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "owner",
+          "group": "source",
+          "bounds": {
+            "allowlist": [
+              "AWS"
+            ]
+          },
+          "default": "AWS",
+          "help": "Always AWS for a managed guardrail rule; custom-policy rules are out of self-service reach.",
+          "path": [
+            "source"
+          ]
+        },
+        {
+          "name": "source_identifier",
+          "label": "Managed rule",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "source_identifier",
+          "group": "source",
+          "bounds": {
+            "allowlist": [
+              "S3_BUCKET_PUBLIC_READ_PROHIBITED",
+              "S3_BUCKET_PUBLIC_WRITE_PROHIBITED",
+              "ENCRYPTED_VOLUMES",
+              "IAM_PASSWORD_POLICY",
+              "ROOT_ACCOUNT_MFA_ENABLED",
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The AWS-managed rule to deploy. A short allowlist of common guardrails is offered; leave it as engineer-decides to have the engineer pick another managed rule.",
+          "path": [
+            "source"
+          ]
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "audit",
+          "help": "A short note describing what the rule checks for.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "description_tag",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "help": "A short description recorded as the resource's Description tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "help": "The team or person accountable for this resource, recorded as its PIC tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "config rule",
+        "managed rule",
+        "compliance rule",
+        "guardrail rule"
+      ],
+      "decisions": [
+        "This form deploys AWS-managed guardrail rules only (source owner AWS). A custom-policy rule that runs engineer-authored Guard policy text is out of self-service reach.",
+        "Confirm the rule's scope and parameters match the intent; a mis-scoped rule reports false compliance and the engineer sets any input parameters at review."
+      ]
+    }
+  ]
+}

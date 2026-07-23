@@ -1,0 +1,9 @@
+{
+  "PaginationToken": "",
+  "ResourceTagMappingList": [
+    { "ResourceARN": "arn:aws:ec2:ap-southeast-5:111111111111:vpc/vpc-0ccccccccccccc001", "Tags": [] },
+    { "ResourceARN": "arn:aws:kinesis:ap-southeast-5:111111111111:stream/coverage-warn-stream", "Tags": [] },
+    { "ResourceARN": "arn:aws:kinesis:ap-southeast-5:111111111111:stream/coverage-warn-stream-2", "Tags": [] },
+    { "ResourceARN": "arn:aws:elasticache:ap-southeast-5:111111111111:replicationgroup:coverage-warn-cache", "Tags": [] }
+  ]
+}

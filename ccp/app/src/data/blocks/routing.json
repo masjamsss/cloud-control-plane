@@ -1,0 +1,12 @@
+{
+ "aws_route_table.public": {
+  "file": "ccp/app/fixtures-estate/routing.tf",
+  "line": 3,
+  "source": "resource \"aws_route_table\" \"public\" {\n  vpc_id = aws_vpc.main.id\n\n  route {\n    cidr_block = \"0.0.0.0/0\"\n    gateway_id = aws_internet_gateway.main.id\n  }\n\n  tags = {\n    Name = \"public-rt\"\n    PIC  = \"user01@example.com\"\n  }\n}"
+ },
+ "aws_route_table.private": {
+  "file": "ccp/app/fixtures-estate/routing.tf",
+  "line": 17,
+  "source": "resource \"aws_route_table\" \"private\" {\n  vpc_id = aws_vpc.main.id\n\n  route {\n    cidr_block     = \"0.0.0.0/0\"\n    nat_gateway_id = aws_nat_gateway.main.id\n  }\n\n  tags = {\n    Name = \"private-rt\"\n    PIC  = \"user02@example.com\"\n  }\n}"
+ }
+}

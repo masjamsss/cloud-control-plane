@@ -1,0 +1,1540 @@
+{
+  "service": "azure-containers",
+  "scope": "estate",
+  "resourceTypes": [
+    "azurerm_container_app",
+    "azurerm_container_app_environment",
+    "azurerm_container_app_environment_certificate",
+    "azurerm_container_app_environment_managed_certificate",
+    "azurerm_container_app_job",
+    "azurerm_container_group",
+    "azurerm_container_registry",
+    "azurerm_container_registry_agent_pool",
+    "azurerm_container_registry_task",
+    "azurerm_container_registry_webhook",
+    "azurerm_kubernetes_automatic_cluster",
+    "azurerm_kubernetes_cluster",
+    "azurerm_kubernetes_cluster_node_pool",
+    "azurerm_kubernetes_fleet_manager"
+  ],
+  "summary": "Azure Kubernetes Service node pools and clusters, plus Container Registry. Node-count and tier scaling are self-service cost knobs; disabling registry public network access is a guardrailed hardening move; provisioning a new cluster, registry, or container instance routes to an engineer.",
+  "operations": [
+    {
+      "id": "azure-containers-node-pool-update-tags",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update AKS node pool tags",
+      "summary": "Set or update this node pool's tags. Only the tags you list change; others are left alone.",
+      "description": "Sets or merges tags on an AKS node pool. Non-disruptive, takes effect immediately, no impact on running nodes or pods.",
+      "target": {
+        "resourceType": "azurerm_kubernetes_cluster_node_pool",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "node_pool",
+          "label": "AKS node pool",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_kubernetes_cluster_node_pool/address",
+          "help": "The node pool to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Azure tag names cannot contain < > % & \\ ? /."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag node pool", "aks handover"],
+      "group": "tags-naming",
+      "decisions": [
+        "Tags are metadata only — cost-neutral and freely reversible — so this stays LOW risk."
+      ]
+    },
+    {
+      "id": "azure-containers-node-pool-scale-count",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Scale an AKS node pool's node count",
+      "summary": "Change how many nodes run in this pool. Kubernetes drains and reschedules pods as nodes are added or removed.",
+      "description": "Sets node_count on an AKS node pool, changing how many nodes it runs. Scale-out provisions new nodes (a cost delta); scale-in cordons and drains nodes before removing them, so Kubernetes reschedules affected pods onto the remaining capacity. Has no effect on a pool with cluster-autoscaler enabled, since Azure recomputes node_count itself there.",
+      "target": {
+        "attr": "node_count",
+        "resourceType": "azurerm_kubernetes_cluster_node_pool"
+      },
+      "params": [
+        {
+          "name": "node_pool",
+          "label": "AKS node pool",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_kubernetes_cluster_node_pool/address",
+          "help": "The node pool to scale."
+        },
+        {
+          "name": "new_node_count",
+          "label": "Node count",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "node_count",
+          "bounds": {
+            "min": 1,
+            "max": 100
+          },
+          "help": "Node count to run in this pool. Floored at 1 so a pool is never emptied outright; above the policy cap of 100 nodes the request routes to an engineer."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (node_count)",
+      "keywords": [
+        "scale nodes",
+        "add nodes",
+        "aks capacity",
+        "cluster capacity",
+        "node pool size"
+      ],
+      "group": "scale-performance",
+      "decisions": [
+        "Cost-changing — each node is billed compute — so MEDIUM floor.",
+        "Scale-in relies on Kubernetes' normal cordon/drain/reschedule behavior for evicted pods rather than an instance-level reboot, so downtime stays none at the cluster level.",
+        "A floor of 1 keeps this safe for both system and user pools; a system pool cannot run at 0 nodes.",
+        "No effect on a pool with cluster-autoscaler enabled — Azure manages node_count itself there."
+      ]
+    },
+    {
+      "id": "azure-containers-cluster-update-tags",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update AKS cluster tags",
+      "summary": "Set or update this cluster's tags. Only the tags you list change; others are left alone.",
+      "description": "Sets or merges tags on the AKS cluster resource. Non-disruptive, takes effect immediately, no impact on nodes or workloads.",
+      "target": {
+        "resourceType": "azurerm_kubernetes_cluster",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "cluster",
+          "label": "AKS cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_kubernetes_cluster/address",
+          "help": "The AKS cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Azure tag names cannot contain < > % & \\ ? /."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag cluster", "aks handover"],
+      "group": "tags-naming",
+      "decisions": [
+        "Tags are metadata only — cost-neutral and freely reversible — so this stays LOW risk."
+      ]
+    },
+    {
+      "id": "azure-containers-cluster-set-sku-tier",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change the AKS cluster's SKU tier",
+      "summary": "Switch between the Free and Standard control-plane tiers. Standard adds an uptime SLA at extra cost.",
+      "description": "Sets sku_tier on the AKS cluster, switching its control-plane tier between Free (no SLA) and Standard (a financially-backed uptime SLA, recommended for production). No node or workload disruption — only the managed control plane's service tier changes. Premium (the AKS Long Term Support tier) is excluded here because it also requires a support_plan selection that this scalar op does not capture; a move to Premium routes to an engineer.",
+      "target": {
+        "attr": "sku_tier",
+        "resourceType": "azurerm_kubernetes_cluster"
+      },
+      "params": [
+        {
+          "name": "cluster",
+          "label": "AKS cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_kubernetes_cluster/address",
+          "help": "The AKS cluster to change."
+        },
+        {
+          "name": "new_sku_tier",
+          "label": "New SKU tier",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku_tier",
+          "bounds": {
+            "allowlist": ["Free", "Standard"]
+          },
+          "help": "Free has no uptime SLA; Standard adds a financially-backed SLA for production clusters. Premium needs an additional support_plan choice and is engineer-only."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (sku_tier)",
+      "keywords": ["aks sla", "cluster tier", "standard tier", "uptime sla"],
+      "group": "scale-performance",
+      "decisions": [
+        "Cost-changing — Standard bills a per-cluster SLA fee — so MEDIUM floor.",
+        "Only the managed control plane's tier changes; nodes and running workloads are untouched, so downtime stays none.",
+        "Premium is excluded from the allowlist — it needs a companion support_plan attribute this single-attribute op does not set, so it is routed to an engineer instead of risking a partially-configured Premium tier."
+      ]
+    },
+    {
+      "id": "azure-containers-registry-update-tags",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Container Registry tags",
+      "summary": "Set or update this registry's tags. Only the tags you list change; others are left alone.",
+      "description": "Sets or merges tags on the Container Registry. Non-disruptive, takes effect immediately, no impact on stored images or running pulls/pushes.",
+      "target": {
+        "resourceType": "azurerm_container_registry",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "registry",
+          "label": "Container registry",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_container_registry/address",
+          "help": "The registry to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Azure tag names cannot contain < > % & \\ ? /."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag registry", "acr handover"],
+      "group": "tags-naming",
+      "decisions": [
+        "Tags are metadata only — cost-neutral and freely reversible — so this stays LOW risk."
+      ]
+    },
+    {
+      "id": "azure-containers-registry-set-sku",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change the Container Registry SKU",
+      "summary": "Move this registry between Basic, Standard, and Premium. Premium adds geo-replication and private networking support.",
+      "description": "Sets sku on the Container Registry, moving it between Basic, Standard, and Premium. Applies online with no registry downtime; Premium unlocks geo-replication, customer-managed keys, and private endpoints, while a move down to Basic/Standard drops those capabilities if they were in use.",
+      "target": {
+        "attr": "sku",
+        "resourceType": "azurerm_container_registry"
+      },
+      "params": [
+        {
+          "name": "registry",
+          "label": "Container registry",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_container_registry/address",
+          "help": "The registry to resize."
+        },
+        {
+          "name": "new_sku",
+          "label": "New SKU",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku",
+          "bounds": {
+            "allowlist": ["Basic", "Standard", "Premium"]
+          },
+          "help": "Basic is dev/test scale; Standard raises storage and throughput; Premium adds geo-replication, private endpoints, and customer-managed keys."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (sku)",
+      "keywords": ["acr tier", "registry sku", "upgrade registry", "geo-replication"],
+      "group": "scale-performance",
+      "decisions": [
+        "Cost-changing — Premium is materially more expensive than Basic/Standard — so MEDIUM floor.",
+        "Applies online; pulls and pushes in flight are not interrupted, so downtime stays none.",
+        "Moving down from Premium silently drops geo-replication/private-endpoint/customer-managed-key features if they were configured — flagged here since the op itself does not check for that dependency."
+      ]
+    },
+    {
+      "id": "azure-containers-registry-restrict-public-network",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Disable public network access on a Container Registry",
+      "summary": "Cut the registry off from the public internet, leaving only private/network-rule access. One-way hardening; an engineer re-opens it.",
+      "description": "Sets public_network_access_enabled to false on the Container Registry, blocking access over the public internet and leaving only private endpoints or configured network rules reachable. Tightening-only — this op can only turn public access off. If nothing private is wired up yet, this can cut off pulls and pushes that currently rely on the public endpoint, so confirm a private path exists first.",
+      "target": {
+        "attr": "public_network_access_enabled",
+        "resourceType": "azurerm_container_registry"
+      },
+      "params": [
+        {
+          "name": "registry",
+          "label": "Container registry",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_container_registry/address",
+          "help": "The registry to lock down."
+        },
+        {
+          "name": "public_network_access_enabled",
+          "label": "Public network access",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "public_network_access_enabled",
+          "bounds": {
+            "allowlist": [false]
+          },
+          "help": "Set to false to block the registry's public endpoint. This op cannot be used to turn public access back on."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (public_network_access_enabled)",
+      "keywords": ["private registry", "disable public access", "acr network lockdown"],
+      "group": "connectivity-access",
+      "decisions": [
+        "Network-reachability change — HIGH floor per the general risk doctrine, even though it only ever tightens.",
+        "Can break pulls/pushes that depend on the public endpoint if no private endpoint or network rule is wired up yet — verify a private path exists before applying.",
+        "Tighten-only posture — the allowlist offers only false; re-opening public access is not offered here and needs an engineer."
+      ]
+    },
+    {
+      "id": "azure-containers-aks-provision",
+      "service": "azure-containers",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new AKS cluster",
+      "summary": "Request a brand-new Kubernetes cluster; an engineer finalizes and reviews the Terraform before it is applied.",
+      "description": "Stand up a new AKS cluster as a complete specification: the default node pool's size and count, cluster identity, and the estate's RBAC, local-account, and API-server exposure guardrails. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "azurerm_kubernetes_cluster"
+      },
+      "params": [
+        {
+          "name": "cluster_name",
+          "label": "Cluster name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,40}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, like aks-checkout-01. Names the cluster and the generated draft's Terraform block."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group the cluster is created in, chosen from the estate inventory."
+        },
+        {
+          "name": "dns_prefix",
+          "label": "DNS prefix",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "dns_prefix",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{1,52}[a-z0-9]$"
+          },
+          "help": "Prefixes the cluster's managed DNS name and API server FQDN. Lower-case letters, numbers and dashes."
+        },
+        {
+          "name": "kubernetes_version",
+          "label": "Kubernetes version",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "kubernetes_version",
+          "group": "identity",
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "The engineer picks and validates the exact patch version during review, against the estate's supported-version policy."
+        },
+        {
+          "name": "node_pool_name",
+          "label": "Default node pool name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "name",
+          "path": ["default_node_pool"],
+          "group": "compute",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9]{0,11}$"
+          },
+          "default": "system",
+          "help": "Names the cluster's default node pool. Lower-case letters and numbers only, 1—12 characters — an AKS naming limit."
+        },
+        {
+          "name": "vm_size",
+          "label": "Node size",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "vm_size",
+          "path": ["default_node_pool"],
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "Standard_B2s",
+              "Standard_B2ms",
+              "Standard_D2s_v5",
+              "Standard_D4s_v5",
+              "Standard_D8s_v5",
+              "Standard_D16s_v5",
+              "Standard_D2as_v5",
+              "Standard_D4as_v5",
+              "Standard_D8as_v5",
+              "Standard_E2s_v5",
+              "Standard_E4s_v5",
+              "Standard_E8s_v5",
+              "Standard_F2s_v2",
+              "Standard_F4s_v2",
+              "Standard_F8s_v2"
+            ]
+          },
+          "default": "Standard_D2s_v5",
+          "help": "VM size for every node in the default pool. D-series is general purpose, E-series memory-optimized, F-series compute-optimized, B-series burstable for dev/test."
+        },
+        {
+          "name": "node_count",
+          "label": "Node count",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "node_count",
+          "path": ["default_node_pool"],
+          "group": "compute",
+          "bounds": {
+            "min": 1,
+            "max": 100
+          },
+          "default": 3,
+          "help": "Starting node count for the default pool. Floored at 1; above the policy cap of 100 nodes the request routes to an engineer."
+        },
+        {
+          "name": "auto_scaling_enabled",
+          "label": "Enable node pool autoscaling",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "tier": "advanced",
+          "attr": "auto_scaling_enabled",
+          "path": ["default_node_pool"],
+          "group": "compute",
+          "bounds": {
+            "allowlist": [true, false]
+          },
+          "help": "Leave unset for a fixed-size pool. Set true and add a minimum/maximum count to let Azure scale the pool itself."
+        },
+        {
+          "name": "min_count",
+          "label": "Minimum node count (autoscale)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "tier": "advanced",
+          "attr": "min_count",
+          "path": ["default_node_pool"],
+          "group": "compute",
+          "bounds": {
+            "min": 1,
+            "max": 100
+          },
+          "help": "Only used when autoscaling is enabled. Leave blank for a fixed-size pool."
+        },
+        {
+          "name": "max_count",
+          "label": "Maximum node count (autoscale)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "tier": "advanced",
+          "attr": "max_count",
+          "path": ["default_node_pool"],
+          "group": "compute",
+          "bounds": {
+            "min": 1,
+            "max": 100
+          },
+          "help": "Only used when autoscaling is enabled. Leave blank for a fixed-size pool."
+        },
+        {
+          "name": "identity_type",
+          "label": "Managed identity",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "SystemAssigned",
+          "attr": "type",
+          "path": ["identity"],
+          "group": "identity",
+          "help": "Always a system-assigned managed identity for a new cluster — written into the draft, never asked."
+        },
+        {
+          "name": "role_based_access_control_enabled",
+          "label": "Kubernetes RBAC",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "role_based_access_control_enabled",
+          "group": "connectivity-access",
+          "help": "Always on for a new cluster — written into the draft, never asked."
+        },
+        {
+          "name": "local_account_disabled",
+          "label": "Local admin accounts",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "local_account_disabled",
+          "group": "connectivity-access",
+          "help": "Local (non-Azure-AD) cluster admin accounts are always disabled for a new cluster — written into the draft, never asked. Requires Azure AD group integration; see the review decisions."
+        },
+        {
+          "name": "private_cluster_enabled",
+          "label": "Private cluster",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "private_cluster_enabled",
+          "group": "connectivity-access",
+          "bounds": {
+            "allowlist": [true, false]
+          },
+          "default": true,
+          "help": "true keeps the Kubernetes API server off the public internet (needs a private network path to reach it); false publishes it — pair that with authorized IP ranges during review."
+        },
+        {
+          "name": "azure_policy_enabled",
+          "label": "Azure Policy add-on",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "azure_policy_enabled",
+          "group": "connectivity-access",
+          "help": "Always on for a new cluster — written into the draft, never asked."
+        },
+        {
+          "name": "resource_name",
+          "label": "Cluster name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this cluster runs",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this cluster."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": ["new cluster", "new aks", "provision kubernetes", "new k8s cluster"],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Kubernetes version — the engineer picks and validates the exact patch version against the estate's supported-version policy.",
+        "Disabling local accounts requires Azure AD group integration (azure_active_directory_role_based_access_control) added during review, or cluster access is lost.",
+        "Node pool autoscaling — leave the minimum/maximum blank for a fixed-size pool, or set them (with autoscaling enabled) to let Azure manage node_count itself.",
+        "Private cluster networking — confirm a private connectivity path (VPN, ExpressRoute, jump host) exists before relying on a private API server; authorized IP ranges are the alternative for a public-but-restricted API server."
+      ]
+    },
+    {
+      "id": "azure-containers-registry-provision",
+      "service": "azure-containers",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new container registry",
+      "summary": "Request a brand-new container registry; an engineer finalizes and reviews the Terraform before it is applied.",
+      "description": "Stand up a new Container Registry as a complete specification: SKU tier plus the estate's admin-access and network-exposure guardrails. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "azurerm_container_registry"
+      },
+      "params": [
+        {
+          "name": "registry_name",
+          "label": "Registry name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9]{5,50}$"
+          },
+          "help": "Letters and numbers only, 5—50 characters — no dashes or dots. Becomes part of the registry's login server address and must be globally unique across Azure."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group the registry is created in, chosen from the estate inventory."
+        },
+        {
+          "name": "sku",
+          "label": "SKU",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku",
+          "group": "compute",
+          "bounds": {
+            "allowlist": ["Basic", "Standard", "Premium"]
+          },
+          "default": "Standard",
+          "help": "Basic is dev/test scale; Standard raises storage and throughput; Premium adds geo-replication, private endpoints, and customer-managed keys."
+        },
+        {
+          "name": "admin_enabled",
+          "label": "Admin user account",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": false,
+          "attr": "admin_enabled",
+          "group": "connectivity-access",
+          "help": "Always off for a new registry — written into the draft, never asked. Pulls and pushes authenticate with Azure AD / managed identity instead of a shared admin password."
+        },
+        {
+          "name": "anonymous_pull_enabled",
+          "label": "Anonymous pull",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": false,
+          "attr": "anonymous_pull_enabled",
+          "group": "connectivity-access",
+          "help": "Always off for a new registry — written into the draft, never asked. No image can be pulled without authentication."
+        },
+        {
+          "name": "public_network_access_enabled",
+          "label": "Public network access",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "public_network_access_enabled",
+          "group": "connectivity-access",
+          "bounds": {
+            "allowlist": [true, false]
+          },
+          "default": false,
+          "help": "false keeps the registry reachable only over a private endpoint or configured network rules; true opens the public endpoint — pair that with IP network rules during review."
+        },
+        {
+          "name": "resource_name",
+          "label": "Registry name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this registry holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this registry."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": ["new registry", "new acr", "provision container registry"],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Public network access defaults to off; if the registry genuinely needs a public endpoint, add IP network rules (network_rule_set) during review rather than leaving it open to any address.",
+        "Geo-replication, customer-managed keys, and private endpoints are Premium-tier follow-ups, not part of this baseline."
+      ]
+    },
+    {
+      "id": "azure-containers-instance-provision",
+      "service": "azure-containers",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new container instance",
+      "summary": "Request a brand-new container instance; an engineer finalizes and reviews the Terraform before it is applied.",
+      "description": "Stand up a new Container Instance as a complete specification: the container image approach, sizing, one exposed port, and network exposure. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "azurerm_container_group"
+      },
+      "params": [
+        {
+          "name": "group_name",
+          "label": "Container group name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,40}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, like batch-worker-01. Names the container group and the generated draft's Terraform block."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group the container instance is created in, chosen from the estate inventory."
+        },
+        {
+          "name": "os_type",
+          "label": "Operating system",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "os_type",
+          "group": "identity",
+          "bounds": {
+            "allowlist": ["Linux", "Windows"]
+          },
+          "default": "Linux",
+          "help": "The OS family for every container in this group; it cannot be mixed within one group."
+        },
+        {
+          "name": "container_name",
+          "label": "Container name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "name",
+          "path": ["container"],
+          "group": "compute",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{1,40}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the single container this group runs."
+        },
+        {
+          "name": "image",
+          "label": "Container image",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "role": "const",
+          "const": "<registry>/<image>:<tag>",
+          "attr": "image",
+          "path": ["container"],
+          "group": "compute",
+          "help": "Placeholder written into the draft so the required container.image renders inside the block — the engineer replaces <registry>/<image>:<tag> with the real, validated image reference during review (approved images follow the account standard)."
+        },
+        {
+          "name": "cpu",
+          "label": "CPU (cores)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "cpu",
+          "path": ["container"],
+          "group": "compute",
+          "bounds": {
+            "min": 0.5,
+            "max": 4
+          },
+          "default": 1,
+          "help": "vCPU cores reserved for the container, 0.5-4."
+        },
+        {
+          "name": "memory",
+          "label": "Memory (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "memory",
+          "path": ["container"],
+          "group": "compute",
+          "bounds": {
+            "min": 0.5,
+            "max": 16
+          },
+          "default": 1.5,
+          "help": "Memory reserved for the container in GiB, 0.5-16."
+        },
+        {
+          "name": "container_port",
+          "label": "Exposed port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "port",
+          "path": ["container", "ports"],
+          "group": "network",
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "default": 80,
+          "help": "The single TCP port this container exposes. Additional ports are an engineer follow-up during review."
+        },
+        {
+          "name": "container_protocol",
+          "label": "Port protocol",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "TCP",
+          "attr": "protocol",
+          "path": ["container", "ports"],
+          "group": "network",
+          "help": "Always TCP for the exposed port — written into the draft, never asked. A UDP port is an engineer follow-up."
+        },
+        {
+          "name": "ip_address_type",
+          "label": "IP address type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "ip_address_type",
+          "group": "network",
+          "bounds": {
+            "allowlist": ["Public", "Private", "None"]
+          },
+          "default": "Private",
+          "help": "Private and None keep this off the public internet; Private additionally needs a subnet reference added during review. Public assigns a routable IP with no extra wiring."
+        },
+        {
+          "name": "resource_name",
+          "label": "Container instance name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this container instance runs",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this container instance."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": ["new container instance", "new aci", "provision container group"],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Container image — the draft carries a <registry>/<image>:<tag> placeholder inside the container block; the engineer replaces it with the real, validated image reference during review.",
+        "Private IP address type needs the reviewing engineer to add a subnet reference (subnet_ids); None needs no networking; Public needs neither but is internet-reachable.",
+        "Only one exposed port is captured here; additional ports are an engineer follow-up during review.",
+        "Restart policy and diagnostics are left at the provider default; adjust during review if the workload needs different behavior."
+      ]
+    },
+    {
+      "id": "azure-tag-container-app",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Container App tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Container App (azurerm_container_app). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_container_app",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Container App",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_container_app/address",
+          "help": "The Container App to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-container-app-environment",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Container App Environment tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Container App Environment (azurerm_container_app_environment). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_container_app_environment",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Container App Environment",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_container_app_environment/address",
+          "help": "The Container App Environment to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-container-app-environment-certificate",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Container App Environment Certificate tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Container App Environment Certificate (azurerm_container_app_environment_certificate). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_container_app_environment_certificate",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Container App Environment Certificate",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_container_app_environment_certificate/address",
+          "help": "The Container App Environment Certificate to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-container-app-environment-managed-certificate",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Container App Environment Managed Certificate tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Container App Environment Managed Certificate (azurerm_container_app_environment_managed_certificate). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_container_app_environment_managed_certificate",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Container App Environment Managed Certificate",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_container_app_environment_managed_certificate/address",
+          "help": "The Container App Environment Managed Certificate to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-container-app-job",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Container App Job tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Container App Job (azurerm_container_app_job). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_container_app_job",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Container App Job",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_container_app_job/address",
+          "help": "The Container App Job to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-container-group",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Container Group tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Container Group (azurerm_container_group). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_container_group",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Container Group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_container_group/address",
+          "help": "The Container Group to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-container-registry-agent-pool",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Container Registry Agent Pool tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Container Registry Agent Pool (azurerm_container_registry_agent_pool). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_container_registry_agent_pool",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Container Registry Agent Pool",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_container_registry_agent_pool/address",
+          "help": "The Container Registry Agent Pool to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-container-registry-task",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Container Registry Task tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Container Registry Task (azurerm_container_registry_task). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_container_registry_task",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Container Registry Task",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_container_registry_task/address",
+          "help": "The Container Registry Task to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-container-registry-webhook",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Container Registry Webhook tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Container Registry Webhook (azurerm_container_registry_webhook). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_container_registry_webhook",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Container Registry Webhook",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_container_registry_webhook/address",
+          "help": "The Container Registry Webhook to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-kubernetes-automatic-cluster",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Kubernetes Automatic Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Kubernetes Automatic Cluster (azurerm_kubernetes_automatic_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_kubernetes_automatic_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Kubernetes Automatic Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_kubernetes_automatic_cluster/address",
+          "help": "The Kubernetes Automatic Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-kubernetes-fleet-manager",
+      "service": "azure-containers",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Kubernetes Fleet Manager tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Kubernetes Fleet Manager (azurerm_kubernetes_fleet_manager). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_kubernetes_fleet_manager",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Kubernetes Fleet Manager",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_kubernetes_fleet_manager/address",
+          "help": "The Kubernetes Fleet Manager to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    }
+  ]
+}

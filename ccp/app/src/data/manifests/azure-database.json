@@ -1,0 +1,2243 @@
+{
+  "service": "azure-database",
+  "scope": "estate",
+  "resourceTypes": [
+    "azurerm_cosmosdb_account",
+    "azurerm_cosmosdb_cassandra_cluster",
+    "azurerm_cosmosdb_postgresql_cluster",
+    "azurerm_mssql_database",
+    "azurerm_mssql_elasticpool",
+    "azurerm_mssql_failover_group",
+    "azurerm_mssql_job_agent",
+    "azurerm_mssql_managed_database",
+    "azurerm_mssql_managed_instance",
+    "azurerm_mssql_server",
+    "azurerm_mssql_virtual_machine",
+    "azurerm_mssql_virtual_machine_group",
+    "azurerm_mysql_flexible_server",
+    "azurerm_postgresql_flexible_server",
+    "azurerm_postgresql_server",
+    "azurerm_redis_cache",
+    "azurerm_redis_enterprise_cluster"
+  ],
+  "summary": "Retune Azure's managed database and cache services: SQL Database, MySQL and PostgreSQL Flexible Server, Redis Cache, and Cosmos DB. Compute and storage changes are scoped to same-family resizes and grow-only storage; anything touching replication, consistency, or network reachability stays engineer-authored.",
+  "operations": [
+    {
+      "id": "mssql-update-tags",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update database tags",
+      "summary": "Set or update this database's tags. Only the tags you list change; others are left alone. No effect on how it runs.",
+      "description": "Sets or merges cost-allocation and ownership tags on the SQL database (tags). Non-disruptive, takes effect immediately, no impact on the running database or its data.",
+      "target": {
+        "resourceType": "azurerm_mssql_database",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "database",
+          "label": "SQL database",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mssql_database/address",
+          "help": "The database to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[^<>%&?/]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Avoid < > % & ? / in tag names — Azure rejects them."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag database"],
+      "group": "tags-naming",
+      "pinned": 1
+    },
+    {
+      "id": "mssql-scale-sku",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Resize the compute and storage tier",
+      "summary": "Change the database's service tier and vCore count. Applying causes a brief connection drop while Azure cuts over to the new size.",
+      "description": "Sets sku_name to a different General Purpose (vCore, Gen5) size. Azure SQL Database applies this online: it provisions the new compute size in parallel, then cuts existing connections over — typically a few seconds, occasionally longer if a long-running transaction has to unwind. Scoped to one purchasing model (General Purpose vCore, Gen5) so this is a straightforward resize, not a purchasing-model switch or a Hyperscale/Business Critical migration.",
+      "target": {
+        "resourceType": "azurerm_mssql_database",
+        "attr": "sku_name"
+      },
+      "params": [
+        {
+          "name": "database",
+          "label": "SQL database",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mssql_database/address",
+          "help": "The database to resize."
+        },
+        {
+          "name": "new_sku_name",
+          "label": "New size",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "GP_Gen5_2",
+              "GP_Gen5_4",
+              "GP_Gen5_6",
+              "GP_Gen5_8",
+              "GP_Gen5_10",
+              "GP_Gen5_16"
+            ]
+          },
+          "help": "General Purpose (vCore, Gen5) size to move to. More vCores cost more and add compute headroom; fewer vCores cost less."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "brief",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "resize database",
+        "upsize sql database",
+        "database compute tier",
+        "bigger database"
+      ],
+      "group": "scale-performance",
+      "decisions": [
+        "Curated to the General Purpose Gen5 vCore family only — moving to Business Critical, Hyperscale, or the DTU model is a bigger operation and stays engineer-authored.",
+        "A few seconds of dropped connections is typical during cutover; a long-running transaction in flight can extend that."
+      ]
+    },
+    {
+      "id": "mssql-grow-max-size",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Grow maximum database size",
+      "summary": "Grow this database's maximum storage size. Storage can only increase, never shrink.",
+      "description": "Grows max_size_gb, the ceiling on how much data the database can hold. Applies online with no interruption; Azure enforces that this value can only increase for a given database.",
+      "target": {
+        "resourceType": "azurerm_mssql_database",
+        "attr": "max_size_gb"
+      },
+      "params": [
+        {
+          "name": "database",
+          "label": "SQL database",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mssql_database/address",
+          "help": "The database to grow."
+        },
+        {
+          "name": "new_max_size_gb",
+          "label": "New maximum size (GB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 4096,
+            "growOnly": true
+          },
+          "help": "Must be greater than the current maximum size; Azure SQL Database storage ceilings cannot be reduced. Capped here at 4096 GB — larger jumps route to an engineer."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["database storage full", "grow database size"],
+      "group": "scale-performance",
+      "pinned": 2
+    },
+    {
+      "id": "mssql-set-short-term-retention",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change point-in-time restore retention",
+      "summary": "Change how many days of automatic backups this database keeps for point-in-time restore.",
+      "description": "Updates short_term_retention_policy.retention_days, the window Azure keeps automatic backups available for point-in-time restore. Applies online with no interruption.",
+      "target": {
+        "resourceType": "azurerm_mssql_database",
+        "path": ["short_term_retention_policy"]
+      },
+      "params": [
+        {
+          "name": "database",
+          "label": "SQL database",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mssql_database/address",
+          "help": "The database to retune."
+        },
+        {
+          "name": "retention_days",
+          "label": "Retention (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "retention_days",
+          "bounds": {
+            "min": 1,
+            "max": 35
+          },
+          "help": "Days of point-in-time restore backups to keep (Azure allows 1-35)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["point in time restore", "pitr window"],
+      "group": "protection-backup"
+    },
+    {
+      "id": "mysql-update-tags",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update server tags",
+      "summary": "Set or update this server's tags. Only the tags you list change; others are left alone. No effect on how it runs.",
+      "description": "Sets or merges cost-allocation and ownership tags on the MySQL Flexible Server (tags). Non-disruptive, takes effect immediately, no impact on the running server or its data.",
+      "target": {
+        "resourceType": "azurerm_mysql_flexible_server",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "database",
+          "label": "MySQL server",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mysql_flexible_server/address",
+          "help": "The server to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[^<>%&?/]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Avoid < > % & ? / in tag names — Azure rejects them."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag server"],
+      "group": "tags-naming",
+      "pinned": 1
+    },
+    {
+      "id": "mysql-scale-sku",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Resize the compute tier",
+      "summary": "Change the server's compute tier and size. Applying restarts the server, typically for 60 to 120 seconds.",
+      "description": "Sets sku_name to a different General Purpose (Standard, Ddsv4) size. Unlike a storage change, a compute tier or size change on MySQL Flexible Server restarts the server — documented as roughly 60 to 120 seconds of unavailability while it comes back up on the new size.",
+      "target": {
+        "resourceType": "azurerm_mysql_flexible_server",
+        "attr": "sku_name"
+      },
+      "params": [
+        {
+          "name": "database",
+          "label": "MySQL server",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mysql_flexible_server/address",
+          "help": "The server to resize."
+        },
+        {
+          "name": "new_sku_name",
+          "label": "New size",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "GP_Standard_D2ds_v4",
+              "GP_Standard_D4ds_v4",
+              "GP_Standard_D8ds_v4",
+              "GP_Standard_D16ds_v4"
+            ]
+          },
+          "help": "General Purpose (Standard, Ddsv4) size to move to. Bigger sizes cost more and add compute headroom; smaller sizes cost less."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "stop-start",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["resize server", "upsize mysql server", "database compute tier"],
+      "group": "scale-performance",
+      "decisions": [
+        "Compute scaling restarts the server for roughly 60-120 seconds, so this stays engineer-authored rather than self-service.",
+        "Curated to the General Purpose Ddsv4 family; moving to Burstable or Memory Optimized is a bigger change and stays engineer-authored too."
+      ]
+    },
+    {
+      "id": "mysql-change-backup-retention",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change how many days of backups are kept",
+      "summary": "Change how many days of automatic backups this server keeps.",
+      "description": "Updates backup_retention_days. Applies online with no restart.",
+      "target": {
+        "resourceType": "azurerm_mysql_flexible_server",
+        "attr": "backup_retention_days"
+      },
+      "params": [
+        {
+          "name": "database",
+          "label": "MySQL server",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mysql_flexible_server/address",
+          "help": "The server to retune."
+        },
+        {
+          "name": "new_backup_retention_days",
+          "label": "New retention period (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 35
+          },
+          "help": "Days of automated backups to retain (Azure allows 1-35)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["mysql retention window", "keep mysql backups longer"],
+      "group": "protection-backup"
+    },
+    {
+      "id": "mysql-grow-storage",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Grow server storage",
+      "summary": "Grow this server's storage. Storage can only increase, never shrink.",
+      "description": "Grows storage.size_gb. Applies online with no restart; Azure enforces that storage can only increase for a given server.",
+      "target": {
+        "resourceType": "azurerm_mysql_flexible_server",
+        "path": ["storage"]
+      },
+      "params": [
+        {
+          "name": "database",
+          "label": "MySQL server",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mysql_flexible_server/address",
+          "help": "The server to grow."
+        },
+        {
+          "name": "new_size_gb",
+          "label": "New storage size (GB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "size_gb",
+          "bounds": {
+            "min": 20,
+            "max": 4096,
+            "growOnly": true
+          },
+          "help": "Must be greater than the current storage size; MySQL Flexible Server storage cannot be reduced. Capped here at 4096 GB — larger jumps route to an engineer."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["database storage full", "grow server storage"],
+      "group": "scale-performance",
+      "pinned": 2
+    },
+    {
+      "id": "postgres-update-tags",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update server tags",
+      "summary": "Set or update this server's tags. Only the tags you list change; others are left alone. No effect on how it runs.",
+      "description": "Sets or merges cost-allocation and ownership tags on the PostgreSQL Flexible Server (tags). Non-disruptive, takes effect immediately, no impact on the running server or its data.",
+      "target": {
+        "resourceType": "azurerm_postgresql_flexible_server",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "database",
+          "label": "PostgreSQL server",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_postgresql_flexible_server/address",
+          "help": "The server to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[^<>%&?/]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Avoid < > % & ? / in tag names — Azure rejects them."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag server"],
+      "group": "tags-naming",
+      "pinned": 1
+    },
+    {
+      "id": "postgres-scale-sku",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Resize the compute tier",
+      "summary": "Change the server's compute tier and vCore count. Applying restarts the server.",
+      "description": "Sets sku_name to a different General Purpose (Standard, Dsv3) size. PostgreSQL Flexible Server rebuilds the server at the new size and cuts over; Azure's near-zero-downtime scaling usually keeps this under 30 seconds, but a regular restart can take several minutes, and near-zero-downtime scaling does not apply to every configuration (unlogged tables lose their data on cutover; the smallest Burstable sizes are excluded).",
+      "target": {
+        "resourceType": "azurerm_postgresql_flexible_server",
+        "attr": "sku_name"
+      },
+      "params": [
+        {
+          "name": "database",
+          "label": "PostgreSQL server",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_postgresql_flexible_server/address",
+          "help": "The server to resize."
+        },
+        {
+          "name": "new_sku_name",
+          "label": "New size",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "GP_Standard_D2s_v3",
+              "GP_Standard_D4s_v3",
+              "GP_Standard_D8s_v3",
+              "GP_Standard_D16s_v3"
+            ]
+          },
+          "help": "General Purpose (Standard, Dsv3) size to move to. Bigger sizes cost more and add compute headroom; smaller sizes cost less."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "stop-start",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["resize server", "upsize postgres server", "database compute tier"],
+      "group": "scale-performance",
+      "decisions": [
+        "Compute scaling restarts the server, so this stays engineer-authored rather than self-service — worth confirming the target has no unlogged tables before applying, since those lose their data on cutover.",
+        "Curated to the General Purpose Dsv3 family; moving to Burstable or Memory Optimized is a bigger change and stays engineer-authored too."
+      ]
+    },
+    {
+      "id": "postgres-grow-storage",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Grow server storage",
+      "summary": "Grow this server's storage. Storage can only increase, never shrink.",
+      "description": "Grows storage_mb. Applies online with no restart; Azure enforces that storage can only increase for a given server.",
+      "target": {
+        "resourceType": "azurerm_postgresql_flexible_server",
+        "attr": "storage_mb"
+      },
+      "params": [
+        {
+          "name": "database",
+          "label": "PostgreSQL server",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_postgresql_flexible_server/address",
+          "help": "The server to grow."
+        },
+        {
+          "name": "new_storage_mb",
+          "label": "New storage size (MB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 32768,
+            "max": 4194304,
+            "growOnly": true
+          },
+          "help": "Must be greater than the current storage size, in MB (32768 MB = 32 GiB). PostgreSQL Flexible Server storage cannot be reduced. Capped here at 4194304 MB (4 TiB) — larger jumps route to an engineer."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["database storage full", "grow server storage"],
+      "group": "scale-performance",
+      "pinned": 2
+    },
+    {
+      "id": "postgres-change-backup-retention",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change how many days of backups are kept",
+      "summary": "Change how many days of automatic backups this server keeps.",
+      "description": "Updates backup_retention_days. Applies online with no restart.",
+      "target": {
+        "resourceType": "azurerm_postgresql_flexible_server",
+        "attr": "backup_retention_days"
+      },
+      "params": [
+        {
+          "name": "database",
+          "label": "PostgreSQL server",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_postgresql_flexible_server/address",
+          "help": "The server to retune."
+        },
+        {
+          "name": "new_backup_retention_days",
+          "label": "New retention period (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 7,
+            "max": 35
+          },
+          "help": "Days of automated backups to retain (Azure allows 7-35)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["postgres retention window", "keep postgres backups longer"],
+      "group": "protection-backup"
+    },
+    {
+      "id": "redis-update-tags",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update cache tags",
+      "summary": "Set or update this cache's tags. Only the tags you list change; others are left alone. No effect on how it runs.",
+      "description": "Sets or merges cost-allocation and ownership tags on the Redis cache (tags). Non-disruptive, takes effect immediately, no impact on the running cache or its data.",
+      "target": {
+        "resourceType": "azurerm_redis_cache",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "database",
+          "label": "Redis cache",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_redis_cache/address",
+          "help": "The cache to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[^<>%&?/]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Avoid < > % & ? / in tag names — Azure rejects them."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag cache", "cache handover"],
+      "group": "tags-naming",
+      "pinned": 1,
+      "decisions": [
+        "Capacity and SKU/family changes restart the cache and can briefly drop connections, and the valid capacity range depends on which family/SKU it is paired with — that coupling and the reboot risk keep sizing changes engineer-authored rather than self-service."
+      ]
+    },
+    {
+      "id": "cosmosdb-update-tags",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update account tags",
+      "summary": "Set or update this account's tags. Only the tags you list change; others are left alone. No effect on how it runs.",
+      "description": "Sets or merges cost-allocation and ownership tags on the Cosmos DB account (tags). Non-disruptive, takes effect immediately, no impact on the running account or its data.",
+      "target": {
+        "resourceType": "azurerm_cosmosdb_account",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "database",
+          "label": "Cosmos DB account",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_cosmosdb_account/address",
+          "help": "The account to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[^<>%&?/]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Avoid < > % & ? / in tag names — Azure rejects them."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag account"],
+      "group": "tags-naming",
+      "pinned": 1,
+      "decisions": [
+        "Every other Cosmos DB setting touches consistency, geo-replication, failover, or network reachability, so this catalog only offers tags — everything else stays engineer-authored."
+      ]
+    },
+    {
+      "id": "azure-tag-cosmosdb-cassandra-cluster",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Cosmosdb Cassandra Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Cosmosdb Cassandra Cluster (azurerm_cosmosdb_cassandra_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_cosmosdb_cassandra_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Cosmosdb Cassandra Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_cosmosdb_cassandra_cluster/address",
+          "help": "The Cosmosdb Cassandra Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-cosmosdb-postgresql-cluster",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Cosmosdb Postgresql Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Cosmosdb Postgresql Cluster (azurerm_cosmosdb_postgresql_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_cosmosdb_postgresql_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Cosmosdb Postgresql Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_cosmosdb_postgresql_cluster/address",
+          "help": "The Cosmosdb Postgresql Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-mssql-elasticpool",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Mssql Elasticpool tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Mssql Elasticpool (azurerm_mssql_elasticpool). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_mssql_elasticpool",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Mssql Elasticpool",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mssql_elasticpool/address",
+          "help": "The Mssql Elasticpool to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-mssql-failover-group",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Mssql Failover Group tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Mssql Failover Group (azurerm_mssql_failover_group). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_mssql_failover_group",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Mssql Failover Group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mssql_failover_group/address",
+          "help": "The Mssql Failover Group to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-mssql-job-agent",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Mssql Job Agent tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Mssql Job Agent (azurerm_mssql_job_agent). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_mssql_job_agent",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Mssql Job Agent",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mssql_job_agent/address",
+          "help": "The Mssql Job Agent to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-mssql-managed-database",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Mssql Managed Database tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Mssql Managed Database (azurerm_mssql_managed_database). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_mssql_managed_database",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Mssql Managed Database",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mssql_managed_database/address",
+          "help": "The Mssql Managed Database to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-mssql-managed-instance",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Mssql Managed Instance tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Mssql Managed Instance (azurerm_mssql_managed_instance). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_mssql_managed_instance",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Mssql Managed Instance",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mssql_managed_instance/address",
+          "help": "The Mssql Managed Instance to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-mssql-server",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Mssql Server tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Mssql Server (azurerm_mssql_server). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_mssql_server",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Mssql Server",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mssql_server/address",
+          "help": "The Mssql Server to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-mssql-virtual-machine",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Mssql Virtual Machine tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Mssql Virtual Machine (azurerm_mssql_virtual_machine). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_mssql_virtual_machine",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Mssql Virtual Machine",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mssql_virtual_machine/address",
+          "help": "The Mssql Virtual Machine to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-mssql-virtual-machine-group",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Mssql Virtual Machine Group tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Mssql Virtual Machine Group (azurerm_mssql_virtual_machine_group). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_mssql_virtual_machine_group",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Mssql Virtual Machine Group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_mssql_virtual_machine_group/address",
+          "help": "The Mssql Virtual Machine Group to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-postgresql-server",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Postgresql Server tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Postgresql Server (azurerm_postgresql_server). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_postgresql_server",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Postgresql Server",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_postgresql_server/address",
+          "help": "The Postgresql Server to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-redis-enterprise-cluster",
+      "service": "azure-database",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Redis Enterprise Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Redis Enterprise Cluster (azurerm_redis_enterprise_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_redis_enterprise_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Redis Enterprise Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_redis_enterprise_cluster/address",
+          "help": "The Redis Enterprise Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-database-sql-server-provision",
+      "service": "azure-database",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new SQL server",
+      "summary": "Request a new SQL server; an engineer finalizes and reviews the Terraform before it applies. Credentials are never entered here.",
+      "description": "Stands up an Azure SQL logical server as a complete specification: identity, region, API version, admin login and network posture. minimum_tls_version is fixed at 1.2 and public_network_access_enabled is fixed off for every new server; the admin password is never entered here — the engineer wires it through the secrets manager. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "azurerm_mssql_server"
+      },
+      "params": [
+        {
+          "name": "server_name",
+          "label": "Server name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{1,61}$"
+          },
+          "help": "Globally unique lowercase name Azure uses for the server's DNS endpoint."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group this belongs to."
+        },
+        {
+          "name": "server_version",
+          "label": "Server API version",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "version",
+          "group": "engine",
+          "bounds": {
+            "allowlist": ["12.0"]
+          },
+          "default": "12.0",
+          "help": "Azure SQL server API version — 12.0 is the current generation and the only supported value for new servers."
+        },
+        {
+          "name": "administrator_login",
+          "label": "Admin login",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "administrator_login",
+          "group": "credentials",
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{1,127}$"
+          },
+          "help": "Server-level admin login name. The matching password is never entered here."
+        },
+        {
+          "name": "administrator_login_password",
+          "label": "Admin password",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "administrator_login_password",
+          "group": "credentials",
+          "sensitive": true,
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "Never entered here — the engineer sets this through the secrets manager during review."
+        },
+        {
+          "name": "minimum_tls_version",
+          "label": "Minimum TLS version",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "1.2",
+          "attr": "minimum_tls_version",
+          "group": "security",
+          "help": "Always enforced at 1.2 for new servers — written into the draft, never asked."
+        },
+        {
+          "name": "public_network_access_enabled",
+          "label": "Public network access",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "public_network_access_enabled",
+          "group": "network",
+          "bounds": {
+            "allowlist": [true, false]
+          },
+          "default": false,
+          "help": "Off by default so the server has no public endpoint. Choosing On exposes a public endpoint; pick On only with a reason a reviewer will read — most workloads should use private (VNet) connectivity, set up by the engineer during review."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM — what this server holds."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this server."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new sql server", "provision sql server", "new database server"],
+      "decisions": [
+        "Master password goes through the secrets manager — never entered in this portal",
+        "Azure AD-only authentication versus SQL authentication is an engineer decision during review",
+        "No firewall rule is created here, so nothing can reach this server until the engineer adds one or wires up private connectivity",
+        "Transparent data encryption key management (service-managed versus a customer key) is an engineer decision during review"
+      ]
+    },
+    {
+      "id": "azure-database-sql-db-provision",
+      "service": "azure-database",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new SQL database",
+      "summary": "Request a brand-new SQL database on an existing server; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stands up an Azure SQL database on an existing logical server as a complete specification: identity, size (sku_name) and maximum size (max_size_gb). Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "azurerm_mssql_database"
+      },
+      "params": [
+        {
+          "name": "database_name",
+          "label": "Database name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{1,127}$"
+          },
+          "help": "Name of the database within the server."
+        },
+        {
+          "name": "sql_server",
+          "label": "SQL server",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_mssql_server/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "server_id",
+          "group": "identity",
+          "help": "Which SQL server this database is created on."
+        },
+        {
+          "name": "sku_name",
+          "label": "Size (SKU)",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku_name",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "GP_Gen5_2",
+              "GP_Gen5_4",
+              "GP_Gen5_6",
+              "GP_Gen5_8",
+              "GP_Gen5_10",
+              "GP_Gen5_16"
+            ]
+          },
+          "default": "GP_Gen5_2",
+          "help": "General Purpose (vCore, Gen5) size — the same list the resize action offers."
+        },
+        {
+          "name": "max_size_gb",
+          "label": "Maximum size (GB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "max_size_gb",
+          "group": "storage",
+          "bounds": {
+            "min": 1,
+            "max": 4096
+          },
+          "default": 32,
+          "help": "Maximum size ceiling for this database, in GB. Can grow later; the resize action never lets it shrink."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM — what this database holds."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this database."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new sql database", "provision database", "new database"],
+      "decisions": [
+        "Collation and elastic pool placement are engineer decisions during review",
+        "Point-in-time and long-term backup retention are tuned separately after the database exists",
+        "Read scale and zone redundancy are engineer decisions during review"
+      ]
+    },
+    {
+      "id": "azure-database-postgres-flexible-provision",
+      "service": "azure-database",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new PostgreSQL flexible server",
+      "summary": "Request a new PostgreSQL server; an engineer finalizes and reviews the Terraform before it applies. Credentials are never entered here.",
+      "description": "Stands up a PostgreSQL Flexible Server as a complete specification: identity, region, version, size (sku_name) and storage (storage_mb). public_network_access_enabled defaults off; choosing to enable it needs a reason a reviewer will read. The admin password is never entered here — the engineer wires it through the secrets manager. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "azurerm_postgresql_flexible_server"
+      },
+      "params": [
+        {
+          "name": "server_name",
+          "label": "Server name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{1,61}$"
+          },
+          "help": "Globally unique lowercase name Azure uses for the server's DNS endpoint."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group this belongs to."
+        },
+        {
+          "name": "postgres_version",
+          "label": "PostgreSQL version",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "version",
+          "group": "engine",
+          "bounds": {
+            "allowlist": ["13", "14", "15", "16"]
+          },
+          "default": "16",
+          "help": "PostgreSQL major version to run."
+        },
+        {
+          "name": "sku_name",
+          "label": "Size (SKU)",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku_name",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "GP_Standard_D2s_v3",
+              "GP_Standard_D4s_v3",
+              "GP_Standard_D8s_v3",
+              "GP_Standard_D16s_v3"
+            ]
+          },
+          "default": "GP_Standard_D2s_v3",
+          "help": "General Purpose (Standard, Dsv3) size — the same list the resize action offers."
+        },
+        {
+          "name": "storage_mb",
+          "label": "Storage (MB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "storage_mb",
+          "group": "storage",
+          "bounds": {
+            "min": 32768,
+            "max": 4194304
+          },
+          "default": 32768,
+          "help": "Storage size in MB (32768 MB = 32 GiB). Can grow later; the resize action never lets it shrink."
+        },
+        {
+          "name": "administrator_login",
+          "label": "Admin login",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "administrator_login",
+          "group": "credentials",
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{1,62}$"
+          },
+          "help": "Server-level admin login name. The matching password is never entered here."
+        },
+        {
+          "name": "administrator_password",
+          "label": "Admin password",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "administrator_password",
+          "group": "credentials",
+          "sensitive": true,
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "Never entered here — the engineer sets this through the secrets manager during review."
+        },
+        {
+          "name": "public_network_access_enabled",
+          "label": "Public network access",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "public_network_access_enabled",
+          "group": "network",
+          "bounds": {
+            "allowlist": [true, false]
+          },
+          "default": false,
+          "help": "Off by default so the server has no public endpoint. Choosing On needs a reason a reviewer will read — most workloads should use private (VNet-integrated) networking instead, set up by the engineer during review."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM — what this server holds."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this server."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new postgres server", "provision postgresql", "new database server"],
+      "decisions": [
+        "Master password goes through the secrets manager — never entered in this portal",
+        "High availability mode (zone-redundant or same-zone standby) is an engineer decision during review",
+        "VNet integration (a delegated subnet) is set up separately when private networking is required",
+        "Backup retention and geo-redundant backup are tuned after the server exists"
+      ]
+    },
+    {
+      "id": "azure-database-mysql-flexible-provision",
+      "service": "azure-database",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new MySQL flexible server",
+      "summary": "Request a brand-new MySQL server; an engineer finalizes and reviews the Terraform before it applies. Credentials are never entered here.",
+      "description": "Stands up a MySQL Flexible Server as a complete specification: identity, region, version, size (sku_name) and storage (storage.size_gb). public_network_access defaults to Disabled; choosing Enabled needs a reason a reviewer will read. The admin password is never entered here — the engineer wires it through the secrets manager. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "azurerm_mysql_flexible_server"
+      },
+      "params": [
+        {
+          "name": "server_name",
+          "label": "Server name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{1,61}$"
+          },
+          "help": "Globally unique lowercase name Azure uses for the server's DNS endpoint."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group this belongs to."
+        },
+        {
+          "name": "mysql_version",
+          "label": "MySQL version",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "version",
+          "group": "engine",
+          "bounds": {
+            "allowlist": ["5.7", "8.0.21"]
+          },
+          "default": "8.0.21",
+          "help": "MySQL major version to run."
+        },
+        {
+          "name": "sku_name",
+          "label": "Size (SKU)",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku_name",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "GP_Standard_D2ds_v4",
+              "GP_Standard_D4ds_v4",
+              "GP_Standard_D8ds_v4",
+              "GP_Standard_D16ds_v4"
+            ]
+          },
+          "default": "GP_Standard_D2ds_v4",
+          "help": "General Purpose (Standard, Ddsv4) size — the same list the resize action offers."
+        },
+        {
+          "name": "storage_size_gb",
+          "label": "Storage (GB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "size_gb",
+          "path": ["storage"],
+          "group": "storage",
+          "bounds": {
+            "min": 20,
+            "max": 4096
+          },
+          "default": 20,
+          "help": "Storage size in GB. Can grow later; the resize action never lets it shrink."
+        },
+        {
+          "name": "administrator_login",
+          "label": "Admin login",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "administrator_login",
+          "group": "credentials",
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{1,62}$"
+          },
+          "help": "Server-level admin login name. The matching password is never entered here."
+        },
+        {
+          "name": "administrator_password",
+          "label": "Admin password",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "administrator_password",
+          "group": "credentials",
+          "sensitive": true,
+          "bounds": {
+            "allowlist": ["engineer-decides"]
+          },
+          "default": "engineer-decides",
+          "help": "Never entered here — the engineer sets this through the secrets manager during review."
+        },
+        {
+          "name": "public_network_access",
+          "label": "Public network access",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "public_network_access",
+          "group": "network",
+          "bounds": {
+            "allowlist": ["Enabled", "Disabled"]
+          },
+          "default": "Disabled",
+          "help": "Whether the server has a public endpoint. Disabled by default; choosing Enabled needs a reason a reviewer will read."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM — what this server holds."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this server."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new mysql server", "provision mysql", "new database server"],
+      "decisions": [
+        "Master password goes through the secrets manager — never entered in this portal",
+        "High availability mode (zone-redundant or same-zone standby) is an engineer decision during review",
+        "VNet integration (a delegated subnet) is set up separately when private networking is required",
+        "Backup retention and geo-redundant backup are tuned after the server exists"
+      ]
+    },
+    {
+      "id": "azure-database-cosmosdb-provision",
+      "service": "azure-database",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Cosmos DB account",
+      "summary": "Request a brand-new Cosmos DB account; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stands up a Cosmos DB account as a complete specification: identity, region, offer_type, consistency_policy and a first geo_location entry. public_network_access_enabled defaults off; choosing On needs a reason a reviewer will read. Submitting routes it to an engineer with a draft Terraform block to review and finish — additional regions and the API kind are engineer decisions during review.",
+      "target": {
+        "resourceType": "azurerm_cosmosdb_account"
+      },
+      "params": [
+        {
+          "name": "account_name",
+          "label": "Account name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,43}$"
+          },
+          "help": "Globally unique lowercase name Azure uses for the account's endpoint."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group this belongs to."
+        },
+        {
+          "name": "offer_type",
+          "label": "Offer type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "offer_type",
+          "group": "engine",
+          "bounds": {
+            "allowlist": ["Standard"]
+          },
+          "default": "Standard",
+          "help": "Azure's only offer type today; kept fixed since no alternative exists."
+        },
+        {
+          "name": "consistency_level",
+          "label": "Default consistency level",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "consistency_level",
+          "path": ["consistency_policy"],
+          "group": "engine",
+          "bounds": {
+            "allowlist": ["Strong", "BoundedStaleness", "Session", "ConsistentPrefix", "Eventual"]
+          },
+          "default": "Session",
+          "help": "Default consistency guarantee for reads across the account. Session balances consistency and latency for most workloads."
+        },
+        {
+          "name": "public_network_access_enabled",
+          "label": "Public network access",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "public_network_access_enabled",
+          "group": "network",
+          "bounds": {
+            "allowlist": [true, false]
+          },
+          "default": false,
+          "help": "Off by default so the account has no public endpoint. Choosing On needs a reason a reviewer will read — most workloads should use a private endpoint instead, set up by the engineer during review."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM — what this account holds."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this account."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new cosmos db account", "provision cosmosdb", "new nosql database"],
+      "decisions": [
+        "Additional geo-replication regions, multi-region writes and automatic failover are engineer decisions during review",
+        "API kind (SQL, MongoDB, Cassandra and so on) defaults to the SQL API; changing it is an engineer decision during review",
+        "Backup mode and retention are tuned separately after the account exists"
+      ]
+    },
+    {
+      "id": "azure-database-redis-provision",
+      "service": "azure-database",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Redis cache",
+      "summary": "Request a brand-new Redis cache; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stands up a Redis cache as a complete specification: identity, region, sku_name, family and capacity. minimum_tls_version is fixed at 1.2 and the non-TLS port stays off for every new cache; public_network_access_enabled defaults off. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "azurerm_redis_cache"
+      },
+      "params": [
+        {
+          "name": "cache_name",
+          "label": "Cache name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{1,61}$"
+          },
+          "help": "Globally unique lowercase name Azure uses for the cache's DNS endpoint."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "group": "identity",
+          "help": "The resource group this belongs to."
+        },
+        {
+          "name": "sku_name",
+          "label": "Tier (SKU)",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku_name",
+          "group": "engine",
+          "bounds": {
+            "allowlist": ["Standard", "Premium"]
+          },
+          "default": "Standard",
+          "help": "Standard adds replication over Basic (not offered here — no SLA); Premium adds clustering, persistence and VNet options. Family and capacity below must match."
+        },
+        {
+          "name": "family",
+          "label": "Family",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "family",
+          "group": "engine",
+          "bounds": {
+            "allowlist": ["C", "P"]
+          },
+          "default": "C",
+          "help": "C pairs with the Standard tier; P pairs with Premium. Must match the tier chosen above."
+        },
+        {
+          "name": "capacity",
+          "label": "Capacity",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "attr": "capacity",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [1, 2, 3, 4]
+          },
+          "default": 1,
+          "help": "Size within the family — higher numbers add memory and throughput. This range is valid for both the C (Standard) and P (Premium) families."
+        },
+        {
+          "name": "minimum_tls_version",
+          "label": "Minimum TLS version",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "1.2",
+          "attr": "minimum_tls_version",
+          "group": "security",
+          "help": "Always enforced at 1.2 for new caches — written into the draft, never asked."
+        },
+        {
+          "name": "non_ssl_port_enabled",
+          "label": "Non-TLS port",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": false,
+          "attr": "non_ssl_port_enabled",
+          "group": "security",
+          "help": "Always off for new caches — the non-TLS 6379 port is never opened, written into the draft, never asked."
+        },
+        {
+          "name": "public_network_access_enabled",
+          "label": "Public network access",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "public_network_access_enabled",
+          "group": "network",
+          "bounds": {
+            "allowlist": [true, false]
+          },
+          "default": false,
+          "help": "Off by default so the cache has no public endpoint. Choosing On needs a reason a reviewer will read — most workloads should use a private endpoint instead, set up by the engineer during review."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM — what this cache holds."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this cache."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new redis cache", "provision redis", "new cache"],
+      "decisions": [
+        "Clustering (shard count), persistence (RDB or AOF) and Redis modules are engineer decisions during review",
+        "Patch schedule and maintenance window are tuned separately after the cache exists"
+      ]
+    }
+  ]
+}

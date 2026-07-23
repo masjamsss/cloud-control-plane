@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-01-01T00:00:00+00:00",
+  "sourceCommit": "0000000000000000000000000000000000000000",
+  "source": "ccp/app/src/data/projects/bootstrap/ (synthetic importer-sandbox sample)",
+  "resources": [
+    {
+      "address": "aws_s3_bucket.state",
+      "resourceType": "aws_s3_bucket",
+      "name": "state",
+      "service": "s3",
+      "attributes": { "bucket": "example-tfstate" }
+    },
+    {
+      "address": "aws_kms_key.state",
+      "resourceType": "aws_kms_key",
+      "name": "state",
+      "service": "kms",
+      "attributes": { "description": "Example state-encryption key" }
+    },
+    {
+      "address": "aws_iam_role.ci",
+      "resourceType": "aws_iam_role",
+      "name": "ci",
+      "service": "iam",
+      "attributes": { "name": "example-ci-role" }
+    }
+  ]
+}

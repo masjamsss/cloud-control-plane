@@ -1,0 +1,11 @@
+--- a/environments/prod/main.tf
++++ b/environments/prod/main.tf
+@@ -2,8 +2,3 @@
+   size = 10
+   type = "gp3"
+ }
+-
+-resource "aws_ebs_volume" "drop" {
+-  size = 20
+-  type = "gp3"
+-}

@@ -1,0 +1,10 @@
+schema: ccp.request/v1
+id: REQ-01JZTC4QWERTY0123456789AG7
+item: backup-set-rule-delete-after
+created_at: "2026-07-11T00:00:00Z"
+requester_login: fixture-l1
+params:
+  plan: aws_backup_plan.no_lifecycle
+  rule_name: primary
+  delete_after: 120
+justification: "U1 golden 7 - selected rule has no lifecycle block; must refuse"

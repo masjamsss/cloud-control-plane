@@ -1,0 +1,472 @@
+/* ============================================================
+   Approvals queue — Ledger: display header + firm rule, divider-
+   separated request blocks (no boxed card chrome). Risk/exposure stay
+   exactly as-is color-wise; the accent is the one interactive hue.
+   ============================================================ */
+/* S-09: visually-hidden `aria-live` region (approve confirmation) — same
+   clip-rect technique SchemaForm.css already uses for its visually-hidden
+   native inputs; kept local here since there is no shared sr-only utility
+   class in this codebase yet. */
+.apv__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Display title + firm rule (Ledger contract #1), same page-header
+   treatment as catalog.css's .catalog__head / console.css's
+   .console__header: a two-column grid (title block + right-aligned mono
+   meta) closed by a firm rule. */
+.apv__head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: var(--space-7);
+  border-bottom: 2px solid var(--text-primary);
+  padding-bottom: var(--space-7);
+  margin-bottom: var(--space-8);
+}
+.apv__head-main {
+  min-width: 0;
+}
+.apv__title {
+  font-size: clamp(32px, 4vw, 46px);
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  margin: 0;
+  color: var(--text-primary);
+}
+.apv__subtitle {
+  margin: var(--space-4) 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-width: 60ch;
+}
+/* Data-authority header meta (Ledger contract #4) — only the total this
+   page already has on hand once loaded; same treatment as catalog.css's
+   .catalog__headmeta. */
+.apv__headmeta {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-faint);
+  line-height: 1.9;
+  white-space: nowrap;
+}
+.apv__headmeta b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.apv__empty {
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: var(--space-8) 0;
+}
+/* --- URL-backed filters (Task 3): status + text, shareable as a link --- */
+.apv__filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin: 0 0 var(--space-6);
+}
+.apv__filters .searchbar {
+  flex: 0 1 280px;
+}
+.apv__status-select {
+  flex: 0 0 auto;
+  background: var(--surface-1);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.apv__status-select:hover {
+  border-color: var(--border-hover);
+}
+.apv__status-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.apv__clear {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.apv__clear:hover {
+  color: var(--accent-hover);
+}
+.apv__error {
+  margin: 0 0 var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  font-size: 14px;
+  color: var(--crit);
+  /* F-05: `--surface`/`--border` were never declared in tokens.css — the
+     color-mix() silently resolved to a transparent background (verified via
+     computed style), so the screen's only failure surface (SoD refusals,
+     quorum races, frozen-estate refusals) rendered as bare red text with no
+     panel. The real token names are `--surface-1`/`--border-default`. */
+  background: color-mix(in srgb, var(--crit) 8%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--crit) 30%, var(--border-default));
+  border-radius: var(--radius-2);
+}
+
+/* Divider rows, not boxed cards (Ledger contract #3) — the blocks
+   themselves (.apv-card below) carry the hairline separators; this is
+   just the flex column that holds them, same shape as catalog.css's
+   .catalog__rows / console.css's .console__rows. */
+.apv__list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- one review block: a divider row, not a boxed card --- */
+.apv-card {
+  padding: var(--space-7) var(--space-2);
+  border-top: 1px solid var(--border-hairline);
+}
+.apv__list > .apv-card:first-child {
+  border-top: none;
+}
+
+.apv-card__head {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-5);
+}
+.apv-card__mono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+.apv-card__heading {
+  min-width: 0;
+}
+.apv-card__title {
+  display: inline-block;
+  max-width: 100%;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.apv-card__title:hover {
+  color: var(--accent-hover);
+}
+.apv-card__title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-1);
+}
+/* Mono meta row (Ledger contract #4): service · target · requester ·
+   age — one quiet data-authority line under the title, replacing the
+   old plain-sans meta + the separate "Requested by" line below the
+   summary (folded in here instead). Wraps rather than clips — this line
+   can run long once every field is present. */
+.apv-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.apv-card__sep {
+  color: var(--text-faint);
+}
+.apv-card__addr {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The raw Terraform address, its own quiet mono line under the meta row —
+   same dual-display idiom as console.css's .rr__name + .rr__addr. */
+.apv-card__target {
+  display: block;
+  margin-top: 2px;
+}
+.apv-card__tags {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+/* Change-set operation count (Phase B) — beside the access badge, so a set reads
+   as an N-operation change at a glance rather than a single op. Mono/tabular
+   (Ledger contract #4: counts are data authority). */
+.apv-card__setcount {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+  white-space: nowrap;
+}
+
+.apv-card__summary {
+  margin: var(--space-5) 0 var(--space-3);
+  font-size: 14px;
+  color: var(--text-primary);
+}
+/* --- beyond-catalog panel (Task 1): no generated diff, just the stored facts --- */
+.apv-card__beyond {
+  margin: var(--space-5) 0 var(--space-3);
+}
+.apv-card__beyond-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2) var(--space-5);
+  margin: 0 0 var(--space-4);
+  font-size: 13px;
+}
+.apv-card__beyond-facts dt {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.apv-card__beyond-facts dd {
+  margin: 0;
+  color: var(--text-primary);
+}
+.apv-card__note {
+  margin: var(--space-3) 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+/* --- collapsible Terraform diff --- */
+.apv-diff {
+  margin-top: var(--space-5);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+  background: var(--surface-1);
+}
+.apv-diff__summary {
+  cursor: pointer;
+  padding: var(--space-4) var(--space-5);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.apv-diff__summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.apv-diff__body {
+  margin: 0;
+  padding: var(--space-5);
+  border-top: 1px solid var(--border-hairline);
+  background: var(--bg-canvas);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* --- footer: progress + actions --- */
+.apv-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-hairline);
+  flex-wrap: wrap;
+}
+/* Footer LEFT slot (F-03/S-08): hosts <ApprovalLadder size="card">, which
+   owns its own typography now (components/ui/approval-ladder.css) — this
+   wrapper only needs to behave inside the flex footer row and carry the
+   narrow-screen "PROGRESS" label below. */
+.apv-card__progress {
+  min-width: 0;
+}
+.apv-card__actions {
+  display: flex;
+  gap: var(--space-4);
+}
+
+/* --- inline reject-reason form (0025 RX-3 — replaces window.prompt) ---
+   Same input treatment as .sf-input / .rq-field__textarea (shared tokens),
+   scoped locally since this file already owns its own apv-* vocabulary. */
+.apv-reject {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+}
+.apv-reject__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.apv-reject__hint {
+  font-weight: 400;
+  color: var(--text-faint);
+}
+.apv-reject__textarea {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  padding: 9px 11px;
+  resize: vertical;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.apv-reject__textarea:hover {
+  border-color: var(--border-hover);
+}
+.apv-reject__textarea:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
+  border-color: var(--brass);
+}
+.apv-reject__textarea[aria-invalid='true'] {
+  border-color: var(--risk-high);
+}
+.apv-reject__textarea:disabled {
+  background: var(--surface-1);
+  border-color: var(--border-hairline);
+  color: var(--text-disabled);
+}
+.apv-reject__error {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--risk-high);
+}
+.apv-reject__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+
+/* Subtle pending hint while a mutation's result commits (deferred via
+   useTransition, 0025 RX-3) — same affordance/values as ServiceConsole's
+   .console__groups--stale and CommandPalette's .cmdp__list--stale. */
+.apv__list--pending {
+  opacity: 0.6;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+@media (prefers-reduced-motion: reduce) {
+  .apv__list--pending {
+    transition: none;
+  }
+}
+
+/* ── Responsive re-template below 720px (Task 4) ─────────────────────────────
+   The review card already IS a card (not a literal <table>), so "table→card"
+   here means: re-template the dense, multi-value rows — the head's meta line
+   and the footer's approval progress — as labeled grid cells instead of a
+   single wrapping line, and stop truncating the one value (the target
+   address) that would otherwise silently lose information on a narrow
+   screen. Actions (Approve/Reject) were already full-width and reachable;
+   unchanged here. */
+@media (max-width: 720px) {
+  .apv-card__head {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+  .apv-card__tags {
+    grid-column: 2 / -1;
+    margin-top: var(--space-3);
+  }
+
+  /* No information loss: a long target address wraps instead of clipping
+     behind an ellipsis (the raw-address line, and the beyond-catalog spec
+     sheet's service/resource-type facts, which share this class). */
+  .apv-card__addr {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+  }
+
+  /* CSS grid re-template: the footer's progress metric and the action row
+     become stacked, explicitly labeled cells rather than a flex line that
+     merely wraps. */
+  .apv-card__foot {
+    display: grid;
+    grid-template-columns: 1fr;
+    row-gap: var(--space-4);
+    align-items: stretch;
+  }
+  .apv-card__progress[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+  .apv-card__actions {
+    width: 100%;
+  }
+  .apv-card__actions .ui-btn {
+    flex: 1;
+  }
+  .apv-reject__actions .ui-btn {
+    flex: 1;
+  }
+}
+
+/* Header stacks below the width where the display title and the
+   right-aligned mono count have room side by side (same breakpoint/pattern
+   as catalog.css's .catalog__head). */
+@media (max-width: 640px) {
+  .apv__head {
+    grid-template-columns: 1fr;
+  }
+  .apv__headmeta {
+    text-align: left;
+    margin-top: var(--space-3);
+  }
+}
+
+/* ── 0035 Docket B — the plan summary block on a review card ───────────────── */
+.apv-card__plan {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-hairline);
+}

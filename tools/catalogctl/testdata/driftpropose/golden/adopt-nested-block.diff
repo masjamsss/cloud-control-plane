@@ -1,0 +1,11 @@
+--- a/environments/prod/extra-nested-block.tf
++++ b/environments/prod/extra-nested-block.tf
+@@ -3,7 +3,7 @@
+   instance_type = "m5.large"
+ 
+   root_block_device {
+-    volume_size = 80
++    volume_size = 100
+     volume_type = "gp3"
+   }
+ }

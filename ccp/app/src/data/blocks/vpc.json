@@ -1,0 +1,37 @@
+{
+ "aws_vpc.main": {
+  "file": "ccp/app/fixtures-estate/vpc.tf",
+  "line": 3,
+  "source": "resource \"aws_vpc\" \"main\" {\n  cidr_block           = \"10.0.0.0/16\"\n  enable_dns_hostnames = true\n  enable_dns_support    = true\n\n  tags = {\n    Name        = \"APP01_NewInstall-vpc\"\n    Environment = \"prod\"\n    Owner       = \"alice\"\n    PIC         = \"user01@example.com\"\n  }\n}"
+ },
+ "aws_subnet.public_a": {
+  "file": "ccp/app/fixtures-estate/vpc.tf",
+  "line": 16,
+  "source": "resource \"aws_subnet\" \"public_a\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block               = \"10.0.0.0/24\"\n  availability_zone        = \"us-east-1a\"\n  map_public_ip_on_launch  = true\n\n  tags = {\n    Name        = \"public-a\"\n    Environment = \"prod\"\n    Tier        = \"public\"\n    PIC         = \"user01@example.com\"\n  }\n}"
+ },
+ "aws_subnet.public_b": {
+  "file": "ccp/app/fixtures-estate/vpc.tf",
+  "line": 30,
+  "source": "resource \"aws_subnet\" \"public_b\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block               = \"10.0.1.0/24\"\n  availability_zone        = \"us-east-1b\"\n  map_public_ip_on_launch  = true\n\n  tags = {\n    Name        = \"public-b\"\n    Environment = \"prod\"\n    Tier        = \"public\"\n    PIC         = \"user01@example.com\"\n  }\n}"
+ },
+ "aws_subnet.private_a": {
+  "file": "ccp/app/fixtures-estate/vpc.tf",
+  "line": 44,
+  "source": "resource \"aws_subnet\" \"private_a\" {\n  vpc_id                  = aws_vpc.main.id\n  cidr_block               = \"10.0.10.0/24\"\n  availability_zone        = \"us-east-1a\"\n  map_public_ip_on_launch  = false\n\n  tags = {\n    Name        = \"private-a\"\n    Environment = \"prod\"\n    Tier        = \"private\"\n    PIC         = \"user02@example.com\"\n  }\n}"
+ },
+ "aws_internet_gateway.main": {
+  "file": "ccp/app/fixtures-estate/vpc.tf",
+  "line": 58,
+  "source": "resource \"aws_internet_gateway\" \"main\" {\n  vpc_id = aws_vpc.main.id\n\n  tags = {\n    Name = \"APP01_NewInstall-igw\"\n    PIC  = \"user01@example.com\"\n  }\n}"
+ },
+ "aws_eip.nat": {
+  "file": "ccp/app/fixtures-estate/vpc.tf",
+  "line": 67,
+  "source": "resource \"aws_eip\" \"nat\" {\n  domain = \"vpc\"\n\n  tags = {\n    Name = \"APP01_NewInstall-nat-eip\"\n    PIC  = \"user01@example.com\"\n  }\n}"
+ },
+ "aws_nat_gateway.main": {
+  "file": "ccp/app/fixtures-estate/vpc.tf",
+  "line": 76,
+  "source": "resource \"aws_nat_gateway\" \"main\" {\n  allocation_id = aws_eip.nat.id\n  subnet_id     = aws_subnet.public_a.id\n\n  tags = {\n    Name = \"APP01_NewInstall-nat\"\n    PIC  = \"user01@example.com\"\n  }\n\n  depends_on = [aws_internet_gateway.main]\n}"
+ }
+}

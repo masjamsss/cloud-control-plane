@@ -1,0 +1,10 @@
+--- a/environments/prod/efs.tf
++++ b/environments/prod/efs.tf
+@@ -8,4 +8,7 @@
+   tags = {
+     ManagedByAmazonSageMakerResource = "arn:aws:sagemaker:ap-southeast-5:123456789012:domain/d-eoyniqjaesh5"
+   }
++  lifecycle_policy {
++    transition_to_ia = "AFTER_30_DAYS"
++  }
+ }

@@ -1,0 +1,716 @@
+{
+  "service": "vpn",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_vpn_connection",
+    "aws_vpn_connection_route",
+    "aws_vpn_gateway",
+    "aws_customer_gateway"
+  ],
+  "summary": "Operate the site-to-site VPN connections: add or remove static routes with guardrails, retag connections self-service, and route the engineer-reviewed work — tunnel PSK rotation, tunnel inside-CIDR changes (forces replacement), new connection provisioning, and decommissioning.",
+  "operations": [
+    {
+      "id": "vpn-add-static-route",
+      "service": "vpn",
+      "macd": "Add",
+      "codemodOp": "instantiate_module",
+      "title": "Add a static route to a VPN connection",
+      "summary": "Add a route so another on-premises network can reach you through this VPN. An engineer finishes and reviews the Terraform before it applies.",
+      "description": "Route another on-premises network through an existing static-routing VPN connection. The route becomes its own resource — the estate does not manage any yet, so an engineer adopts the first one from the generated draft, reviews and finishes it.",
+      "target": {
+        "resourceType": "aws_vpn_connection_route"
+      },
+      "params": [
+        {
+          "name": "vpn_connection",
+          "label": "VPN connection",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_vpn_connection/address",
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpn_connection_id",
+          "help": "Static-routing VPN connection that carries the new route."
+        },
+        {
+          "name": "destination_cidr",
+          "label": "Destination CIDR",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "destination_cidr_block",
+          "bounds": {
+            "pattern": "^(\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2}$",
+            "semantic": "on-prem/internal CIDR only",
+            "cidrPolicy": "no-public"
+          },
+          "help": "The on-premises network to reach through this VPN, like 10.2.0.0/16."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "vpn route",
+        "reach on-prem network",
+        "on-prem subnet"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "The estate's VPN file currently declares route resources out of scope — adopting the first one is part of this change"
+      ]
+    },
+    {
+      "id": "vpn-remove-static-route",
+      "service": "vpn",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Remove static route from VPN connection",
+      "summary": "Remove a static route from a VPN connection. Traffic to that network over this tunnel stops unless another path already carries it.",
+      "description": "Deletes an existing static route entry from a VPN connection; traffic to that CIDR over this tunnel will stop unless another path already carries it.",
+      "target": {
+        "resourceType": "aws_vpn_connection"
+      },
+      "params": [
+        {
+          "name": "route",
+          "label": "Static route",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_vpn_connection_route/address",
+          "help": "Existing static route entry to remove."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "vpn-retag",
+      "service": "vpn",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update VPN connection tags",
+      "summary": "Update tags on a VPN connection. Metadata only - tunnels and routing are unaffected.",
+      "description": "Adds or updates cost-allocation and ownership tags on the VPN connection; purely metadata, no effect on tunnels or routing.",
+      "target": {
+        "resourceType": "aws_vpn_connection",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "vpn_connection",
+          "label": "VPN connection",
+          "type": "string",
+          "source": "inventory",
+          "help": "VPN connection whose tags are updated, chosen from the estate inventory so only a Terraform-managed connection can be selected; tags are metadata and never touch tunnels or routing.",
+          "required": true,
+          "enumSource": "inventory://aws_vpn_connection/address"
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags to merge onto the connection, e.g. Environment=prod, CostCentre=Network."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "pinned": 1
+    },
+    {
+      "id": "vpn-rotate-tunnel-psk",
+      "service": "vpn",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Rotate VPN tunnel pre-shared key",
+      "summary": "Rotate a VPN tunnel's pre-shared key from a Secrets Manager secret. The tunnel drops and reconnects, causing a brief interruption.",
+      "description": "Points a tunnel's pre-shared key at a new secret held in Secrets Manager and triggers renegotiation; the affected tunnel drops and re-establishes during the swap, so expect a brief interruption on that path (the paired tunnel should carry traffic if the on-prem side is HA-configured).",
+      "target": {
+        "resourceType": "aws_vpn_connection"
+      },
+      "params": [
+        {
+          "name": "vpn_connection",
+          "label": "VPN connection",
+          "type": "string",
+          "source": "inventory",
+          "help": "Site-to-site VPN connection whose tunnel pre-shared key is being rotated, chosen from the estate inventory so only a Terraform-managed connection can be targeted.",
+          "required": true,
+          "enumSource": "inventory://aws_vpn_connection/address"
+        },
+        {
+          "name": "tunnel_number",
+          "label": "Tunnel",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              1,
+              2
+            ]
+          },
+          "help": "Which of the two tunnels to rotate."
+        },
+        {
+          "name": "psk_secret_name",
+          "label": "New PSK secret name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9/_-]+$"
+          },
+          "help": "Name of the Secrets Manager secret holding the new pre-shared key. Never paste the raw key here — create the secret first, then reference it by name."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "rotate psk",
+        "tunnel key",
+        "vpn credential rotation"
+      ],
+      "group": "protection-backup"
+    },
+    {
+      "id": "vpn-set-tunnel-inside-cidr",
+      "service": "vpn",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change VPN tunnel inside CIDR",
+      "summary": "Change a VPN tunnel's inside address block. Applying REPLACES the connection - both tunnels go down until it's rebuilt.",
+      "description": "Changes a tunnel's inside IPv4 /30 block; AWS requires the connection to be recreated for this, tearing down and re-establishing both tunnels and causing an outage on this VPN until it comes back up.",
+      "target": {
+        "resourceType": "aws_vpn_connection"
+      },
+      "params": [
+        {
+          "name": "vpn_connection",
+          "label": "VPN connection",
+          "type": "string",
+          "source": "inventory",
+          "help": "Site-to-site VPN connection whose tunnel inside CIDR is changing, chosen from the estate inventory so only a Terraform-managed connection can be targeted for this replacement-level change.",
+          "required": true,
+          "enumSource": "inventory://aws_vpn_connection/address"
+        },
+        {
+          "name": "tunnel_number",
+          "label": "Tunnel",
+          "type": "number",
+          "source": "allowlist",
+          "help": "Which of the connection's tunnels gets the new inside CIDR; every AWS site-to-site VPN connection has exactly two tunnels, so 1 and 2 are the only valid choices.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              1,
+              2
+            ]
+          }
+        },
+        {
+          "name": "new_inside_cidr",
+          "label": "New tunnel inside CIDR",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^169\\.254\\.\\d{1,3}\\.\\d{1,3}/30$",
+            "semantic": "RFC 3927 /30 per AWS VPN tunnel requirements, not already in use by another tunnel",
+            "cidrPolicy": "link-local-30"
+          },
+          "help": "New link-local /30 for the tunnel's inside interface, e.g. 169.254.100.0/30."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "replace",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace",
+      "group": "danger-zone"
+    },
+    {
+      "id": "vpn-add-connection",
+      "service": "vpn",
+      "macd": "Add",
+      "codemodOp": "instantiate_module",
+      "title": "Provision new site-to-site VPN connection",
+      "summary": "Provision a new site-to-site VPN connection with two tunnels. An engineer coordinates keys and routing with on-prem before cutover.",
+      "description": "Creates a new IPSec VPN connection between an existing customer gateway and VPN gateway, provisioning two tunnels; requires coordinating pre-shared keys and static/BGP routing with the on-prem network team before cutover.",
+      "target": {
+        "resourceType": "aws_vpn_connection"
+      },
+      "params": [
+        {
+          "name": "vpn_gateway",
+          "label": "VPN gateway",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_vpn_gateway/address",
+          "help": "Existing VPN gateway (VGW) the new connection will attach to."
+        },
+        {
+          "name": "customer_gateway",
+          "label": "Customer gateway",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_customer_gateway/address",
+          "help": "Existing customer gateway representing the on-prem VPN device."
+        },
+        {
+          "name": "connection_name",
+          "label": "Connection name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-z0-9-]{3,40}$"
+          },
+          "help": "Short identifier for the new connection, e.g. dc2-tertiary-vpn."
+        },
+        {
+          "name": "static_routes_only",
+          "label": "Static routing only",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "default": true,
+          "help": "True for static routes; false to enable BGP dynamic routing over the tunnels."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "vpn-delete-connection",
+      "service": "vpn",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Decommission VPN connection",
+      "summary": "Permanently delete a VPN connection and both tunnels. Confirm nothing still depends on it first - this can't be undone.",
+      "description": "Permanently deletes a site-to-site VPN connection and both its tunnels, removing on-prem connectivity over this path; confirm no static routes, BGP sessions, or on-prem routing still depend on it before proceeding, as this cannot be undone.",
+      "target": {
+        "resourceType": "aws_vpn_connection"
+      },
+      "params": [
+        {
+          "name": "vpn_connection",
+          "label": "VPN connection",
+          "type": "string",
+          "source": "inventory",
+          "help": "The VPN connection to permanently decommission, chosen from the estate inventory so only a Terraform-managed connection whose state is fully known to the repo can be deleted.",
+          "required": true,
+          "enumSource": "inventory://aws_vpn_connection/address"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "replace",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "vpn-customer-gateway-set-device-name",
+      "service": "vpn",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Rename customer gateway device",
+      "summary": "Rename the on-premises device label. Applying REPLACES the gateway and its VPN connection, causing an outage until on-prem is reconfigured.",
+      "description": "Set device_name, the label for the customer gateway device. CAUTION: on aws_customer_gateway every argument except tags is ForceNew (EC2 has no modify API) — changing device_name REPLACES the customer gateway, and any aws_vpn_connection referencing it is replaced with it: new tunnel outside IPs and pre-shared keys, so the on-prem firewall must be reconfigured. Site-to-site VPN outage until that is done. Engineer-authored change only.",
+      "target": {
+        "resourceType": "aws_customer_gateway"
+      },
+      "params": [
+        {
+          "name": "gateway",
+          "label": "Customer gateway",
+          "type": "string",
+          "source": "inventory",
+          "help": "Customer gateway whose device_name is changed, chosen from the estate inventory. Warning: this attribute is ForceNew — the gateway and its dependent VPN connection are replaced, which drops the tunnels until the on-prem side is reconfigured.",
+          "enumSource": "inventory://aws_customer_gateway/address",
+          "required": true
+        },
+        {
+          "name": "device_name",
+          "label": "Device name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Friendly label for the on-prem device. Letters, numbers, spaces and . _ : / @ + = - up to 255 chars.",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._:/@+=-]{1,255}$"
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "Site-to-site VPN outage while the customer gateway and dependent VPN connection are replaced (new outside IPs + PSKs; on-prem reconfig required)",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (device_name is ForceNew; cascades to aws_vpn_connection)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "vpn-customer-gateway-set-ip-address",
+      "service": "vpn",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change customer gateway outside IP address",
+      "summary": "Change the IP the customer gateway points at. Applying REPLACES the gateway and rebuilds the VPN — tunnels drop until it's back.",
+      "description": "Update ip_address, the IPv4 outside-interface address of the customer gateway device. On aws_customer_gateway every argument except tags is ForceNew, so changing this replaces the customer gateway and the VPN connection referencing it; both tunnels drop until the VPN is rebuilt. Bounded to a valid IPv4.",
+      "target": {
+        "resourceType": "aws_customer_gateway"
+      },
+      "params": [
+        {
+          "name": "gateway",
+          "label": "Customer gateway",
+          "type": "string",
+          "source": "inventory",
+          "help": "Customer gateway whose outside IP address is changing, chosen from the estate inventory so only a Terraform-managed aws_customer_gateway can be repointed at a new on-prem peer.",
+          "enumSource": "inventory://aws_customer_gateway/address",
+          "required": true
+        },
+        {
+          "name": "ip_address",
+          "label": "Outside IPv4 address",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Public IPv4 of the on-prem VPN device's outside interface, e.g. 203.0.113.10. Tunnels will re-establish against this peer.",
+          "bounds": {
+            "pattern": "^((25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(25[0-5]|2[0-4]\\d|1?\\d?\\d)$"
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (ip_address)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "vpn-customer-gateway-add-tag",
+      "service": "vpn",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to customer gateway",
+      "summary": "Add a metadata tag to a customer gateway. No effect on tunnels.",
+      "description": "Add a single key/value entry to the customer gateway tags map. In-place update, cosmetic/metadata only. Reversible (remove the tag), no downtime.",
+      "target": {
+        "resourceType": "aws_customer_gateway",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "gateway",
+          "label": "Customer gateway",
+          "type": "string",
+          "source": "inventory",
+          "help": "Customer gateway that receives the new tag, chosen from the estate inventory so only a Terraform-managed aws_customer_gateway can be modified; tags are metadata and never affect tunnels.",
+          "enumSource": "inventory://aws_customer_gateway/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Tag key, up to 128 chars. Letters, numbers, spaces and . _ : / @ + = -",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._:/@+=-]{1,128}$"
+          }
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Tag value, up to 256 chars.",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._:/@+=-]{0,256}$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "create"
+    },
+    {
+      "id": "vpn-customer-gateway-remove-tag",
+      "service": "vpn",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag from customer gateway",
+      "summary": "Remove a metadata tag from a customer gateway. Reversible, and tunnels are unaffected.",
+      "description": "Remove a single key from the customer gateway tags map. In-place update, cosmetic/metadata only. Reversible (re-add the tag), no downtime.",
+      "target": {
+        "resourceType": "aws_customer_gateway",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "gateway",
+          "label": "Customer gateway",
+          "type": "string",
+          "source": "inventory",
+          "help": "Customer gateway whose tag is removed, chosen from the estate inventory so only a Terraform-managed aws_customer_gateway can be modified; removing a tag never affects tunnels.",
+          "enumSource": "inventory://aws_customer_gateway/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Existing tag key to remove, up to 128 chars.",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._:/@+=-]{1,128}$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "vpn-customer-gateway-engineer-request",
+      "service": "vpn",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to customer gateway",
+      "summary": "Request any other change to a customer gateway, including ones that replace it. An engineer authors and reviews the Terraform.",
+      "description": "Catch-all for any customer gateway change not offered as a bounded form — e.g. rotating certificate_arn, changing bgp_asn/bgp_asn_extended (ForceNew), or moving region. An engineer authors and reviews the Terraform.",
+      "target": {
+        "resourceType": "aws_customer_gateway"
+      },
+      "params": [
+        {
+          "name": "gateway",
+          "label": "Customer gateway",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_customer_gateway/address",
+          "required": true,
+          "help": "The customer gateway to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form — an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "vpn-create-connection",
+      "service": "vpn",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new VPN connection (draft resource)",
+      "summary": "Author a new site-to-site VPN connection as a complete draft; an engineer reviews it and coordinates on-prem details first.",
+      "description": "Stand up a new aws_vpn_connection between an existing VPN gateway and customer gateway. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review. Requires coordinating pre-shared keys and static/BGP routing with the on-prem network team before cutover. Same inputs as the existing guided provisioning action; this form authors the raw resource skeleton instead.",
+      "target": {
+        "resourceType": "aws_vpn_connection"
+      },
+      "params": [
+        {
+          "name": "connection_key",
+          "label": "Connection identifier",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the connection in the generated draft."
+        },
+        {
+          "name": "vpn_gateway",
+          "label": "VPN gateway",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_vpn_gateway/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpn_gateway_id",
+          "group": "network",
+          "help": "Existing VPN gateway (VGW) the new connection attaches to."
+        },
+        {
+          "name": "customer_gateway",
+          "label": "Customer gateway",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_customer_gateway/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "customer_gateway_id",
+          "group": "network",
+          "help": "Existing customer gateway representing the on-prem VPN device."
+        },
+        {
+          "name": "type",
+          "label": "Connection type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "ipsec.1",
+          "attr": "type",
+          "group": "network",
+          "help": "The only connection type AWS offers \u2014 written into the draft, never asked."
+        },
+        {
+          "name": "static_routes_only",
+          "label": "Static routing only",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "static_routes_only",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "True for static routes; false to enable BGP dynamic routing over the tunnels."
+        },
+        {
+          "name": "resource_name",
+          "label": "VPN connection name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this connection is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this connection."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new vpn connection",
+        "site-to-site vpn",
+        "provision vpn"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "A site-to-site VPN connection extends the VPC's private network to on-premises \u2014 confirm the on-prem routing/firewall team is coordinated before cutover, and that this does not unintentionally expose internal ranges",
+        "Tunnel pre-shared keys, inside CIDRs and BGP details are left to AWS defaults if unset \u2014 set them afterward with the existing rotate/change actions if the on-prem side requires specific values",
+        "Static routes into this connection are a separate follow-up step (the existing add-a-static-route action)"
+      ]
+    }
+  ]
+}

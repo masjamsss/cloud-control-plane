@@ -1,0 +1,996 @@
+{
+  "service": "dynamodb",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_dynamodb_table"
+  ],
+  "summary": "Operate the DynamoDB tables: toggle point-in-time recovery and TTL, switch billing mode, resize provisioned capacity, tag, guard with deletion protection, and delete a table with engineer review.",
+  "operations": [
+    {
+      "id": "dynamodb-toggle-pitr",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle point-in-time recovery",
+      "summary": "Turn point-in-time recovery on or off, letting you restore to any moment in the last 35 days. Turning it off removes that safety net.",
+      "description": "Enables or disables continuous backups (PITR) on the table, allowing restore to any second in the trailing 35 days. Enabling has no downtime and a modest storage cost; disabling removes that restore capability going forward.",
+      "target": {
+        "resourceType": "aws_dynamodb_table",
+        "path": [
+          "point_in_time_recovery"
+        ]
+      },
+      "params": [
+        {
+          "name": "table",
+          "label": "DynamoDB table",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_dynamodb_table/address",
+          "help": "Select the target DynamoDB table."
+        },
+        {
+          "name": "new_point_in_time_recovery_enabled",
+          "label": "Enable PITR",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "default": true,
+          "help": "Turn continuous point-in-time backups on or off.",
+          "attr": "enabled"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup",
+      "pinned": 1
+    },
+    {
+      "id": "dynamodb-configure-ttl",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Configure item expiry (TTL)",
+      "summary": "Turn on automatic expiry of old items and pick which field holds the expiry time. Deletion runs in the background within about two days.",
+      "description": "Enables or disables Time to Live and sets the item attribute DynamoDB reads as the expiry epoch timestamp, so stale rows (sessions, queue entries) are auto-purged. Deletion is background and eventually consistent, typically within 48 hours of expiry.",
+      "target": {
+        "resourceType": "aws_dynamodb_table",
+        "path": [
+          "ttl"
+        ]
+      },
+      "params": [
+        {
+          "name": "table",
+          "label": "DynamoDB table",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_dynamodb_table/address",
+          "help": "Select the target DynamoDB table."
+        },
+        {
+          "name": "new_ttl_enabled",
+          "label": "Enable TTL",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "default": true,
+          "help": "Turn automatic item expiry on or off.",
+          "attr": "enabled"
+        },
+        {
+          "name": "new_ttl_attribute_name",
+          "label": "TTL attribute name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "expiry_ts",
+          "help": "Item attribute holding the expiry time as a Unix epoch (seconds).",
+          "attr": "attribute_name",
+          "bounds": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,254}$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "scale-performance",
+      "pinned": 2
+    },
+    {
+      "id": "dynamodb-switch-billing-mode",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Switch billing mode (on-demand / provisioned)",
+      "summary": "Switch this table between on-demand and fixed-capacity billing. Fixed capacity needs units set first. It applies live with no downtime.",
+      "description": "Moves the table between PAY_PER_REQUEST and PROVISIONED capacity modes. This is a live, no-downtime change, but switching to PROVISIONED requires read/write capacity to be set (see the resize-capacity operation) or the table will default to minimal throughput.",
+      "target": {
+        "resourceType": "aws_dynamodb_table"
+      },
+      "params": [
+        {
+          "name": "table",
+          "label": "DynamoDB table",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_dynamodb_table/address",
+          "help": "Select the target DynamoDB table."
+        },
+        {
+          "name": "new_billing_mode",
+          "label": "Billing mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "PAY_PER_REQUEST scales automatically and bills per request; PROVISIONED uses fixed read/write capacity units.",
+          "bounds": {
+            "allowlist": [
+              "PAY_PER_REQUEST",
+              "PROVISIONED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "scale-performance"
+    },
+    {
+      "id": "dynamodb-resize-capacity",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Resize provisioned read/write capacity",
+      "summary": "Change this table's read and write capacity to relieve throttling or cut cost. Applies live; only affects fixed-capacity tables.",
+      "description": "Adjusts read_capacity and write_capacity units on a PROVISIONED table to relieve throttling or reduce spend. Applies live with no downtime; has no effect on PAY_PER_REQUEST tables.",
+      "target": {
+        "resourceType": "aws_dynamodb_table"
+      },
+      "params": [
+        {
+          "name": "table",
+          "label": "DynamoDB table",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_dynamodb_table/address",
+          "help": "Select the target DynamoDB table (must be in PROVISIONED billing mode)."
+        },
+        {
+          "name": "new_read_capacity",
+          "label": "Read capacity units",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "Provisioned read capacity units (RCU).",
+          "bounds": {
+            "min": 1,
+            "max": 40000
+          }
+        },
+        {
+          "name": "new_write_capacity",
+          "label": "Write capacity units",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "Provisioned write capacity units (WCU).",
+          "bounds": {
+            "min": 1,
+            "max": 40000
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "scale-performance",
+      "pinned": 3
+    },
+    {
+      "id": "dynamodb-add-tag",
+      "service": "dynamodb",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add or update a table tag",
+      "summary": "Add or update a tag on this table, for example for cost tracking or ownership. Metadata only, no effect on table availability.",
+      "description": "Sets a key/value tag on the table for cost allocation, ownership or compliance tracking (e.g. Environment, Service, DataClass). Live change, no impact to table availability.",
+      "target": {
+        "resourceType": "aws_dynamodb_table",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "table",
+          "label": "DynamoDB table",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_dynamodb_table/address",
+          "help": "Select the target DynamoDB table."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Tag name, e.g. CostCentre or DataClass.",
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9:_-]{0,127}$"
+          }
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Value to assign to this tag.",
+          "bounds": {
+            "pattern": "^[\\w .:/-]{1,256}$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "create"
+    },
+    {
+      "id": "dynamodb-toggle-deletion-protection",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle deletion protection",
+      "summary": "Turn this table's deletion protection on or off. Off removes a safety net just before deleting it.",
+      "description": "Enables or disables deletion_protection_enabled, which blocks the table from being deleted (via console, API or Terraform) while turned on. Disabling it removes a safety guardrail ahead of an intentional table removal.",
+      "target": {
+        "resourceType": "aws_dynamodb_table"
+      },
+      "params": [
+        {
+          "name": "table",
+          "label": "DynamoDB table",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_dynamodb_table/address",
+          "help": "Select the target DynamoDB table."
+        },
+        {
+          "name": "new_deletion_protection_enabled",
+          "label": "Enable deletion protection",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "default": true,
+          "help": "When on, the table cannot be deleted until this is turned off."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dynamodb-delete-table",
+      "service": "dynamodb",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete a DynamoDB table",
+      "summary": "Permanently delete this table and all its items. This can't be undone; apps still writing to it will fail. An engineer reviews it first.",
+      "description": "Permanently removes the table and all its items; there is no undo once applied, and any application still writing to it will fail. Requires deletion_protection_enabled to be off first and explicit confirmation of data loss.",
+      "target": {
+        "resourceType": "aws_dynamodb_table"
+      },
+      "params": [
+        {
+          "name": "table",
+          "label": "DynamoDB table",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_dynamodb_table/address",
+          "help": "Select the table to delete."
+        },
+        {
+          "name": "confirm_data_loss",
+          "label": "Confirm permanent data loss",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "default": false,
+          "help": "Must be explicitly confirmed; all items in the table will be permanently lost.",
+          "bounds": {
+            "allowlist": [
+              true
+            ]
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "replace",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "dynamodb-set-table-class",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change DynamoDB table class",
+      "summary": "Switch this table between standard and infrequent-access pricing. AWS allows only two class changes every 30 days. Reviewed by an approver.",
+      "description": "Switch table_class between STANDARD and STANDARD_INFREQUENT_ACCESS. In-place, reversible, no downtime; changes storage vs throughput pricing. AWS limits table-class changes to twice per rolling 30-day window, so this is gated with guardrails.",
+      "target": {
+        "resourceType": "aws_dynamodb_table"
+      },
+      "params": [
+        {
+          "name": "table",
+          "label": "Table",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the DynamoDB table whose table_class changes; the inventory picker limits the change to estate-managed tables.",
+          "enumSource": "inventory://aws_dynamodb_table/address",
+          "required": true
+        },
+        {
+          "name": "table_class",
+          "label": "Table class",
+          "type": "string",
+          "source": "allowlist",
+          "help": "Sets table_class: STANDARD is the default price mix, while STANDARD_INFREQUENT_ACCESS trades cheaper storage for higher per-request cost and suits rarely-read data; the allowlist holds the only two classes AWS supports, so no invalid value can be submitted.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "STANDARD",
+              "STANDARD_INFREQUENT_ACCESS"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (table_class)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "dynamodb-configure-streams",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Configure DynamoDB Streams",
+      "summary": "Turn this table's change stream on or off. Disabling it can break consumers like Lambda functions.",
+      "description": "Enable or disable DynamoDB Streams and set the stream view type together (view type is only valid while streams are enabled). In-place, reversible, no downtime. Disabling can break stream consumers such as Lambda or Kinesis, so this is guardrailed.",
+      "target": {
+        "resourceType": "aws_dynamodb_table"
+      },
+      "params": [
+        {
+          "name": "table",
+          "label": "Table",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the DynamoDB table whose Streams configuration changes; the inventory picker limits the change to estate-managed tables.",
+          "enumSource": "inventory://aws_dynamodb_table/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Streams enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "attr": "stream_enabled",
+          "help": "Sets stream_enabled: true publishes every item change to a DynamoDB Stream for consumers such as Lambda or Kinesis, false stops the stream and can break those consumers, which is why this operation is guardrailed; only true/false are accepted.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        {
+          "name": "view_type",
+          "label": "Stream view type",
+          "type": "string",
+          "source": "allowlist",
+          "attr": "stream_view_type",
+          "required": true,
+          "help": "Applies when streams are enabled; ignored when disabling.",
+          "bounds": {
+            "allowlist": [
+              "KEYS_ONLY",
+              "NEW_IMAGE",
+              "OLD_IMAGE",
+              "NEW_AND_OLD_IMAGES"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (stream_enabled, stream_view_type)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "dynamodb-toggle-sse",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle server-side encryption (AWS-managed key)",
+      "summary": "Switch this table's encryption key between AWS-managed and the account default. Data stays encrypted either way. Reviewed by an approver.",
+      "description": "Enable or disable server_side_encryption using the AWS-managed KMS key (aws/dynamodb). In-place, reversible, no downtime. Disabling reduces encryption-at-rest posture; supplying a customer-managed CMK ARN is engineer-authored via the catch-all.",
+      "target": {
+        "resourceType": "aws_dynamodb_table",
+        "path": [
+          "server_side_encryption"
+        ]
+      },
+      "params": [
+        {
+          "name": "table",
+          "label": "Table",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the DynamoDB table whose server-side encryption setting changes; the inventory picker limits the change to estate-managed tables.",
+          "enumSource": "inventory://aws_dynamodb_table/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Encryption enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "Sets server_side_encryption.enabled: true encrypts the table with the AWS-managed KMS key (aws/dynamodb), false falls back to DynamoDB's default AWS-owned key; data stays encrypted at rest under both values, so the toggle only changes which key is used.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (server_side_encryption.enabled)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "dynamodb-set-pitr-recovery-period",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set point-in-time recovery window",
+      "summary": "Set how many days back you can restore with point-in-time recovery, from 1 to 35. Requires point-in-time recovery to already be turned on.",
+      "description": "Set point_in_time_recovery.recovery_period_in_days, the PITR restore window in days. In-place, reversible, no downtime. Requires PITR already enabled (toggle handled separately).",
+      "target": {
+        "resourceType": "aws_dynamodb_table",
+        "path": [
+          "point_in_time_recovery"
+        ]
+      },
+      "params": [
+        {
+          "name": "table",
+          "label": "Table",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the DynamoDB table whose point-in-time-recovery window changes; the table must already have PITR enabled, and the inventory picker limits the change to estate-managed tables.",
+          "enumSource": "inventory://aws_dynamodb_table/address",
+          "required": true
+        },
+        {
+          "name": "days",
+          "label": "Recovery period (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "Valid range 1\u201335 days.",
+          "bounds": {
+            "min": 1,
+            "max": 35
+          },
+          "attr": "recovery_period_in_days"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (point_in_time_recovery.recovery_period_in_days)",
+      "group": "protection-backup",
+      "pinned": 4
+    },
+    {
+      "id": "dynamodb-set-on-demand-throughput",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Set on-demand throughput caps",
+      "summary": "Cap this on-demand table's maximum read and write throughput to guard against runaway cost. No downtime.",
+      "description": "Set on_demand_throughput max_read_request_units and max_write_request_units for PAY_PER_REQUEST tables. In-place, reversible, no downtime; caps guard against runaway cost. Guardrailed because it affects a table's capacity ceiling.",
+      "target": {
+        "resourceType": "aws_dynamodb_table",
+        "path": [
+          "on_demand_throughput"
+        ]
+      },
+      "params": [
+        {
+          "name": "table",
+          "label": "Table",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the PAY_PER_REQUEST table whose on-demand throughput caps change; the inventory picker limits the change to estate-managed tables, and the caps only bound spend, they store no data.",
+          "enumSource": "inventory://aws_dynamodb_table/address",
+          "required": true
+        },
+        {
+          "name": "max_read_request_units",
+          "label": "Max read request units",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "Upper bound on on-demand read units (1\u201340000).",
+          "bounds": {
+            "min": 1,
+            "max": 40000
+          }
+        },
+        {
+          "name": "max_write_request_units",
+          "label": "Max write request units",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "Upper bound on on-demand write units (1\u201340000).",
+          "bounds": {
+            "min": 1,
+            "max": 40000
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (on_demand_throughput)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "dynamodb-remove-tag",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag",
+      "summary": "Remove a tag from this table. Metadata only, no effect on table availability.",
+      "description": "Remove a single tags map entry by key. Cosmetic metadata change, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_dynamodb_table",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "table",
+          "label": "Table",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the DynamoDB table to remove the tag from; the inventory picker keeps this metadata-only change on estate-managed tables, and a removed tag can always be re-added.",
+          "enumSource": "inventory://aws_dynamodb_table/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Key of the tag entry to remove.",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9 _.:/=+@-]{1,128}$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "tags-naming",
+      "pinned": 5
+    },
+    {
+      "id": "dynamodb-dynamodb-table-engineer-request",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to DynamoDB table",
+      "summary": "Request any other change to this table, like renaming it, changing keys or indexes, or adding replicas. An engineer writes the Terraform.",
+      "description": "Catch-all for any change to a DynamoDB table not offered as a bounded self-service form \u2014 e.g. renaming, changing keys or indexes (replacement), customer-managed KMS keys, replicas/global tables, or S3 import/restore. An engineer authors the Terraform.",
+      "target": {
+        "resourceType": "aws_dynamodb_table"
+      },
+      "params": [
+        {
+          "name": "table",
+          "label": "Table",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_dynamodb_table/address",
+          "required": true,
+          "help": "The table to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "scale-performance"
+    },
+    {
+      "id": "dynamodb-set-warm-throughput",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set warm throughput (read/write units per second)",
+      "summary": "Set this table's pre-provisioned throughput. Raising it is live; lowering it replaces the table, destroying its data. Reviewed first.",
+      "description": "Sets warm_throughput.read_units_per_second and warm_throughput.write_units_per_second on the table \u2014 the pre-provisioned instantaneous read/write capacity for predictable high-traffic tables. Increasing either value applies in-place with no downtime; DECREASING either value below its current setting forces DynamoDB to recreate the base table (data loss), per the provider doc, so this is engineer-authored and reviewed. Provider minimums (confirmed against the upstream aws provider doc): read_units_per_second >= 12000, write_units_per_second >= 4000.",
+      "target": {
+        "resourceType": "aws_dynamodb_table"
+      },
+      "params": [
+        {
+          "name": "table",
+          "label": "DynamoDB table",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_dynamodb_table/address",
+          "help": "Select the target DynamoDB table."
+        },
+        {
+          "name": "read_units_per_second",
+          "label": "Warm read units per second",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "Pre-provisioned instantaneous read capacity. Provider minimum 12000; decreasing below the current value forces table replacement.",
+          "bounds": {
+            "min": 12000
+          }
+        },
+        {
+          "name": "write_units_per_second",
+          "label": "Warm write units per second",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "Pre-provisioned instantaneous write capacity. Provider minimum 4000; decreasing below the current value forces table replacement.",
+          "bounds": {
+            "min": 4000
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none if increased; table replacement if decreased",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (warm_throughput.read_units_per_second, warm_throughput.write_units_per_second)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "dynamodb-create-table",
+      "service": "dynamodb",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new DynamoDB table",
+      "summary": "Request a brand-new table; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new table as a complete specification: billing mode, key schema, backup and encryption posture. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_dynamodb_table"
+      },
+      "params": [
+        {
+          "name": "table_name",
+          "label": "Table name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_.-]{3,255}$"
+          },
+          "help": "Letters, numbers, underscore, dash and dot, 3-255 chars. Names the table in AWS and in the generated draft."
+        },
+        {
+          "name": "billing_mode",
+          "label": "Billing mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "billing_mode",
+          "group": "capacity",
+          "bounds": {
+            "allowlist": [
+              "PAY_PER_REQUEST",
+              "PROVISIONED"
+            ]
+          },
+          "default": "PAY_PER_REQUEST",
+          "help": "PAY_PER_REQUEST scales automatically and bills per request; PROVISIONED uses fixed read/write capacity units below."
+        },
+        {
+          "name": "read_capacity",
+          "label": "Read capacity units",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "read_capacity",
+          "group": "capacity",
+          "dependsOn": {
+            "param": "billing_mode",
+            "equals": "PROVISIONED"
+          },
+          "bounds": {
+            "min": 1,
+            "max": 40000
+          },
+          "default": 5,
+          "help": "Provisioned read capacity units (RCU). Only applies in PROVISIONED billing mode."
+        },
+        {
+          "name": "write_capacity",
+          "label": "Write capacity units",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "write_capacity",
+          "group": "capacity",
+          "dependsOn": {
+            "param": "billing_mode",
+            "equals": "PROVISIONED"
+          },
+          "bounds": {
+            "min": 1,
+            "max": 40000
+          },
+          "default": 5,
+          "help": "Provisioned write capacity units (WCU). Only applies in PROVISIONED billing mode."
+        },
+        {
+          "name": "hash_key",
+          "label": "Partition key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "hash_key",
+          "group": "keys",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_.-]{1,255}$"
+          },
+          "help": "The item attribute DynamoDB uses to partition data, e.g. id."
+        },
+        {
+          "name": "range_key",
+          "label": "Sort key (optional)",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "range_key",
+          "group": "keys",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_.-]{1,255}$"
+          },
+          "help": "Leave blank for a partition-key-only table. Set this to give the table a composite key."
+        },
+        {
+          "name": "attribute_definitions",
+          "label": "Key attribute types",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "attribute",
+          "group": "keys",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The type (S/N/B) declaration for each key above, and for any index added later — an engineer adds these to match."
+        },
+        {
+          "name": "pitr_enabled",
+          "label": "Point-in-time recovery",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "attr": "enabled",
+          "path": [
+            "point_in_time_recovery"
+          ],
+          "group": "protection",
+          "default": true,
+          "help": "Turn continuous point-in-time backups on or off."
+        },
+        {
+          "name": "kms_key",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key_arn",
+          "path": [
+            "server_side_encryption"
+          ],
+          "group": "protection",
+          "tier": "advanced",
+          "help": "Only set this for a customer-managed key; blank uses DynamoDB's default AWS-owned key."
+        },
+        {
+          "name": "sse_enabled",
+          "label": "Customer-managed encryption",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "enabled",
+          "path": [
+            "server_side_encryption"
+          ],
+          "dependsOn": {
+            "param": "kms_key",
+            "notEquals": ""
+          },
+          "group": "protection",
+          "help": "Set automatically once an encryption key is chosen above — never asked directly."
+        },
+        {
+          "name": "deletion_protection_enabled",
+          "label": "Deletion protection",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "attr": "deletion_protection_enabled",
+          "group": "protection",
+          "default": true,
+          "help": "When on, the table cannot be deleted until this is turned off."
+        },
+        {
+          "name": "resource_name",
+          "label": "Table name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this table holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this table."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new dynamodb table",
+        "provision table",
+        "new table"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "The attribute type-declaration block(s) for the partition key, sort key, and any indexes are an engineer decision",
+        "Global and local secondary indexes are an engineer decision — this form provisions the base table only",
+        "Streams, TTL, and S3 import/restore are engineer follow-ups after creation"
+      ]
+    }
+  ]
+}

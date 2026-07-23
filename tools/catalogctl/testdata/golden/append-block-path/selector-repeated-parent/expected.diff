@@ -1,0 +1,19 @@
+--- a/environments/prod/dlm.tf
++++ b/environments/prod/dlm.tf
+@@ -32,6 +32,16 @@
+       retain_rule {
+         count = 4
+       }
++
++      cross_region_copy_rule {
++        target    = "ap-southeast-5"
++        encrypted = true
++
++        retain_rule {
++          interval      = 30
++          interval_unit = "DAYS"
++        }
++      }
+     }
+   }
+ }

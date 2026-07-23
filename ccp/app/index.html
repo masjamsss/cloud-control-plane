@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- Static generic-default literal (matches brand.ts's fallback) — AppShell
+         overwrites document.title on mount with the resolved instance identity
+         (baked → cached → runtime, lib/instanceIdentity.ts); this pre-JS title
+         is only ever visible for the boot-JS window, never a stale brand. -->
+    <title>Cloud Control Plane</title>
+    <script>
+      // Flash-free theme + palette: apply the saved preferences before first
+      // paint (ADR-0014: per-user palette axis, same "no-op default" shape as
+      // theme — 'ink' is the default and sets no attribute at all).
+      try {
+        if (localStorage.getItem('ccp.theme.v1') === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+        var palette = localStorage.getItem('ccp.palette.v1');
+        if (['ink', 'teal', 'slate', 'mono'].indexOf(palette) !== -1) {
+          document.documentElement.setAttribute('data-palette', palette);
+        }
+      } catch (e) {
+        /* no-op */
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

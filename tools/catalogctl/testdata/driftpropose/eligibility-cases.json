@@ -1,0 +1,551 @@
+{
+  "version": 1,
+  "doctrine": "spec docs/superpowers/specs/2026-07-20-ccp-drift-portal.md §6.2 — one partition table, three implementations (Go generator, api TS re-check, app TS mock/UI), one fixture. Every case is checkout-independent (pure verdict fields only): 'address resolves in checkout' and any other filesystem-dependent refinement is NOT covered here — only catalogctl's Go generator layers that on top, since only it has a checkout to inspect. A case added here must fail every implementation that disagrees.",
+  "cases": [
+    {
+      "name": "adopt-eligible-single-attr",
+      "verdict": {
+        "address": "aws_instance.sample01",
+        "type": "aws_instance",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "tags.Owner", "live": "\"bi-team\"", "code": "\"platform\"", "sensitive": false, "liveJson": "bi-team", "codeJson": "platform" }
+        ]
+      },
+      "bucket": "adopt",
+      "reason": "benign in-place drift — adopt-eligible"
+    },
+    {
+      "name": "adopt-eligible-multiple-attrs",
+      "verdict": {
+        "address": "aws_instance.sample01",
+        "type": "aws_instance",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "tags.Owner", "live": "\"bi-team\"", "code": "\"platform\"", "sensitive": false, "liveJson": "bi-team", "codeJson": "platform" },
+          { "path": "tags.CostCenter", "live": "\"cc-42\"", "code": "\"cc-01\"", "sensitive": false, "liveJson": "cc-42", "codeJson": "cc-01" }
+        ]
+      },
+      "bucket": "adopt",
+      "reason": "benign in-place drift — adopt-eligible"
+    },
+    {
+      "name": "security-by-class-revert-eligible",
+      "verdict": {
+        "address": "aws_security_group.sg1",
+        "type": "aws_security_group",
+        "class": "security_posture",
+        "riskTier": "high",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [{ "path": "ingress", "why": "network reachability" }],
+        "changedAttrs": [
+          { "path": "ingress[0].cidr_blocks", "live": "[\"0.0.0.0/0\"]", "code": "[\"10.0.0.0/16\"]", "sensitive": false, "liveJson": ["0.0.0.0/0"], "codeJson": ["10.0.0.0/16"] }
+        ]
+      },
+      "bucket": "revert",
+      "reason": "security-posture drift — revert-only"
+    },
+    {
+      "name": "security-by-securityhits-only-mislabeled-benign",
+      "verdict": {
+        "address": "aws_iam_role.app1",
+        "type": "aws_iam_role",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [{ "path": "assume_role_policy", "why": "role trust policy" }],
+        "changedAttrs": [
+          { "path": "assume_role_policy", "live": "\"{...console...}\"", "code": "\"{...repo...}\"", "sensitive": false, "liveJson": "{...console...}", "codeJson": "{...repo...}" }
+        ]
+      },
+      "bucket": "revert",
+      "reason": "security-posture drift — revert-only"
+    },
+    {
+      "name": "security-posture-replacement-flavored-ungenerable",
+      "verdict": {
+        "address": "aws_db_instance.db1",
+        "type": "aws_db_instance",
+        "class": "security_posture",
+        "riskTier": "high",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [{ "path": "availability_zone", "verdict": "force_new", "why": "schemadump: force_new on the chain" }],
+        "securityHits": [{ "path": "publicly_accessible", "why": "direct public exposure" }],
+        "changedAttrs": [
+          { "path": "publicly_accessible", "live": "true", "code": "false", "sensitive": false, "liveJson": true, "codeJson": false }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "security-posture drift with forceNew attribute(s) present — replacement-flavored security drift is a human conversation, never a portal button (runbook D2/D3)"
+    },
+    {
+      "name": "security-posture-non-update-actions-ungenerable",
+      "verdict": {
+        "address": "aws_iam_role_policy.inline1",
+        "type": "aws_iam_role_policy",
+        "class": "security_posture",
+        "riskTier": "high",
+        "driftEvidence": true,
+        "actions": ["delete"],
+        "forceNewAttrs": [],
+        "securityHits": [{ "path": "policy", "why": "inline permission grants" }],
+        "changedAttrs": []
+      },
+      "bucket": "ungenerable",
+      "reason": "security-posture drift with actions [delete] (not a pure in-place update) — not mechanically revertible, human decision required (runbook D2)"
+    },
+    {
+      "name": "unknown-class-always-ungenerable",
+      "verdict": {
+        "address": "aws_instance.futurebox01",
+        "type": "aws_instance",
+        "class": "some_future_class_z",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "tags.Owner", "live": "\"a\"", "code": "\"b\"", "sensitive": false, "liveJson": "a", "codeJson": "b" }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "unknown class \"some_future_class_z\" — fail-closed, needs-human (the eleven-class D1-D11 enum is closed)"
+    },
+    {
+      "name": "replacement-forcenew-class-ungenerable",
+      "verdict": {
+        "address": "aws_subnet.sample05",
+        "type": "aws_subnet",
+        "class": "replacement_forcenew",
+        "riskTier": "critical",
+        "driftEvidence": true,
+        "actions": ["create", "delete"],
+        "forceNewAttrs": [{ "path": "cidr_block", "verdict": "force_new", "why": "terraform replace_paths (plan-proven)" }],
+        "securityHits": [],
+        "changedAttrs": []
+      },
+      "bucket": "ungenerable",
+      "reason": "class \"replacement_forcenew\" is not auto-generable in v1 — ADOPT arm is safe and human-preparable today (runbook D3 adopt-PR, docs/runbooks/drift-detection.md); a guided portal lane is tracked in the limitations register"
+    },
+    {
+      "name": "replacement-risk-class-ungenerable",
+      "verdict": {
+        "address": "aws_efs_file_system.shared1",
+        "type": "aws_efs_file_system",
+        "class": "replacement_risk",
+        "riskTier": "high",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [{ "path": "availability_zone_name", "verdict": "force_new", "why": "chain-OR over the walked dump nodes" }],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "availability_zone_name", "live": "\"ap-southeast-5b\"", "code": "\"ap-southeast-5a\"", "sensitive": false, "liveJson": "ap-southeast-5b", "codeJson": "ap-southeast-5a" }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "class \"replacement_risk\" is not auto-generable in v1 — ADOPT arm is safe and human-preparable today (runbook D3b adopt-PR, docs/runbooks/drift-detection.md); a guided portal lane is tracked in the limitations register"
+    },
+    {
+      "name": "oob-deletion-restore-eligible",
+      "verdict": {
+        "address": "aws_flow_log.vpc1",
+        "type": "aws_flow_log",
+        "class": "oob_deletion",
+        "riskTier": "high",
+        "driftEvidence": true,
+        "actions": ["create"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": []
+      },
+      "bucket": "restore",
+      "reason": "out-of-band deletion — restore-eligible (re-assert code; the plan re-creates the deleted resource)"
+    },
+    {
+      "name": "oob-deletion-wrong-actions-refused",
+      "verdict": {
+        "address": "aws_flow_log.vpc2",
+        "type": "aws_flow_log",
+        "class": "oob_deletion",
+        "riskTier": "high",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": []
+      },
+      "bucket": "ungenerable",
+      "reason": "oob_deletion drift with actions [update] (not a pure create) — not mechanically restorable, human decision required (runbook D4)"
+    },
+    {
+      "name": "oob-deletion-no-evidence-refused",
+      "verdict": {
+        "address": "aws_flow_log.vpc3",
+        "type": "aws_flow_log",
+        "class": "oob_deletion",
+        "riskTier": "high",
+        "driftEvidence": false,
+        "actions": ["create"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": []
+      },
+      "bucket": "ungenerable",
+      "reason": "no drift evidence — unapplied config, not drift (see runbook D10)"
+    },
+    {
+      "name": "oob-deletion-forged-securityhits-refused",
+      "verdict": {
+        "address": "aws_flow_log.vpc4",
+        "type": "aws_flow_log",
+        "class": "oob_deletion",
+        "riskTier": "high",
+        "driftEvidence": true,
+        "actions": ["create"],
+        "forceNewAttrs": [],
+        "securityHits": [{ "path": "traffic_type", "why": "forged — an honest classifier can never emit securityHits on a pure create" }],
+        "changedAttrs": []
+      },
+      "bucket": "ungenerable",
+      "reason": "security-posture drift with actions [create] (not a pure in-place update) — not mechanically revertible, human decision required (runbook D2)"
+    },
+    {
+      "name": "risk-tier-not-low-ungenerable",
+      "verdict": {
+        "address": "aws_instance.sample06",
+        "type": "aws_instance",
+        "class": "benign_inplace",
+        "riskTier": "medium",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "tags.Owner", "live": "\"a\"", "code": "\"b\"", "sensitive": false, "liveJson": "a", "codeJson": "b" }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "riskTier \"medium\" is not low"
+    },
+    {
+      "name": "actions-not-update-ungenerable",
+      "verdict": {
+        "address": "aws_instance.sample07",
+        "type": "aws_instance",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["create", "delete"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "tags.Owner", "live": "\"a\"", "code": "\"b\"", "sensitive": false, "liveJson": "a", "codeJson": "b" }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "actions [create delete] are not exactly [update]"
+    },
+    {
+      "name": "forcenew-present-mislabeled-benign-ungenerable",
+      "verdict": {
+        "address": "aws_db_instance.db2",
+        "type": "aws_db_instance",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [{ "path": "availability_zone", "verdict": "force_new", "why": "schemadump: force_new on the chain" }],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "tags.Owner", "live": "\"a\"", "code": "\"b\"", "sensitive": false, "liveJson": "a", "codeJson": "b" }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "forceNew attribute(s) present — not generable in v1 (see runbook D3b)"
+    },
+    {
+      "name": "no-drift-evidence-ungenerable",
+      "verdict": {
+        "address": "aws_instance.sample08",
+        "type": "aws_instance",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": false,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "tags.Owner", "live": "\"a\"", "code": "\"b\"", "sensitive": false, "liveJson": "a", "codeJson": "b" }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "no drift evidence — unapplied config, not drift (see runbook D10)"
+    },
+    {
+      "name": "no-changed-attrs-ungenerable",
+      "verdict": {
+        "address": "aws_instance.sample09",
+        "type": "aws_instance",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": []
+      },
+      "bucket": "ungenerable",
+      "reason": "no changed attributes to adopt"
+    },
+    {
+      "name": "sensitive-attr-ungenerable",
+      "verdict": {
+        "address": "aws_db_instance.db3",
+        "type": "aws_db_instance",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "master_password", "live": "(sensitive)", "code": "(sensitive)", "sensitive": true }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "attribute \"master_password\" is sensitive or missing a machine (liveJson) value"
+    },
+    {
+      "name": "missing-livejson-non-sensitive-ungenerable",
+      "verdict": {
+        "address": "aws_instance.sample10",
+        "type": "aws_instance",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "instance_type", "live": "\"m5.xlarge\"", "code": "\"m5.large\"", "sensitive": false }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "attribute \"instance_type\" is sensitive or missing a machine (liveJson) value"
+    },
+    {
+      "name": "path-not-expressible-list-index-ungenerable",
+      "verdict": {
+        "address": "aws_security_group.sg2",
+        "type": "aws_security_group",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "ingress[0].cidr_blocks", "live": "[\"10.0.0.0/16\"]", "code": "[\"10.0.1.0/24\"]", "sensitive": false, "liveJson": ["10.0.0.0/16"], "codeJson": ["10.0.1.0/24"] }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "attribute \"ingress[0].cidr_blocks\" has a value shape not expressible by the edit engine"
+    },
+    {
+      "name": "path-not-expressible-deep-nesting-ungenerable",
+      "verdict": {
+        "address": "aws_instance.sample11",
+        "type": "aws_instance",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "root_block_device.ebs.volume_size", "live": "100", "code": "80", "sensitive": false, "liveJson": 100, "codeJson": 80 }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "attribute \"root_block_device.ebs.volume_size\" has a value shape not expressible by the edit engine"
+    },
+    {
+      "name": "security-revert-eligible-despite-sensitive-attrs",
+      "verdict": {
+        "address": "aws_db_instance.db4",
+        "type": "aws_db_instance",
+        "class": "security_posture",
+        "riskTier": "high",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [{ "path": "master_user_password", "why": "ERP database exposure, encryption, credential and recovery posture" }],
+        "changedAttrs": [
+          { "path": "master_user_password", "live": "(sensitive)", "code": "(sensitive)", "sensitive": true }
+        ]
+      },
+      "bucket": "revert",
+      "reason": "security-posture drift — revert-only"
+    },
+    {
+      "name": "hostile-class-proto",
+      "verdict": {
+        "address": "aws_instance.hostilebox01",
+        "type": "aws_instance",
+        "class": "__proto__",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "tags.Owner", "live": "\"a\"", "code": "\"b\"", "sensitive": false, "liveJson": "a", "codeJson": "b" }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "unknown class \"__proto__\" — fail-closed, needs-human (the eleven-class D1-D11 enum is closed)"
+    },
+    {
+      "name": "null-live-map-key-adopt",
+      "verdict": {
+        "address": "aws_instance.taggone01",
+        "type": "aws_instance",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "tags.CostCenter", "live": "(absent)", "code": "\"cc-42\"", "sensitive": false, "liveJson": null, "codeJson": "cc-42" }
+        ]
+      },
+      "bucket": "adopt",
+      "reason": "benign in-place drift — adopt-eligible"
+    },
+    {
+      "name": "segments-dotted-key-adopt",
+      "verdict": {
+        "address": "aws_instance.dottedbox01",
+        "type": "aws_instance",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "tags.kubernetes.io/role/elb", "live": "\"owned\"", "code": "\"shared\"", "sensitive": false, "liveJson": "owned", "codeJson": "shared", "pathSegments": ["tags", "kubernetes.io/role/elb"] }
+        ]
+      },
+      "bucket": "adopt",
+      "reason": "benign in-place drift — adopt-eligible"
+    },
+    {
+      "name": "segments-malformed-refused",
+      "verdict": {
+        "address": "aws_instance.malformedbox01",
+        "type": "aws_instance",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "tags.Owner", "live": "\"a\"", "code": "\"b\"", "sensitive": false, "liveJson": "a", "codeJson": "b", "pathSegments": [] }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "attribute \"tags.Owner\" has a value shape not expressible by the edit engine"
+    },
+    {
+      "name": "segments-repeated-block-refused",
+      "verdict": {
+        "address": "aws_security_group.sgrepeated01",
+        "type": "aws_security_group",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "ingress[2].cidr_blocks", "live": "[\"10.0.0.0/16\"]", "code": "[\"10.0.1.0/24\"]", "sensitive": false, "liveJson": ["10.0.0.0/16"], "codeJson": ["10.0.1.0/24"], "pathSegments": ["ingress", 2, "cidr_blocks"] }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "attribute \"ingress[2].cidr_blocks\" has a value shape not expressible by the edit engine"
+    },
+    {
+      "name": "segments-deep-refused",
+      "verdict": {
+        "address": "aws_instance.deepbox01",
+        "type": "aws_instance",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "root_block_device[0].ebs.volume_size", "live": "100", "code": "80", "sensitive": false, "liveJson": 100, "codeJson": 80, "pathSegments": ["root_block_device", 0, "ebs", "volume_size"] }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "attribute \"root_block_device[0].ebs.volume_size\" has a value shape not expressible by the edit engine"
+    },
+    {
+      "name": "nested-3seg-index0-adopt",
+      "verdict": {
+        "address": "aws_instance.volboxadopt01",
+        "type": "aws_instance",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "root_block_device[0].volume_size", "live": "100", "code": "80", "sensitive": false, "liveJson": 100, "codeJson": 80, "pathSegments": ["root_block_device", 0, "volume_size"] }
+        ]
+      },
+      "bucket": "adopt",
+      "reason": "benign in-place drift — adopt-eligible"
+    },
+    {
+      "name": "nested-3seg-index1-refused",
+      "verdict": {
+        "address": "aws_instance.volboxrefused01",
+        "type": "aws_instance",
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "driftEvidence": true,
+        "actions": ["update"],
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          { "path": "root_block_device[1].volume_size", "live": "100", "code": "80", "sensitive": false, "liveJson": 100, "codeJson": 80, "pathSegments": ["root_block_device", 1, "volume_size"] }
+        ]
+      },
+      "bucket": "ungenerable",
+      "reason": "attribute \"root_block_device[1].volume_size\" has a value shape not expressible by the edit engine"
+    }
+  ]
+}

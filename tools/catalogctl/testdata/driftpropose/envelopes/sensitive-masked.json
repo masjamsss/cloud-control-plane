@@ -1,0 +1,47 @@
+{
+  "schema": "ccp.drift/v1",
+  "projectId": "sample",
+  "environment": "prod",
+  "capturedAt": "2026-07-20T03:17:04Z",
+  "runId": "16234567893",
+  "commit": "1370355ddddddddddddddddddddddddddddddd",
+  "cadenceHours": 6,
+  "planExitCode": 2,
+  "report": {
+    "meta": { "format_version": "1.2", "terraform_version": "1.9.0", "provider_tag": "aws-v6.53.0" },
+    "counts": { "benign_inplace": 1 },
+    "absorbed": [],
+    "invisible_to_plan": "out-of-band CREATED resources — detection is the importer-kit account sweep (resourcegroupstaggingapi), disposition import-and-adopt or delete-in-AWS (human)",
+    "verdicts": [
+      {
+        "address": "aws_db_instance.db2",
+        "type": "aws_db_instance",
+        "actions": ["update"],
+        "actionReason": null,
+        "driftEvidence": true,
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "recommendation": "In-place, not security-watchlisted, not replacement-class: adopt the live value into code via a no-op PR.",
+        "neverDo": "Never adopt values you have not read.",
+        "executor": "Claude-preparable PR",
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "computedUnknown": [],
+        "notes": [],
+        "changedAttrs": [
+          {
+            "path": "master_password",
+            "live": "(sensitive)",
+            "code": "(sensitive)",
+            "forceNew": "in_place",
+            "forceNewWhy": "not a schema-ForceNew attribute",
+            "noiseEqual": false,
+            "churn": "",
+            "sensitive": true,
+            "pathSegments": ["master_password"]
+          }
+        ]
+      }
+    ]
+  }
+}

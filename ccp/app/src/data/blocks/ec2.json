@@ -1,0 +1,22 @@
+{
+ "aws_key_pair.admin": {
+  "file": "ccp/app/fixtures-estate/ec2.tf",
+  "line": 3,
+  "source": "resource \"aws_key_pair\" \"admin\" {\n  key_name   = \"admin-key\"\n  public_key = \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEXAMPLEKEYMATERIALNOTREALZZZZZZZZZZZZZZ admin@example.com\"\n\n  tags = {\n    Name = \"admin-key\"\n    PIC  = \"user01@example.com\"\n  }\n}"
+ },
+ "aws_instance.app01": {
+  "file": "ccp/app/fixtures-estate/ec2.tf",
+  "line": 13,
+  "source": "resource \"aws_instance\" \"app01\" {\n  ami                    = \"ami-0abcd1234efgh5678\"\n  instance_type          = \"t3.large\"\n  subnet_id              = aws_subnet.private_a.id\n  key_name               = aws_key_pair.admin.key_name\n  vpc_security_group_ids = [aws_security_group.app.id]\n  iam_instance_profile   = \"app-instance-profile\"\n  ebs_optimized          = true\n\n  root_block_device {\n    volume_size = 50\n    volume_type = \"gp3\"\n    encrypted   = true\n  }\n\n  tags = {\n    Name        = \"APP01_NewInstall\"\n    Environment = \"prod\"\n    Owner       = \"alice\"\n    PIC         = \"user01@example.com\"\n    Description = \"Application server for the checkout service\"\n  }\n}"
+ },
+ "aws_instance.app02": {
+  "file": "ccp/app/fixtures-estate/ec2.tf",
+  "line": 37,
+  "source": "resource \"aws_instance\" \"app02\" {\n  ami                    = \"ami-0abcd1234efgh5678\"\n  instance_type          = \"t3.large\"\n  subnet_id              = aws_subnet.private_a.id\n  key_name               = aws_key_pair.admin.key_name\n  vpc_security_group_ids = [aws_security_group.app.id]\n  iam_instance_profile   = \"app-instance-profile\"\n  ebs_optimized          = true\n\n  root_block_device {\n    volume_size = 50\n    volume_type = \"gp3\"\n    encrypted   = true\n  }\n\n  tags = {\n    Name        = \"APP02_NewInstall\"\n    Environment = \"prod\"\n    Owner       = \"bob\"\n    PIC         = \"user02@example.com\"\n    Description = \"Application server for the checkout service\"\n  }\n}"
+ },
+ "aws_instance.bastion": {
+  "file": "ccp/app/fixtures-estate/ec2.tf",
+  "line": 61,
+  "source": "resource \"aws_instance\" \"bastion\" {\n  ami                    = \"ami-0abcd1234efgh5678\"\n  instance_type          = \"t3.micro\"\n  subnet_id              = aws_subnet.public_a.id\n  private_ip             = \"10.0.0.10\"\n  key_name               = aws_key_pair.admin.key_name\n  vpc_security_group_ids = [aws_security_group.app.id]\n  ebs_optimized          = true\n\n  root_block_device {\n    volume_size = 20\n    volume_type = \"gp3\"\n    encrypted   = true\n  }\n\n  tags = {\n    Name        = \"bastion\"\n    Environment = \"prod\"\n    Owner       = \"alice\"\n    PIC         = \"user01@example.com\"\n    Description = \"Jump host for administrative access\"\n  }\n}"
+ }
+}

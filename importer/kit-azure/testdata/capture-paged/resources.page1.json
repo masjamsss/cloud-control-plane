@@ -1,0 +1,15 @@
+{
+  "data": [
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.Storage/storageAccounts/stpage1data",
+      "name": "stpage1data",
+      "type": "microsoft.storage/storageaccounts",
+      "location": "southeastasia",
+      "resourceGroup": "rg-app",
+      "subscriptionId": "00000000-0000-0000-0000-000000000000",
+      "tags": {}
+    }
+  ],
+  "count": 1,
+  "total_records": 2
+}

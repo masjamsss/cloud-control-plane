@@ -1,0 +1,40 @@
+name: ccp-api
+
+# Runs the ccp-api (authoritative backend, Fork A1 spine) checks on any change
+# under ccp/api. Blocking gates: TypeScript typecheck + the full vitest suite
+# (argon2id credentials, sessions, hash-chained audit, server authz, dual-control,
+# v1 migration). Node 22 (the deploy target).
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ccp/api/**'
+      - '.github/workflows/ccp-api.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ccp/api/**'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: ccp/api
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ccp/api/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Tests
+        run: npm test

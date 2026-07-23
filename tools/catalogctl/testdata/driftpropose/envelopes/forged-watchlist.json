@@ -1,0 +1,49 @@
+{
+  "schema": "ccp.drift/v1",
+  "projectId": "sample",
+  "environment": "prod",
+  "capturedAt": "2026-07-20T03:17:04Z",
+  "runId": "16234567900",
+  "commit": "1370355555555555555555555555555555555555",
+  "cadenceHours": 6,
+  "planExitCode": 2,
+  "report": {
+    "meta": { "format_version": "1.2", "terraform_version": "1.9.0", "provider_tag": "aws-v6.53.0" },
+    "counts": { "benign_inplace": 1 },
+    "absorbed": [],
+    "invisible_to_plan": "out-of-band CREATED resources — detection is the importer-kit account sweep (resourcegroupstaggingapi), disposition import-and-adopt or delete-in-AWS (human)",
+    "verdicts": [
+      {
+        "address": "aws_security_group.sg1",
+        "type": "aws_security_group",
+        "actions": ["update"],
+        "actionReason": null,
+        "driftEvidence": true,
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "recommendation": "NOTE (fixture intent): spec addendum A1/F4 — the audit's 'g1-forged' reproduction. A hostile/forged envelope: securityHits stripped to [] and class relabeled benign_inplace, on the SAME ingress[0].cidr_blocks change watchlisted-sg.json carries honestly. Post-W1 this path is shape-expressible ([s,0,s], index 0), so ClassifyByFields (which trusts only the envelope's own fields) would classify this BucketAdopt — the fourth screen is what still catches it, from the CHECKOUT's own watchlist, independent of anything this envelope claims.",
+        "neverDo": "NEVER silently adopt into code.",
+        "executor": "n/a (fixture: hostile producer)",
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "computedUnknown": [],
+        "notes": [],
+        "changedAttrs": [
+          {
+            "path": "ingress[0].cidr_blocks",
+            "live": "[\"0.0.0.0/0\"]",
+            "code": "[\"10.0.0.0/16\"]",
+            "forceNew": "in_place",
+            "forceNewWhy": "chain-OR over the walked dump nodes",
+            "noiseEqual": false,
+            "churn": "",
+            "sensitive": false,
+            "liveJson": ["0.0.0.0/0"],
+            "codeJson": ["10.0.0.0/16"],
+            "pathSegments": ["ingress", 0, "cidr_blocks"]
+          }
+        ]
+      }
+    ]
+  }
+}

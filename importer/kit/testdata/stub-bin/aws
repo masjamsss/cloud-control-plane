@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Stub `aws` CLI for kit tests — NO network, ever. Behavior is driven by env:
+#   STUB_ACCOUNT       account id sts reports (default 111111111111)
+#   STUB_FAIL_SERVICE  service name (e.g. "rds") whose calls exit 1
+#   STUB_CAPTURE_SRC   dir of fixture captures; when set, a call for service
+#                      "<svc>" with action "<action>" returns the file whose
+#                      name discover.py's plan-commands would assign — the stub
+#                      doesn't know it, so it just returns an empty object
+# The stub only needs to be faithful enough for discover.sh's ORCHESTRATION
+# (identity gate, file writing, failure accounting) — record fidelity is the
+# recorded fixtures' job (capture-happy/ etc.), not this stub's.
+set -u
+service="${1:-}"
+
+if [ "$service" = "sts" ]; then
+  echo "${STUB_ACCOUNT:-111111111111}"
+  exit 0
+fi
+
+if [ -n "${STUB_FAIL_SERVICE:-}" ] && [ "$service" = "$STUB_FAIL_SERVICE" ]; then
+  echo "stub: simulated ${service} failure" >&2
+  exit 1
+fi
+
+echo '{}'

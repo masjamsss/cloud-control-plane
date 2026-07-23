@@ -1,0 +1,26 @@
+# __generated__ by Terraform
+# Fixture: a deliberately malformed -generate-config-out output. The middle
+# block (oob_broken_two) is missing its closing brace before the next
+# resource header appears — payloads.py's line-scanner must withhold THAT
+# address only, while still correctly parsing the clean blocks before and
+# after it.
+
+# __generated__ by Terraform from "i-clean0000000001"
+resource "aws_instance" "oob_clean_one" {
+  instance_type = "t3.micro"
+  tags = {
+    Name = "clean-one"
+  }
+}
+
+# __generated__ by Terraform from "i-broken0000000002"
+resource "aws_instance" "oob_broken_two" {
+  instance_type = "t3.micro"
+
+# __generated__ by Terraform from "i-clean0000000003"
+resource "aws_instance" "oob_clean_three" {
+  instance_type = "t3.micro"
+  tags = {
+    Name = "clean-three"
+  }
+}

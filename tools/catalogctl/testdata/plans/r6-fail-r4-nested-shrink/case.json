@@ -1,0 +1,1 @@
+{"exitCode": 2, "contains": "VIOLATION grow-only: aws_dynamodb_table.orders", "manifests": "testdata/manifests-r6"}

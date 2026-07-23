@@ -1,0 +1,1 @@
+{"service":"uxc","types":{"aws_uxc_account_customizations":{"attrs":[{"n":"account_color","t":"string"},{"n":"visible_regions","t":"list"},{"n":"visible_services","t":"list"}],"blocks":[]}}}

@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "doctrine": "spec docs/superpowers/specs/2026-07-20-ccp-oob-provisioning-import.md §5.2 — one finding-partition table, three implementations (Go generator ClassifyFinding, api TS re-check, app TS advisory partition), one fixture. Every case is checkout-independent (pure finding fields only, mirroring eligibility-cases.json's own doctrine for verdicts): the checkout-based creation_security_types re-derivation (§5.3 screens 1/3) and the 'address resolves in checkout' refinement are NOT covered here — only catalogctl's Go generator/drift-edit layer those on top, since only they have a checkout to inspect. A case added here must fail every implementation that disagrees. A finding has no Terraform address (§3.1) — that is its defining property — so this fixture, unlike eligibility-cases.json, has no address field at all.",
+  "cases": [
+    {
+      "name": "import-eligible-plain",
+      "finding": {
+        "class": "unmanaged_resource",
+        "arn": null,
+        "tfType": "aws_instance",
+        "liveId": "i-0abc123def456789a",
+        "securityFamily": false,
+        "importPayload": {
+          "address": "aws_instance.oob_bastion01",
+          "targetFile": "oob-adopted.tf",
+          "importBlock": "import {\n  to = aws_instance.oob_bastion01\n  id = \"i-0abc123def456789a\"\n}\n",
+          "skeletonHcl": "resource \"aws_instance\" \"oob_bastion01\" {\n  ami           = \"ami-0123456789abcdef0\"\n  instance_type = \"m5.large\"\n}\n"
+        },
+        "payloadWithheldReason": null
+      },
+      "bucket": "import",
+      "reason": "unmanaged resource — import-eligible"
+    },
+    {
+      "name": "import-eligible-with-arn",
+      "finding": {
+        "class": "unmanaged_resource",
+        "arn": "arn:aws:iam::123456789012:policy/oob-policy-01",
+        "tfType": "aws_iam_policy",
+        "liveId": "arn:aws:iam::123456789012:policy/oob-policy-01",
+        "securityFamily": false,
+        "importPayload": {
+          "address": "aws_iam_policy.oob_policy01",
+          "targetFile": "oob-adopted.tf",
+          "importBlock": "import {\n  to = aws_iam_policy.oob_policy01\n  id = \"arn:aws:iam::123456789012:policy/oob-policy-01\"\n}\n",
+          "skeletonHcl": "resource \"aws_iam_policy\" \"oob_policy01\" {\n  name = \"oob-policy-01\"\n}\n"
+        },
+        "payloadWithheldReason": null
+      },
+      "bucket": "import",
+      "reason": "unmanaged resource — import-eligible"
+    },
+    {
+      "name": "creation-security-flagged-ungenerable",
+      "finding": {
+        "class": "unmanaged_resource",
+        "arn": null,
+        "tfType": "aws_iam_role",
+        "liveId": "oob-emergency-role",
+        "securityFamily": true,
+        "importPayload": null,
+        "payloadWithheldReason": null
+      },
+      "bucket": "creation_security",
+      "reason": "tfType \"aws_iam_role\" is flagged securityFamily — creation-security types are never portal-importable; investigate per runbook D2/D5 (the actor evidence is the head start), then either delete-in-AWS (human + owner sign-off) or a manual engineer-tier kit-lane import PR"
+    },
+    {
+      "name": "creation-security-wins-over-missing-payload",
+      "finding": {
+        "class": "unmanaged_resource",
+        "arn": null,
+        "tfType": "aws_security_group",
+        "liveId": "sg-0oobcreated01",
+        "securityFamily": true,
+        "importPayload": null,
+        "payloadWithheldReason": "type is creation-security — never a candidate (§2.6 step 1)"
+      },
+      "bucket": "creation_security",
+      "reason": "tfType \"aws_security_group\" is flagged securityFamily — creation-security types are never portal-importable; investigate per runbook D2/D5 (the actor evidence is the head start), then either delete-in-AWS (human + owner sign-off) or a manual engineer-tier kit-lane import PR"
+    },
+    {
+      "name": "type-unmapped-empty-tftype",
+      "finding": {
+        "class": "unmanaged_resource",
+        "arn": null,
+        "tfType": "",
+        "liveId": "some-untyped-id",
+        "securityFamily": false,
+        "importPayload": null,
+        "payloadWithheldReason": null
+      },
+      "bucket": "type_unmapped",
+      "reason": "tfType is absent — this resource type is outside the services.json 43-type map; extend services.json (a data change + fixture) or use the manual kit import lane"
+    },
+    {
+      "name": "type-unmapped-wins-over-security-family",
+      "finding": {
+        "class": "unmanaged_resource",
+        "arn": null,
+        "tfType": "",
+        "liveId": "some-untyped-id-2",
+        "securityFamily": true,
+        "importPayload": null,
+        "payloadWithheldReason": null
+      },
+      "bucket": "type_unmapped",
+      "reason": "tfType is absent — this resource type is outside the services.json 43-type map; extend services.json (a data change + fixture) or use the manual kit import lane"
+    },
+    {
+      "name": "payload-withheld-with-mechanical-reason",
+      "finding": {
+        "class": "unmanaged_resource",
+        "arn": null,
+        "tfType": "aws_db_instance",
+        "liveId": "db-oob-01",
+        "securityFamily": false,
+        "importPayload": null,
+        "payloadWithheldReason": "generated config carries secret-shaped values — import via the kit runbook with secret handling (e.g. ignore_changes on the secret attribute), never through the portal"
+      },
+      "bucket": "payload_withheld",
+      "reason": "generated config carries secret-shaped values — import via the kit runbook with secret handling (e.g. ignore_changes on the secret attribute), never through the portal"
+    },
+    {
+      "name": "payload-withheld-no-reason-falls-back",
+      "finding": {
+        "class": "unmanaged_resource",
+        "arn": null,
+        "tfType": "aws_ebs_volume",
+        "liveId": "vol-0oobvolume01",
+        "securityFamily": false,
+        "importPayload": null,
+        "payloadWithheldReason": null
+      },
+      "bucket": "payload_withheld",
+      "reason": "no import payload was generated for this finding — payload generation may not be armed for this sweep, this finding fell outside the 20-candidate cap, or it was excluded upstream; see the sweep run's payload step"
+    },
+    {
+      "name": "payload-withheld-incomplete-payload-object",
+      "finding": {
+        "class": "unmanaged_resource",
+        "arn": null,
+        "tfType": "aws_ebs_volume",
+        "liveId": "vol-0oobvolume02",
+        "securityFamily": false,
+        "importPayload": {
+          "address": "aws_ebs_volume.oob_vol02",
+          "targetFile": "oob-adopted.tf",
+          "importBlock": "import {\n  to = aws_ebs_volume.oob_vol02\n  id = \"vol-0oobvolume02\"\n}\n",
+          "skeletonHcl": ""
+        },
+        "payloadWithheldReason": null
+      },
+      "bucket": "payload_withheld",
+      "reason": "no import payload was generated for this finding — payload generation may not be armed for this sweep, this finding fell outside the 20-candidate cap, or it was excluded upstream; see the sweep run's payload step"
+    },
+    {
+      "name": "unknown-class-always-ungenerable",
+      "finding": {
+        "class": "some_future_finding_class",
+        "arn": null,
+        "tfType": "aws_instance",
+        "liveId": "i-0futurebox01",
+        "securityFamily": false,
+        "importPayload": null,
+        "payloadWithheldReason": null
+      },
+      "bucket": "ungenerable",
+      "reason": "finding class \"some_future_finding_class\" is not \"unmanaged_resource\" — fail-closed, needs-human (the finding partition only recognizes the constant unmanaged_resource class id)"
+    },
+    {
+      "name": "hostile-class-proto",
+      "finding": {
+        "class": "__proto__",
+        "arn": null,
+        "tfType": "aws_instance",
+        "liveId": "i-0hostilebox01",
+        "securityFamily": false,
+        "importPayload": null,
+        "payloadWithheldReason": null
+      },
+      "bucket": "ungenerable",
+      "reason": "finding class \"__proto__\" is not \"unmanaged_resource\" — fail-closed, needs-human (the finding partition only recognizes the constant unmanaged_resource class id)"
+    }
+  ]
+}

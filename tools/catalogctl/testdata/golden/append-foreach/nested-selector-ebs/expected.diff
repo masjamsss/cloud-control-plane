@@ -1,0 +1,10 @@
+--- a/environments/prod/main.tf
++++ b/environments/prod/main.tf
+@@ -17,6 +17,7 @@
+ 
+     tags = {
+       Name = "data-2"
++      Snap = "hourly"
+     }
+   }
+ }

@@ -1,0 +1,42 @@
+{
+  "id": "REQ-01ARZ3NDEKTSV4RRFFQ69G5FC5",
+  "projectId": "sample",
+  "operationId": "system-drift-legitimize",
+  "targetAddress": "aws_security_group.sg1",
+  "status": "AWAITING_DEPLOY_APPROVAL",
+  "approvals": [
+    { "approver": "alice", "approved_at": "2026-07-21T04:00:00Z", "policy_version": "1", "decision": "approve" },
+    { "approver": "bob", "approved_at": "2026-07-21T04:05:00Z", "policy_version": "1", "decision": "approve" }
+  ],
+  "params": {
+    "attrs": [],
+    "verdicts": [
+      {
+        "address": "aws_security_group.sg1",
+        "type": "aws_security_group",
+        "actions": ["update"],
+        "driftEvidence": true,
+        "class": "security_posture",
+        "riskTier": "high",
+        "forceNewAttrs": [],
+        "securityHits": [
+          { "path": "ingress[0].cidr_blocks", "why": "emergency SG opened for incident-42, now converged by the linked PR" }
+        ],
+        "changedAttrs": [
+          {
+            "path": "ingress[0].cidr_blocks",
+            "live": "[\"0.0.0.0/0\"]",
+            "code": "[\"0.0.0.0/0\"]",
+            "sensitive": false,
+            "liveJson": ["0.0.0.0/0"],
+            "codeJson": ["0.0.0.0/0"],
+            "pathSegments": ["ingress", 0, "cidr_blocks"]
+          }
+        ]
+      }
+    ],
+    "diff": null,
+    "proposalDigest": "a5b4894e55b91ca9f57fe9364ae67eb7fe7b774baf69456ebc7eb8e43e7a8c50",
+    "reportVersion": 13
+  }
+}

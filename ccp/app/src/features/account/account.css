@@ -1,0 +1,153 @@
+/* ============================================================================
+   Account & security — the standing self-service page (AccountSecurityPage.tsx).
+   Card grid over the shared ui-card/ui-btn/ui-badge primitives; form rows
+   reuse the login__ field vocabulary (login.css) so the password/device forms
+   read as the same product as the sign-in screen.
+   ============================================================================ */
+
+.acct-page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6) var(--space-10);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.acct-page__head {
+  max-width: 62ch;
+}
+.acct-page__title {
+  margin: 0 0 var(--space-3);
+  font-size: clamp(26px, 3vw, 34px);
+  color: var(--text-primary);
+}
+.acct-page__subtitle {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.acct-banner {
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--info) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--info) 40%, transparent);
+  border-radius: var(--radius-2);
+}
+
+.acct-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.acct-card .ui-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.acct-fact {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+.acct-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.acct-success {
+  margin: 0;
+  font-size: 13px;
+  color: var(--risk-low);
+}
+
+.acct-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.acct-list__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+}
+.acct-list__label {
+  margin: 0 0 2px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.acct-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.acct-add-device {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-hairline);
+}
+
+/* The one-off recovery-codes ceremony overlay — a centered modal, same
+   backdrop weight as the re-auth dialog (reauth-dialog.css), sized wider to
+   fit the 10-code grid comfortably. */
+.acct-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  background: color-mix(in srgb, var(--text-primary) 30%, transparent);
+  z-index: 50;
+}
+.acct-modal {
+  width: 100%;
+  max-width: 440px;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-7);
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-3);
+}
+.acct-modal__title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+@media (max-width: 560px) {
+  .acct-page {
+    padding: var(--space-6) var(--space-4) var(--space-8);
+  }
+  .acct-grid {
+    grid-template-columns: 1fr;
+  }
+}

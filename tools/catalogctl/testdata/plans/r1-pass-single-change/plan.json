@@ -1,0 +1,19 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_instance.sample02",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "instance_type": "c5.large"
+        },
+        "after": {
+          "instance_type": "c6i.2xlarge"
+        }
+      }
+    }
+  ]
+}

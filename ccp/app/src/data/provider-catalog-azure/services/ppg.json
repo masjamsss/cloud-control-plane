@@ -1,0 +1,1 @@
+{"service":"ppg","types":{"azurerm_proximity_placement_group":{"attrs":[{"n":"location","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"allowed_vm_sizes","t":"list"},{"n":"tags","t":"map"},{"n":"zone","t":"string"}],"blocks":[]}}}

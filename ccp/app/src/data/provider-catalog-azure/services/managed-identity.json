@@ -1,0 +1,1 @@
+{"service":"managed-identity","types":{"azurerm_user_assigned_identity":{"attrs":[{"n":"location","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"isolation_scope","t":"string"},{"n":"tags","t":"map"}],"blocks":[]}}}

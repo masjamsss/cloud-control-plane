@@ -1,0 +1,93 @@
+{
+  "service": "kms",
+  "scope": "estate",
+  "resourceTypes": ["aws_kms_key", "aws_kms_alias"],
+  "summary": "Generic KMS operations for the importer-sandbox sample: metadata tagging and rotation toggling. Estate-agnostic sample data.",
+  "operations": [
+    {
+      "id": "kms-add-tag-to-key",
+      "service": "kms",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a KMS key",
+      "summary": "Add a governance tag to a key. Metadata only — no change to what the key protects.",
+      "description": "Add a single new key/value tag to an existing KMS key's tags map. Metadata-only — no effect on the key policy, grants, or any ciphertext.",
+      "target": { "resourceType": "aws_kms_key", "block": "tags" },
+      "params": [
+        {
+          "name": "key",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": true,
+          "help": "The existing key to tag, chosen from live inventory."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": { "pattern": "^[A-Za-z][A-Za-z0-9_.:/=+@-]{0,127}$" },
+          "help": "New tag key, up to 128 chars; must not already exist on the key."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": { "pattern": "^.{0,256}$" },
+          "help": "Tag value, up to 256 characters."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "create"
+    },
+    {
+      "id": "kms-enable-key-rotation",
+      "service": "kms",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable automatic key rotation",
+      "summary": "Turn on yearly automatic rotation of a key's material. Safe and additive — older encrypted data stays readable.",
+      "description": "Turns on annual automatic rotation of the key's backing material; AWS keeps prior material to decrypt old ciphertext. Purely additive, no impact on existing ciphertext or callers.",
+      "target": { "resourceType": "aws_kms_key" },
+      "params": [
+        {
+          "name": "key",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": true,
+          "help": "The existing key to modify, chosen from live inventory."
+        },
+        {
+          "name": "enable_key_rotation",
+          "label": "Enable automatic rotation",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": { "allowlist": [true, false] },
+          "help": "true turns on yearly automatic rotation of key material; false turns it off."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup"
+    }
+  ]
+}

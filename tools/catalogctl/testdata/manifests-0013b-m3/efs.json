@@ -1,0 +1,116 @@
+{
+  "service": "efs",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_efs_file_system"
+  ],
+  "summary": "EFS lifecycle_policy transition editing via 0013b M3 target.matchPresence — repeated sibling blocks distinguished by WHICH attribute each carries, not by any attribute's value (there is no request input to key a value-selector on).",
+  "operations": [
+    {
+      "id": "efs-set-lifecycle-transition-to-ia",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set the Infrequent-Access transition for an EFS file system",
+      "description": "Write transition_to_ia inside the lifecycle_policy sibling that already carries it. matchPresence picks that sibling by WHICH attribute it carries (not its value), so a file system with both an IA and an Archive transition edits only the IA one. ensurePath creates the lifecycle_policy block (up to 3 may coexist) when the file system has none yet.",
+      "target": {
+        "resourceType": "aws_efs_file_system",
+        "path": [
+          "lifecycle_policy"
+        ],
+        "matchPresence": {
+          "lifecycle_policy": "transition_to_ia"
+        },
+        "ensurePath": true
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "label": "EFS file system",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "transition_to_ia",
+          "label": "Transition to IA after",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "AFTER_1_DAY",
+              "AFTER_7_DAYS",
+              "AFTER_14_DAYS",
+              "AFTER_30_DAYS",
+              "AFTER_60_DAYS",
+              "AFTER_90_DAYS",
+              "AFTER_180_DAYS",
+              "AFTER_270_DAYS",
+              "AFTER_365_DAYS"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "terraformCapability": "~ update (lifecycle_policy[transition_to_ia].transition_to_ia)"
+    },
+    {
+      "id": "efs-set-lifecycle-transition-to-archive",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set the Archive transition for an EFS file system",
+      "description": "Write transition_to_archive inside the lifecycle_policy sibling that already carries it (matchPresence, same mechanism as efs-set-lifecycle-transition-to-ia). ensurePath creates the block when absent.",
+      "target": {
+        "resourceType": "aws_efs_file_system",
+        "path": [
+          "lifecycle_policy"
+        ],
+        "matchPresence": {
+          "lifecycle_policy": "transition_to_archive"
+        },
+        "ensurePath": true
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "label": "EFS file system",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "transition_to_archive",
+          "label": "Transition to Archive after",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "AFTER_1_DAY",
+              "AFTER_7_DAYS",
+              "AFTER_14_DAYS",
+              "AFTER_30_DAYS",
+              "AFTER_60_DAYS",
+              "AFTER_90_DAYS",
+              "AFTER_180_DAYS",
+              "AFTER_270_DAYS",
+              "AFTER_365_DAYS"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "terraformCapability": "~ update (lifecycle_policy[transition_to_archive].transition_to_archive)"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "data": [
+    {
+      "name": "stappdata001",
+      "type": "microsoft.storage/storageaccounts",
+      "location": "southeastasia",
+      "resourceGroup": "rg-app",
+      "subscriptionId": "00000000-0000-0000-0000-000000000000",
+      "tags": {}
+    }
+  ],
+  "count": 1,
+  "total_records": 1
+}

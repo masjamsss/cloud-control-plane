@@ -1,0 +1,32 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_instance.sample03",
+      "previous_address": "aws_instance.sample02",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "before": {
+          "id": "i-abc"
+        },
+        "after": {
+          "id": "i-abc"
+        }
+      }
+    },
+    {
+      "address": "aws_instance.doomed_host",
+      "change": {
+        "actions": [
+          "delete"
+        ],
+        "before": {
+          "id": "i-999"
+        },
+        "after": null
+      }
+    }
+  ]
+}

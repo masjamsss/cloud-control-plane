@@ -1,0 +1,22 @@
+{
+  "SecurityGroups": [
+    {
+      "GroupId": "sg-0e0e0e0e0e0e0e001",
+      "GroupName": "web-sg",
+      "Description": "web tier",
+      "VpcId": "vpc-0d0d0d0d0d0d0d001"
+    },
+    {
+      "GroupId": "sg-0e0e0e0e0e0e0e002",
+      "GroupName": "web-sg",
+      "Description": "web tier (copy in second vpc — same name, distinct id)",
+      "VpcId": "vpc-0d0d0d0d0d0d0d002"
+    },
+    {
+      "GroupId": "sg-0e0e0e0e0e0e0e003",
+      "GroupName": "default",
+      "Description": "default VPC security group",
+      "VpcId": "vpc-0d0d0d0d0d0d0d001"
+    }
+  ]
+}

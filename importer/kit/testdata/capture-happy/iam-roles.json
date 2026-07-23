@@ -1,0 +1,14 @@
+{
+  "Roles": [
+    {
+      "RoleName": "app-runtime",
+      "Path": "/",
+      "Arn": "arn:aws:iam::111111111111:role/app-runtime"
+    },
+    {
+      "RoleName": "AWSServiceRoleForSupport",
+      "Path": "/aws-service-role/support.amazonaws.com/",
+      "Arn": "arn:aws:iam::111111111111:role/aws-service-role/support.amazonaws.com/AWSServiceRoleForSupport"
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+/* Service identity tile — category-tinted square + per-service glyph. */
+.svc-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-2);
+  background: color-mix(in srgb, var(--svc-hue) 12%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--svc-hue) 22%, transparent);
+  color: var(--svc-hue);
+  transition: background-color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+}
+.svc-icon__glyph {
+  width: 62%;
+  height: 62%;
+}
+.svc-icon__mono {
+  font-family: var(--font-mono);
+  font-size: 0.4em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* Category hues (the "service identity" axis — never status). */
+.svc-icon--compute {
+  --svc-hue: var(--cat-compute);
+}
+.svc-icon--storage {
+  --svc-hue: var(--cat-storage);
+}
+.svc-icon--database {
+  --svc-hue: var(--cat-database);
+}
+.svc-icon--networking {
+  --svc-hue: var(--cat-networking);
+}
+.svc-icon--observability {
+  --svc-hue: var(--cat-observability);
+}
+.svc-icon--security {
+  --svc-hue: var(--cat-security);
+}
+.svc-icon--integration {
+  --svc-hue: var(--cat-integration);
+}
+.svc-icon--devtools {
+  --svc-hue: var(--cat-devtools);
+}
+
+/* Card hover deepens the tint a touch. */
+.service-card:hover .svc-icon {
+  background: color-mix(in srgb, var(--svc-hue) 18%, var(--surface-1));
+  border-color: color-mix(in srgb, var(--svc-hue) 34%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .svc-icon {
+    transition: none;
+  }
+}

@@ -1,0 +1,7 @@
+{
+ "aws_lambda_function.webhook": {
+  "file": "ccp/app/fixtures-estate/lambda.tf",
+  "line": 3,
+  "source": "resource \"aws_lambda_function\" \"webhook\" {\n  function_name = \"ticket-webhook\"\n  # A literal ARN (not a same-root aws_iam_role reference): this role is\n  # shared/managed outside this Terraform root, same convention the estate\n  # capture this sample is modeled after uses.\n  role          = \"arn:aws:iam::123456789012:role/lambda-execution-role\"\n  handler       = \"index.handler\"\n  runtime       = \"python3.12\"\n  memory_size   = 256\n  timeout       = 60\n  filename      = \"webhook.zip\"\n\n  tags = {\n    Name        = \"ticket-webhook\"\n    PIC         = \"user02@example.com\"\n    Description = \"Posts alarm tickets to the service desk\"\n  }\n}"
+ }
+}

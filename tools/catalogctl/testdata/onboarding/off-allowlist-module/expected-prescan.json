@@ -1,0 +1,16 @@
+{
+  "repo": "off-allowlist-module",
+  "verdict": "reject",
+  "findings": [
+    {
+      "code": "MODULE_SOURCE",
+      "file": "main.tf",
+      "line": 2
+    }
+  ],
+  "resourceBlocks": 0,
+  "moduleBlocks": 1,
+  "tfJsonFiles": 0,
+  "fmtDirtyFiles": 0,
+  "providerPins": {}
+}

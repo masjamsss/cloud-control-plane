@@ -1,0 +1,17 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_instance.sample02",
+      "change": {
+        "actions": [
+          "delete"
+        ],
+        "before": {
+          "id": "i-abc"
+        },
+        "after": null
+      }
+    }
+  ]
+}

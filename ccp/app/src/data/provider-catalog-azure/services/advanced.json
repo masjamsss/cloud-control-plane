@@ -1,0 +1,1 @@
+{"service":"advanced","types":{"azurerm_advanced_threat_protection":{"attrs":[{"n":"enabled","t":"bool","r":1},{"n":"target_resource_id","t":"string","r":1}],"blocks":[]}}}

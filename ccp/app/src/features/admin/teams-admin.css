@@ -1,0 +1,290 @@
+/* ============================================================================
+   Teams admin — team → service ownership. Clean neutral; accent for actions.
+   ============================================================================ */
+
+.teams {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.teams__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.teams__section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.teams__section-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+.teams__section-note {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* ── Create ─────────────────────────────────────────────────────────────────── */
+.teams__create {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.teams__create-input {
+  flex: 1 1 260px;
+  min-width: 200px;
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 11px;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-2);
+}
+.teams__create-input::placeholder {
+  color: var(--text-faint);
+}
+.teams__create-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.teams__create-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.teams__create-btn {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 16px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.teams__create-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.teams__create-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.teams__create-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.teams__msg {
+  margin: var(--space-2) 0 0;
+  font-size: 13px;
+}
+.teams__msg--error {
+  color: var(--risk-high);
+}
+.teams__msg--ok {
+  color: var(--text-secondary);
+}
+
+/* ── Team list ──────────────────────────────────────────────────────────────── */
+/* Divider rows, not boxed cards (Ledger contract #3) — the rows themselves
+   (.team below) carry the hairline separators; this is just the flex column
+   that holds them, same shape as catalog.css's .catalog__rows. */
+.teams__list {
+  display: flex;
+  flex-direction: column;
+}
+.team {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-2);
+  border-top: 1px solid var(--border-hairline);
+}
+.teams__list > .team:first-child {
+  border-top: none;
+}
+.team__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+.team__id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.team__name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+.team__meta {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.team__actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.team__btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: border-color var(--dur-base) var(--ease-standard), background-color var(--dur-base) var(--ease-standard);
+}
+.team__btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--border-hover);
+}
+.team__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.team__btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.team__btn--primary {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.team__btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.team__btn--danger {
+  color: var(--risk-high);
+}
+.team__btn--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--risk-high) 8%, transparent);
+  border-color: color-mix(in srgb, var(--risk-high) 40%, transparent);
+}
+
+.team__rename {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  width: 100%;
+}
+.team__rename-input {
+  flex: 1 1 220px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 7px 11px;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-2);
+}
+.team__rename-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.team__rename-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ── Owned-service chips ────────────────────────────────────────────────────── */
+.team__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.team__chip {
+  font-size: 12px;
+  padding: 3px 10px;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+}
+.team__none {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+/* ── Service editor ─────────────────────────────────────────────────────────── */
+.team__editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+  background: var(--surface-2);
+}
+.team__services {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-2) var(--space-4);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.team__service-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  font-size: 13px;
+}
+.team__service-label:hover {
+  background: var(--surface-1);
+}
+.team__checkbox {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+.team__checkbox:disabled {
+  cursor: not-allowed;
+}
+.team__service-name {
+  color: var(--text-primary);
+}
+.team__service-owner {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.team__service-owner::before {
+  content: '· ';
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .team__btn {
+    transition: none;
+  }
+}

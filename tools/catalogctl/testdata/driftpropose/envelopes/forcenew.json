@@ -1,0 +1,51 @@
+{
+  "schema": "ccp.drift/v1",
+  "projectId": "sample",
+  "environment": "prod",
+  "capturedAt": "2026-07-20T03:17:04Z",
+  "runId": "16234567892",
+  "commit": "1370355ccccccccccccccccccccccccccccccc",
+  "cadenceHours": 6,
+  "planExitCode": 2,
+  "report": {
+    "meta": { "format_version": "1.2", "terraform_version": "1.9.0", "provider_tag": "aws-v6.53.0" },
+    "counts": { "benign_inplace": 1 },
+    "absorbed": [],
+    "invisible_to_plan": "out-of-band CREATED resources — detection is the importer-kit account sweep (resourcegroupstaggingapi), disposition import-and-adopt or delete-in-AWS (human)",
+    "verdicts": [
+      {
+        "address": "aws_db_instance.db1",
+        "type": "aws_db_instance",
+        "actions": ["update"],
+        "actionReason": null,
+        "driftEvidence": true,
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "recommendation": "NOTE (fixture intent): this row is deliberately mislabeled benign_inplace despite carrying a forceNewAttrs row, so this fixture proves the partition RE-DERIVES forceNew-presence from verdict fields — never trusting the class label alone (spec §6.2 doctrine, the same one enforcement point 1 pins for security).",
+        "neverDo": "Never adopt values you have not read.",
+        "executor": "Claude-preparable PR",
+        "forceNewAttrs": [
+          { "path": "availability_zone", "verdict": "force_new", "why": "schemadump: force_new on the chain" }
+        ],
+        "securityHits": [],
+        "computedUnknown": [],
+        "notes": [],
+        "changedAttrs": [
+          {
+            "path": "tags.Owner",
+            "live": "\"bi-team\"",
+            "code": "\"platform\"",
+            "forceNew": "in_place",
+            "forceNewWhy": "tags are provider-wide in-place (dedicated update path)",
+            "noiseEqual": false,
+            "churn": "",
+            "sensitive": false,
+            "liveJson": "bi-team",
+            "codeJson": "platform",
+            "pathSegments": ["tags", "Owner"]
+          }
+        ]
+      }
+    ]
+  }
+}

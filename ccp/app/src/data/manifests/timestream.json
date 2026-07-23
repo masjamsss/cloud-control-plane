@@ -1,0 +1,107 @@
+{
+  "service": "timestream",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_timestreamwrite_database"
+  ],
+  "summary": "Provision a brand-new Timestream time-series database. No Timestream estate exists yet, so this is a first stand-up an engineer reviews before it applies.",
+  "operations": [
+    {
+      "id": "timestream-database-create",
+      "service": "timestream",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Timestream database",
+      "summary": "Request a brand-new Timestream time-series database; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a time-series database as a complete specification: name and encryption key. Tables (with their own retention properties) are added afterward as an engineer follow-up. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_timestreamwrite_database"
+      },
+      "params": [
+        {
+          "name": "database_name",
+          "label": "Database name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "database_name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_.-]{3,256}$"
+          },
+          "help": "Letters, numbers, underscore, dash and dot. Names the database in Timestream."
+        },
+        {
+          "name": "kms_key",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key_id",
+          "group": "identity",
+          "tier": "advanced",
+          "help": "Leave blank to use the default AWS-managed key. Pick a key only for a customer-managed CMK."
+        },
+        {
+          "name": "resource_name",
+          "label": "Database name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this database holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this database."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new timestream database",
+        "provision time series database"
+      ],
+      "decisions": [
+        "Tables, with their own memory/magnetic-store retention properties, are an engineer follow-up after the database exists"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "service": "pinpoint",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_pinpoint_app"
+  ],
+  "summary": "Provision an Amazon Pinpoint project (application) as the container for a messaging campaign — email, SMS, or push. Creating the project is an engineer-gated form; the messaging channels that actually send are always finished by the engineer afterward.",
+  "operations": [
+    {
+      "id": "pinpoint-app-create",
+      "service": "pinpoint",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a new Pinpoint project",
+      "summary": "Request a new Pinpoint project for messaging channels and campaigns. An engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Specify a new aws_pinpoint_app: just its name. Messaging channels (email, SMS, push credentials), sending limits, and campaigns are always finished by the engineer — this form provisions the empty project container. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_pinpoint_app"
+      },
+      "params": [
+        {
+          "name": "app_name",
+          "label": "Project name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+          },
+          "help": "The project's name in the Pinpoint console."
+        },
+        {
+          "name": "resource_name",
+          "label": "Project name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this project is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this project."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new pinpoint app",
+        "pinpoint project",
+        "messaging project"
+      ],
+      "decisions": [
+        "Messaging channels (email, SMS, push notification credentials) are separate resources added as engineer follow-ups once this project exists",
+        "Sending limits, quiet hours, and the campaign hook (a Lambda pre-send filter) keep Pinpoint defaults until an engineer sets them"
+      ]
+    }
+  ]
+}

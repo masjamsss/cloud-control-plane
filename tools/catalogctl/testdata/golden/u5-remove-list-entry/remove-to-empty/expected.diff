@@ -1,0 +1,9 @@
+--- a/environments/prod/main.tf
++++ b/environments/prod/main.tf
+@@ -1,5 +1,5 @@
+ resource "aws_db_snapshot" "prod" {
+   db_instance_identifier = "prod-db"
+   db_snapshot_identifier = "prod-db-final"
+-  shared_accounts        = ["111122223333"]
++  shared_accounts        = []
+ }

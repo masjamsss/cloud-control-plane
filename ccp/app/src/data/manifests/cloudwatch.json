@@ -1,0 +1,2129 @@
+{
+  "service": "cloudwatch",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_cloudwatch_metric_alarm",
+    "aws_cloudwatch_log_group",
+    "aws_cloudwatch_dashboard"
+  ],
+  "summary": "CloudWatch alarms and log groups. L1s adjust alarm thresholds and log retention within bounds \u2014 LOW risk, reversible, auto-eligible.",
+  "operations": [
+    {
+      "id": "cloudwatch-alarm-threshold",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Adjust a CloudWatch alarm threshold",
+      "summary": "Change the value that triggers this alarm. Updates instantly with no downtime.",
+      "description": "Change the threshold of an existing metric alarm within bounds. In-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true,
+          "help": "Which alarm to adjust."
+        },
+        {
+          "name": "new_threshold",
+          "label": "New threshold",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 100
+          },
+          "help": "Between 1 and 100."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "alarm noisy",
+        "raise threshold",
+        "alarm threshold",
+        "false alarms"
+      ],
+      "group": "monitoring-alarms",
+      "pinned": 1
+    },
+    {
+      "id": "cloudwatch-log-group-retention",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change log-group retention",
+      "summary": "Change how many days logs are kept before they're automatically deleted. No downtime.",
+      "description": "Set the retention period of a log group to an allowlisted number of days.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group"
+      },
+      "params": [
+        {
+          "name": "log_group",
+          "label": "Log group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudWatch log group whose retention to change, picked from the estate inventory so only existing Terraform-managed log groups can be selected.",
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "required": true
+        },
+        {
+          "name": "retention_in_days",
+          "label": "Retention (days)",
+          "type": "number",
+          "source": "allowlist",
+          "help": "How many days CloudWatch keeps log events before automatically deleting them; limited to standard AWS retention values from 7 to 365 days so logs are never kept forever or purged faster than a week.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              7,
+              14,
+              30,
+              60,
+              90,
+              180,
+              365
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "keep logs",
+        "log retention",
+        "retain logs"
+      ],
+      "group": "protection-backup",
+      "pinned": 2
+    },
+    {
+      "id": "cloudwatch-delete-alarm",
+      "service": "cloudwatch",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete a CloudWatch alarm",
+      "summary": "Delete this alarm. Monitoring stops right away, but it can be recreated from code later.",
+      "description": "Remove a metric alarm. Reversible \u2014 it can be re-created from code. Low blast radius.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "help": "The metric alarm to remove, picked from the estate inventory; because the alarm definition lives in Terraform code it can be re-created later, keeping the blast radius low.",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "cloudwatch-dashboard-update-body",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update dashboard JSON (widgets / layout)",
+      "summary": "Replace this dashboard's widgets and layout with new JSON; an engineer authors and reviews it first.",
+      "description": "Replace dashboard_body with a new CloudWatch dashboard JSON document (widgets, layout, metric expressions). Updates in place, reversible, no downtime. The body is free-form JSON with no provider-side schema validation, so it cannot be reduced to a bounded form \u2014 an engineer authors/reviews the JSON.",
+      "target": {
+        "resourceType": "aws_cloudwatch_dashboard"
+      },
+      "params": [
+        {
+          "name": "dashboard",
+          "label": "Dashboard",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudWatch dashboard whose JSON body will be replaced, picked from the estate inventory so only existing Terraform-managed dashboards can be edited.",
+          "enumSource": "inventory://aws_cloudwatch_dashboard/address",
+          "required": true
+        },
+        {
+          "name": "dashboard_body",
+          "label": "New dashboard JSON",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "maxLength": 102400
+          },
+          "help": "Full CloudWatch dashboard JSON. Free-form and unbounded, which is why an engineer authors/reviews it rather than this being a self-service form."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (dashboard_body)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-dashboard-rename",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Rename dashboard",
+      "summary": "Rename this dashboard. Applying REPLACES it — a brief gap, and the old dashboard link stops working.",
+      "description": "Change dashboard_name. Dashboard names cannot be edited in place \u2014 Terraform destroys the old dashboard and creates a new one (brief gap; the old dashboard URL stops working). The new name is pattern-bounded (letters, digits, hyphens, underscores; max 255). Reversible by renaming back; content is preserved in Terraform config.",
+      "target": {
+        "resourceType": "aws_cloudwatch_dashboard"
+      },
+      "params": [
+        {
+          "name": "dashboard",
+          "label": "Dashboard",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudWatch dashboard to rename, picked from the estate inventory; note that renaming destroys and recreates the dashboard, so the old URL stops working.",
+          "enumSource": "inventory://aws_cloudwatch_dashboard/address",
+          "required": true
+        },
+        {
+          "name": "new_name",
+          "label": "New dashboard name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[-_A-Za-z0-9]+$",
+            "maxLength": 255
+          },
+          "help": "Letters, numbers, hyphens and underscores only; max 255 chars. Renaming recreates the dashboard (brief gap, old URL breaks)."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (dashboard_name)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "cloudwatch-dashboard-change-region",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Move dashboard to another Region",
+      "summary": "Move this dashboard to another Region. Applying REPLACES it — a brief gap, and widgets tied to the old Region's metrics may show blank.",
+      "description": "Change the resource's region (enhanced Region support). Recreates the dashboard in the target Region (brief gap). Bounded to an allowlist of Regions. Caution: widgets that reference metrics in the original Region may render empty after the move. Reversible by moving back.",
+      "target": {
+        "resourceType": "aws_cloudwatch_dashboard"
+      },
+      "params": [
+        {
+          "name": "dashboard",
+          "label": "Dashboard",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudWatch dashboard to move, picked from the estate inventory so only existing Terraform-managed dashboards can be selected.",
+          "enumSource": "inventory://aws_cloudwatch_dashboard/address",
+          "required": true
+        },
+        {
+          "name": "region",
+          "label": "Target Region",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "us-east-1",
+              "us-east-2",
+              "us-west-1",
+              "us-west-2",
+              "eu-west-1",
+              "eu-central-1",
+              "ap-south-1",
+              "ap-southeast-1",
+              "ap-southeast-2",
+              "ap-southeast-5",
+              "ap-northeast-1"
+            ]
+          },
+          "help": "Recreates the dashboard in this Region. Widgets referencing metrics from the old Region may go blank."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (region)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "cloudwatch-dashboard-delete",
+      "service": "cloudwatch",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete dashboard",
+      "summary": "Delete the saved dashboard view, with confirmation. Alarms, metrics, and logs are unaffected.",
+      "description": "Remove the CloudWatch dashboard resource. No impact to alarms, metrics, logs, or running services \u2014 this only deletes the saved view. Reversible by re-applying the Terraform config. Requires explicit confirmation.",
+      "target": {
+        "resourceType": "aws_cloudwatch_dashboard"
+      },
+      "params": [
+        {
+          "name": "dashboard",
+          "label": "Dashboard",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudWatch dashboard to delete, picked from the estate inventory; only the saved view is removed \u2014 the alarms, metrics, and logs it displays are untouched.",
+          "enumSource": "inventory://aws_cloudwatch_dashboard/address",
+          "required": true
+        },
+        {
+          "name": "confirm",
+          "label": "Confirm deletion",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Deletes the dashboard view. Reversible by re-applying Terraform; no service impact."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "cloudwatch-cloudwatch-dashboard-engineer-request",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to CloudWatch dashboard",
+      "summary": "Request any other dashboard change not covered above; an engineer authors and reviews the Terraform.",
+      "description": "Catch-all for any change to a CloudWatch dashboard not offered as a bounded form above. An engineer authors and reviews the Terraform.",
+      "target": {
+        "resourceType": "aws_cloudwatch_dashboard"
+      },
+      "params": [
+        {
+          "name": "dashboard",
+          "label": "Dashboard",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_dashboard/address",
+          "required": true,
+          "help": "The dashboard to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-log-group-toggle-deletion-protection",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle log group deletion protection",
+      "summary": "Turn on or off protection that blocks this log group from being deleted.",
+      "description": "Enable or disable deletion_protection_enabled on a CloudWatch log group. In-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group"
+      },
+      "params": [
+        {
+          "name": "log_group",
+          "label": "Log group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudWatch log group whose deletion protection to toggle, picked from the estate inventory of Terraform-managed log groups.",
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Deletion protection",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "true blocks the log group from being deleted until protection is switched off again; a bounded true/false toggle that changes nothing else and is fully reversible.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (deletion_protection_enabled)",
+      "group": "protection-backup",
+      "pinned": 3
+    },
+    {
+      "id": "cloudwatch-log-group-toggle-skip-destroy",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle retaining the log group on destroy",
+      "summary": "Turn on or off keeping this log group and its stored logs if it's ever destroyed.",
+      "description": "Enable or disable skip_destroy so Terraform retains the log group and its stored logs when destroyed. In-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group"
+      },
+      "params": [
+        {
+          "name": "log_group",
+          "label": "Log group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudWatch log group whose skip_destroy setting to change, picked from the estate inventory of Terraform-managed log groups.",
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Retain on destroy",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "true tells Terraform to leave the log group and its stored logs in AWS when the resource is destroyed (only removing it from state); a reversible true/false toggle with no live effect until a destroy actually runs.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (skip_destroy)",
+      "group": "monitoring-alarms",
+      "pinned": 4
+    },
+    {
+      "id": "cloudwatch-log-group-set-kms-key",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set log group KMS encryption key",
+      "summary": "Encrypt this log group's data with a chosen key. A misconfigured key policy can block log delivery, so it's guardrailed.",
+      "description": "Associate a KMS key (kms_key_id) with a CloudWatch log group to encrypt log data at rest. In-place and reversible, but a misconfigured key policy can block CloudWatch log delivery — guardrailed.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group"
+      },
+      "params": [
+        {
+          "name": "log_group",
+          "label": "Log group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudWatch log group to encrypt at rest, picked from the estate inventory so only existing Terraform-managed log groups can be selected.",
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "required": true
+        },
+        {
+          "name": "kms_key",
+          "label": "KMS key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": true,
+          "help": "Pick an existing KMS key; its key policy must allow the CloudWatch Logs service to encrypt/decrypt.",
+          "role": "reference",
+          "refAttr": "arn"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (kms_key_id)",
+      "group": "protection-backup",
+      "pinned": 5
+    },
+    {
+      "id": "cloudwatch-log-group-add-tag",
+      "service": "cloudwatch",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a log group",
+      "summary": "Add a tag to this log group. Metadata only — no effect on how it runs.",
+      "description": "Add or set a single tag key/value on a CloudWatch log group. Cosmetic metadata, in-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "log_group",
+          "label": "Log group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudWatch log group to tag, picked from the estate inventory; tags are metadata only and never change logging behaviour.",
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 +=._:/@-]{1,128}$"
+          },
+          "help": "1-128 chars: letters, digits, spaces and + - = . _ : / @"
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 +=._:/@-]{0,256}$"
+          },
+          "help": "Up to 256 chars: letters, digits, spaces and + - = . _ : / @"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "create"
+    },
+    {
+      "id": "cloudwatch-log-group-remove-tag",
+      "service": "cloudwatch",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag from a log group",
+      "summary": "Remove a tag from this log group. Metadata only — no effect on how it runs.",
+      "description": "Remove a single tag key from a CloudWatch log group. Cosmetic metadata, in-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "log_group",
+          "label": "Log group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The CloudWatch log group whose tag to remove, picked from the estate inventory; removing a tag is metadata-only and reversible.",
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 +=._:/@-]{1,128}$"
+          },
+          "help": "Exact tag key currently on the log group."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "cloudwatch-cloudwatch-log-group-engineer-request",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to CloudWatch Log Group",
+      "summary": "Request any other log group change, including ones that replace it; an engineer authors the Terraform.",
+      "description": "Catch-all for any CloudWatch log group change not offered as a bounded self-service form \u2014 including ForceNew/replacement arguments (name, name_prefix, log_group_class). An engineer authors and applies the Terraform.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group"
+      },
+      "params": [
+        {
+          "name": "log_group",
+          "label": "Log group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "required": true,
+          "help": "The log group to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-alarm-comparison-operator",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change alarm comparison operator",
+      "summary": "Change how the alarm compares its metric to the threshold, for example greater-than or less-than.",
+      "description": "Set comparison_operator to a standard threshold comparison (how the metric is compared against the threshold). In-place update, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "help": "The metric alarm whose comparison operator to change, picked from the estate inventory so only existing Terraform-managed alarms can be edited.",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true
+        },
+        {
+          "name": "comparison_operator",
+          "label": "Comparison operator",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "GreaterThanOrEqualToThreshold",
+              "GreaterThanThreshold",
+              "LessThanThreshold",
+              "LessThanOrEqualToThreshold"
+            ]
+          },
+          "help": "Standard single-threshold comparisons only. Anomaly-detection band operators are excluded because they require threshold_metric_id and extra config."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (comparison_operator)",
+      "group": "monitoring-alarms",
+      "pinned": 2
+    },
+    {
+      "id": "cloudwatch-alarm-statistic",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change alarm statistic",
+      "summary": "Change which statistic the alarm aggregates, such as average, sum, or maximum.",
+      "description": "Set the metric statistic (SampleCount/Average/Sum/Minimum/Maximum) the alarm aggregates. In-place update, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "help": "The metric alarm whose aggregation statistic to change, picked from the estate inventory of Terraform-managed alarms.",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true
+        },
+        {
+          "name": "statistic",
+          "label": "Statistic",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "SampleCount",
+              "Average",
+              "Sum",
+              "Minimum",
+              "Maximum"
+            ]
+          },
+          "help": "Applies to single-metric alarms using statistic (not extended_statistic percentiles or metric_query)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (statistic)",
+      "group": "monitoring-alarms",
+      "pinned": 3
+    },
+    {
+      "id": "cloudwatch-toggle-actions-enabled",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle alarm actions on/off",
+      "summary": "Turn alarm notifications on or off. The alarm keeps evaluating either way, it just stays quiet.",
+      "description": "Enable or disable actions_enabled. When off the alarm still evaluates state but fires no alarm/OK/insufficient-data actions. Reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "help": "The metric alarm whose actions to switch on or off, picked from the estate inventory; the alarm itself keeps evaluating either way.",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Actions enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "false suppresses notifications/actions without deleting the alarm."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (actions_enabled)",
+      "keywords": [
+        "mute alarm",
+        "silence alarm",
+        "suppress notifications"
+      ],
+      "group": "monitoring-alarms",
+      "pinned": 4
+    },
+    {
+      "id": "cloudwatch-set-alarm-notifications",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Send this alarm to a notification topic",
+      "summary": "Send this alarm's alerts, and optionally its recovery messages, to a notification topic; wiring the wrong topic pages the wrong team.",
+      "description": "Points the alarm's ALARM-state messages (alarm_actions) at a notification topic — usually the on-call topic — and, when chosen, its recovery messages (ok_actions) too. In-place and reversible; wiring the wrong topic sends pages to the wrong team, so it is guardrailed.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "help": "The metric alarm whose notifications are being wired, picked from the estate inventory."
+        },
+        {
+          "name": "topic",
+          "label": "Notification topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "role": "reference",
+          "refAttr": "arn",
+          "wrap": "list",
+          "attr": "alarm_actions",
+          "help": "Where the alarm's ALARM messages go — usually the on-call topic."
+        },
+        {
+          "name": "ok_topic",
+          "label": "Recovery (OK) topic",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "role": "reference",
+          "refAttr": "arn",
+          "wrap": "list",
+          "attr": "ok_actions",
+          "tier": "advanced",
+          "help": "Where the all-clear goes when the alarm recovers — usually the same topic. Leave blank to keep the current recovery wiring unchanged."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (alarm_actions, ok_actions)",
+      "keywords": [
+        "on-call topic",
+        "alarm notification",
+        "point alarm at topic",
+        "alarm recipients"
+      ],
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-alarm-treat-missing-data",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change how the alarm treats missing data",
+      "summary": "Change how the alarm treats gaps in data: as missing, healthy, breaching, or ignored.",
+      "description": "Set treat_missing_data to control how gaps in the metric are evaluated. In-place update, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "help": "The metric alarm whose missing-data handling to change, picked from the estate inventory of Terraform-managed alarms.",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true
+        },
+        {
+          "name": "treat_missing_data",
+          "label": "Treat missing data as",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "missing",
+              "ignore",
+              "breaching",
+              "notBreaching"
+            ]
+          },
+          "help": "Default is 'missing'. 'breaching' makes gaps trigger the alarm; 'notBreaching' treats gaps as healthy."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (treat_missing_data)",
+      "group": "monitoring-alarms",
+      "pinned": 5
+    },
+    {
+      "id": "cloudwatch-alarm-evaluation-periods",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change alarm evaluation periods",
+      "summary": "Change how many time periods the alarm checks before it can trigger.",
+      "description": "Set evaluation_periods (number of periods over which data is compared to the threshold). In-place update, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "help": "The metric alarm whose evaluation window to change, picked from the estate inventory of Terraform-managed alarms.",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true
+        },
+        {
+          "name": "evaluation_periods",
+          "label": "Evaluation periods",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 100
+          },
+          "help": "Must be greater than or equal to datapoints_to_alarm. Higher values reduce flapping but slow detection."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (evaluation_periods)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-alarm-datapoints-to-alarm",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change alarm datapoints-to-alarm",
+      "summary": "Change how many breaching data points within the evaluation window are needed to trigger the alarm.",
+      "description": "Set datapoints_to_alarm for M-out-of-N alarm evaluation. In-place update, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "help": "The metric alarm whose M-out-of-N trigger setting to change, picked from the estate inventory of Terraform-managed alarms.",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true
+        },
+        {
+          "name": "datapoints_to_alarm",
+          "label": "Datapoints to alarm",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 100
+          },
+          "help": "Number of breaching datapoints within evaluation_periods required to trigger. Must be less than or equal to evaluation_periods."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (datapoints_to_alarm)",
+      "keywords": [
+        "require datapoints",
+        "alarm sensitivity"
+      ],
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-alarm-period",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change alarm metric period",
+      "summary": "Change the length of the time window each alarm evaluation covers.",
+      "description": "Set the metric period in seconds the alarm evaluates over. In-place update, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "help": "The metric alarm whose metric period to change, picked from the estate inventory of Terraform-managed alarms.",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true
+        },
+        {
+          "name": "period",
+          "label": "Period (seconds)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "10",
+              "30",
+              "60",
+              "300",
+              "900",
+              "3600"
+            ]
+          },
+          "help": "Valid CloudWatch periods: 10/30 (high-resolution) or multiples of 60. Only applies to single-metric alarms, not metric_query alarms."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (period)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-alarm-description",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Edit alarm description",
+      "summary": "Edit the alarm's description text. Cosmetic only, it does not change how the alarm behaves.",
+      "description": "Update the human-readable alarm_description text. Cosmetic, in-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "help": "The metric alarm whose description text to edit, picked from the estate inventory; the description is cosmetic and does not affect evaluation.",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true
+        },
+        {
+          "name": "alarm_description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "maxLength": 1024,
+            "pattern": "^[\\w\\s.,:;!?()\\-/@'\"]{0,1024}$"
+          },
+          "help": "Free text up to 1024 characters describing what the alarm monitors."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (alarm_description)",
+      "group": "tags-naming"
+    },
+    {
+      "id": "cloudwatch-alarm-add-tag",
+      "service": "cloudwatch",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to alarm",
+      "summary": "Add a tag to this alarm. Metadata only — no effect on how it runs.",
+      "description": "Add or set a single key/value entry in the alarm's tags map. In-place update, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "help": "The metric alarm to tag, picked from the estate inventory; tags are metadata only and do not change alarm behaviour.",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "maxLength": 128,
+            "pattern": "^[\\w.:/+@-]{1,128}$"
+          },
+          "help": "AWS tag key, up to 128 characters."
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "maxLength": 256,
+            "pattern": "^[\\w\\s.:/=+@-]{0,256}$"
+          },
+          "help": "AWS tag value, up to 256 characters."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "create"
+    },
+    {
+      "id": "cloudwatch-alarm-remove-tag",
+      "service": "cloudwatch",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag from alarm",
+      "summary": "Remove a tag from this alarm. Metadata only — no effect on how it runs.",
+      "description": "Remove a single key from the alarm's tags map. In-place update, reversible (re-add with the add-tag form), no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "help": "The metric alarm whose tag to remove, picked from the estate inventory; removing a tag is metadata-only and reversible.",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "maxLength": 128,
+            "pattern": "^[\\w.:/+@-]{1,128}$"
+          },
+          "help": "Exact key of the tag to remove."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "cloudwatch-cloudwatch-metric-alarm-engineer-request",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to CloudWatch metric alarm",
+      "summary": "Request any other change to this alarm not covered above; an engineer authors the Terraform.",
+      "description": "Catch-all for any change to a CloudWatch metric alarm not offered as a bounded self-service form. An engineer reviews and authors the Terraform.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true,
+          "help": "The alarm to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-alarm-change-region",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Move alarm to another Region",
+      "summary": "Move this alarm to another Region. Applying REPLACES it — brief gap, and it may show no data if the metric isn't there too.",
+      "description": "Change the alarm's region (enhanced Region support). Terraform destroys the alarm and recreates it in the target Region (brief monitoring gap). Bounded to an allowlist of Regions. Caution: the same metric may not exist in the new Region, which can leave the alarm stuck in INSUFFICIENT_DATA. Reversible by moving back.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true,
+          "help": "Which alarm to move."
+        },
+        {
+          "name": "region",
+          "label": "Target Region",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "us-east-1",
+              "us-east-2",
+              "us-west-1",
+              "us-west-2",
+              "eu-west-1",
+              "eu-central-1",
+              "ap-south-1",
+              "ap-southeast-1",
+              "ap-southeast-2",
+              "ap-southeast-5",
+              "ap-northeast-1"
+            ]
+          },
+          "help": "Recreates the alarm in this Region. The alarm's metric must also exist there or the alarm will read INSUFFICIENT_DATA."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (region)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "cloudwatch-alarm-evaluation-interval",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change PromQL alarm evaluation interval",
+      "summary": "Change how often a PromQL alarm re-checks its query, in seconds.",
+      "description": "Set evaluation_interval, the frequency in seconds at which a PromQL (evaluation_criteria) alarm is evaluated. In-place update, reversible, no downtime. Allowlisted to valid CloudWatch intervals.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true,
+          "help": "The alarm to change, chosen from live inventory."
+        },
+        {
+          "name": "evaluation_interval",
+          "label": "Evaluation interval (seconds)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "10",
+              "20",
+              "30",
+              "60",
+              "300",
+              "900",
+              "3600"
+            ]
+          },
+          "help": "Valid values are 10, 20, 30, or any multiple of 60. Applies only to PromQL (evaluation_criteria) alarms."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (evaluation_interval)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-alarm-extended-statistic",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change alarm extended statistic (percentile)",
+      "summary": "Change the alarm to evaluate a percentile, like p95 or p99.9, instead of a plain statistic.",
+      "description": "Set extended_statistic to a percentile between p0.0 and p100 (for example p95 or p99.9). Cannot be combined with statistic. In-place update, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true,
+          "help": "The alarm to change, chosen from live inventory."
+        },
+        {
+          "name": "extended_statistic",
+          "label": "Extended statistic (percentile)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^p(100(\\.0+)?|\\d{1,2}(\\.\\d+)?)$"
+          },
+          "help": "A percentile from p0.0 to p100, e.g. p50, p95, p99.9. Mutually exclusive with statistic."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (extended_statistic)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-alarm-threshold-metric-id",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set alarm anomaly-detection band metric ID",
+      "summary": "Point the alarm's anomaly-detection band at a specific calculated metric.",
+      "description": "Set threshold_metric_id to the id of the ANOMALY_DETECTION_BAND metric_query that supplies this alarm's dynamic threshold. Bounded to the CloudWatch metric-query id format. In-place update, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true,
+          "help": "The alarm to change, chosen from live inventory."
+        },
+        {
+          "name": "threshold_metric_id",
+          "label": "Anomaly-detection band metric id",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-z][a-zA-Z0-9_]*$"
+          },
+          "help": "Must match the id of the ANOMALY_DETECTION_BAND metric_query: letters, numbers and underscore, first character a lowercase letter."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (threshold_metric_id)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-alarm-evaluate-low-sample-count-percentiles",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change low-sample-count percentile handling",
+      "summary": "Choose whether a percentile alarm evaluates or ignores low-traffic periods; ignoring can mask real breaches.",
+      "description": "Set evaluate_low_sample_count_percentiles to control whether a percentile alarm evaluates or ignores periods that have too few samples. 'ignore' holds alarm state on low-confidence data; 'evaluate' always evaluates. Guardrailed because 'ignore' can mask real breaches during low-traffic periods.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true,
+          "help": "The alarm to change, chosen from live inventory."
+        },
+        {
+          "name": "evaluate_low_sample_count_percentiles",
+          "label": "Low-sample percentile handling",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ignore",
+              "evaluate"
+            ]
+          },
+          "help": "'ignore' does not change alarm state on periods with few samples; 'evaluate' always evaluates. Used only for percentile-based alarms."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (evaluate_low_sample_count_percentiles)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-alarm-promql-pending-period",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change PromQL alarm pending period",
+      "summary": "Change how long a PromQL alarm must keep breaching before it goes into alarm state.",
+      "description": "Set evaluation_criteria.promql_criteria.pending_period, the number of seconds a contributor must be continuously breaching before a PromQL alarm transitions into ALARM. In-place update, reversible, no downtime. Range 0-86400 seconds.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm",
+        "path": [
+          "evaluation_criteria",
+          "promql_criteria"
+        ]
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true,
+          "help": "The alarm to change, chosen from live inventory."
+        },
+        {
+          "name": "pending_period",
+          "label": "Pending period (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 86400
+          },
+          "help": "Seconds of continuous breaching before transitioning to ALARM. Valid range 0 to 86400."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (pending_period)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-alarm-promql-recovery-period",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change PromQL alarm recovery period",
+      "summary": "Change how long a PromQL alarm must stop breaching before it recovers to OK.",
+      "description": "Set evaluation_criteria.promql_criteria.recovery_period, the number of seconds a contributor must be continuously not breaching before a PromQL alarm transitions back to OK. In-place update, reversible, no downtime. Range 0-86400 seconds.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm",
+        "path": [
+          "evaluation_criteria",
+          "promql_criteria"
+        ]
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true,
+          "help": "The alarm to change, chosen from live inventory."
+        },
+        {
+          "name": "recovery_period",
+          "label": "Recovery period (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 86400
+          },
+          "help": "Seconds of continuous non-breaching before transitioning back to OK. Valid range 0 to 86400."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (recovery_period)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-alarm-metric-query-period",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a metric-query period",
+      "summary": "Change how often one metric calculation in this alarm is sampled, in seconds.",
+      "description": "Set the period (seconds) of one metric_query block, selected by its id, on a metric-math / Metrics Insights alarm. Allowlisted to valid CloudWatch periods. In-place update, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm",
+        "path": [
+          "metric_query"
+        ]
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true,
+          "help": "The alarm to change, chosen from live inventory."
+        },
+        {
+          "name": "query_id",
+          "label": "Metric-query id",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-z][a-zA-Z0-9_]*$"
+          },
+          "help": "The id of the metric_query block to modify: letters, numbers and underscore, first character a lowercase letter.",
+          "role": "selector",
+          "matchAttr": "id"
+        },
+        {
+          "name": "period",
+          "label": "Period (seconds)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "10",
+              "30",
+              "60",
+              "300",
+              "900",
+              "3600"
+            ]
+          },
+          "help": "Valid CloudWatch periods: 10 or 30 (high-resolution) or multiples of 60."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (metric_query.period)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-alarm-metric-query-metric-period",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a metric-query metric period",
+      "summary": "Change how often the underlying metric inside one calculation is sampled, in seconds.",
+      "description": "Set the period (seconds) of the metric inside one metric_query block, selected by the query id, on a metric-math / Metrics Insights alarm. Allowlisted to valid CloudWatch periods. In-place update, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm",
+        "path": [
+          "metric_query",
+          "metric"
+        ]
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true,
+          "help": "The alarm to change, chosen from live inventory."
+        },
+        {
+          "name": "query_id",
+          "label": "Metric-query id",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-z][a-zA-Z0-9_]*$"
+          },
+          "help": "The id of the metric_query block whose nested metric period you are changing.",
+          "role": "selector",
+          "matchAttr": "id"
+        },
+        {
+          "name": "period",
+          "label": "Metric period (seconds)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "10",
+              "30",
+              "60",
+              "300",
+              "900",
+              "3600"
+            ]
+          },
+          "help": "Valid CloudWatch periods: 10 or 30 (high-resolution) or multiples of 60."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (metric_query.metric.period)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-alarm-metric-query-account-id",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set a metric-query cross-account source account",
+      "summary": "Point one metric calculation at another AWS account's data; the wrong account silently breaks the metric.",
+      "description": "Set account_id on one metric_query block (selected by its id) so that query sources its metrics from another AWS account. 12-digit account ID. In-place update, reversible, no downtime. Guardrailed because pointing at the wrong account silently breaks or misdirects the metric source.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm",
+        "path": [
+          "metric_query"
+        ]
+      },
+      "params": [
+        {
+          "name": "alarm",
+          "label": "Alarm",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_metric_alarm/address",
+          "required": true,
+          "help": "The alarm to change, chosen from live inventory."
+        },
+        {
+          "name": "query_id",
+          "label": "Metric-query id",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-z][a-zA-Z0-9_]*$"
+          },
+          "help": "The id of the metric_query block to modify: letters, numbers and underscore, first character a lowercase letter.",
+          "role": "selector",
+          "matchAttr": "id"
+        },
+        {
+          "name": "account_id",
+          "label": "Source AWS account ID",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^\\d{12}$"
+          },
+          "help": "12-digit AWS account ID that holds the metrics for this query."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (metric_query.account_id)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "cloudwatch-log-group-set-class",
+      "service": "cloudwatch",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change log group storage class",
+      "summary": "Change this log group's storage class. Applying REPLACES it and permanently deletes stored logs unless you keep them on destroy.",
+      "description": "Set log_group_class to one of the three provider-documented values (STANDARD, INFREQUENT_ACCESS, DELIVERY). This argument is ForceNew in the provider schema (internal/service/logs/group.go): Terraform destroys and recreates the log group on any class change, so by default every stored log event in the existing group is deleted (irreversible unless skip_destroy is set on the resource). Selecting DELIVERY additionally forces retention_in_days to 2. Engineer-authored/reviewed rather than a self-service form: the value set is a bounded enum, but the change is a destructive replacement.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group"
+      },
+      "params": [
+        {
+          "name": "log_group",
+          "label": "Log group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudwatch_log_group/address",
+          "required": true,
+          "help": "Which log group's storage class to change."
+        },
+        {
+          "name": "log_group_class",
+          "label": "Log group class",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "STANDARD",
+              "INFREQUENT_ACCESS",
+              "DELIVERY"
+            ]
+          },
+          "help": "STANDARD (default full-feature), INFREQUENT_ACCESS (lower-cost, reduced features), or DELIVERY. Changing the class is a ForceNew replacement -- the log group is destroyed and recreated, deleting stored log events unless skip_destroy is set on the resource. DELIVERY additionally forces retention_in_days to 2."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "brief",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (log_group_class)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "cloudwatch-provision-log-group",
+      "service": "cloudwatch",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a log group",
+      "summary": "Create a CloudWatch log group with a bounded retention. Logs are deleted permanently when retention lapses.",
+      "consoleLabel": "Log groups",
+      "description": "Create an aws_cloudwatch_log_group with a bounded retention period and optional customer-managed encryption. Retention governs how long audit and application logs are kept, so it is chosen from an allowlist. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_cloudwatch_log_group"
+      },
+      "params": [
+        {
+          "name": "log_group_name",
+          "label": "Log group name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "The name of the log group (written to the name attribute), for example /app/service.",
+          "attr": "name",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9/_.#-]{1,512}$"
+          }
+        },
+        {
+          "name": "retention_in_days",
+          "label": "Retention (days)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "attr": "retention_in_days",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              30,
+              90,
+              180,
+              365,
+              731
+            ]
+          },
+          "default": 365,
+          "help": "How long log events are kept before they are deleted permanently. Choose the period that meets the audit and compliance requirement."
+        },
+        {
+          "name": "log_group_class",
+          "label": "Log class",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "log_group_class",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "STANDARD",
+              "INFREQUENT_ACCESS"
+            ]
+          },
+          "default": "STANDARD",
+          "help": "STANDARD supports all features; INFREQUENT_ACCESS is a lower-cost class for rarely-queried logs."
+        },
+        {
+          "name": "kms_key_id",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key_id",
+          "enumSource": "inventory://aws_kms_key/address",
+          "group": "settings",
+          "help": "An optional customer-managed KMS key to encrypt the log group with (the aws_kms_key.arn it references)."
+        },
+        {
+          "name": "description_tag",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "help": "A short description recorded as the resource's Description tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "help": "The team or person accountable for this resource, recorded as its PIC tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "log group",
+        "create log group",
+        "cloudwatch logs",
+        "log retention"
+      ],
+      "decisions": [
+        "Confirm the retention period meets the audit and compliance requirement: log events are deleted permanently once retention lapses."
+      ]
+    },
+    {
+      "id": "cloudwatch-provision-metric-alarm",
+      "service": "cloudwatch",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a metric alarm",
+      "summary": "Create a CloudWatch metric alarm. An alarm with no action, or the wrong topic, fires silently.",
+      "consoleLabel": "Alarms",
+      "description": "Create an aws_cloudwatch_metric_alarm watching one metric against a threshold, notifying an SNS topic chosen from inventory. The comparison, statistic, and period are bounded; the metric identity and dimensions are confirmed against the watched resource at review. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_cloudwatch_metric_alarm"
+      },
+      "params": [
+        {
+          "name": "alarm_name",
+          "label": "Alarm name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "The name of the alarm (written to the alarm_name attribute).",
+          "attr": "alarm_name",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._:-]{1,255}$"
+          }
+        },
+        {
+          "name": "metric_name",
+          "label": "Metric name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "metric_name",
+          "group": "metric",
+          "help": "The metric to watch, for example CPUUtilization. Confirmed against the watched resource at review.",
+          "bounds": {
+            "maxLength": 255
+          }
+        },
+        {
+          "name": "namespace",
+          "label": "Namespace",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "namespace",
+          "group": "metric",
+          "help": "The metric namespace, for example AWS/EC2.",
+          "bounds": {
+            "maxLength": 255
+          }
+        },
+        {
+          "name": "comparison_operator",
+          "label": "Comparison",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "comparison_operator",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "GreaterThanThreshold",
+              "GreaterThanOrEqualToThreshold",
+              "LessThanThreshold",
+              "LessThanOrEqualToThreshold"
+            ]
+          },
+          "default": "GreaterThanThreshold",
+          "help": "How the statistic is compared to the threshold to decide the alarm state."
+        },
+        {
+          "name": "statistic",
+          "label": "Statistic",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "statistic",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "Average",
+              "Sum",
+              "Minimum",
+              "Maximum",
+              "SampleCount"
+            ]
+          },
+          "default": "Average",
+          "help": "The statistic applied to the metric over each period."
+        },
+        {
+          "name": "period",
+          "label": "Period (seconds)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "attr": "period",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              60,
+              300,
+              900
+            ]
+          },
+          "default": 300,
+          "help": "The length of each evaluation period, in seconds."
+        },
+        {
+          "name": "evaluation_periods",
+          "label": "Evaluation periods",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "attr": "evaluation_periods",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              1,
+              2,
+              3,
+              5
+            ]
+          },
+          "default": 3,
+          "help": "How many consecutive periods must breach the threshold before the alarm fires."
+        },
+        {
+          "name": "threshold",
+          "label": "Threshold",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "threshold",
+          "group": "settings",
+          "help": "The value the statistic is compared against."
+        },
+        {
+          "name": "alarm_actions",
+          "label": "Notify topic",
+          "type": "list",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "alarm_actions",
+          "enumSource": "inventory://aws_sns_topic/address",
+          "group": "actions",
+          "help": "The SNS topic notified when the alarm fires (the aws_sns_topic.arn it references)."
+        },
+        {
+          "name": "treat_missing_data",
+          "label": "Missing data",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "treat_missing_data",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "missing",
+              "notBreaching",
+              "breaching",
+              "ignore"
+            ]
+          },
+          "default": "missing",
+          "help": "How missing datapoints are treated when deciding the alarm state."
+        },
+        {
+          "name": "description_tag",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "help": "A short description recorded as the resource's Description tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "help": "The team or person accountable for this resource, recorded as its PIC tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "metric alarm",
+        "create alarm",
+        "cloudwatch alarm",
+        "monitoring alarm"
+      ],
+      "decisions": [
+        "Confirm the alarm notifies the right on-call target: an alarm with no action, or the wrong SNS topic, fires silently and no one is paged.",
+        "The metric name, namespace, and dimensions must match the resource being watched; the engineer confirms them against the live resource, since a mismatched alarm watches nothing."
+      ]
+    }
+  ]
+}

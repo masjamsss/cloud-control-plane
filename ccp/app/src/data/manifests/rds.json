@@ -1,0 +1,2577 @@
+{
+  "service": "rds",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_db_instance",
+    "aws_db_snapshot",
+    "aws_db_subnet_group",
+    "aws_rds_cluster",
+    "aws_rds_cluster_instance"
+  ],
+  "summary": "Resize and retune the RDS database instances — instance class, storage, backup retention, Multi-AZ, parameter group — plus ad-hoc manual snapshots and engineer-gated instance deletion. Also provisions brand-new Aurora/RDS clusters and their cluster instances.",
+  "operations": [
+    {
+      "id": "rds-modify-instance-class",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Resize DB instance class",
+      "summary": "Resize the database's instance class. Applying restarts it (or briefly fails over if Multi-AZ) unless deferred to the maintenance window.",
+      "consoleLabel": "DB instance class",
+      "description": "Changes the compute/memory size of an RDS instance by updating instance_class. Unless deferred to the next maintenance window, this triggers a reboot (or a brief failover if Multi-AZ) while the new class is provisioned.",
+      "target": {
+        "attr": "instance_class",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "db",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_db_instance/address",
+          "help": "Select the RDS instance to resize."
+        },
+        {
+          "name": "new_instance_class",
+          "label": "New instance class",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "db.t3.large",
+              "db.t3.xlarge",
+              "db.t3.2xlarge",
+              "db.m5.xlarge",
+              "db.m5.2xlarge",
+              "db.r5.xlarge",
+              "db.r5.2xlarge",
+              "db.r5.4xlarge"
+            ]
+          },
+          "help": "Target instance class to migrate to. The list always includes the class the database runs on today, so a change can be reversed."
+        },
+        {
+          "name": "apply_immediately",
+          "label": "Apply immediately",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "default": false,
+          "help": "If false, the change is scheduled for the next maintenance window instead of applying (and rebooting) now."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "stop-start",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (stop/start)",
+      "keywords": [
+        "resize database",
+        "upsize db",
+        "db instance class",
+        "bigger database"
+      ],
+      "group": "scale-performance"
+    },
+    {
+      "id": "rds-increase-allocated-storage",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Increase allocated storage",
+      "summary": "Grow this database's storage. Storage can only increase, never shrink, and another resize must wait out a cooldown period.",
+      "consoleLabel": "Allocated storage",
+      "description": "Grows the instance's allocated_storage (GiB). RDS applies gp3/io1 storage scaling online in most cases, but AWS enforces a cooldown before another storage modification is accepted, and storage can never be shrunk back down.",
+      "target": {
+        "attr": "allocated_storage",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "db",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_db_instance/address",
+          "help": "Select the RDS instance to grow."
+        },
+        {
+          "name": "new_allocated_storage",
+          "label": "New allocated storage (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 20,
+            "max": 16384,
+            "growOnly": true
+          },
+          "help": "Must be greater than the current allocation; RDS storage cannot be reduced."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "db storage full",
+        "grow database storage",
+        "database disk full",
+        "db out of space"
+      ],
+      "group": "scale-performance",
+      "pinned": 1
+    },
+    {
+      "id": "rds-change-backup-retention",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change backup retention window",
+      "summary": "Change how many days of automatic backups this database keeps. Setting it to zero turns off automatic backups entirely.",
+      "consoleLabel": "Backup retention period",
+      "description": "Updates backup_retention_period, the number of days RDS keeps automated backups. Setting this to 0 disables automated backups entirely for that instance.",
+      "target": {
+        "attr": "backup_retention_period",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "db",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_db_instance/address",
+          "help": "Select the RDS instance to retune."
+        },
+        {
+          "name": "new_backup_retention_period",
+          "label": "New retention period (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 35
+          },
+          "help": "Days of automated backups to retain. 0 disables automated backups (AWS maximum is 35)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "backup retention",
+        "keep backups longer",
+        "audit retention"
+      ],
+      "group": "protection-backup"
+    },
+    {
+      "id": "rds-toggle-multi-az",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle Multi-AZ deployment",
+      "summary": "Turn the standby replica in a second zone on or off. Either way, the change itself causes a brief failover-style interruption.",
+      "consoleLabel": "Multi-AZ deployment",
+      "description": "Enables or disables a synchronous standby replica in a second AZ. Enabling improves availability at extra cost; disabling removes automatic failover protection. The change itself causes a brief failover-style interruption.",
+      "target": {
+        "attr": "multi_az",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "db",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_db_instance/address",
+          "help": "Select the RDS instance."
+        },
+        {
+          "name": "new_multi_az",
+          "label": "Multi-AZ enabled",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "help": "true to add a standby replica in another AZ, false to remove it."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "multi-az",
+        "high availability",
+        "standby",
+        "database failover"
+      ],
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "rds-change-parameter-group",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Attach a different DB parameter group",
+      "summary": "Attach a different, engineer-tuned parameter group. Some settings apply right away; others wait for the next reboot.",
+      "consoleLabel": "DB parameter group",
+      "description": "Switches parameter_group_name to reference an existing, engineer-tuned parameter group. Dynamic parameters take effect per apply_immediately; static parameters only take effect after the next reboot.",
+      "target": {
+        "attr": "parameter_group_name",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "db",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_db_instance/address",
+          "help": "Select the RDS instance."
+        },
+        {
+          "name": "new_parameter_group_name",
+          "label": "New parameter group",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "erp-prd-oracle-pg",
+              "erp-qas-oracle-pg",
+              "erp-solman-sqlserver-pg",
+              "default.postgres15",
+              "default.postgres16",
+              "custom-postgres15-erp",
+              "default.oracle-ee-19"
+            ]
+          },
+          "help": "Choose from parameter groups already created and validated by an engineer. The list always includes the group attached today, so a change can be reversed."
+        },
+        {
+          "name": "apply_immediately",
+          "label": "Apply immediately",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "default": false,
+          "help": "Apply now (may force a reboot for static parameters) instead of waiting for the maintenance window."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": [
+        "parameter group",
+        "db parameters",
+        "database tuning"
+      ],
+      "group": "scale-performance"
+    },
+    {
+      "id": "rds-create-manual-snapshot",
+      "service": "rds",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Create a manual DB snapshot",
+      "summary": "Take a manual, point-in-time backup of this database. Safe and reversible, but the snapshot costs money to store until deleted.",
+      "description": "Adds a new aws_db_snapshot resource capturing a point-in-time copy of the instance for backup, cloning, or pre-change safety. Snapshot storage cost accrues until it is deleted.",
+      "target": {
+        "resourceType": "aws_db_instance",
+        "block": "aws_db_snapshot"
+      },
+      "params": [
+        {
+          "name": "db",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_db_instance/address",
+          "help": "Select the RDS instance to snapshot."
+        },
+        {
+          "name": "snapshot_identifier",
+          "label": "Snapshot identifier",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{0,254}$",
+            "semantic": "RDS snapshot naming rules"
+          },
+          "help": "Lower-case, starts with a letter, hyphens allowed. Becomes the snapshot's name."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "keywords": [
+        "db snapshot",
+        "snapshot before release",
+        "database backup now"
+      ],
+      "group": "create"
+    },
+    {
+      "id": "rds-delete-instance",
+      "service": "rds",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete DB instance",
+      "summary": "Permanently delete this database. A final snapshot is taken by default, but the instance can't be recovered; an engineer reviews this first.",
+      "description": "Permanently destroys the RDS instance and its underlying storage. A final snapshot is taken by default, but the running instance, its automated backups, and any data not captured in a snapshot cannot be recovered afterwards.",
+      "target": {
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "db",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_db_instance/address",
+          "help": "Select the RDS instance to delete."
+        },
+        {
+          "name": "final_snapshot_identifier",
+          "label": "Final snapshot identifier",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{0,254}$",
+            "semantic": "RDS snapshot naming rules"
+          },
+          "help": "Name for the final snapshot taken before deletion (ignored if skip is set)."
+        },
+        {
+          "name": "skip_final_snapshot",
+          "label": "Skip final snapshot",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "default": false,
+          "help": "Not recommended for production instances; deletes without any final backup."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "replace",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "rds-change-subnet-group-description",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change DB subnet group description",
+      "summary": "Update the description on this database's network subnet group. Metadata only — no effect on how it runs.",
+      "consoleLabel": "Description",
+      "description": "Update the description on an aws_db_subnet_group. Docs mark description as an in-place update (not ForceNew). Cosmetic metadata only; reversible, no downtime.",
+      "target": {
+        "attr": "description",
+        "resourceType": "aws_db_subnet_group"
+      },
+      "params": [
+        {
+          "name": "subnet_group",
+          "label": "DB subnet group",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the aws_db_subnet_group to edit; the inventory picker limits the change to estate-managed subnet groups, and the description is cosmetic metadata that updates in place.",
+          "enumSource": "inventory://aws_db_subnet_group/address",
+          "required": true
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._:/@+=-]{1,255}$",
+            "maxLength": 255
+          },
+          "help": "1-255 chars. AWS disallows the literal value 'Default'."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (description)",
+      "group": "tags-naming",
+      "pinned": 1
+    },
+    {
+      "id": "rds-change-subnet-group-subnets",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change DB subnet group subnets",
+      "summary": "Change the subnets in a database's network group. Keep at least two zones, including any zone with a database, or you could cut off access.",
+      "consoleLabel": "Subnets",
+      "description": "Replace the set of subnet_ids on an aws_db_subnet_group. Docs mark subnet_ids as an in-place update (not ForceNew). Guardrailed: pick ≥2 subnets spanning ≥2 AZs and keep any subnet whose AZ currently hosts a DB instance, or an in-use AZ can be orphaned.",
+      "target": {
+        "attr": "subnet_ids",
+        "resourceType": "aws_db_subnet_group"
+      },
+      "params": [
+        {
+          "name": "subnet_group",
+          "label": "DB subnet group",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the aws_db_subnet_group whose subnet set will be replaced; the inventory picker limits this networking change to estate-managed subnet groups.",
+          "enumSource": "inventory://aws_db_subnet_group/address",
+          "required": true
+        },
+        {
+          "name": "subnet_ids",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "role": "reference",
+          "refAttr": "id",
+          "required": true,
+          "bounds": {
+            "minItems": 2
+          },
+          "help": "Pick at least two subnets across at least two Availability Zones (an AWS requirement), from the estate's subnets — the picker shows each one's zone and address range. Keep any subnet whose zone currently hosts a database instance."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (subnet_ids)",
+      "group": "connectivity-access",
+      "pinned": 2
+    },
+    {
+      "id": "rds-add-subnet-group-tag",
+      "service": "rds",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a DB subnet group",
+      "summary": "Add a tag to a database subnet group. Metadata only — no effect on how it runs.",
+      "description": "Add a single key/value entry to the tags map on an aws_db_subnet_group. Tags update in place; reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_db_subnet_group",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "subnet_group",
+          "label": "DB subnet group",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the DB subnet group to tag; the inventory picker keeps this metadata-only change on estate-managed subnet groups.",
+          "enumSource": "inventory://aws_db_subnet_group/address",
+          "required": true
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 +\\-=._:/@]{1,128}$",
+            "maxLength": 128
+          },
+          "help": "1-128 chars. Cannot start with the reserved prefix 'aws:'."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 +\\-=._:/@]{0,256}$",
+            "maxLength": 256
+          },
+          "help": "0-256 chars."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "create"
+    },
+    {
+      "id": "rds-remove-subnet-group-tag",
+      "service": "rds",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag from a DB subnet group",
+      "summary": "Remove a tag from a database subnet group. Metadata only, and it can always be added back.",
+      "description": "Remove a tag entry by key from the tags map on an aws_db_subnet_group. Tags update in place; reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_db_subnet_group",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "subnet_group",
+          "label": "DB subnet group",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the DB subnet group to remove the tag from; the inventory picker keeps the change on estate-managed subnet groups, and a removed tag can always be re-added.",
+          "enumSource": "inventory://aws_db_subnet_group/address",
+          "required": true
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 +\\-=._:/@]{1,128}$",
+            "maxLength": 128
+          },
+          "help": "Key of the existing tag entry to remove."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "rds-db-subnet-group-engineer-request",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to DB subnet group",
+      "summary": "Request any other change to this subnet group, like renaming it. An engineer authors and reviews the Terraform.",
+      "description": "Escalation path for any aws_db_subnet_group change not offered as a bounded form \u2014 e.g. renaming via name/name_prefix (both force replacement) or a per-resource region relocation. An engineer authors the Terraform.",
+      "target": {
+        "attr": "purpose",
+        "resourceType": "aws_db_subnet_group"
+      },
+      "params": [
+        {
+          "name": "subnet_group",
+          "label": "Subnet group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_subnet_group/address",
+          "required": true,
+          "help": "The subnet group to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "rds-toggle-deletion-protection",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle deletion protection",
+      "summary": "Protect this database from being deleted by accident, or lift that protection.",
+      "consoleLabel": "Deletion protection",
+      "description": "Enable or disable deletion_protection on an RDS DB instance. Reversible, no downtime; blocks accidental destroys when on.",
+      "target": {
+        "attr": "deletion_protection",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the RDS instance whose deletion_protection flag changes; the inventory picker limits the change to estate-managed database instances.",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Deletion protection",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "Sets deletion_protection: when true, AWS refuses any delete of the instance from the console, API, or a Terraform destroy until the flag is cleared; only true/false are accepted and the running database is unaffected.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (deletion_protection)",
+      "group": "protection-backup",
+      "pinned": 2
+    },
+    {
+      "id": "rds-toggle-auto-minor-version-upgrade",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle auto minor version upgrades",
+      "summary": "Turn automatic minor engine version upgrades on or off. When on, minor patches apply during the maintenance window.",
+      "consoleLabel": "Auto minor version upgrade",
+      "description": "Enable or disable auto_minor_version_upgrade. Reversible, no immediate downtime; minor upgrades apply during the maintenance window.",
+      "target": {
+        "attr": "auto_minor_version_upgrade",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the RDS instance whose automatic minor-version upgrade setting changes; the inventory picker limits the change to estate-managed database instances.",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Auto minor upgrade",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "Sets auto_minor_version_upgrade: true lets AWS apply minor engine patches automatically during the maintenance window, false pins the current minor version; a strict true/false toggle with no immediate effect on the database.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (auto_minor_version_upgrade)",
+      "group": "availability-lifecycle",
+      "pinned": 3
+    },
+    {
+      "id": "rds-toggle-copy-tags-to-snapshot",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle copy tags to snapshots",
+      "summary": "Turn on or off copying this database's tags onto its snapshots. Metadata only — no effect on how it runs.",
+      "consoleLabel": "Copy tags to snapshots",
+      "description": "Enable or disable copy_tags_to_snapshot so instance tags propagate to automated and manual snapshots. Cosmetic, reversible, no downtime.",
+      "target": {
+        "attr": "copy_tags_to_snapshot",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the RDS instance whose tag-propagation setting changes; the inventory picker limits the change to estate-managed database instances.",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Copy tags to snapshot",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "Sets copy_tags_to_snapshot: true copies the instance's tags onto every automated and manual snapshot so cost and ownership tracking follow the backups; a metadata-only true/false toggle with no workload impact.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (copy_tags_to_snapshot)",
+      "group": "tags-naming",
+      "pinned": 4
+    },
+    {
+      "id": "rds-toggle-performance-insights",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle Performance Insights",
+      "summary": "Turn the performance monitoring dashboard on or off for this database. No downtime either way.",
+      "consoleLabel": "Performance Insights",
+      "description": "Enable or disable performance_insights_enabled. No downtime and reversible; enabling requires a supported instance class and uses the default (free) 7-day retention unless changed separately.",
+      "target": {
+        "attr": "performance_insights_enabled",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the RDS instance whose Performance Insights setting changes; the inventory picker limits the change to estate-managed database instances.",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Performance Insights",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "Sets performance_insights_enabled: true turns on the database performance dashboard with the default free 7-day retention, false switches it off; a strict true/false toggle applied with no downtime either way.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (performance_insights_enabled)",
+      "group": "monitoring-alarms",
+      "pinned": 5
+    },
+    {
+      "id": "rds-change-backup-window",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change backup window",
+      "summary": "Move the daily time window when automatic backups run. No downtime, but it can't overlap the maintenance window.",
+      "consoleLabel": "Backup window",
+      "description": "Set the daily backup_window (UTC, hh:mm-hh:mm). Configuration only, no downtime, reversible. Must not overlap the maintenance window.",
+      "target": {
+        "attr": "backup_window",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the RDS instance whose daily backup window moves; the inventory picker limits this schedule-only change to estate-managed database instances.",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true
+        },
+        {
+          "name": "window",
+          "label": "Backup window (UTC)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d-([01]\\d|2[0-3]):[0-5]\\d$"
+          },
+          "help": "Format hh:mm-hh:mm in UTC, e.g. 03:00-04:00. Minimum 30-minute window; must not overlap the maintenance window."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (backup_window)",
+      "keywords": [
+        "backup window",
+        "move backup window"
+      ],
+      "group": "protection-backup"
+    },
+    {
+      "id": "rds-change-maintenance-window",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change maintenance window",
+      "summary": "Move the weekly maintenance window for this database. Configuration only, with no immediate downtime.",
+      "consoleLabel": "Maintenance window",
+      "description": "Set the weekly maintenance_window (UTC, ddd:hh:mm-ddd:hh:mm). Configuration only, no immediate downtime, reversible.",
+      "target": {
+        "attr": "maintenance_window",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the RDS instance whose weekly maintenance window moves; the inventory picker limits this schedule-only change to estate-managed database instances.",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true
+        },
+        {
+          "name": "window",
+          "label": "Maintenance window (UTC)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(Mon|Tue|Wed|Thu|Fri|Sat|Sun):([01]\\d|2[0-3]):[0-5]\\d-(Mon|Tue|Wed|Thu|Fri|Sat|Sun):([01]\\d|2[0-3]):[0-5]\\d$"
+          },
+          "help": "Format ddd:hh:mm-ddd:hh:mm in UTC, e.g. Sun:05:00-Sun:06:00. Must not overlap the backup window."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (maintenance_window)",
+      "keywords": [
+        "maintenance window"
+      ],
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "rds-set-max-allocated-storage",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set storage autoscaling limit",
+      "summary": "Set the ceiling for automatic storage growth on this database, or turn autoscaling off entirely. No downtime either way.",
+      "consoleLabel": "Maximum storage threshold",
+      "description": "Set max_allocated_storage, the GiB upper bound for RDS storage autoscaling (0 disables autoscaling). No downtime, reversible. Must be greater than or equal to current allocated_storage to enable.",
+      "target": {
+        "attr": "max_allocated_storage",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the RDS instance whose storage-autoscaling ceiling changes; the inventory picker limits the change to estate-managed database instances, and the setting only caps future automatic growth.",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true
+        },
+        {
+          "name": "max_gib",
+          "label": "Max autoscaling storage (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 65536
+          },
+          "help": "Upper cap for storage autoscaling in GiB. Set 0 to disable; otherwise must be at least the current allocated_storage."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (max_allocated_storage)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "rds-change-monitoring-interval",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change Enhanced Monitoring interval",
+      "summary": "Change how often Enhanced Monitoring collects metrics, or turn it off. A reviewer checks the monitoring role is in place first.",
+      "description": "Set monitoring_interval (seconds) for Enhanced Monitoring. Reversible, no downtime, but any non-zero value requires an existing monitoring_role_arn, so a reviewer confirms the role before apply.",
+      "target": {
+        "attr": "monitoring_interval",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the RDS instance whose Enhanced Monitoring interval changes; the inventory picker limits the change to estate-managed database instances.",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true
+        },
+        {
+          "name": "interval",
+          "label": "Monitoring interval (s)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "0",
+              "1",
+              "5",
+              "10",
+              "15",
+              "30",
+              "60"
+            ]
+          },
+          "help": "0 disables Enhanced Monitoring. Non-zero values need a monitoring IAM role to already be attached."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (monitoring_interval)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "rds-db-instance-engineer-request",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to RDS DB instance",
+      "summary": "Request any other change to this database, like an engine upgrade or replacing the instance. An engineer authors and reviews the Terraform.",
+      "description": "Catch-all for any RDS DB instance change not offered as a bounded form (e.g. engine_version upgrades, publicly_accessible, instance replacement). An engineer authors and reviews the Terraform.",
+      "target": {
+        "attr": "purpose",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true,
+          "help": "The DB instance to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "scale-performance"
+    },
+    {
+      "id": "rds-snapshot-add-tag",
+      "service": "rds",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a DB snapshot",
+      "summary": "Add a tag to a database snapshot. Metadata only — no effect on the snapshot itself.",
+      "description": "Add or overwrite one key/value entry in the tags map of an aws_db_snapshot. Cosmetic metadata only; reversible and no downtime.",
+      "target": {
+        "resourceType": "aws_db_snapshot",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "snapshot",
+          "label": "DB snapshot",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the DB snapshot to tag; the inventory picker keeps this metadata-only change on estate-managed snapshots.",
+          "enumSource": "inventory://aws_db_snapshot/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w.:/+@-]{1,128}$"
+          },
+          "help": "AWS tag key, max 128 chars (letters, numbers, and + - . _ : / @; no spaces or =)."
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w\\s+=._:/@-]{0,256}$"
+          },
+          "help": "AWS tag value, max 256 chars."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "create"
+    },
+    {
+      "id": "rds-snapshot-remove-tag",
+      "service": "rds",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag from a DB snapshot",
+      "summary": "Remove a tag from a database snapshot. Metadata only, and it can always be added back.",
+      "description": "Remove one key from the tags map of an aws_db_snapshot. Cosmetic metadata only; reversible and no downtime.",
+      "target": {
+        "resourceType": "aws_db_snapshot",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "snapshot",
+          "label": "DB snapshot",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the DB snapshot to remove the tag from; the inventory picker keeps the change on estate-managed snapshots, and a removed tag can always be re-added.",
+          "enumSource": "inventory://aws_db_snapshot/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w.:/+@-]{1,128}$"
+          },
+          "help": "Existing tag key to delete from this snapshot."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "rds-snapshot-unshare-account",
+      "service": "rds",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Stop sharing a DB snapshot with an account",
+      "summary": "Stop one AWS account from being able to restore this snapshot. Tightens access; you can re-share it again later if needed.",
+      "description": "Remove one AWS account ID from shared_accounts, revoking that account's access to the snapshot. Security-tightening (reduces exposure), reversible by re-sharing, no downtime. Guardrails because a legitimate cross-account restore consumer could lose access.",
+      "target": {
+        "resourceType": "aws_db_snapshot"
+      },
+      "params": [
+        {
+          "name": "snapshot",
+          "label": "DB snapshot",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the DB snapshot whose cross-account sharing is being reduced; the inventory picker limits the change to estate-managed snapshots, and the snapshot itself is untouched, only its access list shrinks.",
+          "enumSource": "inventory://aws_db_snapshot/address",
+          "required": true
+        },
+        {
+          "name": "account_id",
+          "label": "AWS account ID to stop sharing with",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^\\d{12}$"
+          },
+          "help": "12-digit AWS account ID currently present in shared_accounts."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (shared_accounts)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "rds-snapshot-make-private",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Make a DB snapshot private",
+      "summary": "Make this snapshot private, revoking access for every other account it was shared with. Re-share it again later if needed.",
+      "description": "Set shared_accounts to an empty list, revoking all cross-account and public ('all') sharing so the snapshot is private to this account. Security-tightening (reduces exposure), reversible by re-sharing, no downtime. Guardrails because existing consumers lose access.",
+      "target": {
+        "resourceType": "aws_db_snapshot"
+      },
+      "params": [
+        {
+          "name": "snapshot",
+          "label": "DB snapshot",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the DB snapshot to make private; its shared_accounts list is emptied so no other account can restore from it, the inventory picker limits the choice to estate-managed snapshots, and re-sharing later remains possible.",
+          "enumSource": "inventory://aws_db_snapshot/address",
+          "required": true
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (shared_accounts \u2192 [])",
+      "group": "protection-backup",
+      "pinned": 1
+    },
+    {
+      "id": "rds-db-snapshot-engineer-request",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to DB snapshot",
+      "summary": "Request any other change to a database snapshot, like sharing it out or renaming it. An engineer authors and reviews the Terraform.",
+      "description": "Free-text request for any change to an aws_db_snapshot not offered as a bounded form \u2014 e.g. sharing outward with a specific AWS account, making the snapshot public ('all'), renaming db_snapshot_identifier, or re-sourcing db_instance_identifier (both ForceNew). An engineer authors and applies the Terraform.",
+      "target": {
+        "attr": "purpose",
+        "resourceType": "aws_db_snapshot"
+      },
+      "params": [
+        {
+          "name": "snapshot",
+          "label": "DB snapshot",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "enumSource": "inventory://aws_db_snapshot/address",
+          "help": "The DB snapshot this request is about, when the estate already tracks one. Leave blank when describing one that is not tracked yet."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "protection-backup"
+    },
+    {
+      "id": "rds-toggle-major-version-upgrade",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle major version upgrade allowance",
+      "summary": "Allow, or block, this database from accepting a future major engine version upgrade. Flipping this flag alone causes no outage.",
+      "description": "Enable or disable allow_major_version_upgrade on an RDS DB instance. This flag only permits a later engine_version major bump to be accepted; per the provider docs, changing the flag itself does not cause an outage and applies asynchronously. Reversible, no downtime.",
+      "target": {
+        "attr": "allow_major_version_upgrade",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true,
+          "help": "Select the RDS instance."
+        },
+        {
+          "name": "enabled",
+          "label": "Allow major version upgrades",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true permits a future major engine_version upgrade; the flag alone does not upgrade or cause an outage."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (allow_major_version_upgrade)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "rds-toggle-blue-green-update",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle Blue/Green deployment mode",
+      "summary": "Route future changes to this database through a low-downtime Blue/Green deployment, or turn that off. Nothing changes today.",
+      "description": "Enable or disable blue_green_update.enabled on an RDS DB instance. This only selects whether a later modification is applied via an RDS Blue/Green low-downtime deployment; setting the flag alone does not modify the running instance. Reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_db_instance",
+        "path": [
+          "blue_green_update"
+        ]
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true,
+          "help": "Select the RDS instance."
+        },
+        {
+          "name": "enabled",
+          "label": "Blue/Green updates enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true routes future changes through a Blue/Green deployment; the flag alone has no effect on the live instance."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (blue_green_update.enabled)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "rds-instance-add-tag",
+      "service": "rds",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a DB instance",
+      "summary": "Add a tag to this database instance. Metadata only — no effect on how it runs.",
+      "description": "Add or overwrite one key/value entry in the tags map of an aws_db_instance. Cosmetic metadata only; reversible and no downtime.",
+      "target": {
+        "resourceType": "aws_db_instance",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true,
+          "help": "Select the RDS instance."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 +=._:/@-]{1,128}$",
+            "maxLength": 128
+          },
+          "help": "1-128 chars. Cannot start with the reserved prefix 'aws:'."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 +=._:/@-]{0,256}$",
+            "maxLength": 256
+          },
+          "help": "0-256 chars."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "create"
+    },
+    {
+      "id": "rds-instance-remove-tag",
+      "service": "rds",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag from a DB instance",
+      "summary": "Remove a tag from this database instance. Metadata only, and it can always be added back.",
+      "description": "Remove one key from the tags map of an aws_db_instance. Cosmetic metadata only; reversible and no downtime.",
+      "target": {
+        "resourceType": "aws_db_instance",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true,
+          "help": "Select the RDS instance."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 +=._:/@-]{1,128}$",
+            "maxLength": 128
+          },
+          "help": "Key of the existing tag entry to remove."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "rds-change-database-insights-mode",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change Database Insights mode",
+      "summary": "Switch this database's insights monitoring between standard and advanced. Advanced costs more, and a reviewer checks the prerequisites.",
+      "consoleLabel": "Database Insights mode",
+      "description": "Set database_insights_mode on an RDS DB instance to 'standard' or 'advanced'. Monitoring-feature change with no downtime and reversible; 'advanced' carries additional cost and prerequisites, so a reviewer confirms intent.",
+      "target": {
+        "attr": "database_insights_mode",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true,
+          "help": "Select the RDS instance."
+        },
+        {
+          "name": "mode",
+          "label": "Database Insights mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "standard",
+              "advanced"
+            ]
+          },
+          "help": "'advanced' incurs additional cost and requires a supported configuration."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (database_insights_mode)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "rds-toggle-dedicated-log-volume",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle dedicated log volume",
+      "summary": "Turn a dedicated log storage volume on or off. Takes effect after a reboot, so expect brief downtime; a reviewer checks prerequisites.",
+      "description": "Enable or disable dedicated_log_volume (DLV) on an RDS DB instance. Per the docs this requires Provisioned IOPS storage and changes the storage architecture, taking effect after a reboot, so a reviewer confirms prerequisites. Reversible.",
+      "target": {
+        "attr": "dedicated_log_volume",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true,
+          "help": "Select the RDS instance."
+        },
+        {
+          "name": "enabled",
+          "label": "Dedicated log volume",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Requires Provisioned IOPS storage (io1/io2/gp3). Takes effect after a reboot."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (dedicated_log_volume)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "rds-change-engine-lifecycle-support",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change engine lifecycle support",
+      "summary": "Turn extended vendor support on or off for an older database engine version. Turning it off stops critical security patches.",
+      "description": "Set engine_lifecycle_support on an RDS for MySQL/PostgreSQL instance to enable or disable RDS Extended Support. Disabling stops critical patches for an end-of-life engine version and has cost implications, so it is guardrailed. Reversible, no downtime.",
+      "target": {
+        "attr": "engine_lifecycle_support",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true,
+          "help": "Select the RDS instance (MySQL/PostgreSQL only)."
+        },
+        {
+          "name": "support",
+          "label": "Engine lifecycle support",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "open-source-rds-extended-support",
+              "open-source-rds-extended-support-disabled"
+            ]
+          },
+          "help": "'-disabled' opts out of RDS Extended Support; the engine then stops receiving critical patches after end of standard support."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (engine_lifecycle_support)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "rds-change-license-model",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change license model",
+      "summary": "Change this database's license model. It must match the engine, and applying it may need a brief restart.",
+      "consoleLabel": "License model",
+      "description": "Set license_model on an RDS DB instance. Valid values are engine-specific (general-public-license for MariaDB/MySQL, license-included or bring-your-own-license for Oracle, license-included for SQL Server, postgresql-license for PostgreSQL); the value must match the instance's engine, which the reviewer confirms. May require a reboot to take effect.",
+      "target": {
+        "attr": "license_model",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true,
+          "help": "Select the RDS instance."
+        },
+        {
+          "name": "model",
+          "label": "License model",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "general-public-license",
+              "license-included",
+              "bring-your-own-license",
+              "postgresql-license"
+            ]
+          },
+          "help": "Must match the instance engine (e.g. postgresql-license for PostgreSQL; bring-your-own-license or license-included for Oracle)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (license_model)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "rds-change-network-type",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change network type",
+      "summary": "Switch this database between IPv4-only and dual-stack IPv4/IPv6 networking. The endpoint update can briefly interrupt connectivity.",
+      "consoleLabel": "Network type",
+      "description": "Set network_type on an RDS DB instance to IPV4 or DUAL (dual-stack IPv4/IPv6). Changing the IP addressing stack can briefly interrupt connectivity while the endpoint updates and requires subnets that support the chosen stack, so it is guardrailed. Reversible.",
+      "target": {
+        "attr": "network_type",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true,
+          "help": "Select the RDS instance."
+        },
+        {
+          "name": "network_type",
+          "label": "Network type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "IPV4",
+              "DUAL"
+            ]
+          },
+          "help": "DUAL requires the DB subnet group's subnets to have IPv6 CIDRs."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (network_type)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "rds-change-performance-insights-retention",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change Performance Insights retention",
+      "summary": "Change how long performance monitoring data is kept. A reviewer confirms monitoring is already turned on before this applies.",
+      "description": "Set performance_insights_retention_period (days) on an RDS DB instance. Per the docs the valid values are 7 (free tier), 731 (2 years), or a multiple of 31. Requires performance_insights_enabled=true, which the reviewer confirms. Tunes diagnostic-data retention only; reversible, no downtime.",
+      "target": {
+        "attr": "performance_insights_retention_period",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true,
+          "help": "Select the RDS instance."
+        },
+        {
+          "name": "retention_days",
+          "label": "Retention period (days)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "7",
+              "31",
+              "62",
+              "93",
+              "124",
+              "155",
+              "186",
+              "217",
+              "248",
+              "279",
+              "310",
+              "341",
+              "372",
+              "403",
+              "434",
+              "465",
+              "496",
+              "527",
+              "558",
+              "589",
+              "620",
+              "651",
+              "682",
+              "713",
+              "731"
+            ]
+          },
+          "help": "7 (free tier), 731 (2 years), or a multiple of 31. Requires Performance Insights to be enabled."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (performance_insights_retention_period)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "rds-change-replica-mode",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change Oracle replica mode",
+      "summary": "Switch an Oracle read replica between mounted and open-read-only mode. Applying restarts the replica, so expect brief downtime.",
+      "description": "Set replica_mode ('mounted' or 'open-read-only') on an Oracle read replica. Affects the replica's read/data-consistency characteristics and restarts the replica to apply, so it is guardrailed. Oracle replicas only; reversible.",
+      "target": {
+        "attr": "replica_mode",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true,
+          "help": "Select the Oracle read replica."
+        },
+        {
+          "name": "mode",
+          "label": "Replica mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "mounted",
+              "open-read-only"
+            ]
+          },
+          "help": "Oracle read replicas only. Switching mode restarts the replica."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (replica_mode)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "rds-change-storage-type",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change storage type",
+      "summary": "Change this database's underlying storage type. No downtime to apply, but cost, performance, and the next cooldown all vary by type.",
+      "consoleLabel": "Storage type",
+      "description": "Set storage_type on an RDS DB instance to standard, gp2, gp3, io1, or io2. Conversions apply online but have cost/performance implications, IOPS-compatibility constraints, and a storage-modification cooldown, so it is guardrailed. Reversible.",
+      "target": {
+        "attr": "storage_type",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true,
+          "help": "Select the RDS instance."
+        },
+        {
+          "name": "storage_type",
+          "label": "Storage type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "standard",
+              "gp2",
+              "gp3",
+              "io1",
+              "io2"
+            ]
+          },
+          "help": "io1/io2 (and gp3 above thresholds) require iops; conversions are subject to a modification cooldown."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (storage_type)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "rds-toggle-upgrade-storage-config",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Upgrade read-replica storage configuration",
+      "summary": "Upgrade the storage file system on a read replica. One-way and restarts the replica, so expect brief downtime; it can't be undone.",
+      "description": "Enable upgrade_storage_config to upgrade the storage file system configuration on an RDS read replica. Per the docs this is only valid together with replicate_source_db (a read replica), which the reviewer confirms; the upgrade restarts the replica and is a one-way storage change scoped to the replica.",
+      "target": {
+        "attr": "upgrade_storage_config",
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "DB instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_instance/address",
+          "required": true,
+          "help": "Select the RDS read replica."
+        },
+        {
+          "name": "enabled",
+          "label": "Upgrade storage config",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Only valid on a read replica (replicate_source_db set). The filesystem upgrade is one-way and restarts the replica."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": false,
+      "downtime": "brief-interruption",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (upgrade_storage_config)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "rds-provision-instance",
+      "service": "rds",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new database",
+      "summary": "Request a brand-new database; an engineer finalizes and reviews the Terraform before it applies. Credentials are never entered here.",
+      "description": "Stand up a managed database as a complete specification: engine, size, storage, standby, backups and network placement. Credentials are never entered here — the engineer wires them through the secrets manager. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_db_instance"
+      },
+      "params": [
+        {
+          "name": "db_name",
+          "label": "Database identifier",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "identifier",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,62}$"
+          },
+          "help": "Lower-case name AWS uses for the endpoint."
+        },
+        {
+          "name": "engine",
+          "label": "Engine",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "engine",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "postgres",
+              "oracle-ee",
+              "sqlserver-ee",
+              "engineer-decides"
+            ]
+          },
+          "default": "postgres",
+          "help": "PostgreSQL is the default today; Oracle and SQL Server appear in some tuning groups. Pick engineer-decides if unsure."
+        },
+        {
+          "name": "engine_version",
+          "label": "Engine version",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "engine_version",
+          "group": "engine",
+          "tier": "advanced",
+          "bounds": {
+            "pattern": "^[0-9][0-9a-z.-]{0,20}$"
+          },
+          "help": "Leave blank for the engineer to pin the version."
+        },
+        {
+          "name": "instance_class",
+          "label": "Instance class",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "instance_class",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "db.t3.large",
+              "db.t3.xlarge",
+              "db.t3.2xlarge",
+              "db.m5.xlarge",
+              "db.m5.2xlarge",
+              "db.r5.xlarge",
+              "db.r5.2xlarge",
+              "db.r5.4xlarge"
+            ]
+          },
+          "default": "db.t3.xlarge",
+          "help": "Size class for processor and memory — the same list the resize action offers."
+        },
+        {
+          "name": "allocated_storage_gib",
+          "label": "Storage (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "allocated_storage",
+          "group": "storage",
+          "bounds": {
+            "min": 20,
+            "max": 16384
+          },
+          "default": 52,
+          "help": "Can grow online later; can never shrink."
+        },
+        {
+          "name": "storage_type",
+          "label": "Storage type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "storage_type",
+          "group": "storage",
+          "bounds": {
+            "allowlist": [
+              "gp3"
+            ]
+          },
+          "default": "gp3",
+          "help": "New databases start on gp3."
+        },
+        {
+          "name": "multi_az",
+          "label": "Standby in a second zone?",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "multi_az",
+          "group": "availability",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Production databases typically run with a standby. Choosing No needs a reason a reviewer will read."
+        },
+        {
+          "name": "backup_retention_days",
+          "label": "Keep backups (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "backup_retention_period",
+          "group": "availability",
+          "bounds": {
+            "min": 1,
+            "max": 35
+          },
+          "default": 7,
+          "help": "Days of automatic backups. This baseline never allows zero, which would mean no backups."
+        },
+        {
+          "name": "backup_window",
+          "label": "Backup window (UTC)",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "backup_window",
+          "group": "availability",
+          "tier": "advanced",
+          "bounds": {
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d-([01]\\d|2[0-3]):[0-5]\\d$"
+          },
+          "help": "Leave blank for AWS to choose a quiet slot."
+        },
+        {
+          "name": "subnet_group",
+          "label": "Network placement",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_subnet_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "db_subnet_group_name",
+          "group": "network",
+          "help": "Which private subnets the database lives in."
+        },
+        {
+          "name": "security_groups",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc_security_group_ids",
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "help": "Who can reach the database port."
+        },
+        {
+          "name": "deletion_protection",
+          "label": "Deletion protection",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "deletion_protection",
+          "group": "availability",
+          "help": "Always on from birth — written into the draft, never asked."
+        },
+        {
+          "name": "resource_name",
+          "label": "Database name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this database holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this database."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new database",
+        "provision database"
+      ],
+      "decisions": [
+        "Master credentials go through the secrets manager — never entered in this portal",
+        "Parameter group choice and tuning",
+        "License model for Oracle or SQL Server engines",
+        "Final storage and IOPS sizing review"
+      ]
+    },
+    {
+      "id": "rds-cluster-create",
+      "service": "rds",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new RDS/Aurora cluster",
+      "summary": "Request a brand-new Aurora/RDS cluster; an engineer reviews the Terraform before it applies. Credentials are never entered here.",
+      "description": "Stand up a clustered database as a complete specification: engine, network placement, backups and encryption. Credentials are never entered here — the engineer wires them through the secrets manager. This provisions the cluster only; at least one instance is added afterward with the companion cluster-instance form. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_rds_cluster"
+      },
+      "params": [
+        {
+          "name": "cluster_name",
+          "label": "Cluster identifier",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "cluster_identifier",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,62}$"
+          },
+          "help": "Lower-case name AWS uses for the cluster endpoint."
+        },
+        {
+          "name": "engine",
+          "label": "Engine",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "engine",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "aurora-mysql",
+              "aurora-postgresql",
+              "engineer-decides"
+            ]
+          },
+          "default": "aurora-postgresql",
+          "help": "Aurora PostgreSQL is the default today; Aurora MySQL is also offered. Pick engineer-decides for a Multi-AZ DB cluster on a non-Aurora engine."
+        },
+        {
+          "name": "engine_version",
+          "label": "Engine version",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "engine_version",
+          "group": "engine",
+          "tier": "advanced",
+          "bounds": {
+            "pattern": "^[0-9][0-9a-z.-]{0,20}$"
+          },
+          "help": "Leave blank for the engineer to pin the version."
+        },
+        {
+          "name": "database_name",
+          "label": "Initial database name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "database_name",
+          "group": "engine",
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$"
+          },
+          "help": "Leave blank for no default database; the engineer or app migration creates it."
+        },
+        {
+          "name": "backup_retention_days",
+          "label": "Keep backups (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "backup_retention_period",
+          "group": "availability",
+          "bounds": {
+            "min": 1,
+            "max": 35
+          },
+          "default": 7,
+          "help": "Days of automatic backups. This baseline never allows zero, which would mean no backups."
+        },
+        {
+          "name": "preferred_backup_window",
+          "label": "Backup window (UTC)",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "preferred_backup_window",
+          "group": "availability",
+          "tier": "advanced",
+          "bounds": {
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d-([01]\\d|2[0-3]):[0-5]\\d$"
+          },
+          "help": "Leave blank for AWS to choose a quiet slot."
+        },
+        {
+          "name": "storage_encrypted",
+          "label": "Storage encryption",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "storage_encrypted",
+          "group": "availability",
+          "help": "Always on from birth — written into the draft, never asked."
+        },
+        {
+          "name": "kms_key",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key_id",
+          "group": "availability",
+          "tier": "advanced",
+          "help": "Leave blank to use the default AWS-managed key. Pick a key only for a customer-managed CMK."
+        },
+        {
+          "name": "subnet_group",
+          "label": "Network placement",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_db_subnet_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "db_subnet_group_name",
+          "group": "network",
+          "help": "Which private subnets the cluster lives in."
+        },
+        {
+          "name": "security_groups",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc_security_group_ids",
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "help": "Who can reach the cluster's port."
+        },
+        {
+          "name": "deletion_protection",
+          "label": "Deletion protection",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "deletion_protection",
+          "group": "availability",
+          "help": "Always on from birth — written into the draft, never asked."
+        },
+        {
+          "name": "resource_name",
+          "label": "Cluster name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this cluster holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this cluster."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new rds cluster",
+        "new aurora cluster",
+        "provision database cluster"
+      ],
+      "decisions": [
+        "Master credentials go through the secrets manager — never entered in this portal",
+        "Cluster and instance parameter group choice and tuning",
+        "Storage type, allocated storage, and IOPS for a Multi-AZ DB cluster or Aurora Serverless v2 capacity range are engineer decisions",
+        "At least one aws_rds_cluster_instance is required before the cluster serves traffic — use the companion cluster-instance form after this is approved",
+        "Global cluster membership and cross-region replication are engineer decisions"
+      ]
+    },
+    {
+      "id": "rds-cluster-instance-create",
+      "service": "rds",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new RDS/Aurora cluster instance",
+      "summary": "Add a new instance to an existing Aurora or Multi-AZ RDS cluster; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new cluster instance as a complete specification: which cluster it joins, engine, and instance class. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_rds_cluster_instance"
+      },
+      "params": [
+        {
+          "name": "cluster",
+          "label": "Cluster",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_rds_cluster/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "cluster_identifier",
+          "attr": "cluster_identifier",
+          "group": "identity",
+          "help": "The Aurora/RDS cluster this instance joins. Create the cluster first if the list is empty."
+        },
+        {
+          "name": "identifier",
+          "label": "Instance identifier",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "identifier",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,62}$"
+          },
+          "help": "Lower-case name AWS uses for this instance's own endpoint."
+        },
+        {
+          "name": "engine",
+          "label": "Engine",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "engine",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "aurora-mysql",
+              "aurora-postgresql",
+              "engineer-decides"
+            ]
+          },
+          "default": "aurora-postgresql",
+          "help": "Must match the cluster's own engine — the engineer verifies this during review."
+        },
+        {
+          "name": "instance_class",
+          "label": "Instance class",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "instance_class",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "db.t3.large",
+              "db.t3.xlarge",
+              "db.t3.2xlarge",
+              "db.m5.xlarge",
+              "db.m5.2xlarge",
+              "db.r5.xlarge",
+              "db.r5.2xlarge",
+              "db.r5.4xlarge"
+            ]
+          },
+          "default": "db.r5.xlarge",
+          "help": "Size class for processor and memory — the same list the single-instance provision form offers."
+        },
+        {
+          "name": "publicly_accessible",
+          "label": "Public accessibility",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": false,
+          "attr": "publicly_accessible",
+          "group": "network",
+          "help": "Never public. These instances are internal-only — written into the draft, never asked."
+        },
+        {
+          "name": "promotion_tier",
+          "label": "Failover promotion tier",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "promotion_tier",
+          "group": "availability",
+          "bounds": {
+            "min": 0,
+            "max": 15
+          },
+          "default": 1,
+          "help": "Lower tiers are promoted to primary first during failover. 0 is highest priority."
+        },
+        {
+          "name": "performance_insights_enabled",
+          "label": "Performance Insights",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "attr": "performance_insights_enabled",
+          "group": "availability",
+          "default": true,
+          "help": "Turn on query-level performance monitoring for this instance."
+        },
+        {
+          "name": "resource_name",
+          "label": "Instance name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this instance serves",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this instance."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new rds cluster instance",
+        "add aurora instance",
+        "provision cluster instance"
+      ],
+      "decisions": [
+        "The engine must match the cluster's engine family — verified by the engineer before apply",
+        "Custom parameter group and enhanced monitoring role are engineer decisions",
+        "Additional read replicas: submit this form again once per extra instance"
+      ]
+    }
+  ]
+}

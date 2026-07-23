@@ -1,0 +1,37 @@
+# __generated__ by terraform from "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.Network/virtualNetworks/vnet-app"
+resource "azurerm_virtual_network" "vnet_app" {
+  name                = "vnet-app"
+  location            = "southeastasia"
+  resource_group_name = "rg-app"
+  address_space       = ["10.0.0.0/16"]
+}
+
+# __generated__ by terraform from "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.Storage/storageAccounts/stappdata001"
+resource "azurerm_storage_account" "stappdata001" {
+  name                     = "stappdata001"
+  resource_group_name      = "rg-app"
+  location                 = "southeastasia"
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+}
+
+# __generated__ by terraform from "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.OperationalInsights/workspaces/law-app"
+resource "azurerm_log_analytics_workspace" "law_app" {
+  name                = "law-app"
+  location            = "southeastasia"
+  resource_group_name = "rg-app"
+  sku                 = "PerGB2018"
+  # a brace inside a string literal — proves split uses a real HCL parser, not brace-counting
+  tags = {
+    query = "union * | where op == \"}\""
+  }
+}
+
+# __generated__ by terraform from "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.CognitiveServices/accounts/cog-app"
+resource "azurerm_cognitive_account" "cog_app" {
+  name                = "cog-app"
+  location            = "southeastasia"
+  resource_group_name = "rg-app"
+  kind                = "OpenAI"
+  sku_name            = "S0"
+}

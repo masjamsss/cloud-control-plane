@@ -1,0 +1,1276 @@
+{
+  "service": "route53",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_route53_zone",
+    "aws_route53_record"
+  ],
+  "summary": "Manage DNS records (modeled for the moment DNS is brought in-repo): add a simple A/AAAA/CNAME/TXT record, add an alias record pointing at an ALB or CloudFront distribution, re-point an existing record's value, tune a record's TTL (self-service), shift traffic by adjusting a weighted record's weight, and delete a confirmed-unused record (irreversible). Terraform applies are instant; the real-world effect is TTL-bound propagation, called out on each change or delete.",
+  "operations": [
+    {
+      "id": "route53-add-record",
+      "service": "route53",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a DNS record (A/AAAA/CNAME/TXT)",
+      "summary": "Add a new DNS record. Reversible, but once it propagates, a wrong value quietly sends traffic to the wrong place.",
+      "description": "Creates a new simple (non-alias) record in the selected hosted zone. Additive and reversible, but the name becomes resolvable once the change propagates (TTL-bound), so a wrong value silently points clients somewhere unintended.",
+      "target": {
+        "resourceType": "aws_route53_record"
+      },
+      "params": [
+        {
+          "name": "zone",
+          "label": "Hosted zone",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_zone/address",
+          "required": true,
+          "help": "The hosted zone the new record is created in."
+        },
+        {
+          "name": "record_name",
+          "label": "Record name (FQDN)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(\\*\\.)?([a-zA-Z0-9_-]+\\.)+[a-zA-Z]{2,}\\.?$",
+            "semantic": "must be within the selected zone's domain"
+          },
+          "help": "Fully-qualified name, e.g. api.internal.example.com. Must sit inside the chosen zone."
+        },
+        {
+          "name": "record_type",
+          "label": "Record type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "A",
+              "AAAA",
+              "CNAME",
+              "TXT"
+            ]
+          },
+          "help": "Simple record types only. Alias records use the dedicated Add-alias operation."
+        },
+        {
+          "name": "records",
+          "label": "Record value(s)",
+          "type": "list",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "semantic": "each value must be valid for the chosen type: IPv4 for A, IPv6 for AAAA, a single FQDN for CNAME, a quoted string for TXT",
+            "maxItems": 20,
+            "pattern": "^[\\x20-\\x7E]{1,255}$"
+          },
+          "help": "One value per rdata entry. CNAME must be exactly one FQDN."
+        },
+        {
+          "name": "ttl",
+          "label": "TTL (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "default": 300,
+          "bounds": {
+            "min": 0,
+            "max": 172800
+          },
+          "help": "How long resolvers cache this record. Lower = faster changes, more query volume."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "route53-add-alias-record",
+      "service": "route53",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add an alias record (to ALB/CloudFront)",
+      "summary": "Point a name at an AWS load balancer or CloudFront distribution. A wrong target misdirects traffic once it propagates.",
+      "description": "Creates an alias A or AAAA record that resolves to an AWS target such as an ALB or CloudFront distribution, with no TTL of its own. Additive and reversible; a wrong alias target DNS name or hosted-zone-id makes the name resolve incorrectly once propagated.",
+      "target": {
+        "resourceType": "aws_route53_record",
+        "block": "alias"
+      },
+      "params": [
+        {
+          "name": "zone",
+          "label": "Hosted zone",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_zone/address",
+          "required": true,
+          "help": "The hosted zone the alias record is created in."
+        },
+        {
+          "name": "record_name",
+          "label": "Record name (FQDN)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(\\*\\.)?([a-zA-Z0-9_-]+\\.)+[a-zA-Z]{2,}\\.?$",
+            "semantic": "must be within the selected zone's domain"
+          },
+          "help": "Fully-qualified name, e.g. portal.example.com."
+        },
+        {
+          "name": "record_type",
+          "label": "Record type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "default": "A",
+          "bounds": {
+            "allowlist": [
+              "A",
+              "AAAA"
+            ]
+          },
+          "help": "Alias records are A (IPv4) or AAAA (IPv6) only."
+        },
+        {
+          "name": "alias_target_dns_name",
+          "label": "Alias target DNS name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^([a-z0-9-]+\\.)+[a-z]{2,}\\.?$",
+            "semantic": "the DNS name of an ALB, NLB, CloudFront distribution, or another Route53 record in this account"
+          },
+          "help": "e.g. web-prod-alb-1234567890.ap-southeast-5.elb.amazonaws.com."
+        },
+        {
+          "name": "alias_target_zone_id",
+          "label": "Alias target hosted zone ID",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^Z[A-Z0-9]{1,31}$"
+          },
+          "help": "The canonical hosted zone ID of the target (ALB regional zone id, or Z2FDTNDATAQYW2 for CloudFront)."
+        },
+        {
+          "name": "evaluate_target_health",
+          "label": "Evaluate target health",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "default": true,
+          "help": "Whether Route53 factors the target's health into responses."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "route53-change-record-value",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a record's value(s)",
+      "summary": "Change where an existing DNS record points. Once it propagates, all traffic to that name follows the new target until the cache expires.",
+      "description": "Re-points an existing record to new rdata value(s). Updates in place and is reversible, but every client that resolves the name after propagation follows the new target, so a mistake re-routes live traffic until the TTL expires.",
+      "target": {
+        "resourceType": "aws_route53_record"
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "Record",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_record/address",
+          "required": true,
+          "help": "The record whose value(s) will change."
+        },
+        {
+          "name": "new_records",
+          "label": "New value(s)",
+          "type": "list",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "semantic": "each value must be valid for the record's existing type; CNAME must be a single FQDN",
+            "maxItems": 20,
+            "pattern": "^[\\x20-\\x7E]{1,255}$"
+          },
+          "help": "Replaces the full set of rdata values for this record."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "connectivity-access",
+      "pinned": 2
+    },
+    {
+      "id": "route53-change-record-ttl",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a record's TTL",
+      "summary": "Change how long resolvers cache this record. Lowering it first makes a later value change take effect faster.",
+      "description": "Adjusts how long resolvers cache a record. Low-risk and reversible; a common pre-cutover step is lowering the TTL ahead of a planned value change so the switch propagates faster.",
+      "target": {
+        "resourceType": "aws_route53_record"
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "Record",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_record/address",
+          "required": true,
+          "help": "The record whose TTL will change. Alias records have no TTL and are not eligible."
+        },
+        {
+          "name": "new_ttl",
+          "label": "New TTL (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 172800
+          },
+          "help": "Cache lifetime in seconds. 60-300 is typical for records that change; 3600+ for stable records."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "scale-performance",
+      "pinned": 1
+    },
+    {
+      "id": "route53-adjust-weighted-routing",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Adjust a weighted record's weight",
+      "summary": "Shift the share of traffic this record receives in a weighted group, e.g. for a canary release or gradual cutover.",
+      "description": "Changes the weight on one record of a weighted routing set to shift the share of traffic it receives (e.g. canary or blue/green cutover). Reversible, but this moves live traffic proportionally once propagated, so it is reviewed before apply.",
+      "target": {
+        "resourceType": "aws_route53_record",
+        "path": [
+          "weighted_routing_policy"
+        ]
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "Weighted record",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_record/address",
+          "required": true,
+          "help": "Must be a record that already has a weighted_routing_policy and a set_identifier."
+        },
+        {
+          "name": "new_weight",
+          "label": "New weight",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 255
+          },
+          "help": "Relative weight vs the other records in the set. 0 drains this endpoint; traffic share = this weight / sum of all weights in the set."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "connectivity-access",
+      "pinned": 3
+    },
+    {
+      "id": "route53-delete-record",
+      "service": "route53",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete a DNS record",
+      "summary": "Permanently delete this DNS record. Once propagated, the name stops resolving and breaks anything still using it. Confirm it's unused first.",
+      "description": "Permanently removes a record from its hosted zone. Irreversible in place - once propagated the name stops resolving (NXDOMAIN), so anything still pointed at it breaks until the record is recreated. Requires typed confirmation that the name is unused.",
+      "target": {
+        "resourceType": "aws_route53_record"
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "Record",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_record/address",
+          "required": true,
+          "help": "The record to permanently delete."
+        },
+        {
+          "name": "confirm_unused",
+          "label": "Confirm unused",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "default": false,
+          "help": "Typed confirmation that no application, alias, health check, or downstream config still relies on this name resolving."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "brief-interruption",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "route53-zone-rename",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Rename a Route 53 hosted zone (name)",
+      "summary": "Rename this hosted zone domain. Breaks delegation for every record inside until repointed — risk of a full outage. Engineer-reviewed.",
+      "description": "Changes the `name` argument of an existing hosted zone. The provider doc marks this in-place (not ForceNew), but it changes the domain the zone answers for and breaks NS delegation from the parent domain/registrar for every record inside it until delegation is repointed \u2014 broad blast radius, potential full outage. Engineer-only; a human reviews the real plan (which may show a replacement) before apply.",
+      "target": {
+        "resourceType": "aws_route53_zone"
+      },
+      "params": [
+        {
+          "name": "zone",
+          "label": "Hosted zone",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_zone/address",
+          "required": true,
+          "help": "The hosted zone to rename."
+        },
+        {
+          "name": "new_name",
+          "label": "New zone name (FQDN)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\\.?$",
+            "semantic": "a valid lowercase DNS domain name"
+          },
+          "help": "New domain name for the zone, e.g. example.com."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "resolution disruption for the zone's names until the parent NS delegation is repointed",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (name)",
+      "group": "tags-naming"
+    },
+    {
+      "id": "route53-zone-change-delegation-set",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a hosted zone's reusable delegation set",
+      "summary": "Applying REPLACES this hosted zone with new name servers: every record is recreated and resolution breaks until delegation is repointed.",
+      "description": "Set `delegation_set_id`. CAUTION: ForceNew on aws_route53_zone — Terraform REPLACES the hosted zone: a new zone with new name servers, and every record must be recreated. DNS resolution is disrupted until the parent NS delegation is repointed. Engineer-authored change.",
+      "target": {
+        "resourceType": "aws_route53_zone"
+      },
+      "params": [
+        {
+          "name": "zone",
+          "label": "Hosted zone",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_zone/address",
+          "required": true,
+          "help": "The public hosted zone whose delegation set will change."
+        },
+        {
+          "name": "delegation_set_id",
+          "label": "Reusable delegation set",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "The reusable delegation set whose NS records will back the zone. Chosen from existing delegation sets in inventory."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "DNS resolution disruption — the hosted zone is replaced with new name servers; records are recreated and the parent NS delegation must be repointed",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "-/+ replace (delegation_set_id is ForceNew)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "route53-zone-set-force-destroy",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set forced destroy for a hosted zone",
+      "summary": "Allow a future zone deletion to also wipe out every record in it, even ones not managed here. No effect until that deletion happens.",
+      "description": "Sets the `force_destroy` flag on an existing hosted zone. When true, a later zone destroy will delete all records in the zone (possibly including records managed outside Terraform). The flag has no runtime effect on live resolution until a destroy actually occurs, but enabling it removes a deletion guardrail against irreversible data loss. Engineer-only.",
+      "target": {
+        "resourceType": "aws_route53_zone"
+      },
+      "params": [
+        {
+          "name": "zone",
+          "label": "Hosted zone",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_zone/address",
+          "required": true,
+          "help": "The hosted zone to set force_destroy on."
+        },
+        {
+          "name": "force_destroy",
+          "label": "Force destroy",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true allows a subsequent zone destroy to remove all records in the zone; false keeps the guardrail."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (force_destroy)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "route53-zone-associate-vpc",
+      "service": "route53",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Associate an additional VPC with a private hosted zone (vpc)",
+      "summary": "Let another VPC resolve this private zone. The wrong VPC wrongly extends internal DNS to it. Engineer-reviewed.",
+      "description": "Adds a `vpc` block to an existing private hosted zone, associating another VPC so its resources resolve the zone's records. Additive, reversible (the association can later be removed), and non-disruptive to existing associations, but selecting the wrong VPC wrongly extends internal DNS to an unintended VPC \u2014 broad blast radius. Groups the tightly-coupled `vpc` block fields (`vpc_id` required, `vpc_region` optional). Private zones only \u2014 `vpc` conflicts with `delegation_set_id`. Engineer-only.",
+      "target": {
+        "resourceType": "aws_route53_zone"
+      },
+      "params": [
+        {
+          "name": "zone",
+          "label": "Hosted zone",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_zone/address",
+          "required": true,
+          "help": "The private hosted zone to associate an additional VPC with."
+        },
+        {
+          "name": "vpc_id",
+          "label": "VPC to associate",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "help": "The VPC whose resources should resolve this private zone."
+        },
+        {
+          "name": "vpc_region",
+          "label": "VPC region",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "bounds": {
+            "pattern": "^[a-z]{2}-[a-z]+-\\d+$"
+          },
+          "help": "AWS region code of the VPC (e.g. ap-southeast-5). Defaults to the provider region if omitted."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ vpc { vpc_id, vpc_region }",
+      "group": "create"
+    },
+    {
+      "id": "route53-change-record-type",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a record's type",
+      "summary": "Change what type of DNS record this is, e.g. CNAME to A. Clients get a different answer; old cached answers may linger. Engineer-reviewed.",
+      "description": "Changes the `type` argument of an existing DNS record (e.g. CNAME to A). Bounded to the record types the provider documents as valid. Identity-changing: clients get a different answer for the same name and resolvers can hold stale or incompatible cached data during the transition, so every application is engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_route53_record"
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "Record",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_record/address",
+          "required": true,
+          "help": "The record whose type will change."
+        },
+        {
+          "name": "new_type",
+          "label": "New record type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "A",
+              "AAAA",
+              "CAA",
+              "CNAME",
+              "DS",
+              "HTTPS",
+              "MX",
+              "NAPTR",
+              "NS",
+              "PTR",
+              "SOA",
+              "SPF",
+              "SRV",
+              "SSHFP",
+              "SVCB",
+              "TLSA",
+              "TXT"
+            ]
+          },
+          "help": "One of the DNS record types the aws_route53_record provider doc lists as valid."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (type)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "route53-set-failover-role",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set a failover record's PRIMARY/SECONDARY role",
+      "summary": "Set whether this record is the primary or backup target in a failover pair. A mismatched pair can make the name stop resolving.",
+      "description": "Sets `failover_routing_policy.type` on a record that already participates in a failover pair to PRIMARY or SECONDARY. Flipping the role changes which target serves all traffic for the name, and a mismatched pair (two PRIMARYs or two SECONDARYs) can black-hole the record, so every application is engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_route53_record",
+        "path": [
+          "failover_routing_policy"
+        ]
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "Failover record",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_record/address",
+          "required": true,
+          "help": "Must be a record that already has a failover_routing_policy and a set_identifier."
+        },
+        {
+          "name": "failover_type",
+          "label": "Failover role",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "PRIMARY",
+              "SECONDARY"
+            ]
+          },
+          "help": "PRIMARY is served while its health check passes, otherwise SECONDARY is served.",
+          "attr": "type"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (failover_routing_policy.type)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "route53-set-allow-overwrite",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Allow or block overwriting a pre-existing record",
+      "summary": "Allow or block a new record from overwriting an existing untracked one of the same name. Allowing it risks clobbering a live record.",
+      "description": "Sets the `allow_overwrite` flag, which controls whether a Terraform create may overwrite a pre-existing record of the same name and type that is not yet in state. Enabling it removes the guardrail against clobbering a live, possibly unrelated record; the provider defaults it to false and notes it is not recommended for most environments, so every application is engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_route53_record"
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "Record",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_record/address",
+          "required": true,
+          "help": "The record whose allow_overwrite flag will change."
+        },
+        {
+          "name": "allow_overwrite",
+          "label": "Allow overwrite",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true lets a Terraform create overwrite an existing record of the same name/type; false (default) blocks it."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (allow_overwrite)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "route53-toggle-alias-evaluate-target-health",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle target health evaluation on an alias record",
+      "summary": "Turn health checks on or off for this alias record. When on, it stops pointing at its target while that target is unhealthy.",
+      "description": "Sets `alias.evaluate_target_health` on an existing alias record \u2014 whether Route 53 checks the alias target's health before answering with it. In-place, reversible behavior toggle; enabling it means the name stops resolving to the target while the target is unhealthy.",
+      "target": {
+        "resourceType": "aws_route53_record",
+        "path": [
+          "alias"
+        ]
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "Alias record",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_record/address",
+          "required": true,
+          "help": "Must be a record that already has an alias block."
+        },
+        {
+          "name": "evaluate_target_health",
+          "label": "Evaluate target health",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true makes Route 53 factor the alias target's health into its answer; false always answers with the target."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (alias.evaluate_target_health)",
+      "group": "connectivity-access",
+      "pinned": 4
+    },
+    {
+      "id": "route53-toggle-multivalue-answer",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle multivalue answer routing",
+      "summary": "Turn multivalue-answer routing on or off, so resolvers can get several healthy answers back for this name at once.",
+      "description": "Sets `multivalue_answer_routing_policy` (true or false) on an existing record. When true, Route 53 returns a multivalue answer for the record; the provider documents that it conflicts with any other routing policy. In-place, reversible routing-behavior toggle.",
+      "target": {
+        "resourceType": "aws_route53_record"
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "Record",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_record/address",
+          "required": true,
+          "help": "Must be a record with a set_identifier and no other routing policy attached."
+        },
+        {
+          "name": "multivalue_answer",
+          "label": "Multivalue answer",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true enables multivalue-answer routing for this record; false disables it."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (multivalue_answer_routing_policy)",
+      "group": "connectivity-access",
+      "pinned": 5
+    },
+    {
+      "id": "route53-set-geolocation-continent",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set a geolocation record's continent",
+      "summary": "Set which continent this geolocation record answers for.",
+      "description": "Sets `geolocation_routing_policy.continent` on a record that already uses geolocation routing, changing which continent-level audience it answers for. Bounded to the seven continent codes Route 53 supports (per the GetGeoLocation API reference the provider doc cites).",
+      "target": {
+        "resourceType": "aws_route53_record",
+        "path": [
+          "geolocation_routing_policy"
+        ]
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "Geolocation record",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_record/address",
+          "required": true,
+          "help": "Must be a record that already has a geolocation_routing_policy and a set_identifier."
+        },
+        {
+          "name": "continent",
+          "label": "Continent code",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "AF",
+              "AN",
+              "AS",
+              "EU",
+              "OC",
+              "NA",
+              "SA"
+            ]
+          },
+          "help": "Two-letter Route 53 continent code: AF Africa, AN Antarctica, AS Asia, EU Europe, OC Oceania, NA North America, SA South America."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (geolocation_routing_policy.continent)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "route53-set-geolocation-country",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set a geolocation record's country",
+      "summary": "Set which country this geolocation record answers for, or make it the default for unmatched locations.",
+      "description": "Sets `geolocation_routing_policy.country` on a record that already uses geolocation routing. The provider doc constrains the value to a two-character ISO 3166-1 alpha-2 country code, or `*` for the default resource record set.",
+      "target": {
+        "resourceType": "aws_route53_record",
+        "path": [
+          "geolocation_routing_policy"
+        ]
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "Geolocation record",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_record/address",
+          "required": true,
+          "help": "Must be a record that already has a geolocation_routing_policy and a set_identifier."
+        },
+        {
+          "name": "country",
+          "label": "Country code",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^([A-Z]{2}|\\*)$",
+            "semantic": "two-character ISO 3166-1 alpha-2 country code (uppercase), or * for the default resource record set"
+          },
+          "help": "e.g. ID, SG, US, or * for the default record."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (geolocation_routing_policy.country)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "route53-set-geoproximity-region",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set a geoproximity record's AWS region",
+      "summary": "Set the AWS region where this geoproximity record's target lives, used to calculate proximity routing.",
+      "description": "Sets `geoproximity_routing_policy.aws_region` on a record that already uses geoproximity routing \u2014 the AWS region where the target resource is present, used to compute proximity. Bounded to AWS region-code format.",
+      "target": {
+        "resourceType": "aws_route53_record",
+        "path": [
+          "geoproximity_routing_policy"
+        ]
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "Geoproximity record",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_record/address",
+          "required": true,
+          "help": "Must be a record that already has a geoproximity_routing_policy and a set_identifier."
+        },
+        {
+          "name": "aws_region",
+          "label": "AWS region",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-z]{2}-[a-z]+-\\d+$",
+            "semantic": "an AWS region code, e.g. ap-southeast-5"
+          },
+          "help": "AWS region where the target resource is present, e.g. ap-southeast-5."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (geoproximity_routing_policy.aws_region)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "route53-adjust-geoproximity-bias",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Adjust a geoproximity record's bias",
+      "summary": "Expand or shrink the geographic area routed to this resource by adjusting its proximity bias.",
+      "description": "Sets `geoproximity_routing_policy.bias` on a record that already uses geoproximity routing, expanding or shrinking the geographic area routed to this resource. Bounded to the provider-documented range of -90 to 90.",
+      "target": {
+        "resourceType": "aws_route53_record",
+        "path": [
+          "geoproximity_routing_policy"
+        ]
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "Geoproximity record",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_record/address",
+          "required": true,
+          "help": "Must be a record that already has a geoproximity_routing_policy and a set_identifier."
+        },
+        {
+          "name": "bias",
+          "label": "Bias",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": -90,
+            "max": 90
+          },
+          "help": "Positive values route more traffic to this resource, negative values route less. Documented range -90 to 90."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (geoproximity_routing_policy.bias)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "route53-set-latency-region",
+      "service": "route53",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set a latency record's AWS region",
+      "summary": "Set the AWS region Route 53 measures latency from for this record, used for latency-based routing.",
+      "description": "Sets `latency_routing_policy.region` on a record that already uses latency-based routing \u2014 the AWS region from which Route 53 measures latency for this record. Bounded to AWS region-code format.",
+      "target": {
+        "resourceType": "aws_route53_record",
+        "path": [
+          "latency_routing_policy"
+        ]
+      },
+      "params": [
+        {
+          "name": "record",
+          "label": "Latency record",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_record/address",
+          "required": true,
+          "help": "Must be a record that already has a latency_routing_policy and a set_identifier."
+        },
+        {
+          "name": "region",
+          "label": "AWS region",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-z]{2}-[a-z]+-\\d+$",
+            "semantic": "an AWS region code, e.g. ap-southeast-5"
+          },
+          "help": "AWS region from which latency is measured for this record, e.g. ap-southeast-5."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (latency_routing_policy.region)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "route53-create-zone",
+      "service": "route53",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new hosted zone",
+      "summary": "Request a brand-new public or private hosted zone; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new aws_route53_zone as a complete specification: its domain name and, optionally, a VPC that makes it private. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_route53_zone"
+      },
+      "params": [
+        {
+          "name": "zone_name",
+          "label": "Domain name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}\\.?$"
+          },
+          "help": "Fully-qualified domain the zone is authoritative for, e.g. internal.example.com."
+        },
+        {
+          "name": "comment",
+          "label": "Comment",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "comment",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 256
+          },
+          "help": "Optional free-text note shown in the console."
+        },
+        {
+          "name": "private_vpc",
+          "label": "VPC (for a private zone)",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_vpc/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc_id",
+          "path": [
+            "vpc"
+          ],
+          "group": "network",
+          "help": "Leave blank for a PUBLIC hosted zone. Pick a VPC to make this a PRIVATE hosted zone, resolvable only inside it."
+        },
+        {
+          "name": "force_destroy",
+          "label": "Allow delete with records present",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": false,
+          "attr": "force_destroy",
+          "group": "protection",
+          "help": "Always off for a new zone \u2014 deleting a zone that still holds records must be an explicit engineer follow-up, written into the draft, never asked."
+        },
+        {
+          "name": "resource_name",
+          "label": "Hosted zone name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this zone is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this zone."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new hosted zone",
+        "provision dns zone",
+        "new private zone",
+        "new public zone"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Leaving the VPC picker blank creates a PUBLIC hosted zone, resolvable from the internet once delegated; picking a VPC creates a PRIVATE zone resolvable only inside it \u2014 confirm which is intended before submitting",
+        "Associating additional VPCs afterward, and a custom/reusable delegation set, are engineer follow-ups (the existing associate-a-VPC action)",
+        "Records are added as a separate follow-up step (the existing add-a-record action) \u2014 a new zone starts with only its default NS/SOA records"
+      ]
+    },
+    {
+      "id": "route53-create-record",
+      "service": "route53",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new DNS record (engineer-reviewed draft)",
+      "summary": "Author a new simple DNS record as a complete draft; an engineer reviews the Terraform before it applies.",
+      "description": "Stand up a new aws_route53_record as a complete specification: zone, name, type, value(s) and TTL. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review. For a routine addition to an established zone, prefer the existing self-service add-a-record action; use this form when a full engineer-reviewed draft is wanted instead.",
+      "target": {
+        "resourceType": "aws_route53_record"
+      },
+      "params": [
+        {
+          "name": "record_key",
+          "label": "Record identifier",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the record in the generated draft \u2014 a DNS record has no separate name field of its own beyond its FQDN."
+        },
+        {
+          "name": "zone",
+          "label": "Hosted zone",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_route53_zone/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "zone_id",
+          "attr": "zone_id",
+          "group": "identity",
+          "help": "The hosted zone the new record is created in."
+        },
+        {
+          "name": "record_name",
+          "label": "Record name (FQDN)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^(\\*\\.)?([a-zA-Z0-9_-]+\\.)+[a-zA-Z]{2,}\\.?$",
+            "semantic": "must be within the selected zone's domain"
+          },
+          "help": "Fully-qualified name, e.g. api.internal.example.com. Must sit inside the chosen zone."
+        },
+        {
+          "name": "record_type",
+          "label": "Record type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "type",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              "A",
+              "AAAA",
+              "CNAME",
+              "TXT"
+            ]
+          },
+          "default": "A",
+          "help": "Simple record types only. Alias records use the existing add-alias-record action."
+        },
+        {
+          "name": "records",
+          "label": "Record value(s)",
+          "type": "list",
+          "source": "user_input",
+          "required": true,
+          "attr": "records",
+          "group": "network",
+          "bounds": {
+            "semantic": "each value must be valid for the chosen type: IPv4 for A, IPv6 for AAAA, a single FQDN for CNAME, a quoted string for TXT",
+            "maxItems": 20,
+            "pattern": "^[\\x20-\\x7E]{1,255}$"
+          },
+          "help": "One value per rdata entry. CNAME must be exactly one FQDN."
+        },
+        {
+          "name": "ttl",
+          "label": "TTL (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "ttl",
+          "group": "network",
+          "default": 300,
+          "bounds": {
+            "min": 0,
+            "max": 172800
+          },
+          "help": "How long resolvers cache this record. Lower = faster changes, more query volume."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new dns record",
+        "provision record",
+        "draft dns record"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "A record change becomes live once it propagates (TTL-bound) and can silently redirect traffic to the wrong place \u2014 verify the value carefully before submitting",
+        "For a routine A/AAAA/CNAME/TXT addition to an established zone, the existing self-service add-a-record action stays the faster path; use this form when a full engineer-reviewed draft is wanted instead",
+        "Alias records and non-simple routing policies (weighted, latency, failover, geolocation, geoproximity) are engineer decisions \u2014 use the existing add-alias-record action or the dedicated set-* actions after creation"
+      ]
+    }
+  ]
+}

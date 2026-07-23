@@ -1,0 +1,195 @@
+{
+  "service": "imagebuilder",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_imagebuilder_image_pipeline"
+  ],
+  "summary": "Provision new EC2 Image Builder pipelines. Every stand-up routes to an engineer for review \u2014 recipes, infrastructure configurations, and day-2 operations land in a later wave.",
+  "operations": [
+    {
+      "id": "imagebuilder-image-pipeline-create",
+      "service": "imagebuilder",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new EC2 Image Builder pipeline",
+      "summary": "Request a brand-new image pipeline; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new image pipeline as a complete specification: the recipe and infrastructure it builds with, scanning, and an optional build schedule. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_imagebuilder_image_pipeline"
+      },
+      "params": [
+        {
+          "name": "pipeline_name",
+          "label": "Pipeline name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, like golden-al2023-pipeline. Names the pipeline in AWS and in the generated draft."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 500
+          },
+          "help": "Shown in the Image Builder console's pipeline list."
+        },
+        {
+          "name": "image_recipe_arn",
+          "label": "Image recipe",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "image_recipe_arn",
+          "group": "recipe",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The image recipe (base image plus build/test components) this pipeline builds from \u2014 an engineer picks the validated recipe during review."
+        },
+        {
+          "name": "infrastructure_configuration_arn",
+          "label": "Infrastructure configuration",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "infrastructure_configuration_arn",
+          "group": "recipe",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The build infrastructure (instance type, subnet, instance profile) this pipeline builds on \u2014 an engineer picks the validated configuration during review."
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "status",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "default": "ENABLED",
+          "help": "DISABLED stops the pipeline from building until turned on."
+        },
+        {
+          "name": "image_scanning_enabled",
+          "label": "Enable image scanning",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "image_scanning_enabled",
+          "path": [
+            "image_scanning_configuration"
+          ],
+          "group": "security",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Scans every built image for known vulnerabilities via Amazon Inspector."
+        },
+        {
+          "name": "schedule_expression",
+          "label": "Build schedule",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "schedule_expression",
+          "path": [
+            "schedule"
+          ],
+          "group": "schedule",
+          "tier": "advanced",
+          "bounds": {
+            "pattern": "^cron\\([^)]+\\)$"
+          },
+          "help": "A cron expression for automatic rebuilds, e.g. cron(0 0 * * ? *) for daily at midnight UTC. Leave blank to build only on manual trigger."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this pipeline does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this pipeline."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new image builder pipeline",
+        "provision ami pipeline",
+        "new golden image pipeline"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "The image recipe and infrastructure configuration are prerequisite resources this catalog does not yet create \u2014 an engineer picks validated existing ones during review",
+        "A container recipe (building into ECR instead of an AMI), a distribution configuration, and cross-account/region distribution are engineer decisions",
+        "Additional workflows (build/test/distribution stage customization) beyond the recipe's defaults are an engineer follow-up"
+      ]
+    }
+  ]
+}

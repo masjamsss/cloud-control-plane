@@ -1,0 +1,99 @@
+{
+  "aws_instance": {
+    "noun": "host",
+    "destroysData": true,
+    "headline": "Replacing a host destroys this EC2 instance and builds a new one.",
+    "consequences": [
+      "Anything on instance-store (ephemeral) disks is permanently lost — only EBS volumes survive the swap.",
+      "The instance ID changes; monitoring, backup plans, or scripts pinned to the old ID stop matching.",
+      "The private IP usually changes and the public IP always changes — an Elastic IP re-attaches only after the new host exists.",
+      "The host is offline for the whole destroy-and-recreate window."
+    ]
+  },
+  "aws_ebs_volume": {
+    "noun": "volume",
+    "destroysData": true,
+    "headline": "Replacing a volume destroys the disk and creates an empty new one.",
+    "consequences": [
+      "All data on the volume is lost unless the new volume is restored from a snapshot — confirm a recent snapshot exists before approving.",
+      "The volume ID changes, and the attachment to its host is torn down and recreated.",
+      "The host cannot use the disk between detach and re-attach; filesystems on it must be re-mounted."
+    ]
+  },
+  "aws_db_instance": {
+    "noun": "database",
+    "destroysData": true,
+    "headline": "Replacing a database destroys this RDS instance and creates a new one.",
+    "consequences": [
+      "Data survives only through a snapshot or restore source — without one the new database starts empty.",
+      "The database is unavailable for the whole replacement, commonly ten minutes to well over an hour.",
+      "Verify application connection settings afterwards — the endpoint address can change with the new instance."
+    ]
+  },
+  "aws_efs_file_system": {
+    "noun": "file system",
+    "destroysData": true,
+    "headline": "Replacing a file system destroys every file stored on it.",
+    "consequences": [
+      "All contents are lost unless restored from an AWS Backup recovery point — confirm one exists before approving.",
+      "The file system ID and its DNS name change; every mount target is recreated and every client must re-mount."
+    ]
+  },
+  "aws_s3_bucket": {
+    "noun": "bucket",
+    "destroysData": true,
+    "headline": "Replacing a bucket deletes the bucket and claims the name again.",
+    "consequences": [
+      "A bucket holding objects cannot be destroyed — the apply fails midway unless force-destroy is set, and force-destroy deletes every object first.",
+      "Bucket names are global: between delete and re-create the name is briefly claimable by anyone on the internet.",
+      "Policies, public-access blocks, versioning, and lifecycle rules re-attach only after the new bucket exists."
+    ]
+  },
+  "aws_security_group": {
+    "noun": "security group",
+    "destroysData": false,
+    "headline": "Replacing a security group swaps its identity, not just its rules.",
+    "consequences": [
+      "The group ID changes; anything referencing the old ID outside this repository — scripts, peered accounts, pasted console rules — silently breaks.",
+      "Network interfaces move to the new group during the apply; connections allowed only by the old group can drop while membership swaps.",
+      "If anything still references the old group at destroy time, the apply can hang until that reference is removed."
+    ]
+  },
+  "aws_lb": {
+    "noun": "load balancer",
+    "destroysData": false,
+    "headline": "Replacing a load balancer changes its DNS name.",
+    "consequences": [
+      "The DNS name is regenerated — anything pointing at the old name (records managed elsewhere, on-premises config, hardcoded URLs) breaks until repointed.",
+      "In-flight connections drop when the old load balancer is destroyed; listeners and certificates re-attach to the new one.",
+      "Health checks start from zero, so targets serve only after they pass again."
+    ]
+  },
+  "aws_lb_target_group": {
+    "noun": "target group",
+    "destroysData": false,
+    "headline": "Replacing a target group deregisters every target.",
+    "consequences": [
+      "All targets drop out and must re-register; health checks restart from scratch, so traffic to them can blip.",
+      "The ARN changes; listener rules in this repository re-point during the same apply, but anything external holding the old ARN breaks."
+    ]
+  },
+  "aws_efs_mount_target": {
+    "noun": "mount target",
+    "destroysData": false,
+    "headline": "Replacing a mount target briefly removes the file system's door in that subnet.",
+    "consequences": [
+      "Clients in the affected availability zone lose the mount until the new target is up — active NFS sessions stall or error.",
+      "The mount target's IP address changes; anything mounting by IP instead of DNS must be updated."
+    ]
+  },
+  "aws_eip": {
+    "noun": "Elastic IP",
+    "destroysData": false,
+    "headline": "Replacing an Elastic IP releases the public address itself.",
+    "consequences": [
+      "The old public IP returns to the AWS pool and may be assigned to another customer — DNS records, firewall allowlists, and partner configurations pointing at it break.",
+      "A released address usually cannot be recovered; treat this as losing the number permanently."
+    ]
+  }
+}

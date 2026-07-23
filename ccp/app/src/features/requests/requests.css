@@ -1,0 +1,1024 @@
+/* ============================================================
+   My requests  (list) — Ledger: display header + firm rule, divider rows
+   (no boxed card chrome). Status colors are unchanged (StatusBadge).
+   ============================================================ */
+/* Display title + firm rule (Ledger contract #1), same page-header
+   treatment as catalog.css's .catalog__head / console.css's
+   .console__header / approvals.css's .apv__head. */
+.reqs__head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+  border-bottom: 2px solid var(--text-primary);
+  padding-bottom: var(--space-7);
+  margin-bottom: var(--space-8);
+}
+.reqs__head-main {
+  min-width: 0;
+}
+.reqs__title {
+  font-size: clamp(32px, 4vw, 46px);
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  margin: 0;
+  color: var(--text-primary);
+}
+.reqs__new {
+  font-size: 14px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.reqs__new:hover {
+  color: var(--accent-hover);
+}
+.reqs__empty {
+  color: var(--text-muted);
+}
+
+/* --- URL-backed filters (Task 3): status + text, shareable as a link --- */
+.reqs__filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin: 0 0 var(--space-6);
+}
+.reqs__filters .searchbar {
+  flex: 0 1 280px;
+}
+.reqs__status-select {
+  flex: 0 0 auto;
+  background: var(--surface-1);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.reqs__status-select:hover {
+  border-color: var(--border-hover);
+}
+.reqs__status-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.reqs__clear {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.reqs__clear:hover {
+  color: var(--accent-hover);
+}
+
+.reqs__lanes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+.reqs__lane-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+}
+.reqs__lane-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  letter-spacing: 0;
+}
+/* Divider rows, not boxed cards (Ledger contract #3) — the rows themselves
+   (.rq-row below) carry the hairline separators; this is just the flex
+   column that holds them, same shape as catalog.css's .catalog__rows. */
+.reqs__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- one request row (stretched-link), a divider row not a boxed card --- */
+.rq-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-2);
+  border-top: 1px solid var(--border-hairline);
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.reqs__list > .rq-row:first-child {
+  border-top: none;
+}
+.rq-row:hover {
+  background: var(--surface-2);
+}
+/* The stretched link's own :focus-visible outline (below) only rings the
+   title text; this whole-row inset ring keeps the "the entire row is the
+   target" affordance the old bordered card gave for free. */
+.rq-row:focus-within {
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.rq-row__mono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.rq-row__body {
+  min-width: 0;
+}
+.rq-row__link {
+  display: inline-block;
+  max-width: 100%;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rq-row__link:hover {
+  color: var(--accent-hover);
+}
+.rq-row__link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-1);
+}
+/* whole card is clickable via the stretched title link */
+.rq-row__link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-3);
+}
+.rq-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+}
+.rq-row__sep {
+  color: var(--text-faint);
+}
+.rq-row__addr {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- right rail: badges + counters over date/PR --- */
+.rq-row__side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+.rq-row__tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+.rq-row__sched {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--steel) 40%, transparent);
+  background: color-mix(in srgb, var(--steel) 10%, transparent);
+  color: var(--access-strong);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.rq-row__end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  white-space: nowrap;
+}
+.rq-row__when {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.rq-row__pr {
+  position: relative; /* lift above the stretched link overlay */
+  z-index: 1;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.rq-row__pr:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+/* ============================================================
+   Request detail
+   ============================================================ */
+.rd__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  margin: var(--space-4) 0 var(--space-6);
+  flex-wrap: wrap;
+}
+.rd__title {
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+}
+.rd__badges {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  align-items: center;
+}
+/* Change-set operation count (Phase B) — a quiet chip beside the status/access
+   badges saying how many operations this one reviewed change enacts. */
+.rd__set-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+  white-space: nowrap;
+}
+
+/* --- horizontal phase stepper (above the timeline) --- */
+.rd__stepper-band {
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  padding: var(--space-6) var(--space-6);
+  margin-bottom: var(--space-7);
+}
+.rd__track-note {
+  margin: 0 0 var(--space-5);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.stepper {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+}
+.stepper__step {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-top: 18px;
+}
+/* connector line runs behind the dots */
+.stepper__step::before {
+  content: '';
+  position: absolute;
+  top: 5px;
+  left: -50%;
+  width: 100%;
+  height: 2px;
+  background: var(--border-hairline);
+}
+.stepper__step:first-child::before {
+  display: none;
+}
+.stepper__step--done::before,
+.stepper__step--current::before,
+.stepper__step--failed::before {
+  background: var(--risk-low);
+}
+.stepper__dot {
+  position: absolute;
+  top: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--surface-1);
+  border: 2px solid var(--border-default);
+  box-sizing: border-box;
+}
+.stepper__step--done .stepper__dot {
+  background: var(--risk-low);
+  border-color: var(--risk-low);
+}
+.stepper__step--current .stepper__dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.stepper__step--failed .stepper__dot {
+  background: var(--risk-high);
+  border-color: var(--risk-high);
+}
+.stepper__label {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--text-faint);
+  padding: 0 4px;
+}
+.stepper__step--done .stepper__label {
+  color: var(--text-muted);
+}
+.stepper__step--current .stepper__label {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.stepper__step--failed .stepper__label {
+  color: var(--risk-high);
+  font-weight: 600;
+}
+
+.rd__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--space-9);
+  align-items: start;
+}
+.rd__main {
+  min-width: 0;
+}
+.rd__facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-3) var(--space-5);
+  margin: 0 0 var(--space-5);
+  font-size: 13px;
+}
+.rd__facts dt {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.rd__facts dd {
+  margin: 0;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rd__facts a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.rd__facts a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+.rd__target-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.rd__justification {
+  font-style: italic;
+  color: var(--text-secondary);
+  border-left: 3px solid var(--border-default);
+  padding-left: var(--space-5);
+  margin: var(--space-5) 0 var(--space-7);
+}
+
+/* --- shared section heading (detail main column) --- */
+.rd-section-title {
+  margin: 0 0 var(--space-4);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+}
+
+/* --- approvals (N of M) --- */
+.rd-approvals {
+  margin: 0 0 var(--space-7);
+  padding: var(--space-6);
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+}
+
+/* --- ADR-0009 cooling-off banner (0021 G1) --- */
+.rd-cooling {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-7);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid color-mix(in srgb, var(--steel) 40%, transparent);
+  border-left: 3px solid var(--steel);
+  border-radius: var(--radius-3);
+  background: color-mix(in srgb, var(--steel) 10%, var(--surface-1));
+}
+.rd-cooling__text {
+  flex: 1 1 320px;
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.rd-cooling__error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--risk-high);
+}
+
+/* --- 0024 §2.2-§2.4 maintenance-window gate panel --- */
+.rd-window {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-7);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border-default));
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius-3);
+  background: color-mix(in srgb, var(--warn) 8%, var(--surface-1));
+}
+.rd-window__text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.rd-window__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+.rd-window__form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.rd-window__input {
+  background: var(--surface-2);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 9px;
+}
+.rd-window__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+.rd-window__error {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--risk-high);
+}
+
+/* --- 0021 G5 quorum-feasibility honesty notices --- */
+.rd-feasibility {
+  margin: 0 0 var(--space-7);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-3);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.rd-feasibility--interim {
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border-default));
+  border-left: 3px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 8%, var(--surface-1));
+  color: var(--text-primary);
+}
+.rd-feasibility--infeasible {
+  border: 1px solid color-mix(in srgb, var(--risk-high) 40%, transparent);
+  border-left: 3px solid var(--risk-high);
+  background: color-mix(in srgb, var(--risk-high) 8%, transparent);
+  color: var(--text-primary);
+}
+
+/* --- what changes --- */
+.rd-changes {
+  margin: 0 0 var(--space-7);
+}
+.rd-changes__summary {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+/* --- generated terraform (diff panel) --- */
+.rd-diff {
+  margin: 0 0 var(--space-7);
+}
+.rd-diff__code {
+  margin: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  overflow-x: auto;
+  display: flex;
+  flex-direction: column;
+}
+.rd-diff__line {
+  white-space: pre;
+}
+.rd-diff__line--add {
+  color: var(--risk-low);
+}
+.rd-diff__line--del {
+  color: var(--risk-high);
+}
+.rd-diff__line--chg {
+  color: var(--risk-med);
+}
+.rd-diff__line--note {
+  color: var(--text-faint);
+}
+
+/* --- schedule --- */
+.rd-schedule {
+  margin: 0 0 var(--space-7);
+}
+.rd-schedule__text {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.rd-schedule__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.rd-schedule__chip--now {
+  border: 1px solid var(--border-default);
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+.rd-schedule__chip--window {
+  border: 1px solid color-mix(in srgb, var(--steel) 40%, transparent);
+  background: color-mix(in srgb, var(--steel) 12%, transparent);
+  color: var(--access-strong);
+}
+
+.rd__timeline {
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  padding: var(--space-6) var(--space-6);
+}
+
+/* shared: side heading + mono value + yaml disclosure (used on detail) */
+.rq__side-title {
+  margin: 0 0 var(--space-5);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+}
+.rq__mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+.rq-preview {
+  margin-top: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+  background: var(--surface-1);
+}
+.rq-preview__summary {
+  cursor: pointer;
+  padding: var(--space-4) var(--space-5);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.rq-preview__summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.rq-preview__yaml {
+  margin: 0;
+  padding: var(--space-5);
+  border-top: 1px solid var(--border-hairline);
+  background: var(--bg-canvas);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* ============================================================
+   Timeline (vertical, in the aside) — Ledger: a hairline spine joins the
+   dots (structure/behavior unchanged; timestamps were already mono).
+   ============================================================ */
+.tl {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+/* The spine — centered on the 9px dot (4px + half the 1px line width). */
+.tl::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: var(--border-hairline);
+}
+.tl__item {
+  display: flex;
+  gap: var(--space-4);
+}
+.tl__dot {
+  position: relative;
+  z-index: 1;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--info);
+  margin-top: 5px;
+  flex: none;
+}
+.tl__label {
+  font-size: 13.5px;
+  color: var(--text-primary);
+}
+.tl__meta {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 900px) {
+  .rd__grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-6);
+  }
+}
+
+@media (max-width: 720px) {
+  .rq-row {
+    grid-template-columns: 34px minmax(0, 1fr);
+    row-gap: var(--space-4);
+  }
+  .rq-row__side {
+    grid-column: 1 / -1;
+    align-items: stretch;
+  }
+  .rq-row__tags {
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rq-row,
+  .rq-row__link {
+    transition: none;
+  }
+  .stepper__step--current .stepper__dot {
+    box-shadow: none;
+  }
+}
+
+/* Evidence chain (accountability surface; populated by the pipeline once armed) */
+.rd-evidence {
+  margin-top: var(--space-7);
+}
+.rd-evidence__grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-3) var(--space-6);
+  margin: 0 0 var(--space-4);
+  font-size: 13px;
+  align-items: baseline;
+}
+.rd-evidence__grid dt {
+  color: var(--text-muted);
+}
+.rd-evidence__grid dd {
+  margin: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.rd-evidence__pending {
+  font-style: italic;
+  color: var(--text-faint);
+}
+.rd-evidence__note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* ── 0034 D15 — "Request again" on terminal requests ───────────────────────── */
+.rd__again {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.rd__again:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-1);
+}
+.rd__again:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ── 0033 A12 — the engineering-PR link panel (Lead write side) ────────────── */
+.rd-linkpr {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-7);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--steel);
+  border-radius: var(--radius-3);
+  background: var(--surface-2);
+}
+.rd-linkpr__text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.rd-linkpr__form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.rd-linkpr__input {
+  flex: 1 1 280px;
+  padding: 7px 10px;
+  background: var(--surface-1);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-2);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+.rd-linkpr__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.rd-linkpr__error {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--risk-high);
+}
+
+/* ── 0035 Docket B — the plan summary panel (RequestDetail + approvals) ────── */
+.plan-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.plan-summary__headline {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.plan-summary__headline--noop {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.plan-summary__pending {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  font-style: italic;
+  color: var(--text-muted);
+}
+.plan-summary__vintage {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.plan-res {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  background: var(--surface-2);
+}
+.plan-res--replace,
+.plan-res--delete {
+  border-left: 3px solid var(--risk-high);
+}
+.plan-res--create {
+  border-left: 3px solid var(--risk-low);
+}
+.plan-res--update {
+  border-left: 3px solid var(--steel);
+}
+.plan-res__summary {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  cursor: pointer;
+  font-size: 13px;
+}
+.plan-res__summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.plan-res__action {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.plan-res__action--replace,
+.plan-res__action--delete {
+  color: var(--risk-high);
+}
+.plan-res__warn {
+  color: var(--warn);
+}
+.plan-res__addr {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.plan-res__forced,
+.plan-res__attrs {
+  margin: 0 var(--space-5) var(--space-4);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+.plan-res__attrs {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.plan-attr {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+.plan-attr__name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.plan-attr__values {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.plan-attr__before {
+  color: var(--text-muted);
+}
+.plan-attr__after {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.plan-consequence {
+  margin: 0 var(--space-5) var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--risk-high);
+  border-radius: var(--radius-2);
+  background: var(--surface-1);
+}
+.plan-consequence__head {
+  margin: 0 0 var(--space-3);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.plan-consequence__data-badge {
+  color: var(--risk-high);
+}
+.plan-consequence__list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+.plan-dependents {
+  margin: 0 var(--space-5) var(--space-4);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+.plan-dependents__head,
+.plan-dependents__none {
+  margin: 0;
+}
+.plan-dependents__none {
+  color: var(--text-muted);
+}
+.plan-dependents__list {
+  margin: 2px 0 0;
+  padding-left: 18px;
+}
+.plan-dependents__list code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}

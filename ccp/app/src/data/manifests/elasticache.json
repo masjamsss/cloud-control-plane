@@ -1,0 +1,456 @@
+{
+  "service": "elasticache",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_elasticache_replication_group",
+    "aws_elasticache_cluster"
+  ],
+  "summary": "Provision brand-new ElastiCache caches: a replicated Redis/Valkey group with automatic failover, or a standalone Memcached/Redis cluster. No ElastiCache estate exists yet, so every operation is a first stand-up an engineer reviews before it applies.",
+  "operations": [
+    {
+      "id": "elasticache-replication-group-create",
+      "service": "elasticache",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new ElastiCache replication group",
+      "summary": "Request a brand-new replicated Redis/Valkey cache with automatic failover; an engineer reviews the Terraform before it applies.",
+      "description": "Stand up a replicated cache as a complete specification: engine, node size, replica count, network placement, and encryption. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_elasticache_replication_group"
+      },
+      "params": [
+        {
+          "name": "replication_group_id",
+          "label": "Replication group identifier",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "replication_group_id",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,38}$"
+          },
+          "help": "Lower-case name AWS uses for the cache's endpoint."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "description",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 255
+          },
+          "help": "What this cache is for — required by the provider, shown in the AWS console."
+        },
+        {
+          "name": "engine",
+          "label": "Engine",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "engine",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "redis",
+              "valkey",
+              "engineer-decides"
+            ]
+          },
+          "default": "redis",
+          "help": "Replication (automatic failover) is only offered for Redis and its Valkey fork."
+        },
+        {
+          "name": "engine_version",
+          "label": "Engine version",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "engine_version",
+          "group": "engine",
+          "tier": "advanced",
+          "bounds": {
+            "pattern": "^[0-9][0-9a-z.-]{0,20}$"
+          },
+          "help": "Leave blank for the engineer to pin the version."
+        },
+        {
+          "name": "node_type",
+          "label": "Node type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "node_type",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "cache.t3.medium",
+              "cache.t3.large",
+              "cache.m5.large",
+              "cache.m5.xlarge",
+              "cache.r5.large",
+              "cache.r5.xlarge",
+              "cache.r5.2xlarge"
+            ]
+          },
+          "default": "cache.m5.large",
+          "help": "Size class for processor and memory on every node in the group."
+        },
+        {
+          "name": "num_cache_clusters",
+          "label": "Node count (primary + replicas)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "num_cache_clusters",
+          "group": "availability",
+          "bounds": {
+            "min": 1,
+            "max": 6
+          },
+          "default": 2,
+          "help": "1 disables replication. 2 or more gives at least one replica for automatic failover."
+        },
+        {
+          "name": "automatic_failover_enabled",
+          "label": "Automatic failover",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "attr": "automatic_failover_enabled",
+          "group": "availability",
+          "default": true,
+          "help": "Requires at least 2 nodes. Promotes a replica automatically if the primary fails."
+        },
+        {
+          "name": "multi_az_enabled",
+          "label": "Multi-AZ",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "attr": "multi_az_enabled",
+          "group": "availability",
+          "default": true,
+          "help": "Spreads nodes across Availability Zones so a single zone outage does not take down the cache."
+        },
+        {
+          "name": "at_rest_encryption_enabled",
+          "label": "Encryption at rest",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "at_rest_encryption_enabled",
+          "group": "availability",
+          "help": "Always on from birth — written into the draft, never asked."
+        },
+        {
+          "name": "transit_encryption_enabled",
+          "label": "Encryption in transit",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "transit_encryption_enabled",
+          "group": "availability",
+          "help": "Always on from birth — written into the draft, never asked."
+        },
+        {
+          "name": "kms_key",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_key_id",
+          "group": "availability",
+          "tier": "advanced",
+          "help": "Leave blank to use the default AWS-managed key. Pick a key only for a customer-managed CMK."
+        },
+        {
+          "name": "subnet_group",
+          "label": "Network placement",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_elasticache_subnet_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "subnet_group_name",
+          "group": "network",
+          "help": "Which private subnets the cache lives in. Empty until the estate provisions or imports an ElastiCache subnet group."
+        },
+        {
+          "name": "security_groups",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "security_group_ids",
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "help": "Who can reach the cache's port."
+        },
+        {
+          "name": "resource_name",
+          "label": "Cache name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this cache holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this cache."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new elasticache replication group",
+        "new redis cluster",
+        "provision cache cluster"
+      ],
+      "decisions": [
+        "AUTH token / Redis password rotation goes through the secrets manager — never entered in this portal",
+        "Cluster mode (sharding via node_group_configuration) is an engineer decision — this form provisions the common single-shard, multi-replica case",
+        "Parameter group tuning and a non-default maintenance/snapshot window are engineer decisions",
+        "Log delivery to CloudWatch or Kinesis Firehose is an engineer follow-up after creation"
+      ]
+    },
+    {
+      "id": "elasticache-cluster-create",
+      "service": "elasticache",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new ElastiCache standalone cluster",
+      "summary": "Request a brand-new standalone Memcached or single-node Redis/Valkey cache; an engineer reviews the Terraform before it applies.",
+      "description": "Stand up a standalone cache as a complete specification: engine, node size and count, and network placement. Use this for Memcached (which has no replication) or a single-node cache; a replicated Redis/Valkey group with failover uses the replication-group form instead. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_elasticache_cluster"
+      },
+      "params": [
+        {
+          "name": "cluster_id",
+          "label": "Cluster identifier",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "cluster_id",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,48}$"
+          },
+          "help": "Lower-case name AWS uses for the cluster's endpoint."
+        },
+        {
+          "name": "engine",
+          "label": "Engine",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "engine",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "memcached",
+              "redis",
+              "valkey",
+              "engineer-decides"
+            ]
+          },
+          "default": "memcached",
+          "help": "Memcached is the classic standalone-cluster use; pick redis or valkey for a single node with no replication."
+        },
+        {
+          "name": "engine_version",
+          "label": "Engine version",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "engine_version",
+          "group": "engine",
+          "tier": "advanced",
+          "bounds": {
+            "pattern": "^[0-9][0-9a-z.-]{0,20}$"
+          },
+          "help": "Leave blank for the engineer to pin the version."
+        },
+        {
+          "name": "node_type",
+          "label": "Node type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "node_type",
+          "group": "engine",
+          "bounds": {
+            "allowlist": [
+              "cache.t3.medium",
+              "cache.t3.large",
+              "cache.m5.large",
+              "cache.m5.xlarge",
+              "cache.r5.large",
+              "cache.r5.xlarge",
+              "cache.r5.2xlarge"
+            ]
+          },
+          "default": "cache.m5.large",
+          "help": "Size class for processor and memory on every node in the cluster."
+        },
+        {
+          "name": "num_cache_nodes",
+          "label": "Node count",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "num_cache_nodes",
+          "group": "engine",
+          "bounds": {
+            "min": 1,
+            "max": 20
+          },
+          "default": 1,
+          "help": "Memcached can shard across multiple nodes; a Redis or Valkey standalone cluster must stay at 1."
+        },
+        {
+          "name": "subnet_group",
+          "label": "Network placement",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_elasticache_subnet_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "subnet_group_name",
+          "group": "network",
+          "help": "Which private subnets the cache lives in. Empty until the estate provisions or imports an ElastiCache subnet group."
+        },
+        {
+          "name": "security_groups",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "security_group_ids",
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "help": "Who can reach the cache's port."
+        },
+        {
+          "name": "resource_name",
+          "label": "Cache name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this cache holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this cache."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new elasticache cluster",
+        "new memcached cluster",
+        "provision cache node"
+      ],
+      "decisions": [
+        "Transit and at-rest encryption for a standalone Redis/Valkey node are engineer decisions — Memcached supports neither",
+        "Parameter group tuning and a non-default port or maintenance window are engineer decisions",
+        "Cross-AZ node placement (preferred_availability_zones) beyond the default is an engineer decision"
+      ]
+    }
+  ]
+}

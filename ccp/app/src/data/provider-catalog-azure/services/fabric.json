@@ -1,0 +1,1 @@
+{"service":"fabric","types":{"azurerm_fabric_capacity":{"attrs":[{"n":"location","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"administration_members","t":"list"},{"n":"tags","t":"map"}],"blocks":[{"n":"sku","m":"single","attrs":[{"n":"name","t":"string","r":1},{"n":"tier","t":"string","r":1}],"blocks":[]}]}}}

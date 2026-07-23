@@ -1,0 +1,1 @@
+{"service":"costoptimizationhub","types":{"aws_costoptimizationhub_enrollment_status":{"attrs":[{"n":"include_member_accounts","t":"bool"}],"blocks":[]},"aws_costoptimizationhub_preferences":{"attrs":[{"n":"member_account_discount_visibility","t":"string"},{"n":"savings_estimation_mode","t":"string"}],"blocks":[]}}}

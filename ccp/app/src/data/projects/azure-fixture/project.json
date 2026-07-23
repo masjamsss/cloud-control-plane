@@ -1,0 +1,20 @@
+{
+  "id": "azure-fixture",
+  "name": "Azure fixture — southeastasia subscription",
+  "provider": "azure",
+  "github": { "owner": "example-org", "repo": "azure-fixture", "mode": "personal" },
+  "region": "southeastasia",
+  "seedLead": {
+    "username": "lead",
+    "displayName": "Lead",
+    "teamId": "cloud",
+    "defaultPassword": "ccp-lead"
+  },
+  "teams": [
+    {
+      "id": "cloud",
+      "name": "Cloud",
+      "serviceSlugs": []
+    }
+  ]
+}

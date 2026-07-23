@@ -1,0 +1,8 @@
+--- a/environments/prod/assoc.tf
++++ b/environments/prod/assoc.tf
+@@ -1,4 +1,4 @@
+ resource "aws_lb_listener" "web" {
+   port            = 443
+-  certificate_arn = "arn:aws:acm:ap-southeast-5:123456789012:certificate/old"
++  certificate_arn = "arn:aws:acm:ap-southeast-5:123456789012:certificate/new"
+ }

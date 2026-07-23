@@ -1,0 +1,92 @@
+{
+  "service": "macie",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_macie2_account"
+  ],
+  "summary": "Provision and operate Amazon Macie sensitive-data discovery. Enabling it account-wide is an engineer-gated create form; pausing or disabling it stops discovery and never auto-applies.",
+  "operations": [
+    {
+      "id": "macie-enable-account",
+      "service": "macie",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Enable Macie",
+      "summary": "Enable Macie for the account. Pausing or disabling it stops sensitive-data discovery.",
+      "consoleLabel": "Macie",
+      "description": "Create an aws_macie2_account, enabling Amazon Macie sensitive-data discovery for the account. Classification jobs are a reviewed follow-up; this turns Macie on. Submitting drafts the resource and routes it to an engineer to review and finish.",
+      "target": {
+        "resourceType": "aws_macie2_account"
+      },
+      "params": [
+        {
+          "name": "account_label",
+          "label": "Account label",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "A short label naming the Terraform block only; the account-level resource has no name attribute in AWS.",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          }
+        },
+        {
+          "name": "finding_publishing_frequency",
+          "label": "Finding frequency",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "finding_publishing_frequency",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "FIFTEEN_MINUTES",
+              "ONE_HOUR",
+              "SIX_HOURS"
+            ]
+          },
+          "default": "ONE_HOUR",
+          "help": "How often Macie publishes finding updates."
+        },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "status",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "PAUSED"
+            ]
+          },
+          "default": "ENABLED",
+          "help": "ENABLED turns Macie on; PAUSED suspends discovery without removing it."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "macie",
+        "sensitive data",
+        "enable macie",
+        "data discovery"
+      ],
+      "decisions": [
+        "Enabling Macie starts sensitive-data discovery account-wide; pausing or disabling it stops that visibility, so status changes are engineer-reviewed.",
+        "Classification jobs and custom data identifiers are a reviewed follow-up; this provisions Macie enabled with none defined yet."
+      ]
+    }
+  ]
+}

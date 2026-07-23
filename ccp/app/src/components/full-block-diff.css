@@ -1,0 +1,90 @@
+/* Full-block before/after viewer — token-driven, theme-aware. Ledger: a
+   tighter, all-mono header strip above the two panes; the panes' own
+   changed-line tinting is untouched (risk-adjacent semantics, not part of
+   this restyle). */
+.fbd {
+  margin-top: var(--space-4);
+}
+.fbd__provenance {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.fbd__file {
+  color: var(--text-secondary);
+}
+.fbd__line {
+  color: var(--text-faint);
+}
+.fbd__removed-tag {
+  font-weight: 600;
+  color: var(--crit);
+}
+.fbd__panes {
+  display: grid;
+  /* minmax(0, 1fr), not bare 1fr (= minmax(auto, 1fr)): a plain 1fr track
+     floors at its content's min-content width, which for a white-space:pre
+     code pane (.fbd__row/.fbd__code below) is the longest line — so the
+     track never shrinks and the grid blows the page out horizontally
+     instead of letting .fbd__code's own overflow-x:auto scroll internally.
+     minmax(0, 1fr) removes that floor so the track (and therefore the
+     pane) respects the grid's own container width. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+}
+.fbd__panes--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (max-width: 960px) {
+  .fbd__panes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* Mono CURRENT/AFTER labels (Ledger contract #4 idiom — small mono
+   uppercase, same as console.css's .console__group-title). */
+.fbd__pane-title {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.fbd__code {
+  margin: 0;
+  padding: var(--space-4) 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-x: auto;
+}
+.fbd__row {
+  display: flex;
+  padding: 0 var(--space-4);
+  white-space: pre;
+}
+.fbd__row--del {
+  background: color-mix(in srgb, var(--risk-high) 12%, transparent);
+}
+.fbd__row--add {
+  background: color-mix(in srgb, var(--risk-low) 14%, transparent);
+}
+.fbd__num {
+  flex: 0 0 44px;
+  text-align: right;
+  padding-right: var(--space-4);
+  color: var(--text-faint);
+  user-select: none;
+}
+.fbd__text {
+  color: var(--text-primary);
+}

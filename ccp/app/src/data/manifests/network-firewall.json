@@ -1,0 +1,153 @@
+{
+  "service": "network-firewall",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_networkfirewall_firewall"
+  ],
+  "summary": "Provision a new AWS Network Firewall. Greenfield today (none exists yet in this estate) \u2014 the create stands up the firewall with one starter subnet mapping; the firewall policy (its rule groups) and routing traffic through it are engineer follow-ups.",
+  "operations": [
+    {
+      "id": "network-firewall-create",
+      "service": "network-firewall",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new network firewall",
+      "summary": "Request a brand-new AWS Network Firewall; an engineer finalizes and reviews the Terraform, including its policy, before it applies.",
+      "description": "Stand up a new aws_networkfirewall_firewall as a complete specification: VPC, firewall policy and a starter subnet mapping. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_networkfirewall_firewall"
+      },
+      "params": [
+        {
+          "name": "firewall_name",
+          "label": "Firewall name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes."
+        },
+        {
+          "name": "vpc",
+          "label": "VPC",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_vpc/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc_id",
+          "group": "network",
+          "help": "The VPC this firewall inspects traffic for."
+        },
+        {
+          "name": "firewall_policy_arn",
+          "label": "Firewall policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "firewall_policy_arn",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The engineer picks or authors the stateless/stateful rule-group policy during review \u2014 a firewall filters nothing without one."
+        },
+        {
+          "name": "subnet",
+          "label": "Subnet (firewall endpoint)",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_id",
+          "path": [
+            "subnet_mapping"
+          ],
+          "group": "network",
+          "help": "One subnet the firewall places an inspection endpoint in. Add more Availability Zones afterward \u2014 this form seeds one starter mapping."
+        },
+        {
+          "name": "delete_protection",
+          "label": "Delete protection",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "delete_protection",
+          "group": "protection",
+          "help": "Always on for a new firewall \u2014 written into the draft, never asked."
+        },
+        {
+          "name": "resource_name",
+          "label": "Firewall name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this firewall is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this firewall."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new network firewall",
+        "provision networkfirewall",
+        "traffic inspection"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "The firewall policy (stateless default actions plus stateful rule groups) is an engineer decision \u2014 pick or author it before this firewall can meaningfully filter traffic; an empty/permissive policy passes everything",
+        "This form seeds exactly one subnet mapping (one Availability Zone); additional zones are an engineer follow-up",
+        "Routing traffic THROUGH this firewall (route table changes pointing at its VPC endpoints, in both directions) is a separate, required follow-up \u2014 creating the firewall alone redirects no traffic"
+      ]
+    }
+  ]
+}

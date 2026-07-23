@@ -1,0 +1,9 @@
+--- a/environments/prod/main.tf
++++ b/environments/prod/main.tf
+@@ -2,5 +2,5 @@
+   name               = "blocklist"
+   scope              = "REGIONAL"
+   ip_address_version = "IPV4"
+-  addresses          = ["10.0.0.0/24"]
++  addresses          = ["10.0.0.0/24", "10.1.0.0/24"]
+ }

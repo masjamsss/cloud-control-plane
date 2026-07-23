@@ -1,0 +1,1 @@
+{"service":"savingsplans","types":{"aws_savingsplans_savings_plan":{"attrs":[{"n":"commitment","t":"string","r":1},{"n":"savings_plan_offering_id","t":"string","r":1},{"n":"purchase_time","t":"string"},{"n":"tags","t":"map"},{"n":"upfront_payment_amount","t":"string"}],"blocks":[]}}}

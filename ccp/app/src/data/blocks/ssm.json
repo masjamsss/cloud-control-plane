@@ -1,0 +1,7 @@
+{
+ "aws_ssm_parameter.app_config": {
+  "file": "ccp/app/fixtures-estate/ssm.tf",
+  "line": 3,
+  "source": "resource \"aws_ssm_parameter\" \"app_config\" {\n  name        = \"/app/checkout/feature-flags\"\n  type        = \"String\"\n  value       = \"{}\"\n  description = \"Checkout service feature flag parameter\"\n\n  tags = {\n    Name = \"app-config\"\n    PIC  = \"user01@example.com\"\n  }\n}"
+ }
+}

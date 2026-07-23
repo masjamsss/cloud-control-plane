@@ -1,0 +1,9 @@
+--- a/environments/prod/locals.tf
++++ b/environments/prod/locals.tf
+@@ -2,5 +2,6 @@
+   legacy_host_alarms = {
+     web01 = "cpu-high"
+     db01  = "mem-high"
++    api01 = "disk-high"
+   }
+ }

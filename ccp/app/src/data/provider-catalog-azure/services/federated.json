@@ -1,0 +1,1 @@
+{"service":"federated","types":{"azurerm_federated_identity_credential":{"attrs":[{"n":"audience","t":"list","r":1},{"n":"issuer","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"subject","t":"string","r":1},{"n":"user_assigned_identity_id","t":"string"}],"blocks":[]}}}

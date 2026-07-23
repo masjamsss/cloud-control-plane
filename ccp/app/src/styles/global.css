@@ -1,0 +1,134 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Typographic polish: balance short headings so no single word is orphaned on
+   the last line, and let the browser optimize body raggedness. Progressive —
+   silently ignored where unsupported, zero layout risk. */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+/* Ledger display type scale — the shared baseline every page title, section
+   heading and sub-heading in the app renders on. Each feature stylesheet still
+   sets its own font-size/line-height per page rank (28–46px by rank — see
+   e.g. .catalog__title), so this establishes only the qualities that make the
+   whole app read as one voice: tight tracking, near-1 line-height, and a
+   weight in the 600–660 band. Every existing h1/h2/h3 class already declares
+   its own font-size/weight with higher specificity, so this is additive —
+   it changes nothing that isn't already overridden, and gives any future
+   heading a sane Ledger default with zero extra CSS. */
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+a {
+  color: var(--brass);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+code,
+pre {
+  font-family: var(--mono);
+}
+
+/* Page-identity eyebrow — the one-line tag every top-level page header shows
+   above its display title (Home's `.catalog__eyebrow` was the original; this
+   is the shared rule every other page's header reuses so the whole app reads
+   as one designed surface, not one polished page plus five plain ones).
+   Decorative-adjacent but real text (AA holds: accent >= 4.5:1 on canvas in
+   every palette — gate-verified). */
+.page-eyebrow {
+  margin: 0 0 var(--space-4);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* Shared dropdown-menu entrance (account menu, notifications, row actions). */
+@keyframes menu-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Refined custom caret for the admin/dashboard dropdowns (native <select>). */
+select.enrol__input,
+.users__cell-select,
+.dash__select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2379828d' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px;
+}
+
+/* Reduced-motion backstop: honors the user's OS setting for any motion not
+   already covered by a component's own reduced-motion block. Feedback remains
+   (opacity/color still resolve); only movement/duration collapse. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,280 @@
+{
+  "service": "sqs",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_sqs_queue"
+  ],
+  "summary": "Provision new SQS queues \u2014 standard or FIFO. Greenfield today (no SQS queue exists yet in this estate) \u2014 the create stands up the queue with its delivery and encryption settings; dead-letter routing and a custom access policy are engineer follow-ups.",
+  "operations": [
+    {
+      "id": "sqs-queue-create",
+      "service": "sqs",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new SQS queue",
+      "summary": "Request a brand-new standard or FIFO queue; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a queue as a complete specification: standard vs FIFO, retention, visibility timeout, and encryption. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_sqs_queue"
+      },
+      "params": [
+        {
+          "name": "queue_name",
+          "label": "Queue name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_-]{1,75}(\\.fifo)?$"
+          },
+          "help": "Up to 80 characters. A FIFO queue's name must end in .fifo (matching the FIFO queue toggle below)."
+        },
+        {
+          "name": "fifo_queue",
+          "label": "FIFO queue",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "fifo_queue",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "default": "false",
+          "help": "FIFO guarantees exact-once, in-order delivery within a message group at lower throughput; standard is unordered/at-least-once and scales further. Cannot be changed after creation."
+        },
+        {
+          "name": "content_based_deduplication",
+          "label": "Content-based deduplication",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "content_based_deduplication",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "default": "false",
+          "dependsOn": {
+            "param": "fifo_queue",
+            "equals": true
+          },
+          "help": "FIFO only. Deduplicates on a SHA-256 hash of message body instead of a caller-supplied dedup id."
+        },
+        {
+          "name": "deduplication_scope",
+          "label": "Deduplication scope",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "deduplication_scope",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "queue",
+              "messageGroup"
+            ]
+          },
+          "default": "queue",
+          "dependsOn": {
+            "param": "fifo_queue",
+            "equals": true
+          },
+          "help": "FIFO only. messageGroup unlocks higher throughput (with fifo_throughput_limit set to perMessageGroupId)."
+        },
+        {
+          "name": "fifo_throughput_limit",
+          "label": "FIFO throughput limit",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "fifo_throughput_limit",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "perQueue",
+              "perMessageGroupId"
+            ]
+          },
+          "default": "perQueue",
+          "dependsOn": {
+            "param": "fifo_queue",
+            "equals": true
+          },
+          "help": "FIFO only. perMessageGroupId requires deduplication_scope=messageGroup and gives each message group its own throughput quota."
+        },
+        {
+          "name": "visibility_timeout_seconds",
+          "label": "Visibility timeout (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "visibility_timeout_seconds",
+          "group": "delivery",
+          "bounds": {
+            "min": 0,
+            "max": 43200
+          },
+          "default": 30,
+          "help": "How long a received message is hidden from other consumers before it becomes visible again."
+        },
+        {
+          "name": "message_retention_seconds",
+          "label": "Message retention (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "message_retention_seconds",
+          "group": "delivery",
+          "bounds": {
+            "min": 60,
+            "max": 1209600
+          },
+          "default": 345600,
+          "help": "How long an undelivered message is kept. 1,209,600 seconds = 14 days (the maximum)."
+        },
+        {
+          "name": "max_message_size",
+          "label": "Max message size (bytes)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "max_message_size",
+          "group": "delivery",
+          "bounds": {
+            "min": 1024,
+            "max": 262144
+          },
+          "default": 262144,
+          "help": "262,144 bytes (256 KiB) is the AWS maximum."
+        },
+        {
+          "name": "delay_seconds",
+          "label": "Delivery delay (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "delay_seconds",
+          "group": "delivery",
+          "bounds": {
+            "min": 0,
+            "max": 900
+          },
+          "default": 0,
+          "help": "Delays every message this many seconds before consumers can see it."
+        },
+        {
+          "name": "receive_wait_time_seconds",
+          "label": "Long-poll wait time (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "receive_wait_time_seconds",
+          "group": "delivery",
+          "bounds": {
+            "min": 0,
+            "max": 20
+          },
+          "default": 0,
+          "help": "Above 0 enables long polling, reducing empty-receive API calls and cost."
+        },
+        {
+          "name": "sqs_managed_sse_enabled",
+          "label": "SSE-SQS (AWS-managed encryption)",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "sqs_managed_sse_enabled",
+          "group": "encryption",
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "default": "true",
+          "help": "Amazon SQS-managed server-side encryption. Mutually exclusive with the customer-managed KMS key below \u2014 pick one during review."
+        },
+        {
+          "name": "kms_master_key_id",
+          "label": "Customer-managed KMS key (SSE-KMS)",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_master_key_id",
+          "group": "encryption",
+          "help": "Leave blank to use SSE-SQS above instead of a customer-managed key."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this queue is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this queue."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new queue",
+        "provision sqs queue",
+        "new sqs",
+        "fifo queue"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Dead-letter queue wiring (redrive_policy) and a custom queue access policy are engineer follow-ups after creation."
+      ]
+    }
+  ]
+}

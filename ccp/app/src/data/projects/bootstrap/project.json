@@ -1,0 +1,17 @@
+{
+  "id": "bootstrap",
+  "name": "Bootstrap — importer sandbox",
+  "github": { "owner": "example-org", "repo": "example-bootstrap", "mode": "personal" },
+  "region": "us-east-1",
+  "timezone": "Asia/Tokyo",
+  "timezoneLabel": "JST",
+  "seedLead": {
+    "username": "alice",
+    "displayName": "Alice",
+    "teamId": "platform",
+    "defaultPassword": "alice"
+  },
+  "teams": [
+    { "id": "platform", "name": "Platform", "serviceSlugs": ["iam", "kms", "s3"] }
+  ]
+}

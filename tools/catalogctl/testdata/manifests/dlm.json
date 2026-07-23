@@ -1,0 +1,103 @@
+{
+  "service": "dlm",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_dlm_lifecycle_policy"
+  ],
+  "summary": "DLM schedule editing via 0010 U1 (sibling schedule selected by schedule_name).",
+  "operations": [
+    {
+      "id": "dlm-set-schedule-copy-tags",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle copy_tags on a DLM schedule",
+      "description": "Set copy_tags inside one selected schedule of a DLM lifecycle policy.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "path": [
+          "policy_details",
+          "schedule"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "DLM policy",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "selector",
+          "matchAttr": "schedule_name"
+        },
+        {
+          "name": "copy_tags",
+          "label": "Copy tags",
+          "type": "bool",
+          "source": "user_input",
+          "required": true
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "terraformCapability": "~ update (schedule[selected].copy_tags)"
+    },
+    {
+      "id": "dlm-merge-schedule-tags",
+      "service": "dlm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Merge tags into a DLM schedule (tags_to_add)",
+      "description": "Merge keys into tags_to_add inside one selected schedule of a DLM lifecycle policy.",
+      "target": {
+        "resourceType": "aws_dlm_lifecycle_policy",
+        "block": "tags_to_add",
+        "path": [
+          "policy_details",
+          "schedule"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "DLM policy",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "schedule_name",
+          "label": "Schedule",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "selector",
+          "matchAttr": "schedule_name"
+        },
+        {
+          "name": "tags_to_add",
+          "label": "Tags to add",
+          "type": "map",
+          "source": "user_input",
+          "required": true
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "terraformCapability": "~ update (schedule[selected].tags_to_add)"
+    }
+  ]
+}

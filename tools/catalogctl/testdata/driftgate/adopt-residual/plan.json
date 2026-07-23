@@ -1,0 +1,13 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_instance.sample01",
+      "change": {
+        "actions": ["update"],
+        "before": { "tags": { "Owner": "someone-else", "Env": "prod" } },
+        "after": { "tags": { "Owner": "bi-team", "Env": "prod" } }
+      }
+    }
+  ]
+}

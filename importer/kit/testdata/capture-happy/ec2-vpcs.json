@@ -1,0 +1,10 @@
+{
+  "Vpcs": [
+    {
+      "VpcId": "vpc-0d0d0d0d0d0d0d001",
+      "CidrBlock": "10.99.0.0/16",
+      "IsDefault": false,
+      "Tags": [{ "Key": "Name", "Value": "vpc-main" }]
+    }
+  ]
+}

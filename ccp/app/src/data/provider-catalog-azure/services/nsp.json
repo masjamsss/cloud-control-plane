@@ -1,0 +1,1 @@
+{"service":"nsp","types":{"azurerm_network_security_perimeter":{"attrs":[{"n":"location","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"tags","t":"map"}],"blocks":[]}}}

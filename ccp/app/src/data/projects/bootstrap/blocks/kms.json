@@ -1,0 +1,7 @@
+{
+  "aws_kms_key.state": {
+    "file": "example-bootstrap/kms.tf",
+    "line": 1,
+    "source": "resource \"aws_kms_key\" \"state\" {\n  description             = \"Example state-encryption key\"\n  deletion_window_in_days = 30\n  enable_key_rotation     = true\n\n  tags = {\n    Name = \"state\"\n  }\n}"
+  }
+}

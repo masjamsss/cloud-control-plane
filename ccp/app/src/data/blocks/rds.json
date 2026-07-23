@@ -1,0 +1,12 @@
+{
+ "aws_db_subnet_group.main": {
+  "file": "ccp/app/fixtures-estate/rds.tf",
+  "line": 3,
+  "source": "resource \"aws_db_subnet_group\" \"main\" {\n  name       = \"app-db-subnet-group\"\n  subnet_ids = [aws_subnet.private_a.id, aws_subnet.public_b.id]\n\n  tags = {\n    Name = \"app-db-subnet-group\"\n    PIC  = \"user02@example.com\"\n  }\n}"
+ },
+ "aws_db_instance.app_db": {
+  "file": "ccp/app/fixtures-estate/rds.tf",
+  "line": 13,
+  "source": "resource \"aws_db_instance\" \"app_db\" {\n  identifier             = \"app-db\"\n  engine                 = \"postgres\"\n  engine_version         = \"16.4\"\n  instance_class         = \"db.t3.large\"\n  allocated_storage      = 100\n  storage_type           = \"gp3\"\n  multi_az               = true\n  backup_retention_period = 7\n  db_subnet_group_name   = aws_db_subnet_group.main.name\n  vpc_security_group_ids = [aws_security_group.db.id]\n  username                    = \"app_admin\"\n  manage_master_user_password = true # AWS-managed via Secrets Manager — no literal password\n  skip_final_snapshot         = false\n  final_snapshot_identifier = \"app-db-final\"\n\n  tags = {\n    Name        = \"app-db\"\n    PIC         = \"user02@example.com\"\n    Description = \"Primary application database\"\n  }\n}"
+ }
+}

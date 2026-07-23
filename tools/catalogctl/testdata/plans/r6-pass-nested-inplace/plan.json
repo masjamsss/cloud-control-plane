@@ -1,0 +1,31 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_instance.sample02",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "metadata_options": [
+            {
+              "http_tokens": "optional",
+              "http_endpoint": "enabled",
+              "http_put_response_hop_limit": 1
+            }
+          ]
+        },
+        "after": {
+          "metadata_options": [
+            {
+              "http_tokens": "required",
+              "http_endpoint": "enabled",
+              "http_put_response_hop_limit": 1
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

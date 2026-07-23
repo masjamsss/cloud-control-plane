@@ -1,0 +1,14 @@
+--- a/environments/prod/sg.tf
++++ b/environments/prod/sg.tf
+@@ -7,4 +7,11 @@
+     protocol    = "tcp"
+     cidr_blocks = ["10.200.0.0/16"]
+   }
++
++  ingress {
++    protocol   = "tcp"
++    from_port  = 8080
++    to_port    = 8080
++    cidr_block = "10.20.0.0/16"
++  }
+ }

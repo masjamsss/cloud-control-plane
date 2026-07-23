@@ -1,0 +1,173 @@
+{
+  "service": "u4-fixtures",
+  "operations": [
+    {
+      "id": "cloudtrail-set-kms-key",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Encrypt a CloudTrail trail with a KMS key",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "terraformCapability": "~ update (kms_key_id)",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "trail",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "kms_key",
+          "source": "inventory",
+          "type": "string",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn"
+        }
+      ]
+    },
+    {
+      "id": "cloudtrail-set-kms-key-noref",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Encrypt a CloudTrail trail (reference missing refAttr)",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "terraformCapability": "~ update (kms_key_id)",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "trail",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "kms_key",
+          "source": "inventory",
+          "type": "string",
+          "required": true,
+          "role": "reference"
+        }
+      ]
+    },
+    {
+      "id": "cloudtrail-set-kms-key-typed",
+      "service": "cloudtrail",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Encrypt a CloudTrail trail with a KMS key (enumSource-typed reference)",
+      "target": {
+        "resourceType": "aws_cloudtrail"
+      },
+      "terraformCapability": "~ update (kms_key_id)",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "trail",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "kms_key",
+          "source": "inventory",
+          "type": "string",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "enumSource": "inventory://aws_kms_key/arn"
+        }
+      ]
+    },
+    {
+      "id": "config-set-role-arn",
+      "service": "config",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Point a Config recorder at an IAM service role (enumSource-typed reference)",
+      "target": {
+        "resourceType": "aws_config_configuration_recorder"
+      },
+      "terraformCapability": "~ update (role_arn)",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "recorder",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "role",
+          "source": "inventory",
+          "type": "string",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "enumSource": "inventory://aws_iam_role/arn"
+        }
+      ]
+    },
+    {
+      "id": "autoscaling-set-termination-policies",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set an ASG's termination policies",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "terraformCapability": "~ update (termination_policies)",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "asg",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "termination_policies",
+          "source": "user_input",
+          "type": "array",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "rds-snapshot-make-private",
+      "service": "rds",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Make a DB snapshot private",
+      "target": {
+        "resourceType": "aws_db_snapshot"
+      },
+      "terraformCapability": "~ update (shared_accounts)",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "snapshot",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "shared_accounts",
+          "source": "user_input",
+          "type": "array",
+          "required": false,
+          "role": "const",
+          "const": [],
+          "attr": "shared_accounts"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"service":"resource-locks","types":{"azurerm_management_lock":{"attrs":[{"n":"lock_level","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"scope","t":"string","r":1},{"n":"notes","t":"string"}],"blocks":[]}}}

@@ -1,0 +1,634 @@
+{
+  "$comment": [
+    "Resource-type allowlist for importer/kit discovery — the DATA the kit's scripts run on.",
+    "Derived from the two things this repo already supports: (a) the resource types the prod",
+    "import actually adopted (importer/prod/imports.tf — 76 types; every `id` shape below is",
+    "verified against a real block in that archive) and (b) the types the Cloud Control Plane catalog",
+    "manages (ccp/app/src/data/manifests/*.json resourceTypes).",
+    "",
+    "TO EXTEND: add an entry under `types` (schema below), author a fixture capture under",
+    "testdata/, and add a test. Types that cannot be enumerated with ONE list call belong in",
+    "`manual` instead — they are copied verbatim into every discovery manifest as",
+    "manual_followup so they are never silently absent (0007 silent-loss lesson).",
+    "",
+    "Entry schema (types):",
+    "  service   file/service name the resource lands in (mirrors environments/prod/<service>.tf)",
+    "  arnHint   the ARN service-namespace token (arn:partition:SERVICE:region:account:resource)",
+    "            this type's resources appear under. Used ONLY by discover.py's coverage sweep",
+    "            (an `aws resourcegroupstaggingapi get-resources` capture, discover.sh 'Gap 1')",
+    "            to bucket every swept ARN into covered/manual/unrecognized. Deliberately coarser",
+    "            than the Terraform type: one AWS service namespace often maps many types here",
+    "            (e.g. ec2 covers vpc/subnet/security_group/instance/volume/...), so the sweep",
+    "            catches a wholly NEW service showing up in the account, not a new resource type",
+    "            within an already-covered service — see importer/kit/README.md 'coverage sweep'",
+    "            for that stated limit. Required (validated like the keys below); usually equals",
+    "            the `cli` command's service token, EXCEPT where AWS's ARN namespace diverges from",
+    "            the CLI service name (efs -> elasticfilesystem, elbv2 -> elasticloadbalancing) —",
+    "            verified per type against real AWS ARN formats, not derived mechanically.",
+    "  capture   basename (no .json) of the recorded CLI output in the capture dir",
+    "  cli       the exact read-only AWS CLI command discover.sh runs to produce that capture",
+    "  records   dotted path into the capture JSON; a trailing [] flattens a list;",
+    "            '.' means the document itself. Records may be objects or plain strings.",
+    "  id        field path on a record ('.' = the record itself) OR use id_format",
+    "  id_format python str.format template over record fields, e.g. {Device}:{VolumeId}:{InstanceId}",
+    "  name      display-name resolution: a path, 'tag:<Key>' (Tags list or map), or a",
+    "            fallback LIST of those. Final fallback is always the id.",
+    "  skips     [{field, prefix|equals, reason}] — matching records go to manifest.ignored",
+    "            WITH the reason, never dropped silently",
+    "  phase     importer/docs/strategy.md phase (2 low-risk · 3 networking · 4 compute · 5 stateful)",
+    "  stateful  true ⇒ normalize.py `guard` inserts lifecycle { prevent_destroy = true }",
+    "            (strategy.md rule 2: guards go in BEFORE import)",
+    "",
+    "Entry schema (manual[] groups) additionally carries:",
+    "  arnHints  list of ARN service-namespace tokens this group's types are confidently known to",
+    "            appear under (may be [] when the group's types are sub-resources with no ARN of",
+    "            their own, e.g. S3 bucket configs, IAM inline policies/attachments). A long-tail",
+    "            type whose exact ARN token is NOT independently verified is left out on purpose —",
+    "            it will surface as an unrecognized coverage-sweep family rather than a guessed,",
+    "            possibly-wrong mapping (honest gap over a silent one, same rule as everywhere else",
+    "            in this file)."
+  ],
+  "schema": 1,
+  "types": {
+    "aws_vpc": {
+      "service": "vpc",
+      "arnHint": "ec2",
+      "capture": "ec2-vpcs",
+      "cli": "aws ec2 describe-vpcs --output json",
+      "records": "Vpcs[]",
+      "id": "VpcId",
+      "name": "tag:Name",
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_subnet": {
+      "service": "vpc",
+      "arnHint": "ec2",
+      "capture": "ec2-subnets",
+      "cli": "aws ec2 describe-subnets --output json",
+      "records": "Subnets[]",
+      "id": "SubnetId",
+      "name": "tag:Name",
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_route_table": {
+      "service": "routing",
+      "arnHint": "ec2",
+      "capture": "ec2-route-tables",
+      "cli": "aws ec2 describe-route-tables --output json",
+      "records": "RouteTables[]",
+      "id": "RouteTableId",
+      "name": "tag:Name",
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_internet_gateway": {
+      "service": "vpc",
+      "arnHint": "ec2",
+      "capture": "ec2-internet-gateways",
+      "cli": "aws ec2 describe-internet-gateways --output json",
+      "records": "InternetGateways[]",
+      "id": "InternetGatewayId",
+      "name": "tag:Name",
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_nat_gateway": {
+      "service": "vpc",
+      "arnHint": "ec2",
+      "capture": "ec2-nat-gateways",
+      "cli": "aws ec2 describe-nat-gateways --output json",
+      "records": "NatGateways[]",
+      "id": "NatGatewayId",
+      "name": "tag:Name",
+      "skips": [
+        { "field": "State", "equals": "deleted", "reason": "NAT gateway already deleted" }
+      ],
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_eip": {
+      "service": "vpc",
+      "arnHint": "ec2",
+      "capture": "ec2-addresses",
+      "cli": "aws ec2 describe-addresses --output json",
+      "records": "Addresses[]",
+      "id": "AllocationId",
+      "name": ["tag:Name", "PublicIp"],
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_security_group": {
+      "service": "security-groups",
+      "arnHint": "ec2",
+      "capture": "ec2-security-groups",
+      "cli": "aws ec2 describe-security-groups --output json",
+      "records": "SecurityGroups[]",
+      "id": "GroupId",
+      "name": "GroupName",
+      "skips": [
+        { "field": "GroupName", "equals": "default", "reason": "default SG — adopt as aws_default_security_group by hand (prod pattern, importer/docs/import-plan.md row 113)" }
+      ],
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_network_acl": {
+      "service": "vpc",
+      "arnHint": "ec2",
+      "capture": "ec2-network-acls",
+      "cli": "aws ec2 describe-network-acls --output json",
+      "records": "NetworkAcls[]",
+      "id": "NetworkAclId",
+      "name": "tag:Name",
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_vpc_endpoint": {
+      "service": "vpc",
+      "arnHint": "ec2",
+      "capture": "ec2-vpc-endpoints",
+      "cli": "aws ec2 describe-vpc-endpoints --output json",
+      "records": "VpcEndpoints[]",
+      "id": "VpcEndpointId",
+      "name": ["tag:Name", "ServiceName"],
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_vpc_peering_connection": {
+      "service": "vpc",
+      "arnHint": "ec2",
+      "capture": "ec2-vpc-peering-connections",
+      "cli": "aws ec2 describe-vpc-peering-connections --output json",
+      "records": "VpcPeeringConnections[]",
+      "id": "VpcPeeringConnectionId",
+      "name": "tag:Name",
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_vpc_dhcp_options": {
+      "service": "vpc",
+      "arnHint": "ec2",
+      "capture": "ec2-dhcp-options",
+      "cli": "aws ec2 describe-dhcp-options --output json",
+      "records": "DhcpOptions[]",
+      "id": "DhcpOptionsId",
+      "name": "tag:Name",
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_vpn_gateway": {
+      "service": "vpn",
+      "arnHint": "ec2",
+      "capture": "ec2-vpn-gateways",
+      "cli": "aws ec2 describe-vpn-gateways --output json",
+      "records": "VpnGateways[]",
+      "id": "VpnGatewayId",
+      "name": "tag:Name",
+      "skips": [
+        { "field": "State", "equals": "deleted", "reason": "VPN gateway already deleted" }
+      ],
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_vpn_connection": {
+      "service": "vpn",
+      "arnHint": "ec2",
+      "capture": "ec2-vpn-connections",
+      "cli": "aws ec2 describe-vpn-connections --output json",
+      "records": "VpnConnections[]",
+      "id": "VpnConnectionId",
+      "name": "tag:Name",
+      "skips": [
+        { "field": "State", "equals": "deleted", "reason": "VPN connection already deleted" }
+      ],
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_customer_gateway": {
+      "service": "vpn",
+      "arnHint": "ec2",
+      "capture": "ec2-customer-gateways",
+      "cli": "aws ec2 describe-customer-gateways --output json",
+      "records": "CustomerGateways[]",
+      "id": "CustomerGatewayId",
+      "name": "tag:Name",
+      "skips": [
+        { "field": "State", "equals": "deleted", "reason": "customer gateway already deleted" }
+      ],
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_flow_log": {
+      "service": "vpc",
+      "arnHint": "ec2",
+      "capture": "ec2-flow-logs",
+      "cli": "aws ec2 describe-flow-logs --output json",
+      "records": "FlowLogs[]",
+      "id": "FlowLogId",
+      "name": ["tag:Name", "LogGroupName"],
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_key_pair": {
+      "service": "ec2",
+      "arnHint": "ec2",
+      "capture": "ec2-key-pairs",
+      "cli": "aws ec2 describe-key-pairs --output json",
+      "records": "KeyPairs[]",
+      "id": "KeyName",
+      "name": "KeyName",
+      "phase": 4,
+      "stateful": false
+    },
+    "aws_instance": {
+      "service": "ec2",
+      "arnHint": "ec2",
+      "capture": "ec2-instances",
+      "cli": "aws ec2 describe-instances --output json",
+      "records": "Reservations[].Instances[]",
+      "id": "InstanceId",
+      "name": "tag:Name",
+      "skips": [
+        { "field": "State.Name", "equals": "terminated", "reason": "terminated instance (nothing left to import)" }
+      ],
+      "phase": 4,
+      "stateful": false
+    },
+    "aws_ebs_volume": {
+      "service": "ebs",
+      "arnHint": "ec2",
+      "capture": "ec2-volumes",
+      "cli": "aws ec2 describe-volumes --output json",
+      "records": "Volumes[]",
+      "id": "VolumeId",
+      "name": "tag:Name",
+      "phase": 4,
+      "stateful": true
+    },
+    "aws_volume_attachment": {
+      "service": "ebs",
+      "arnHint": "ec2",
+      "capture": "ec2-volumes",
+      "cli": "aws ec2 describe-volumes --output json",
+      "records": "Volumes[].Attachments[]",
+      "id_format": "{Device}:{VolumeId}:{InstanceId}",
+      "name": ["Device"],
+      "skips": [
+        { "field": "State", "equals": "detached", "reason": "attachment already detached" }
+      ],
+      "phase": 4,
+      "stateful": false
+    },
+    "aws_s3_bucket": {
+      "service": "s3",
+      "arnHint": "s3",
+      "capture": "s3-buckets",
+      "cli": "aws s3api list-buckets --output json",
+      "records": "Buckets[]",
+      "id": "Name",
+      "name": "Name",
+      "phase": 5,
+      "stateful": true
+    },
+    "aws_iam_user": {
+      "service": "iam",
+      "arnHint": "iam",
+      "capture": "iam-users",
+      "cli": "aws iam list-users --output json",
+      "records": "Users[]",
+      "id": "UserName",
+      "name": "UserName",
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_iam_group": {
+      "service": "iam",
+      "arnHint": "iam",
+      "capture": "iam-groups",
+      "cli": "aws iam list-groups --output json",
+      "records": "Groups[]",
+      "id": "GroupName",
+      "name": "GroupName",
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_iam_role": {
+      "service": "iam",
+      "arnHint": "iam",
+      "capture": "iam-roles",
+      "cli": "aws iam list-roles --output json",
+      "records": "Roles[]",
+      "id": "RoleName",
+      "name": "RoleName",
+      "skips": [
+        { "field": "Path", "prefix": "/aws-service-role/", "reason": "service-linked role (AWS-managed) — disposition Ignore per importer/docs/discovery-guide.md §4" }
+      ],
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_iam_policy": {
+      "service": "iam",
+      "arnHint": "iam",
+      "capture": "iam-policies",
+      "cli": "aws iam list-policies --scope Local --output json",
+      "records": "Policies[]",
+      "id": "Arn",
+      "name": "PolicyName",
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_iam_instance_profile": {
+      "service": "iam",
+      "arnHint": "iam",
+      "capture": "iam-instance-profiles",
+      "cli": "aws iam list-instance-profiles --output json",
+      "records": "InstanceProfiles[]",
+      "id": "InstanceProfileName",
+      "name": "InstanceProfileName",
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_lambda_function": {
+      "service": "lambda",
+      "arnHint": "lambda",
+      "capture": "lambda-functions",
+      "cli": "aws lambda list-functions --output json",
+      "records": "Functions[]",
+      "id": "FunctionName",
+      "name": "FunctionName",
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_cloudwatch_log_group": {
+      "service": "cloudwatch",
+      "arnHint": "logs",
+      "capture": "logs-log-groups",
+      "cli": "aws logs describe-log-groups --output json",
+      "records": "logGroups[]",
+      "id": "logGroupName",
+      "name": "logGroupName",
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_cloudwatch_metric_alarm": {
+      "service": "cloudwatch",
+      "arnHint": "cloudwatch",
+      "capture": "cloudwatch-alarms",
+      "cli": "aws cloudwatch describe-alarms --output json",
+      "records": "MetricAlarms[]",
+      "id": "AlarmName",
+      "name": "AlarmName",
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_cloudwatch_dashboard": {
+      "service": "cloudwatch",
+      "arnHint": "cloudwatch",
+      "capture": "cloudwatch-dashboards",
+      "cli": "aws cloudwatch list-dashboards --output json",
+      "records": "DashboardEntries[]",
+      "id": "DashboardName",
+      "name": "DashboardName",
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_cloudwatch_event_rule": {
+      "service": "eventbridge",
+      "arnHint": "events",
+      "capture": "events-rules",
+      "cli": "aws events list-rules --output json",
+      "records": "Rules[]",
+      "id": "Name",
+      "name": "Name",
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_sns_topic": {
+      "service": "sns",
+      "arnHint": "sns",
+      "capture": "sns-topics",
+      "cli": "aws sns list-topics --output json",
+      "records": "Topics[]",
+      "id": "TopicArn",
+      "name": "TopicArn",
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_ssm_parameter": {
+      "service": "ssm",
+      "arnHint": "ssm",
+      "capture": "ssm-parameters",
+      "cli": "aws ssm describe-parameters --output json",
+      "records": "Parameters[]",
+      "id": "Name",
+      "name": "Name",
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_kms_alias": {
+      "service": "kms",
+      "arnHint": "kms",
+      "capture": "kms-aliases",
+      "cli": "aws kms list-aliases --output json",
+      "records": "Aliases[]",
+      "id": "AliasName",
+      "name": "AliasName",
+      "skips": [
+        { "field": "AliasName", "prefix": "alias/aws/", "reason": "AWS-managed key alias — disposition Ignore" }
+      ],
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_kms_key": {
+      "service": "kms",
+      "arnHint": "kms",
+      "capture": "kms-aliases",
+      "cli": "aws kms list-aliases --output json",
+      "records": "Aliases[]",
+      "id": "TargetKeyId",
+      "name": "AliasName",
+      "skips": [
+        { "field": "AliasName", "prefix": "alias/aws/", "reason": "AWS-managed key — disposition Ignore" }
+      ],
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_acm_certificate": {
+      "service": "acm",
+      "arnHint": "acm",
+      "capture": "acm-certificates",
+      "cli": "aws acm list-certificates --output json",
+      "records": "CertificateSummaryList[]",
+      "id": "CertificateArn",
+      "name": "DomainName",
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_cloudtrail": {
+      "service": "cloudtrail",
+      "arnHint": "cloudtrail",
+      "capture": "cloudtrail-trails",
+      "cli": "aws cloudtrail describe-trails --output json",
+      "records": "trailList[]",
+      "id": "TrailARN",
+      "name": "Name",
+      "phase": 2,
+      "stateful": false
+    },
+    "aws_db_instance": {
+      "service": "rds",
+      "arnHint": "rds",
+      "capture": "rds-db-instances",
+      "cli": "aws rds describe-db-instances --output json",
+      "records": "DBInstances[]",
+      "id": "DBInstanceIdentifier",
+      "name": "DBInstanceIdentifier",
+      "phase": 5,
+      "stateful": true
+    },
+    "aws_db_subnet_group": {
+      "service": "rds",
+      "arnHint": "rds",
+      "capture": "rds-db-subnet-groups",
+      "cli": "aws rds describe-db-subnet-groups --output json",
+      "records": "DBSubnetGroups[]",
+      "id": "DBSubnetGroupName",
+      "name": "DBSubnetGroupName",
+      "phase": 3,
+      "stateful": false
+    },
+    "aws_dynamodb_table": {
+      "service": "dynamodb",
+      "arnHint": "dynamodb",
+      "capture": "dynamodb-tables",
+      "cli": "aws dynamodb list-tables --output json",
+      "records": "TableNames[]",
+      "id": ".",
+      "name": ".",
+      "phase": 5,
+      "stateful": true
+    },
+    "aws_efs_file_system": {
+      "service": "efs",
+      "arnHint": "elasticfilesystem",
+      "capture": "efs-file-systems",
+      "cli": "aws efs describe-file-systems --output json",
+      "records": "FileSystems[]",
+      "id": "FileSystemId",
+      "name": ["Name", "tag:Name"],
+      "phase": 5,
+      "stateful": true
+    },
+    "aws_lb": {
+      "service": "alb",
+      "arnHint": "elasticloadbalancing",
+      "capture": "elbv2-load-balancers",
+      "cli": "aws elbv2 describe-load-balancers --output json",
+      "records": "LoadBalancers[]",
+      "id": "LoadBalancerArn",
+      "name": "LoadBalancerName",
+      "phase": 4,
+      "stateful": false
+    },
+    "aws_lb_target_group": {
+      "service": "alb",
+      "arnHint": "elasticloadbalancing",
+      "capture": "elbv2-target-groups",
+      "cli": "aws elbv2 describe-target-groups --output json",
+      "records": "TargetGroups[]",
+      "id": "TargetGroupArn",
+      "name": "TargetGroupName",
+      "phase": 4,
+      "stateful": false
+    },
+    "aws_cloudfront_distribution": {
+      "service": "cloudfront",
+      "arnHint": "cloudfront",
+      "capture": "cloudfront-distributions",
+      "cli": "aws cloudfront list-distributions --output json",
+      "records": "DistributionList.Items[]",
+      "id": "Id",
+      "name": ["Comment", "DomainName"],
+      "phase": 2,
+      "stateful": false
+    }
+  },
+  "manual": [
+    {
+      "types": ["aws_lb_listener", "aws_lb_listener_rule"],
+      "why": "need one describe-listeners / describe-rules call PER load balancer / listener — not a single list",
+      "how": "aws elbv2 describe-listeners --load-balancer-arn <arn>; then describe-rules --listener-arn <arn>; import ids are the ARNs (see importer/prod/imports.tf aws_lb_listener / aws_lb_listener_rule blocks)",
+      "arnHints": ["elasticloadbalancing"]
+    },
+    {
+      "types": [
+        "aws_s3_bucket_versioning",
+        "aws_s3_bucket_server_side_encryption_configuration",
+        "aws_s3_bucket_public_access_block",
+        "aws_s3_bucket_policy",
+        "aws_s3_bucket_lifecycle_configuration",
+        "aws_s3_bucket_ownership_controls",
+        "aws_s3_bucket_cors_configuration"
+      ],
+      "why": "per-bucket get calls; blind generation per bucket over-imports configs that do not exist",
+      "how": "per bucket: aws s3api get-bucket-versioning/-encryption/-public-access-block/... ; import id = bucket name (importer/prod/imports.tf convention)",
+      "arnHints": []
+    },
+    {
+      "types": [
+        "aws_iam_role_policy",
+        "aws_iam_user_policy",
+        "aws_iam_group_policy",
+        "aws_iam_role_policy_attachment",
+        "aws_iam_user_policy_attachment",
+        "aws_iam_group_policy_attachment",
+        "aws_iam_user_group_membership"
+      ],
+      "why": "per-principal list calls (list-role-policies, list-attached-role-policies, ...)",
+      "how": "ids are '<principal>:<policy-name>' for inline and '<principal>/<policy-arn>' for attachments (verified against importer/prod/imports.tf)",
+      "arnHints": []
+    },
+    {
+      "types": ["aws_cloudwatch_event_target"],
+      "why": "per-rule list-targets-by-rule",
+      "how": "id = '<rule-name>/<target-id>' (importer/prod/imports.tf convention)",
+      "arnHints": []
+    },
+    {
+      "types": ["aws_lambda_event_source_mapping", "aws_lambda_permission"],
+      "why": "per-function listings / policy reads",
+      "how": "list-event-source-mappings (UUID id); permissions from get-policy statement ids",
+      "arnHints": ["lambda"]
+    },
+    {
+      "types": [
+        "aws_sagemaker_domain",
+        "aws_sagemaker_user_profile",
+        "aws_sagemaker_space",
+        "aws_sagemaker_pipeline"
+      ],
+      "why": "estate-specific ML stack; list calls exist but attribute alignment needed hand-work in prod",
+      "how": "aws sagemaker list-domains / list-user-profiles / list-spaces / list-pipelines",
+      "arnHints": ["sagemaker"]
+    },
+    {
+      "types": [
+        "aws_wafv2_web_acl",
+        "aws_cloudfront_origin_access_control",
+        "aws_config_configuration_recorder",
+        "aws_config_delivery_channel",
+        "aws_dlm_lifecycle_policy",
+        "aws_licensemanager_license_configuration",
+        "aws_ssm_association",
+        "aws_ssm_document",
+        "aws_default_network_acl",
+        "aws_vpc_dhcp_options_association",
+        "aws_ec2_instance_connect_endpoint"
+      ],
+      "why": "long tail the prod import handled by hand (composite ids, scoped listings, or defaults adopted rather than listed)",
+      "how": "see the matching blocks in importer/prod/imports.tf for each id shape; add a types entry here once a clean single list call is identified",
+      "arnHints": ["wafv2", "cloudfront", "dlm", "ssm", "ec2"]
+    }
+  ]
+}

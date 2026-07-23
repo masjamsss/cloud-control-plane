@@ -1,0 +1,12 @@
+{
+  "Policies": [
+    {
+      "PolicyName": "orphan-policy-1",
+      "Arn": "arn:aws:iam::333333333333:policy/orphan-policy-1"
+    },
+    {
+      "PolicyName": "legacy-ignored-policy",
+      "Arn": "arn:aws:iam::333333333333:policy/legacy-ignored-policy"
+    }
+  ]
+}

@@ -1,0 +1,1279 @@
+{
+  "service": "sns",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_sns_topic",
+    "aws_sns_topic_subscription"
+  ],
+  "summary": "Manage the notification topics: add and remove subscriptions, set display names, tune delivery retries, tag, apply access-policy templates, and delete a topic.",
+  "operations": [
+    {
+      "id": "sns-add-subscription",
+      "service": "sns",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a subscription to a topic",
+      "summary": "Add a new subscriber (email, SMS, queue, or function) to a topic; some endpoint types must confirm before delivery starts.",
+      "description": "Subscribes a new endpoint (email, SMS, SQS queue or Lambda) to an existing topic; email/SMS/HTTP endpoints must confirm the subscription before delivery starts.",
+      "target": {
+        "resourceType": "aws_sns_topic_subscription",
+        "block": "aws_sns_topic_subscription"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic the new endpoint will receive notifications from."
+        },
+        {
+          "name": "protocol",
+          "label": "Protocol",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "email",
+              "email-json",
+              "sms",
+              "sqs",
+              "lambda",
+              "https"
+            ]
+          },
+          "help": "Delivery protocol for the new subscriber."
+        },
+        {
+          "name": "endpoint",
+          "label": "Endpoint",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "semantic": "email address, E.164 phone number, SQS queue ARN, Lambda ARN, or HTTPS URL matching the chosen protocol",
+            "maxLength": 512,
+            "pattern": "^(arn:aws:(sqs|lambda):[a-z0-9-]+:[0-9]{12}:[A-Za-z0-9._:-]+|\\+[0-9]{7,15}|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,63}|https://[A-Za-z0-9.-]+(:[0-9]+)?(/[\\x21-\\x7E]*)?)$"
+          },
+          "help": "Destination address, e.g. an ops mailbox, phone number, or queue/function ARN."
+        },
+        {
+          "name": "filter_policy",
+          "label": "Filter policy (JSON)",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "",
+          "bounds": {
+            "semantic": "valid SNS message-attribute filter policy JSON, or empty for no filtering",
+            "maxLength": 4096,
+            "pattern": "^(\\{[\\s\\S]*\\})?$"
+          },
+          "help": "Optional message filter so this subscriber only receives a subset of messages."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "sns-remove-subscription",
+      "service": "sns",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Remove a topic subscription",
+      "summary": "Unsubscribe an endpoint from a topic. It stops receiving notifications right away and must reconfirm if added back later.",
+      "description": "Unsubscribes an endpoint from a topic; that endpoint stops receiving notifications immediately and would need to re-confirm if re-added later.",
+      "target": {
+        "resourceType": "aws_sns_topic_subscription",
+        "block": "aws_sns_topic_subscription"
+      },
+      "params": [
+        {
+          "name": "subscription",
+          "label": "Subscription",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic_subscription/address",
+          "help": "The subscription (topic + endpoint pair) to remove."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "sns-set-display-name",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set topic display name",
+      "summary": "Change the topic's display name, used as the SMS sender prefix and the email From label. No delivery interruption.",
+      "description": "Changes the topic's display_name, used as the SMS sender ID prefix and the From label on email-based subscriptions; no delivery interruption.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic to rename for display purposes."
+        },
+        {
+          "name": "new_display_name",
+          "label": "New display name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _-]{0,100}$",
+            "max": 100
+          },
+          "help": "Up to 100 characters; SMS sender ID is truncated to 10 characters by carriers."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "monitoring-alarms",
+      "pinned": 1
+    },
+    {
+      "id": "sns-set-delivery-retry-policy",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Retune HTTP/S delivery retry policy",
+      "summary": "Tune how many times and how long SNS retries delivery to HTTP or HTTPS subscribers before giving up.",
+      "description": "Adjusts the topic's delivery_policy retry backoff for HTTP/S subscribers (max retries and max delay between attempts) before SNS gives up and reports the message as undeliverable.",
+      "target": {
+        "resourceType": "aws_sns_topic",
+        "block": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose HTTP/S retry behaviour to change."
+        },
+        {
+          "name": "new_delivery_policy_num_retries",
+          "label": "Max retries",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "default": 3,
+          "bounds": {
+            "min": 0,
+            "max": 100
+          },
+          "help": "Total delivery attempts to an HTTP/S endpoint before giving up."
+        },
+        {
+          "name": "new_delivery_policy_max_delay_target",
+          "label": "Max retry delay (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "default": 20,
+          "bounds": {
+            "min": 3,
+            "max": 3600
+          },
+          "help": "Longest backoff delay between retry attempts."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "monitoring-alarms",
+      "pinned": 2
+    },
+    {
+      "id": "sns-tag-topic",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update topic tags",
+      "summary": "Add or update the topic's tags; only the tags you list change and others are left alone. Metadata only, no effect on delivery.",
+      "description": "Sets or merges cost-allocation and ownership tags on a topic; purely metadata, no effect on delivery or subscribers.",
+      "target": {
+        "resourceType": "aws_sns_topic",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic to tag."
+        },
+        {
+          "name": "new_tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "semantic": "key/value pairs, e.g. CostCentre, Environment, Owner",
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$"
+          },
+          "help": "Full tag map to apply; existing tags not listed here are removed."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "pinned": 3
+    },
+    {
+      "id": "sns-set-topic-policy",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Apply an access-policy template to a topic",
+      "summary": "Apply a pre-approved template controlling who can publish or subscribe to this topic, including cross-account access. Engineer-only.",
+      "description": "Replaces the topic's resource policy with a pre-approved named template (e.g. account-internal publish-only, or cross-account ERP read access); changes who/what can publish or subscribe.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose access policy to change."
+        },
+        {
+          "name": "policy_template",
+          "label": "Policy template",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "account-internal-publish-only",
+              "cross-account-erp-readonly",
+              "eventbridge-publish-only",
+              "default-account-owner-only"
+            ]
+          },
+          "help": "Named, pre-reviewed policy document; raw policy JSON is not accepted here.",
+          "attr": "policy"
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "sns-delete-topic",
+      "service": "sns",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete a topic",
+      "summary": "Permanently delete the topic and all its subscriptions; publishers pointing at it start failing. Can't be undone; engineer-only.",
+      "description": "Permanently deletes the topic and every subscription attached to it; any publisher or CloudWatch alarm still pointing at it starts failing with NotFound, and history/metrics for the topic are lost.",
+      "target": {
+        "resourceType": "aws_sns_topic",
+        "block": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic to permanently delete."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "sns-set-application-success-feedback-role",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set application (mobile push) success feedback IAM role",
+      "summary": "Set the IAM role SNS uses to log successful mobile push deliveries to CloudWatch. Logging only, no effect on delivery.",
+      "description": "Sets application_success_feedback_role_arn, the IAM role SNS assumes to write success-delivery feedback logs for mobile-app (application) endpoints to CloudWatch Logs. Observability only; no effect on message delivery.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose mobile-app success-feedback logging role to set."
+        },
+        {
+          "name": "application_success_feedback_role_arn",
+          "label": "Application success feedback IAM role ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^arn:aws:iam::\\d{12}:role/[a-zA-Z0-9+=,.@\\-_/]+$"
+          },
+          "help": "ARN of an IAM role that grants SNS permission to write mobile-app success-feedback logs to CloudWatch Logs."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (application_success_feedback_role_arn)",
+      "group": "monitoring-alarms",
+      "pinned": 4
+    },
+    {
+      "id": "sns-set-application-failure-feedback-role",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set application (mobile push) failure feedback IAM role",
+      "summary": "Set the IAM role SNS uses to log failed mobile push deliveries to CloudWatch. Logging only, no effect on delivery.",
+      "description": "Sets application_failure_feedback_role_arn, the IAM role SNS assumes to write failed-delivery feedback logs for mobile-app (application) endpoints to CloudWatch Logs. Observability only; no effect on message delivery.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose mobile-app failure-feedback logging role to set."
+        },
+        {
+          "name": "application_failure_feedback_role_arn",
+          "label": "Application failure feedback IAM role ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^arn:aws:iam::\\d{12}:role/[a-zA-Z0-9+=,.@\\-_/]+$"
+          },
+          "help": "ARN of an IAM role that grants SNS permission to write mobile-app failure-feedback logs to CloudWatch Logs."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (application_failure_feedback_role_arn)",
+      "group": "monitoring-alarms",
+      "pinned": 5
+    },
+    {
+      "id": "sns-set-application-success-sample-rate",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set application (mobile push) success feedback sample rate",
+      "summary": "Set what percentage of successful mobile push deliveries SNS logs to CloudWatch. Logging only, no effect on delivery.",
+      "description": "Sets application_success_feedback_sample_rate, the percentage (0-100) of successful mobile-app (application) deliveries SNS samples into CloudWatch success-feedback logs. Observability only; no effect on message delivery.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose mobile-app success-feedback sample rate to set."
+        },
+        {
+          "name": "application_success_feedback_sample_rate",
+          "label": "Application success feedback sample rate (%)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 100
+          },
+          "help": "Percentage of successful deliveries to sample into CloudWatch logs, 0-100."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (application_success_feedback_sample_rate)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "sns-set-http-success-feedback-role",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set HTTP/S success feedback IAM role",
+      "summary": "Set the IAM role SNS uses to log successful HTTP or HTTPS deliveries to CloudWatch. Logging only, no effect on delivery.",
+      "description": "Sets http_success_feedback_role_arn, the IAM role SNS assumes to write success-delivery feedback logs for HTTP/S endpoints to CloudWatch Logs. Observability only; no effect on message delivery.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose HTTP/S success-feedback logging role to set."
+        },
+        {
+          "name": "http_success_feedback_role_arn",
+          "label": "HTTP/S success feedback IAM role ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^arn:aws:iam::\\d{12}:role/[a-zA-Z0-9+=,.@\\-_/]+$"
+          },
+          "help": "ARN of an IAM role that grants SNS permission to write HTTP/S success-feedback logs to CloudWatch Logs."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (http_success_feedback_role_arn)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "sns-set-http-failure-feedback-role",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set HTTP/S failure feedback IAM role",
+      "summary": "Set the IAM role SNS uses to log failed HTTP or HTTPS deliveries to CloudWatch. Logging only, no effect on delivery.",
+      "description": "Sets http_failure_feedback_role_arn, the IAM role SNS assumes to write failed-delivery feedback logs for HTTP/S endpoints to CloudWatch Logs. Observability only; no effect on message delivery.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose HTTP/S failure-feedback logging role to set."
+        },
+        {
+          "name": "http_failure_feedback_role_arn",
+          "label": "HTTP/S failure feedback IAM role ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^arn:aws:iam::\\d{12}:role/[a-zA-Z0-9+=,.@\\-_/]+$"
+          },
+          "help": "ARN of an IAM role that grants SNS permission to write HTTP/S failure-feedback logs to CloudWatch Logs."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (http_failure_feedback_role_arn)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "sns-set-http-success-sample-rate",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set HTTP/S success feedback sample rate",
+      "summary": "Set what percentage of successful HTTP or HTTPS deliveries SNS logs to CloudWatch. Logging only, no effect on delivery.",
+      "description": "Sets http_success_feedback_sample_rate, the percentage (0-100) of successful HTTP/S deliveries SNS samples into CloudWatch success-feedback logs. Observability only; no effect on message delivery.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose HTTP/S success-feedback sample rate to set."
+        },
+        {
+          "name": "http_success_feedback_sample_rate",
+          "label": "HTTP/S success feedback sample rate (%)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 100
+          },
+          "help": "Percentage of successful deliveries to sample into CloudWatch logs, 0-100."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (http_success_feedback_sample_rate)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "sns-set-lambda-success-feedback-role",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set Lambda success feedback IAM role",
+      "summary": "Set the IAM role SNS uses to log successful Lambda deliveries to CloudWatch. Logging only, no effect on delivery.",
+      "description": "Sets lambda_success_feedback_role_arn, the IAM role SNS assumes to write success-delivery feedback logs for Lambda endpoints to CloudWatch Logs. Observability only; no effect on message delivery.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose Lambda success-feedback logging role to set."
+        },
+        {
+          "name": "lambda_success_feedback_role_arn",
+          "label": "Lambda success feedback IAM role ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^arn:aws:iam::\\d{12}:role/[a-zA-Z0-9+=,.@\\-_/]+$"
+          },
+          "help": "ARN of an IAM role that grants SNS permission to write Lambda success-feedback logs to CloudWatch Logs."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (lambda_success_feedback_role_arn)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "sns-set-lambda-success-sample-rate",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set Lambda success feedback sample rate",
+      "summary": "Set what percentage of successful Lambda deliveries SNS logs to CloudWatch. Logging only, no effect on delivery.",
+      "description": "Sets lambda_success_feedback_sample_rate, the percentage (0-100) of successful Lambda deliveries SNS samples into CloudWatch success-feedback logs. Observability only; no effect on message delivery.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose Lambda success-feedback sample rate to set."
+        },
+        {
+          "name": "lambda_success_feedback_sample_rate",
+          "label": "Lambda success feedback sample rate (%)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 100
+          },
+          "help": "Percentage of successful deliveries to sample into CloudWatch logs, 0-100."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (lambda_success_feedback_sample_rate)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "sns-set-sqs-success-feedback-role",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set SQS success feedback IAM role",
+      "summary": "Set the IAM role SNS uses to log successful queue deliveries to CloudWatch. Logging only, no effect on delivery.",
+      "description": "Sets sqs_success_feedback_role_arn, the IAM role SNS assumes to write success-delivery feedback logs for SQS endpoints to CloudWatch Logs. Observability only; no effect on message delivery.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose SQS success-feedback logging role to set."
+        },
+        {
+          "name": "sqs_success_feedback_role_arn",
+          "label": "SQS success feedback IAM role ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^arn:aws:iam::\\d{12}:role/[a-zA-Z0-9+=,.@\\-_/]+$"
+          },
+          "help": "ARN of an IAM role that grants SNS permission to write SQS success-feedback logs to CloudWatch Logs."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (sqs_success_feedback_role_arn)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "sns-set-sqs-failure-feedback-role",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set SQS failure feedback IAM role",
+      "summary": "Set the IAM role SNS uses to log failed queue deliveries to CloudWatch. Logging only, no effect on delivery.",
+      "description": "Sets sqs_failure_feedback_role_arn, the IAM role SNS assumes to write failed-delivery feedback logs for SQS endpoints to CloudWatch Logs. Observability only; no effect on message delivery.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose SQS failure-feedback logging role to set."
+        },
+        {
+          "name": "sqs_failure_feedback_role_arn",
+          "label": "SQS failure feedback IAM role ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^arn:aws:iam::\\d{12}:role/[a-zA-Z0-9+=,.@\\-_/]+$"
+          },
+          "help": "ARN of an IAM role that grants SNS permission to write SQS failure-feedback logs to CloudWatch Logs."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (sqs_failure_feedback_role_arn)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "sns-set-sqs-success-sample-rate",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set SQS success feedback sample rate",
+      "summary": "Set what percentage of successful queue deliveries SNS logs to CloudWatch. Logging only, no effect on delivery.",
+      "description": "Sets sqs_success_feedback_sample_rate, the percentage (0-100) of successful SQS deliveries SNS samples into CloudWatch success-feedback logs. Observability only; no effect on message delivery.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose SQS success-feedback sample rate to set."
+        },
+        {
+          "name": "sqs_success_feedback_sample_rate",
+          "label": "SQS success feedback sample rate (%)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 100
+          },
+          "help": "Percentage of successful deliveries to sample into CloudWatch logs, 0-100."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (sqs_success_feedback_sample_rate)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "sns-set-firehose-success-feedback-role",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set Firehose success feedback IAM role",
+      "summary": "Set the IAM role SNS uses to log successful Kinesis Data Firehose deliveries to CloudWatch. Logging only, no effect on delivery.",
+      "description": "Sets firehose_success_feedback_role_arn, the IAM role SNS assumes to write success-delivery feedback logs for Kinesis Data Firehose endpoints to CloudWatch Logs. Observability only; no effect on message delivery.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose Firehose success-feedback logging role to set."
+        },
+        {
+          "name": "firehose_success_feedback_role_arn",
+          "label": "Firehose success feedback IAM role ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^arn:aws:iam::\\d{12}:role/[a-zA-Z0-9+=,.@\\-_/]+$"
+          },
+          "help": "ARN of an IAM role that grants SNS permission to write Firehose success-feedback logs to CloudWatch Logs."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (firehose_success_feedback_role_arn)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "sns-set-firehose-failure-feedback-role",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set Firehose failure feedback IAM role",
+      "summary": "Set the IAM role SNS uses to log failed Kinesis Data Firehose deliveries to CloudWatch. Logging only, no effect on delivery.",
+      "description": "Sets firehose_failure_feedback_role_arn, the IAM role SNS assumes to write failed-delivery feedback logs for Kinesis Data Firehose endpoints to CloudWatch Logs. Observability only; no effect on message delivery.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose Firehose failure-feedback logging role to set."
+        },
+        {
+          "name": "firehose_failure_feedback_role_arn",
+          "label": "Firehose failure feedback IAM role ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^arn:aws:iam::\\d{12}:role/[a-zA-Z0-9+=,.@\\-_/]+$"
+          },
+          "help": "ARN of an IAM role that grants SNS permission to write Firehose failure-feedback logs to CloudWatch Logs."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (firehose_failure_feedback_role_arn)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "sns-set-firehose-success-sample-rate",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set Firehose success feedback sample rate",
+      "summary": "Set what percentage of successful Kinesis Data Firehose deliveries SNS logs to CloudWatch. Logging only, no effect on delivery.",
+      "description": "Sets firehose_success_feedback_sample_rate, the percentage (0-100) of successful Kinesis Data Firehose deliveries SNS samples into CloudWatch success-feedback logs. Observability only; no effect on message delivery.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The topic whose Firehose success-feedback sample rate to set."
+        },
+        {
+          "name": "firehose_success_feedback_sample_rate",
+          "label": "Firehose success feedback sample rate (%)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 100
+          },
+          "help": "Percentage of successful deliveries to sample into CloudWatch logs, 0-100."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (firehose_success_feedback_sample_rate)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "sns-set-fifo-throughput-scope",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set FIFO throughput scope",
+      "summary": "Choose whether a high-throughput FIFO topic orders and deduplicates messages topic-wide or per message group. Guardrailed change.",
+      "description": "Sets fifo_throughput_scope on a high-throughput FIFO topic, selecting the deduplication/ordering scope: Topic (topic-wide) or MessageGroup (per message group). Changes the ordering and deduplication guarantees downstream consumers rely on.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The FIFO topic whose throughput/deduplication scope to change."
+        },
+        {
+          "name": "fifo_throughput_scope",
+          "label": "FIFO throughput scope",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "Topic",
+              "MessageGroup"
+            ]
+          },
+          "help": "Deduplication and ordering scope for a high-throughput FIFO topic."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (fifo_throughput_scope)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "sns-set-content-based-deduplication",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle FIFO content-based deduplication",
+      "summary": "Toggle same-content deduplication on a FIFO topic. Enabling can silently merge duplicates; disabling can break dependent publishers.",
+      "description": "Sets content_based_deduplication (true/false) on a FIFO topic. When enabled, SNS derives the deduplication ID from a hash of the message body. Disabling can cause publish failures for producers that rely on it; enabling can silently deduplicate distinct same-body messages within the deduplication interval.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic/address",
+          "help": "The FIFO topic whose content-based deduplication setting to change."
+        },
+        {
+          "name": "content_based_deduplication",
+          "label": "Content-based deduplication",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Whether to enable content-based deduplication on this FIFO topic."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (content_based_deduplication)",
+      "group": "monitoring-alarms"
+    },
+    {
+      "id": "sns-set-endpoint-auto-confirms",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set subscription endpoint auto-confirm flag",
+      "summary": "Tell Terraform whether this subscriber's endpoint auto-confirms itself, like PagerDuty. No effect on an already-confirmed subscription.",
+      "description": "Sets this subscription's endpoint_auto_confirms flag, which tells Terraform whether the endpoint is capable of auto-confirming its subscription (e.g. PagerDuty) during apply. No effect on an already-confirmed live subscription.",
+      "target": {
+        "resourceType": "aws_sns_topic_subscription"
+      },
+      "params": [
+        {
+          "name": "subscription_arn",
+          "label": "SNS subscription ARN",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic_subscription/address",
+          "help": "The subscription (topic + endpoint pair) to modify."
+        },
+        {
+          "name": "endpoint_auto_confirms",
+          "label": "Endpoint auto-confirms",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true if the endpoint auto-confirms its subscription (e.g. PagerDuty); default is false."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (endpoint_auto_confirms)",
+      "group": "monitoring-alarms",
+      "pinned": 1
+    },
+    {
+      "id": "sns-set-raw-message-delivery",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle raw message delivery",
+      "summary": "Turn raw message delivery on or off for this subscriber. Changes the message format, so the subscriber may need to adjust its parsing.",
+      "description": "Sets this subscription's raw_message_delivery flag: when true, the original message is passed directly to the endpoint instead of being wrapped in JSON. Changing the payload shape may require the subscriber to adjust its message parsing.",
+      "target": {
+        "resourceType": "aws_sns_topic_subscription"
+      },
+      "params": [
+        {
+          "name": "subscription_arn",
+          "label": "SNS subscription ARN",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic_subscription/address",
+          "help": "The subscription (topic + endpoint pair) to modify."
+        },
+        {
+          "name": "raw_message_delivery",
+          "label": "Raw message delivery",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true passes the original message directly; false wraps it in JSON (default)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (raw_message_delivery)",
+      "group": "monitoring-alarms",
+      "pinned": 2
+    },
+    {
+      "id": "sns-set-subscription-role-arn",
+      "service": "sns",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set Firehose subscription publish role",
+      "summary": "Set the IAM role SNS uses to publish this subscriber's messages into a Firehose delivery stream. A wrong role silently breaks delivery.",
+      "description": "Sets this subscription's subscription_role_arn -- the IAM role SNS assumes to publish the subscription's messages into a Kinesis Data Firehose delivery stream (used only for firehose-protocol subscriptions). A wrong role silently breaks delivery to this one subscriber.",
+      "target": {
+        "resourceType": "aws_sns_topic_subscription"
+      },
+      "params": [
+        {
+          "name": "subscription_arn",
+          "label": "SNS subscription ARN",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_sns_topic_subscription/address",
+          "help": "The subscription (topic + endpoint pair) to modify."
+        },
+        {
+          "name": "subscription_role_arn",
+          "label": "Subscription role ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^arn:aws:iam::\\d{12}:role/[a-zA-Z0-9+=,.@\\-_/]+$"
+          },
+          "help": "ARN of an IAM role SNS assumes to publish to the Kinesis Data Firehose delivery stream."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (subscription_role_arn)",
+      "group": "monitoring-alarms",
+      "pinned": 3
+    },
+    {
+      "id": "sns-create-topic",
+      "service": "sns",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a notification topic",
+      "summary": "Request a new notification topic; an engineer finalizes and reviews the Terraform before it is applied.",
+      "description": "Create a topic that alarms and jobs can notify. The first subscription rides the existing add-a-subscription action afterwards. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_sns_topic"
+      },
+      "params": [
+        {
+          "name": "topic_name",
+          "label": "Topic name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9_-]{1,256}$"
+          },
+          "help": "Letters, numbers, dashes and underscores, like app-oncall-alerts."
+        },
+        {
+          "name": "display_name",
+          "label": "Display name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "display_name",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 100
+          },
+          "help": "The name shown in SMS and email notifications."
+        },
+        {
+          "name": "kms_key",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_master_key_id",
+          "group": "identity",
+          "tier": "advanced",
+          "help": "Encrypt queued messages. Leave blank for no encryption key."
+        },
+        {
+          "name": "resource_name",
+          "label": "Topic name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this topic notifies",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this topic."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new notification topic",
+        "new alert topic"
+      ],
+      "decisions": [
+        "Delivery policy or dead-letter queue if this topic feeds alarms"
+      ]
+    }
+  ]
+}

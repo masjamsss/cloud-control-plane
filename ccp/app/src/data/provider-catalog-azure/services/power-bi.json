@@ -1,0 +1,1 @@
+{"service":"power-bi","types":{"azurerm_powerbi_embedded":{"attrs":[{"n":"administrators","t":"list","r":1},{"n":"location","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"sku_name","t":"string","r":1},{"n":"mode","t":"string"},{"n":"tags","t":"map"}],"blocks":[]}}}

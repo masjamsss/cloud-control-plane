@@ -1,0 +1,14 @@
+{
+  "Reservations": [
+    {
+      "ReservationId": "r-0aaaaaaaaaaaaaaa9",
+      "Instances": [
+        {
+          "InstanceType": "t3.micro",
+          "State": { "Name": "running" },
+          "Tags": [{ "Key": "Name", "Value": "record-without-an-InstanceId" }]
+        }
+      ]
+    }
+  ]
+}

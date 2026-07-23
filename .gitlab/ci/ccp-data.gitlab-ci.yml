@@ -1,0 +1,67 @@
+# Control-plane per-account portal data, generated in CI and
+# uploaded to the control plane. GitLab twin of
+# .github/workflows/ccp-data.yml; spec: docs/runbooks/account-data-ci.md.
+#
+# Use from a GitLab-hosted estate repo: copy this file in (or `include:` it if
+# the control-plane repo is mirrored on the same GitLab), then set under
+# Settings → CI/CD → Variables (details: docs/runbooks/account-data-ci.md):
+#
+#   CCP_UPLOAD_TOKEN        masked + protected — per-project upload key,
+#                              minted in the portal under Admin → Projects
+#   CCP_CONTROL_PLANE_URL   e.g. https://ccp.example.com/api
+#                              (unset = generate only, keep the artifact)
+#   CCP_PROJECT_ID          the control-plane project id
+#   CCP_SCAN_ROOT             optional; default environments/prod
+#
+# A protected variable only reaches pipelines on PROTECTED refs — protect the
+# default branch or the job dies with "CCP_UPLOAD_TOKEN is empty".
+#
+# All logic and every version pin (python 3.12, node 20, python-hcl2==5.1.1)
+# live in scripts/gen-project-data.sh. The image below is the one host-side
+# duplicate of those pins GitLab forces on us (an `image:` cannot be computed
+# by a script); if it ever drifts, the script's own pin check fails the job
+# loudly before anything is generated or uploaded.
+
+ccp-data:
+  # python 3.12 + node 20 in one image, matching the script's pins. Self-hosted
+  # runners in air-gapped estates should mirror this image (and may pin it by
+  # digest) in their own registry.
+  image: nikolaik/python-nodejs:python3.12-nodejs20
+  rules:
+    # Every merge to the default branch, same as the GitHub template. This
+    # also covers manually started (Run pipeline) runs on that branch — the
+    # workflow_dispatch equivalent.
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  variables:
+    # Shallow clone: build-inventory.py's git-derived sourceCommit/generatedAt
+    # then equal the built commit — same behavior as actions/checkout's
+    # default fetch-depth 1, so both hosts stamp identical provenance.
+    GIT_DEPTH: "1"
+    CCP_OUT_DIR: "$CI_PROJECT_DIR/ccp-data-out"
+  before_script:
+    # No-ops on the image above (it ships git + curl); keeps the job alive on
+    # a slimmed self-hosted mirror.
+    - command -v curl >/dev/null && command -v git >/dev/null || (apt-get update && apt-get install -y --no-install-recommends curl git ca-certificates)
+  script:
+    # Same-repo layout (the control-plane repo itself) or a foreign estate
+    # that cloned the tools into .ccp-tools/ — same resolution as the
+    # GitHub template.
+    - |
+      if [ -f scripts/gen-project-data.sh ]; then
+        SCRIPT=scripts/gen-project-data.sh
+      elif [ -f .ccp-tools/scripts/gen-project-data.sh ]; then
+        SCRIPT=.ccp-tools/scripts/gen-project-data.sh
+      else
+        echo "gen-project-data.sh not found — estate repos must also clone the control-plane repo into .ccp-tools/ (see docs/runbooks/account-data-ci.md)" >&2
+        exit 1
+      fi
+      bash "$SCRIPT" --install-deps
+  artifacts:
+    # Manual-upload fallback: on an unreachable control plane the script exits
+    # 0 and the bundle is kept here for a hand upload
+    # (docs/runbooks/account-data-ci.md §Manual fallback).
+    when: always
+    name: ccp-project-data
+    paths:
+      - ccp-data-out/
+    expire_in: 14 days

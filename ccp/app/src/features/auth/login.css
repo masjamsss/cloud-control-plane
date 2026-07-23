@@ -1,0 +1,258 @@
+/* ============================================================================
+   Sign-in — a calm, centered welcome surface. Clean neutral, one accent.
+   Reuses the app's field + button vocabulary so it feels part of the product.
+   ============================================================================ */
+
+.login {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-8);
+  background: var(--bg-canvas);
+}
+
+.login__panel {
+  width: 100%;
+  max-width: 384px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-9);
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  box-shadow: 0 1px 2px rgba(20, 28, 38, 0.04), 0 12px 32px rgba(20, 28, 38, 0.06);
+  animation: login-rise var(--dur-slow) var(--ease-emphasized) both;
+}
+
+.login__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.login__mark {
+  color: var(--accent);
+  font-size: 18px;
+  line-height: 1;
+}
+.login__wordmark {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+/* Ledger title scale — bigger and tighter than the old 22px/700, tracking
+   the same display voice as the Home H1 (just lower rank: a single-purpose
+   page, not the top-level screen, so it sits below the 30–44px Home clamp). */
+.login__title {
+  margin: 0;
+  font-size: clamp(26px, 3vw, 32px);
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+.login__sub {
+  margin: 0 0 var(--space-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-width: 42ch;
+}
+
+.login__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.login__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.login__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.login__input {
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-2);
+  transition: border-color var(--dur-base) var(--ease-standard), box-shadow var(--dur-base) var(--ease-standard);
+}
+.login__input:hover {
+  border-color: var(--border-hover);
+}
+.login__input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.login__input[aria-invalid='true'] {
+  border-color: var(--risk-high);
+}
+.login__input:disabled {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.login__error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--risk-high);
+}
+
+/* The "sign out my other devices" choice on the standing password card
+   (ChangePasswordFields.tsx) — a plain checkbox row, same field rhythm. */
+.login__checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.login__checkbox-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.login__submit {
+  margin-top: var(--space-2);
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 16px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: background-color var(--dur-base) var(--ease-standard), border-color var(--dur-base) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
+}
+.login__submit:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+/* Tactile press — matches the shared .ui-btn primitive. */
+.login__submit:not(:disabled):active {
+  transform: translateY(1px);
+}
+.login__submit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.login__submit:disabled {
+  background: var(--surface-3);
+  border-color: var(--border-default);
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+.login__link {
+  margin-top: var(--space-1);
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: color var(--dur-base) var(--ease-standard);
+}
+.login__link:hover {
+  color: var(--text-primary);
+}
+.login__link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Api-mode second factor: the enrolment secret + otpauth URI to add to an app. */
+.login__totp-enroll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background: var(--surface-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+}
+.login__secret {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--text-primary);
+  word-break: break-all;
+  user-select: all;
+}
+.login__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.login__otpauth {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+  user-select: all;
+}
+
+/* The scannable QR (TotpQr.tsx). Caption sits flush above the panel;
+   .login__hint already carries the right size/color/contrast. */
+.login__qr-caption {
+  text-align: center;
+}
+/* An EXPLICIT white quiet zone — deliberately NOT var(--surface-1)/var(--bg-canvas):
+   both invert to a dark tone in dark theme (src/styles/tokens.css), and a QR
+   scanner needs a light background + dark modules regardless of the app's own
+   theme. Fixed colors here are correct in every theme/palette, by design. */
+.login__qr-panel {
+  display: flex;
+  align-self: center;
+  padding: var(--space-5);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: var(--radius-2);
+}
+.login__qr-svg {
+  display: block;
+}
+
+@keyframes login-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login__panel {
+    animation: none;
+  }
+  .login__input,
+  .login__submit {
+    transition: none;
+  }
+}

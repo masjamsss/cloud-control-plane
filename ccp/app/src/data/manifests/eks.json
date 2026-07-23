@@ -1,0 +1,705 @@
+{
+  "service": "eks",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_eks_cluster",
+    "aws_eks_node_group",
+    "aws_eks_fargate_profile"
+  ],
+  "summary": "Provision new EKS clusters, managed node groups, and Fargate profiles. Every stand-up routes to an engineer for review \u2014 day-2 operations on existing EKS resources land in a later wave.",
+  "operations": [
+    {
+      "id": "eks-cluster-create",
+      "service": "eks",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new EKS cluster",
+      "summary": "Request a brand-new EKS cluster; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new Kubernetes control plane as a complete specification: version, IAM role, network placement, endpoint access, and admin bootstrap. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_eks_cluster"
+      },
+      "params": [
+        {
+          "name": "cluster_name",
+          "label": "Cluster name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, like app-tier-eks. Names the cluster in AWS and in the generated draft."
+        },
+        {
+          "name": "k8s_version",
+          "label": "Kubernetes version",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "version",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "1.29",
+              "1.30",
+              "1.31",
+              "1.32",
+              "1.33"
+            ]
+          },
+          "default": "1.32",
+          "help": "Leave the estate's current default selected unless a workload needs a specific version."
+        },
+        {
+          "name": "cluster_role",
+          "label": "Cluster IAM role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "role_arn",
+          "group": "identity",
+          "help": "The IAM role EKS assumes to manage the cluster's AWS resources (the EKS cluster service role)."
+        },
+        {
+          "name": "subnet_ids",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_ids",
+          "path": [
+            "vpc_config"
+          ],
+          "group": "network",
+          "bounds": {
+            "minItems": 2,
+            "maxItems": 10
+          },
+          "help": "Where the control plane's elastic network interfaces live. Span at least two Availability Zones."
+        },
+        {
+          "name": "security_group_ids",
+          "label": "Additional security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "security_group_ids",
+          "path": [
+            "vpc_config"
+          ],
+          "group": "network",
+          "tier": "advanced",
+          "bounds": {
+            "maxItems": 5
+          },
+          "help": "Extra groups applied to the control plane's network interfaces, beyond the cluster's own managed one."
+        },
+        {
+          "name": "endpoint_private_access",
+          "label": "Private API endpoint",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "endpoint_private_access",
+          "path": [
+            "vpc_config"
+          ],
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Lets resources inside the VPC reach the Kubernetes API without crossing the public internet."
+        },
+        {
+          "name": "endpoint_public_access",
+          "label": "Public API endpoint",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "endpoint_public_access",
+          "path": [
+            "vpc_config"
+          ],
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": false,
+          "help": "Off keeps the API server reachable only from inside the VPC \u2014 the estate default."
+        },
+        {
+          "name": "authentication_mode",
+          "label": "Authentication mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "authentication_mode",
+          "path": [
+            "access_config"
+          ],
+          "group": "security",
+          "bounds": {
+            "allowlist": [
+              "API",
+              "API_AND_CONFIG_MAP",
+              "CONFIG_MAP"
+            ]
+          },
+          "default": "API",
+          "help": "API uses EKS access entries for authorization; the others also honor the legacy aws-auth ConfigMap."
+        },
+        {
+          "name": "bootstrap_admin_permissions",
+          "label": "Grant creator admin access",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "bootstrap_cluster_creator_admin_permissions",
+          "path": [
+            "access_config"
+          ],
+          "group": "security",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Grants the creating principal cluster-admin at bootstrap \u2014 the common starting point for a new cluster."
+        },
+        {
+          "name": "enabled_cluster_log_types",
+          "label": "Control plane logs",
+          "type": "list",
+          "source": "allowlist",
+          "required": false,
+          "attr": "enabled_cluster_log_types",
+          "group": "observability",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              "api",
+              "audit",
+              "authenticator",
+              "controllerManager",
+              "scheduler"
+            ]
+          },
+          "default": [
+            "api",
+            "audit"
+          ],
+          "help": "Which control plane log streams EKS exports to CloudWatch Logs. Leave blank to export none."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this cluster does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this cluster."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new eks cluster",
+        "provision eks cluster",
+        "new kubernetes cluster",
+        "stand up a k8s control plane"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Add-ons (VPC CNI, CoreDNS, kube-proxy, EBS/EFS CSI drivers) are installed as an engineer follow-up after creation",
+        "Encryption of Kubernetes secrets with a customer-managed KMS key (encryption_config) is an engineer decision",
+        "Fine-grained access entries beyond the bootstrap admin grant are configured after the cluster exists"
+      ]
+    },
+    {
+      "id": "eks-node-group-create",
+      "service": "eks",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new EKS managed node group",
+      "summary": "Request a brand-new managed node group; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new group of worker nodes as a complete specification: which cluster it joins, instance sizing, capacity type, and scaling bounds. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_eks_node_group"
+      },
+      "params": [
+        {
+          "name": "node_group_name",
+          "label": "Node group name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "node_group_name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, like app-tier-ng. Names the node group in AWS and in the generated draft."
+        },
+        {
+          "name": "cluster",
+          "label": "Cluster",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_eks_cluster/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "cluster_name",
+          "group": "identity",
+          "help": "The EKS cluster this node group joins. Create the cluster first (eks-cluster-create) if none exists yet."
+        },
+        {
+          "name": "node_role",
+          "label": "Node IAM role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "node_role_arn",
+          "group": "identity",
+          "help": "The IAM role each worker node's EC2 instance profile assumes (the EKS node role)."
+        },
+        {
+          "name": "subnet_ids",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_ids",
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "help": "Where worker node instances launch. Pick subnets spanning at least two Availability Zones."
+        },
+        {
+          "name": "capacity_type",
+          "label": "Capacity type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "capacity_type",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "ON_DEMAND",
+              "SPOT"
+            ]
+          },
+          "default": "ON_DEMAND",
+          "help": "SPOT is cheaper but nodes can be reclaimed on short notice."
+        },
+        {
+          "name": "ami_type",
+          "label": "AMI type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "ami_type",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "AL2023_x86_64_STANDARD",
+              "AL2023_ARM_64_STANDARD",
+              "BOTTLEROCKET_x86_64",
+              "BOTTLEROCKET_ARM_64"
+            ]
+          },
+          "default": "AL2023_x86_64_STANDARD",
+          "help": "The managed worker-node operating system image family."
+        },
+        {
+          "name": "instance_types",
+          "label": "Instance type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "instance_types",
+          "wrap": "list",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "t3.medium",
+              "t3.large",
+              "t3.xlarge",
+              "m5.large",
+              "m5.xlarge",
+              "m5.2xlarge",
+              "c5.large",
+              "c5.xlarge",
+              "r5.large",
+              "r5.xlarge"
+            ]
+          },
+          "default": "t3.large",
+          "help": "The EC2 instance type worker nodes launch as."
+        },
+        {
+          "name": "disk_size",
+          "label": "Node disk size (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "disk_size",
+          "group": "compute",
+          "bounds": {
+            "min": 20,
+            "max": 500
+          },
+          "default": 50,
+          "help": "Root volume size for each worker node."
+        },
+        {
+          "name": "desired_size",
+          "label": "Desired size",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "desired_size",
+          "path": [
+            "scaling_config"
+          ],
+          "group": "capacity",
+          "bounds": {
+            "min": 0,
+            "max": 100,
+            "semantic": "instance_count"
+          },
+          "default": 2,
+          "help": "Starting number of worker nodes."
+        },
+        {
+          "name": "min_size",
+          "label": "Minimum size",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "min_size",
+          "path": [
+            "scaling_config"
+          ],
+          "group": "capacity",
+          "bounds": {
+            "min": 0,
+            "max": 100,
+            "semantic": "instance_count"
+          },
+          "default": 1,
+          "help": "Fewest worker nodes the group ever runs."
+        },
+        {
+          "name": "max_size",
+          "label": "Maximum size",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "max_size",
+          "path": [
+            "scaling_config"
+          ],
+          "group": "capacity",
+          "bounds": {
+            "min": 1,
+            "max": 100,
+            "semantic": "instance_count"
+          },
+          "default": 4,
+          "help": "Most worker nodes the group may scale up to."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this node group does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this node group."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new eks node group",
+        "provision node group",
+        "new worker nodes",
+        "add eks capacity"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "A custom launch template (for extra EBS volumes, user data, or a golden AMI) is an engineer decision",
+        "Kubernetes labels and taints (beyond the AWS-managed defaults) are configured as an engineer follow-up",
+        "Remote SSH access (remote_access) is off by default \u2014 an engineer decision if node-level shell access is required"
+      ]
+    },
+    {
+      "id": "eks-fargate-profile-create",
+      "service": "eks",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new EKS Fargate profile",
+      "summary": "Request a brand-new Fargate profile; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new Fargate profile as a complete specification: which cluster it attaches to, its private subnets, and the namespace it schedules pods for. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_eks_fargate_profile"
+      },
+      "params": [
+        {
+          "name": "fargate_profile_name",
+          "label": "Fargate profile name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "fargate_profile_name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, like batch-jobs-fp. Names the profile in AWS and in the generated draft."
+        },
+        {
+          "name": "cluster",
+          "label": "Cluster",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_eks_cluster/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "cluster_name",
+          "group": "identity",
+          "help": "The EKS cluster this Fargate profile attaches to. Create the cluster first (eks-cluster-create) if none exists yet."
+        },
+        {
+          "name": "pod_execution_role",
+          "label": "Pod execution role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "pod_execution_role_arn",
+          "group": "identity",
+          "help": "The IAM role Fargate uses to make AWS API calls on behalf of pods scheduled by this profile."
+        },
+        {
+          "name": "subnet_ids",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_ids",
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "help": "Private subnets pods launch into. Fargate pods need private egress (NAT), never a public subnet."
+        },
+        {
+          "name": "namespace",
+          "label": "Kubernetes namespace",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "namespace",
+          "path": [
+            "selector"
+          ],
+          "group": "selector",
+          "bounds": {
+            "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+          },
+          "help": "Pods in this namespace are scheduled on Fargate by this profile."
+        },
+        {
+          "name": "labels_note",
+          "label": "Pod label selector",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "labels",
+          "group": "selector",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "An optional Kubernetes label key/value selector narrowing which pods in the namespace this profile covers \u2014 an engineer adds it to match the workload's pod spec.",
+          "path": [
+            "selector"
+          ]
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this Fargate profile does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this Fargate profile."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new eks fargate profile",
+        "provision fargate profile",
+        "serverless eks pods",
+        "run pods on fargate"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "The pod label selector narrowing this profile beyond the whole namespace is an engineer decision",
+        "Additional selectors (multiple namespace/label pairs) beyond the one authored here are an engineer follow-up"
+      ]
+    }
+  ]
+}

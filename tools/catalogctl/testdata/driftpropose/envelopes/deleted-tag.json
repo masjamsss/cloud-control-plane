@@ -1,0 +1,49 @@
+{
+  "schema": "ccp.drift/v1",
+  "projectId": "sample",
+  "environment": "prod",
+  "capturedAt": "2026-07-20T03:17:04Z",
+  "runId": "16234567897",
+  "commit": "1370355222222222222222222222222222222222",
+  "cadenceHours": 6,
+  "planExitCode": 2,
+  "report": {
+    "meta": { "format_version": "1.2", "terraform_version": "1.9.0", "provider_tag": "aws-v6.53.0" },
+    "counts": { "benign_inplace": 1 },
+    "absorbed": [],
+    "invisible_to_plan": "out-of-band CREATED resources — detection is the importer-kit account sweep (resourcegroupstaggingapi), disposition import-and-adopt or delete-in-AWS (human)",
+    "verdicts": [
+      {
+        "address": "aws_instance.tagdel01",
+        "type": "aws_instance",
+        "actions": ["update"],
+        "actionReason": null,
+        "driftEvidence": true,
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "recommendation": "NOTE (fixture intent): spec F3 — the CostCenter tag key was deleted in the console (live null on a 2-segment map path). Adoption must REMOVE the key from code, never write `CostCenter = null` (terraform-proven non-equivalent — the old behavior could never plan 0/0/0 and permanently wedged R7).",
+        "neverDo": "Never adopt values you have not read.",
+        "executor": "Claude-preparable PR",
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "computedUnknown": [],
+        "notes": [],
+        "changedAttrs": [
+          {
+            "path": "tags.CostCenter",
+            "live": "(absent)",
+            "code": "\"cc-42\"",
+            "forceNew": "in_place",
+            "forceNewWhy": "tags are provider-wide in-place (dedicated update path)",
+            "noiseEqual": false,
+            "churn": "",
+            "sensitive": false,
+            "liveJson": null,
+            "codeJson": "cc-42",
+            "pathSegments": ["tags", "CostCenter"]
+          }
+        ]
+      }
+    ]
+  }
+}

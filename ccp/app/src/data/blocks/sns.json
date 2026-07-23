@@ -1,0 +1,7 @@
+{
+ "aws_sns_topic.alerts": {
+  "file": "ccp/app/fixtures-estate/sns.tf",
+  "line": 3,
+  "source": "resource \"aws_sns_topic\" \"alerts\" {\n  name         = \"oncall-alerts\"\n  display_name = \"On-call\"\n  kms_master_key_id = aws_kms_key.app_key.key_id\n\n  tags = {\n    Name        = \"oncall-alerts\"\n    PIC         = \"user02@example.com\"\n    Description = \"On-call notifications\"\n  }\n}"
+ }
+}

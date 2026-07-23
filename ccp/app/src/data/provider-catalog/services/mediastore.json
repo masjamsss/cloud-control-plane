@@ -1,0 +1,1 @@
+{"service":"mediastore","types":{"aws_media_store_container":{"attrs":[{"n":"name","t":"string","r":1},{"n":"region","t":"string"},{"n":"tags","t":"map"}],"blocks":[]},"aws_media_store_container_policy":{"attrs":[{"n":"container_name","t":"string","r":1},{"n":"policy","t":"string","r":1},{"n":"region","t":"string"}],"blocks":[]}}}

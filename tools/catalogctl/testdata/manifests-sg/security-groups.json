@@ -1,0 +1,87 @@
+{
+  "service": "security-groups",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_security_group"
+  ],
+  "summary": "Fixture copy of the estate security-groups manifest, trimmed to the ops the F1 CIDR-policy tests exercise. sg-add-internal-ingress-rule carries the machine-enforceable cidrPolicy:internal-only that the real manifest migration will add.",
+  "operations": [
+    {
+      "id": "sg-add-internal-ingress-rule",
+      "service": "security-groups",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add an internal ingress rule",
+      "description": "Add one ingress rule from an internal (RFC1918) CIDR.",
+      "target": {
+        "resourceType": "aws_security_group",
+        "block": "ingress"
+      },
+      "params": [
+        {
+          "name": "security_group",
+          "label": "Security group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true
+        },
+        {
+          "name": "protocol",
+          "label": "Protocol",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "tcp",
+              "udp"
+            ]
+          }
+        },
+        {
+          "name": "from_port",
+          "label": "From port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          }
+        },
+        {
+          "name": "to_port",
+          "label": "To port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          }
+        },
+        {
+          "name": "cidr_block",
+          "label": "Source CIDR",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "cidrPolicy": "internal-only",
+            "semantic": "internal cidr only — RFC1918, no public range, no 0.0.0.0/0"
+          },
+          "help": "e.g. 10.0.0.0/16 — internal only."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (ingress rule)",
+      "group": "create"
+    }
+  ]
+}

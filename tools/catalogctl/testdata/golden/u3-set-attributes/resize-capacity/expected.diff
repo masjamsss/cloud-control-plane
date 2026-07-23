@@ -1,0 +1,11 @@
+--- a/environments/prod/main.tf
++++ b/environments/prod/main.tf
+@@ -2,6 +2,6 @@
+   name           = "orders"
+   billing_mode   = "PROVISIONED"
+   hash_key       = "id"
+-  read_capacity  = 5
+-  write_capacity = 5
++  read_capacity  = 20
++  write_capacity = 10
+ }

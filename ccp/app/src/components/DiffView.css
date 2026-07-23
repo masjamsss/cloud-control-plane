@@ -1,0 +1,51 @@
+/* Ledger: quiet pane chrome — a hairline border, not a heavier default one
+   (mono + risk-tinted rows below are untouched: those tints are
+   risk-adjacent semantics, not part of this restyle). */
+.diff {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+  overflow-x: auto;
+  background: var(--surface-1);
+}
+.diff__body {
+  margin: 0;
+  padding: var(--space-3) 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+.diff__row {
+  display: flex;
+  white-space: pre;
+}
+.diff__gutter {
+  width: 26px;
+  flex: none;
+  text-align: center;
+  color: var(--text-faint);
+  user-select: none;
+}
+.diff__text {
+  flex: 1;
+  padding-right: var(--space-5);
+}
+
+/* GitHub-style add / remove highlighting */
+.diff__row--add {
+  background: color-mix(in srgb, var(--risk-low) 15%, transparent);
+}
+.diff__row--add .diff__gutter,
+.diff__row--add .diff__text {
+  color: color-mix(in srgb, var(--risk-low) 78%, var(--text-primary));
+}
+.diff__row--del {
+  background: color-mix(in srgb, var(--risk-high) 13%, transparent);
+}
+.diff__row--del .diff__gutter,
+.diff__row--del .diff__text {
+  color: color-mix(in srgb, var(--risk-high) 78%, var(--text-primary));
+}
+.diff__row--meta {
+  color: var(--text-muted);
+}

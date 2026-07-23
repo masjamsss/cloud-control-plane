@@ -1,0 +1,93 @@
+{
+  "service": "s3",
+  "scope": "estate",
+  "resourceTypes": ["aws_s3_bucket"],
+  "summary": "Generic S3 operations for the importer-sandbox sample: metadata tagging and versioning. Estate-agnostic sample data.",
+  "operations": [
+    {
+      "id": "s3-add-tag-to-bucket",
+      "service": "s3",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to an S3 bucket",
+      "summary": "Add a governance tag to a bucket. Metadata only — no change to its contents or access.",
+      "description": "Add a single new key/value tag to an existing bucket's tags map. Metadata-only — no effect on objects, policy, or access.",
+      "target": { "resourceType": "aws_s3_bucket", "block": "tags" },
+      "params": [
+        {
+          "name": "bucket",
+          "label": "Bucket",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_s3_bucket/address",
+          "required": true,
+          "help": "The existing bucket to tag, chosen from live inventory."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": { "pattern": "^[A-Za-z][A-Za-z0-9_.:/=+@-]{0,127}$" },
+          "help": "New tag key, up to 128 chars; must not already exist on the bucket."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": { "pattern": "^.{0,256}$" },
+          "help": "Tag value, up to 256 characters."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "create"
+    },
+    {
+      "id": "s3-enable-versioning",
+      "service": "s3",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable bucket versioning",
+      "summary": "Turn on versioning so object overwrites keep prior versions. Safe and additive.",
+      "description": "Sets the bucket's versioning configuration status to Enabled. Additive; existing objects are unaffected and prior versions are retained going forward.",
+      "target": { "resourceType": "aws_s3_bucket" },
+      "params": [
+        {
+          "name": "bucket",
+          "label": "Bucket",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_s3_bucket/address",
+          "required": true,
+          "help": "The existing bucket to modify, chosen from live inventory."
+        },
+        {
+          "name": "versioning_status",
+          "label": "Versioning",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": { "allowlist": ["Enabled", "Suspended"] },
+          "help": "Enabled keeps prior versions on overwrite; Suspended stops creating new versions."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup"
+    }
+  ]
+}

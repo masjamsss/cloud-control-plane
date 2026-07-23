@@ -1,0 +1,16 @@
+{
+  "repo": "malicious-data-external",
+  "verdict": "reject",
+  "findings": [
+    {
+      "code": "DATA_EXTERNAL",
+      "file": "main.tf",
+      "line": 1
+    }
+  ],
+  "resourceBlocks": 0,
+  "moduleBlocks": 0,
+  "tfJsonFiles": 0,
+  "fmtDirtyFiles": 0,
+  "providerPins": {}
+}

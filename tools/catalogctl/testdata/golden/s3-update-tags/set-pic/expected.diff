@@ -1,0 +1,11 @@
+--- a/environments/prod/s3.tf
++++ b/environments/prod/s3.tf
+@@ -2,7 +2,7 @@
+   bucket = "bird-datalake"
+ 
+   tags = {
+-    PIC = "user05@example.com"
++    PIC = "user03@example.com"
+   }
+ 
+   lifecycle {

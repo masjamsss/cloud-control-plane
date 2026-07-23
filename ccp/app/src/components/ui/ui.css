@@ -1,0 +1,162 @@
+/* ── Badge ─────────────────────────────────────────────── */
+.ui-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-default);
+  white-space: nowrap;
+}
+/* Risk is the ONE colored axis: leading dot + 12% tint + 45% border. */
+.ui-badge--ok { color: var(--risk-low); border-color: color-mix(in srgb, var(--risk-low) 45%, transparent); background: color-mix(in srgb, var(--risk-low) 12%, transparent); }
+.ui-badge--warn { color: var(--risk-med); border-color: color-mix(in srgb, var(--risk-med) 45%, transparent); background: color-mix(in srgb, var(--risk-med) 12%, transparent); }
+.ui-badge--crit { color: var(--risk-high); border-color: color-mix(in srgb, var(--risk-high) 45%, transparent); background: color-mix(in srgb, var(--risk-high) 12%, transparent); }
+.ui-badge--human { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); background: color-mix(in srgb, var(--info) 12%, transparent); }
+.ui-badge--brass { color: var(--brass); border-color: color-mix(in srgb, var(--brass) 45%, transparent); background: color-mix(in srgb, var(--brass) 12%, transparent); }
+.ui-badge--muted { color: var(--text-muted); border-color: var(--border-hairline); }
+
+/* ── Button ────────────────────────────────────────────── */
+.ui-btn {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: var(--radius-2);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: filter var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
+}
+.ui-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.ui-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+/* Tactile press: a 1px push simulates a physical click. Transform-only (GPU),
+   and the shift stays under reduced-motion (feedback remains, only the tween drops). */
+.ui-btn:not(:disabled):active { transform: translateY(1px); }
+.ui-btn--primary { background: var(--brass); color: var(--brass-ink); }
+.ui-btn--primary:not(:disabled):hover { background: var(--brass-hover); }
+.ui-btn--ghost { background: transparent; color: var(--text-primary); border-color: var(--border-default); }
+.ui-btn--ghost:not(:disabled):hover { background: var(--surface-2); border-color: var(--border-hover); }
+.ui-btn--danger { background: transparent; color: var(--risk-high); border-color: color-mix(in srgb, var(--risk-high) 50%, transparent); }
+.ui-btn--danger:not(:disabled):hover { background: color-mix(in srgb, var(--risk-high) 12%, transparent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-btn { transition: none; }
+}
+
+/* ── Card ──────────────────────────────────────────────── */
+.ui-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  padding: var(--space-6) var(--space-6);
+}
+/* R5: hover brightens the border only — no transform in a dense grid. */
+.ui-card--interactive { transition: border-color var(--dur-fast) var(--ease-standard); }
+.ui-card--interactive:hover { border-color: var(--brass); }
+.ui-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+.ui-card__title { font-size: 15px; font-weight: 650; color: var(--text-primary); }
+.ui-card__actions { display: flex; align-items: center; gap: var(--space-3); }
+.ui-card__body { color: var(--text-muted); font-size: 14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-card--interactive { transition: none; }
+}
+
+/* ── AccessBadge — exposure on the steel --access hue ───── */
+/* One hue, three fill weights + lock glyph + label. NEVER green/amber/red. */
+.access-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  color: var(--access);
+  border: 1px solid color-mix(in srgb, var(--access) 45%, transparent);
+  background: transparent;
+}
+.access-badge__glyph { font-size: 10px; line-height: 1; }
+/* self → outline only */
+.access-badge--self { background: transparent; }
+/* guard → 12% fill */
+.access-badge--guard { background: color-mix(in srgb, var(--access) 12%, transparent); }
+/* engineer → 20% fill, strongest label */
+.access-badge--engineer {
+  background: color-mix(in srgb, var(--access) 20%, transparent);
+  color: var(--access-strong);
+  border-color: color-mix(in srgb, var(--access) 60%, transparent);
+}
+
+/* ── MacdTag — neutral mono glyph-tag ──────────────────── */
+/* Terraform-plan symbols on --surface-2; NOT a colored axis. */
+.macd-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+}
+.macd-tag__glyph { color: var(--text-primary); font-weight: 700; }
+/* Delete's glyph alone may carry --risk-high. */
+.macd-tag__glyph--danger { color: var(--risk-high); }
+
+/* ── OpChips — risk + exposure, compact, independent axes ─ */
+.op-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+
+/* ── StatusBadge — dot + label ─────────────────────────── */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.status-badge__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  flex: none;
+  background: var(--text-muted);
+}
+.status-badge--done .status-badge__dot { background: var(--risk-low); }
+.status-badge--fail .status-badge__dot { background: var(--risk-high); }
+.status-badge--wait .status-badge__dot { background: var(--risk-med); }
+.status-badge--flight .status-badge__dot { background: var(--info); }
+.status-badge--idle { color: var(--text-muted); }
+.status-badge--idle .status-badge__dot { background: var(--text-muted); }

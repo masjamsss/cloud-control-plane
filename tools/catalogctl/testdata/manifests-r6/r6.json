@@ -1,0 +1,48 @@
+{
+  "service": "r6fx",
+  "operations": [
+    {
+      "id": "r6-grow-gsi-read-capacity",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Grow a DynamoDB GSI read capacity (nested, grow-only)",
+      "target": {
+        "resourceType": "aws_dynamodb_table",
+        "path": [
+          "global_secondary_index"
+        ]
+      },
+      "params": [
+        {
+          "name": "table",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "index_name",
+          "source": "user_input",
+          "type": "string",
+          "required": true,
+          "role": "selector",
+          "matchAttr": "name"
+        },
+        {
+          "name": "new_read_capacity",
+          "source": "user_input",
+          "type": "number",
+          "required": true,
+          "attr": "read_capacity",
+          "bounds": {
+            "min": 1,
+            "max": 40000,
+            "growOnly": true
+          }
+        }
+      ],
+      "forcesReplace": false,
+      "terraformCapability": "~ update (global_secondary_index read_capacity)"
+    }
+  ]
+}

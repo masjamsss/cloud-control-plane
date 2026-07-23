@@ -1,0 +1,5 @@
+{
+  "aws_s3_bucket.state": "s3",
+  "aws_kms_key.state": "kms",
+  "aws_iam_role.ci": "iam"
+}

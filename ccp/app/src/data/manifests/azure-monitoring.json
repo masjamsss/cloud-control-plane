@@ -1,0 +1,972 @@
+{
+  "service": "azure-monitoring",
+  "scope": "estate",
+  "resourceTypes": [
+    "azurerm_application_insights",
+    "azurerm_log_analytics_cluster",
+    "azurerm_log_analytics_query_pack",
+    "azurerm_log_analytics_query_pack_query",
+    "azurerm_log_analytics_solution",
+    "azurerm_log_analytics_workspace",
+    "azurerm_monitor_action_group",
+    "azurerm_monitor_activity_log_alert",
+    "azurerm_monitor_autoscale_setting",
+    "azurerm_monitor_data_collection_endpoint",
+    "azurerm_monitor_metric_alert",
+    "azurerm_monitor_workspace"
+  ],
+  "summary": "Log Analytics workspaces, Application Insights components, and metric alerts. Retention, ingestion caps, and sampling are self-service cost/visibility knobs; silencing an alert stays guardrailed since it is a monitoring-posture change.",
+  "operations": [
+    {
+      "id": "azure-monitoring-log-analytics-update-tags",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Log Analytics workspace tags",
+      "summary": "Set or update this workspace's tags. Only the tags you list change; others are left alone.",
+      "description": "Sets or merges tags on the Log Analytics workspace. Non-disruptive, takes effect immediately, no impact on ingested data or queries.",
+      "target": {
+        "resourceType": "azurerm_log_analytics_workspace",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "workspace",
+          "label": "Log Analytics workspace",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_log_analytics_workspace/address",
+          "help": "The workspace to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Azure tag names cannot contain < > % & \\ ? /."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag workspace", "log analytics handover"],
+      "group": "tags-naming",
+      "decisions": [
+        "Tags are metadata only — cost-neutral and freely reversible — so this stays LOW risk."
+      ]
+    },
+    {
+      "id": "azure-monitoring-log-analytics-set-retention",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set Log Analytics workspace retention",
+      "summary": "Change how long ingested log data is kept. Shortening the window permanently discards data older than the new limit.",
+      "description": "Sets retention_in_days on the Log Analytics workspace. Azure supports 30-730 days. Extending retention raises storage cost; shortening it permanently discards data outside the new window on Azure's next retention sweep — there is no undo for data already purged.",
+      "target": {
+        "attr": "retention_in_days",
+        "resourceType": "azurerm_log_analytics_workspace"
+      },
+      "params": [
+        {
+          "name": "workspace",
+          "label": "Log Analytics workspace",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_log_analytics_workspace/address",
+          "help": "The workspace to change."
+        },
+        {
+          "name": "new_retention_in_days",
+          "label": "Retention (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "retention_in_days",
+          "bounds": {
+            "min": 30,
+            "max": 730
+          },
+          "help": "Days of log data to retain; Azure accepts 30-730. Lowering this permanently discards data older than the new window."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (retention_in_days)",
+      "keywords": [
+        "log retention",
+        "keep logs longer",
+        "reduce log retention",
+        "workspace retention"
+      ],
+      "group": "monitoring-alarms",
+      "decisions": [
+        "Cost-changing — longer retention bills more storage — so MEDIUM floor.",
+        "Shortening the window is a real data-loss risk once Azure's retention sweep runs — called out explicitly since the op does not warn again at apply time.",
+        "Config-only change to the workspace resource; nothing restarts, so downtime stays none."
+      ]
+    },
+    {
+      "id": "azure-monitoring-log-analytics-set-daily-quota",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set the Log Analytics daily ingestion cap",
+      "summary": "Cap how much log data the workspace ingests per day, or remove the cap. A cap stops ingestion once it is hit.",
+      "description": "Sets daily_quota_gb on the Log Analytics workspace, capping daily ingestion volume as a cost guardrail. -1 means no cap (unlimited ingestion, the Azure default). Once a day's ingestion hits the cap, Azure stops collecting new data for the rest of that day — including data any alert rule depends on — until the daily reset.",
+      "target": {
+        "attr": "daily_quota_gb",
+        "resourceType": "azurerm_log_analytics_workspace"
+      },
+      "params": [
+        {
+          "name": "workspace",
+          "label": "Log Analytics workspace",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_log_analytics_workspace/address",
+          "help": "The workspace to change."
+        },
+        {
+          "name": "new_daily_quota_gb",
+          "label": "Daily ingestion cap (GB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "daily_quota_gb",
+          "bounds": {
+            "min": -1,
+            "max": 10000
+          },
+          "help": "Daily ingestion cap in GB; use -1 to remove the cap entirely. Hitting the cap stops log collection for the rest of that day."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (daily_quota_gb)",
+      "keywords": ["ingestion cap", "cost control logs", "stop log ingestion", "quota"],
+      "group": "monitoring-alarms",
+      "decisions": [
+        "Cost-changing in both directions — raising or removing the cap increases ingestion spend — so MEDIUM floor.",
+        "A cap that is hit silently stops log collection (and any alert that depends on that data) for the rest of the day — an operational risk worth flagging, not just a cost one.",
+        "Config-only; no restart, so downtime stays none."
+      ]
+    },
+    {
+      "id": "azure-monitoring-app-insights-update-tags",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Application Insights tags",
+      "summary": "Set or update this component's tags. Only the tags you list change; others are left alone.",
+      "description": "Sets or merges tags on the Application Insights component. Non-disruptive, takes effect immediately, no impact on collected telemetry.",
+      "target": {
+        "resourceType": "azurerm_application_insights",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "app_insights",
+          "label": "Application Insights component",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_application_insights/address",
+          "help": "The Application Insights component to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Azure tag names cannot contain < > % & \\ ? /."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag app insights", "telemetry handover"],
+      "group": "tags-naming",
+      "decisions": [
+        "Tags are metadata only — cost-neutral and freely reversible — so this stays LOW risk."
+      ]
+    },
+    {
+      "id": "azure-monitoring-app-insights-set-retention",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set Application Insights retention",
+      "summary": "Change how long telemetry data is kept. Shortening the window permanently discards data older than the new limit.",
+      "description": "Sets retention_in_days on the Application Insights component to one of Azure's supported retention windows. Extending retention raises storage cost; shortening it permanently discards telemetry outside the new window.",
+      "target": {
+        "attr": "retention_in_days",
+        "resourceType": "azurerm_application_insights"
+      },
+      "params": [
+        {
+          "name": "app_insights",
+          "label": "Application Insights component",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_application_insights/address",
+          "help": "The Application Insights component to change."
+        },
+        {
+          "name": "new_retention_in_days",
+          "label": "Retention (days)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "attr": "retention_in_days",
+          "bounds": {
+            "allowlist": [30, 60, 90, 120, 180, 270, 365, 550, 730]
+          },
+          "help": "Application Insights only accepts these discrete retention windows, in days; 90 is the Azure default."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (retention_in_days)",
+      "keywords": ["telemetry retention", "app insights retention", "reduce telemetry retention"],
+      "group": "monitoring-alarms",
+      "decisions": [
+        "Cost-changing — longer retention bills more storage — so MEDIUM floor, matching the Log Analytics retention op.",
+        "Shortening the window permanently discards telemetry once Azure's retention sweep runs.",
+        "Retention only accepts a closed set of values on this resource, so this is an allowlist rather than a min/max range."
+      ]
+    },
+    {
+      "id": "azure-monitoring-app-insights-set-sampling",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set Application Insights sampling rate",
+      "summary": "Change what share of telemetry is collected. Lower sampling cuts cost but also cuts visibility during an incident.",
+      "description": "Sets sampling_percentage on the Application Insights component. 100 collects every telemetry item; lower values collect a random share to cut ingestion cost, at the cost of losing some visibility — potentially including the exact request that mattered during an incident.",
+      "target": {
+        "attr": "sampling_percentage",
+        "resourceType": "azurerm_application_insights"
+      },
+      "params": [
+        {
+          "name": "app_insights",
+          "label": "Application Insights component",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_application_insights/address",
+          "help": "The Application Insights component to change."
+        },
+        {
+          "name": "new_sampling_percentage",
+          "label": "Sampling percentage",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "sampling_percentage",
+          "bounds": {
+            "min": 0,
+            "max": 100
+          },
+          "help": "Percent of telemetry to keep, 0-100. 100 keeps everything and is also Azure's default."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (sampling_percentage)",
+      "keywords": ["reduce telemetry cost", "sampling rate", "app insights cost"],
+      "group": "monitoring-alarms",
+      "decisions": [
+        "Cost-changing — ingestion volume scales with the sampling rate — so MEDIUM floor.",
+        "Lowering sampling trades cost for visibility — flagged since a too-low rate can hide the one request an incident review needs.",
+        "Config-only; no restart, so downtime stays none."
+      ]
+    },
+    {
+      "id": "azure-monitoring-metric-alert-toggle-enabled",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or silence a metric alert rule",
+      "summary": "Turn this alert rule on or off. Silencing it stops notifications until it is re-enabled — review before applying.",
+      "description": "Sets enabled on the metric alert rule. false silences the rule — Azure Monitor stops evaluating it and no notifications fire — without deleting its configuration, so re-enabling later restores it exactly as it was. Both directions are offered: silencing during planned maintenance and re-enabling afterward are equally legitimate self-service asks.",
+      "target": {
+        "attr": "enabled",
+        "resourceType": "azurerm_monitor_metric_alert"
+      },
+      "params": [
+        {
+          "name": "alert",
+          "label": "Metric alert rule",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_monitor_metric_alert/address",
+          "help": "The alert rule to enable or silence."
+        },
+        {
+          "name": "enabled",
+          "label": "Enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "enabled",
+          "bounds": {
+            "allowlist": [true, false]
+          },
+          "help": "false silences the rule (no evaluation, no notifications) without deleting it; true restores normal evaluation."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (enabled)",
+      "keywords": [
+        "silence alert",
+        "mute alert",
+        "disable alert",
+        "re-enable alert",
+        "maintenance window"
+      ],
+      "group": "monitoring-alarms",
+      "decisions": [
+        "Silencing an alert is a real monitoring-posture change — an incident could go unnoticed while it is off — so MEDIUM floor even though the change itself is trivially reversible.",
+        "Both true and false are offered since planned-maintenance silencing and re-enabling afterward are both legitimate, equally common asks.",
+        "Config-only; no restart, so downtime stays none."
+      ]
+    },
+    {
+      "id": "azure-monitoring-metric-alert-update-tags",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update metric alert tags",
+      "summary": "Set or update this alert rule's tags. Only the tags you list change; others are left alone.",
+      "description": "Sets or merges tags on the metric alert rule. Non-disruptive, takes effect immediately, no impact on alert evaluation.",
+      "target": {
+        "resourceType": "azurerm_monitor_metric_alert",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "alert",
+          "label": "Metric alert rule",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_monitor_metric_alert/address",
+          "help": "The alert rule to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched. Azure tag names cannot contain < > % & \\ ? /."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag alert", "alert handover"],
+      "group": "tags-naming",
+      "decisions": [
+        "Tags are metadata only — cost-neutral and freely reversible — so this stays LOW risk."
+      ]
+    },
+    {
+      "id": "azure-tag-log-analytics-cluster",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Log Analytics Cluster tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Log Analytics Cluster (azurerm_log_analytics_cluster). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_log_analytics_cluster",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Log Analytics Cluster",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_log_analytics_cluster/address",
+          "help": "The Log Analytics Cluster to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-log-analytics-query-pack",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Log Analytics Query Pack tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Log Analytics Query Pack (azurerm_log_analytics_query_pack). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_log_analytics_query_pack",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Log Analytics Query Pack",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_log_analytics_query_pack/address",
+          "help": "The Log Analytics Query Pack to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-log-analytics-query-pack-query",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Log Analytics Query Pack Query tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Log Analytics Query Pack Query (azurerm_log_analytics_query_pack_query). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_log_analytics_query_pack_query",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Log Analytics Query Pack Query",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_log_analytics_query_pack_query/address",
+          "help": "The Log Analytics Query Pack Query to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-log-analytics-solution",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Log Analytics Solution tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Log Analytics Solution (azurerm_log_analytics_solution). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_log_analytics_solution",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Log Analytics Solution",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_log_analytics_solution/address",
+          "help": "The Log Analytics Solution to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-monitor-action-group",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Monitor Action Group tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Monitor Action Group (azurerm_monitor_action_group). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_monitor_action_group",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Monitor Action Group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_monitor_action_group/address",
+          "help": "The Monitor Action Group to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-monitor-activity-log-alert",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Monitor Activity Log Alert tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Monitor Activity Log Alert (azurerm_monitor_activity_log_alert). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_monitor_activity_log_alert",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Monitor Activity Log Alert",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_monitor_activity_log_alert/address",
+          "help": "The Monitor Activity Log Alert to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-monitor-autoscale-setting",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Monitor Autoscale Setting tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Monitor Autoscale Setting (azurerm_monitor_autoscale_setting). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_monitor_autoscale_setting",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Monitor Autoscale Setting",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_monitor_autoscale_setting/address",
+          "help": "The Monitor Autoscale Setting to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-monitor-data-collection-endpoint",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Monitor Data Collection Endpoint tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Monitor Data Collection Endpoint (azurerm_monitor_data_collection_endpoint). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_monitor_data_collection_endpoint",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Monitor Data Collection Endpoint",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_monitor_data_collection_endpoint/address",
+          "help": "The Monitor Data Collection Endpoint to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-tag-monitor-workspace",
+      "service": "azure-monitoring",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update Monitor Workspace tags",
+      "summary": "Set or update tags on this resource. Only the tags you list change; others are left untouched. No effect on its data, endpoints, or access.",
+      "consoleLabel": "Tags",
+      "description": "Sets or merges cost-allocation and ownership tags on this Monitor Workspace (azurerm_monitor_workspace). In-place, takes effect immediately, and has no effect on the resource's data, configuration, endpoints, or access. Auto-generated tag operation (the comprehensive Azure tag surface); the tag-case-collision guard applies.",
+      "target": {
+        "resourceType": "azurerm_monitor_workspace",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Monitor Workspace",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_monitor_workspace/address",
+          "help": "The Monitor Workspace to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:=+@-]{1,256}$",
+            "semantic": "azure_tag_map"
+          },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming"
+    },
+    {
+      "id": "azure-monitoring-log-analytics-provision",
+      "service": "azure-monitoring",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a Log Analytics workspace",
+      "summary": "Request a new Log Analytics workspace to collect logs and metrics; an engineer finalizes and reviews the Terraform.",
+      "description": "Specify a new Log Analytics workspace: name, resource group, region, pricing tier, and retention window. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "azurerm_log_analytics_workspace"
+      },
+      "params": [
+        {
+          "name": "workspace_name",
+          "label": "Workspace name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9-]{4,63}$"
+          },
+          "help": "Letters, numbers and dashes, 4-63 characters. Names the workspace in the generated draft."
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "resource_group_name",
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "group": "identity",
+          "help": "The resource group this workspace belongs to."
+        },
+        {
+          "name": "sku",
+          "label": "Pricing tier",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "sku",
+          "group": "monitoring",
+          "bounds": {
+            "allowlist": ["PerGB2018", "CapacityReservation"]
+          },
+          "default": "PerGB2018",
+          "help": "PerGB2018 bills per GB ingested and is the standard choice for a new workspace. CapacityReservation commits to a fixed daily volume at a lower per-GB rate for high-ingestion workspaces. Older legacy tiers are not offered."
+        },
+        {
+          "name": "retention_in_days",
+          "label": "Retention (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "retention_in_days",
+          "group": "monitoring",
+          "bounds": {
+            "min": 30,
+            "max": 730
+          },
+          "default": 30,
+          "help": "Days of log data to retain; Azure accepts 30-730. Longer retention raises storage cost."
+        },
+        {
+          "name": "resource_name",
+          "label": "Workspace name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this workspace collects",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this workspace."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new log analytics workspace", "new workspace"],
+      "decisions": [
+        "If Capacity Reservation is chosen for the pricing tier, also set a daily reservation volume — not captured as a param here.",
+        "A daily ingestion cap and diagnostic settings that route other resources' logs into this workspace are configured separately after creation."
+      ]
+    }
+  ]
+}

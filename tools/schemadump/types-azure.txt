@@ -1,0 +1,28 @@
+# azurerm resource types — scope input for gen.sh (PROVIDER=azurerm).
+#
+# SUPERSEDED AS THE COMMITTED SCOPE (2026-07-18, owner: "scan every capability"):
+# the committed azurerm-v4.81.0-schema.json is now the FULL provider reflection —
+# ALL 1,141 azurerm SDKv2 resource types, 21,939 attributes, 5,532 ForceNew=true —
+# produced by running gen.sh (PROVIDER=azurerm) with NO -types filter (empty = all,
+# matching the tool's documented behavior). The ForceNew gate can therefore resolve
+# ANY azurerm type an authored op writes; nothing is fail-closed for lack of a dump
+# entry anymore (an unrecognized *attribute* still fails closed — that is correct).
+#
+# This file is retained as the ORIGINAL 12-type spike scope (F1/F2, 0039) — the
+# minimum that proved the reflection mechanism on a second provider (F1c's three
+# verdicts, all still present in the full dump). It is no longer the committed
+# scope; regenerate the full dump with an empty -types filter, not this list.
+# The AWS side keeps its curated types.txt union rule because its dump is scoped
+# to relevant types; the Azure dump is deliberately complete instead.
+azurerm_resource_group
+azurerm_storage_account
+azurerm_linux_virtual_machine
+azurerm_windows_virtual_machine
+azurerm_managed_disk
+azurerm_virtual_network
+azurerm_subnet
+azurerm_network_security_group
+azurerm_network_security_rule
+azurerm_network_interface
+azurerm_public_ip
+azurerm_key_vault

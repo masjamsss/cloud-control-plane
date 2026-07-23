@@ -1,0 +1,28 @@
+{
+  "Volumes": [
+    {
+      "VolumeId": "vol-0c0c0c0c0c0c0c001",
+      "Size": 100,
+      "VolumeType": "gp3",
+      "State": "in-use",
+      "AvailabilityZone": "ap-southeast-5a",
+      "Attachments": [
+        {
+          "Device": "/dev/sdb",
+          "VolumeId": "vol-0c0c0c0c0c0c0c001",
+          "InstanceId": "i-0a0a0a0a0a0a0a001",
+          "State": "attached"
+        }
+      ],
+      "Tags": [{ "Key": "Name", "Value": "app-data" }]
+    },
+    {
+      "VolumeId": "vol-0c0c0c0c0c0c0c002",
+      "Size": 50,
+      "VolumeType": "gp3",
+      "State": "available",
+      "AvailabilityZone": "ap-southeast-5a",
+      "Attachments": []
+    }
+  ]
+}

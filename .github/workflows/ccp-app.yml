@@ -1,0 +1,56 @@
+name: ccp-app
+
+# Runs the Cloud Control Plane SPA's checks on any change under ccp/app. Fixes 0005
+# MAINT-5 (nothing ran the app's typecheck/tests despite the README implying it).
+# Blocking gates: typecheck, tests, build, and the WCAG contrast gate — all green
+# today. Lint and format run informationally: the repo carries pre-existing lint
+# and Prettier debt (0005 MAINT-6/MAINT-9) that is out of scope to fix here.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ccp/app/**'
+      - '.github/workflows/ccp-app.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ccp/app/**'
+      - '.github/workflows/ccp-app.yml'
+
+defaults:
+  run:
+    working-directory: ccp/app
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ccp/app/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Contrast (WCAG AA tokens)
+        run: npm run contrast
+      - name: Help coverage (every param documented — R5)
+        run: npm run help:check
+      - name: ForceNew safety gate (0006 §5)
+        run: npm run verify:safety
+      - name: Lint (informational — pre-existing debt, MAINT-6)
+        run: npm run lint
+        continue-on-error: true
+      - name: Format check (informational — pre-existing debt, MAINT-9)
+        run: npm run format:check
+        continue-on-error: true

@@ -1,0 +1,1742 @@
+{
+  "service": "ec2",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_instance",
+    "aws_key_pair"
+  ],
+  "summary": "EC2 ERP hosts. Resize is guardrailed (stop/start downtime); a tag add is self-service; a brand-new instance routes to an engineer.",
+  "operations": [
+    {
+      "id": "ec2-resize",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Resize an EC2 instance",
+      "description": "Change instance_type to an allowlisted ERP-supported size. Requires a stop/start \u2014 brief downtime for the workload.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EC2 instance to resize; the picker only lists instances already tracked in the estate's Terraform inventory, so the change cannot target an unmanaged host.",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true
+        },
+        {
+          "name": "new_instance_type",
+          "label": "New instance type",
+          "type": "string",
+          "source": "allowlist",
+          "help": "The EC2 instance_type, the size class that fixes the host's vCPU and memory; only the engineer-approved ERP-supported r6i/m6i/c6i sizes on the allowlist can be chosen, and applying the change stops and restarts the instance.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "r6i.large",
+              "r6i.xlarge",
+              "r6i.2xlarge",
+              "r6i.4xlarge",
+              "m6i.xlarge",
+              "m6i.2xlarge",
+              "c6i.2xlarge"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "stop-start",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (stop/start)"
+    },
+    {
+      "id": "ec2-add-instance-tag",
+      "service": "ec2",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to an instance",
+      "description": "Add one metadata tag key/value to an instance. Additive, reversible, no workload impact.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EC2 instance to tag; the inventory picker limits the change to hosts Terraform already manages, and a tag is metadata that cannot affect the running workload.",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{1,64}$"
+          },
+          "help": "Letters/digits/_/- , 2\u201365 chars. Governance keys are engineer-owned."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "help": "The text stored under the tag key, metadata only with no effect on the instance; limited here to 1-128 characters, safely inside AWS's 256-character tag-value limit.",
+          "required": true,
+          "bounds": {
+            "pattern": "^.{1,128}$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tag add)"
+    },
+    {
+      "id": "ec2-provision-instance",
+      "service": "ec2",
+      "macd": "Add",
+      "codemodOp": "instantiate_module",
+      "title": "Provision a new EC2 instance",
+      "description": "Stand up a brand-new ERP host. Requires AMI, subnet, static IP, security-group and IAM decisions \u2014 architectural and security-relevant, so it routes to an engineer.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "purpose",
+          "label": "What is this host for?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Describe the workload; an engineer will design and author the resource."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)"
+    },
+    {
+      "id": "ec2-remove-instance-tag",
+      "service": "ec2",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag from an instance",
+      "description": "Delete one metadata tag from an instance. Reversible \u2014 the tag can be re-added. Governance tags are protected.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EC2 instance to remove the tag from; the inventory picker keeps the change scoped to estate-managed hosts, and a removed tag can always be re-added.",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{1,64}$"
+          },
+          "help": "The tag key to delete. Governance keys are engineer-owned."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (tag removal)"
+    },
+    {
+      "id": "ec2-toggle-termination-protection",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle termination protection",
+      "description": "Enable or disable disable_api_termination on an instance. Updates in place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EC2 instance whose termination-protection flag changes; the inventory picker limits the change to estate-managed hosts.",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Protection",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "Sets disable_api_termination: when true, AWS rejects any terminate call from the console, API, or Terraform until the flag is turned off; only true/false are accepted, so nothing else on the instance can change.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (disable_api_termination)"
+    },
+    {
+      "id": "ec2-toggle-stop-protection",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle stop protection",
+      "description": "Enable or disable disable_api_stop on an instance. Updates in place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EC2 instance whose stop-protection flag changes; the inventory picker limits the change to estate-managed hosts.",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Protection",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "Sets disable_api_stop: when true, AWS rejects stop requests from the console or API, guarding an always-on workload; it is a strict true/false toggle that is reversible at any time.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (disable_api_stop)"
+    },
+    {
+      "id": "ec2-toggle-detailed-monitoring",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle detailed monitoring",
+      "description": "Enable or disable detailed CloudWatch monitoring (monitoring) on an instance. Updates in place, reversible, no downtime; a small cost when on.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EC2 instance whose CloudWatch monitoring level changes; the inventory picker limits the change to estate-managed hosts.",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Detailed monitoring",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "Sets monitoring: true publishes CloudWatch metrics at 1-minute detail for a small extra cost, false returns to free 5-minute basic metrics; either value leaves the workload itself untouched.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (monitoring)"
+    },
+    {
+      "id": "ec2-toggle-source-dest-check",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle source/destination check",
+      "description": "Enable or disable source_dest_check. Disabling is required for NAT/routing instances \u2014 a networking change, so it is guardrailed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EC2 instance whose source/destination check changes; the inventory picker limits this networking change to estate-managed hosts.",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Source/dest check",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "Sets source_dest_check: true (the AWS default) makes the instance drop packets not addressed to itself, while false is needed only for NAT or routing appliances that forward other hosts' traffic, which is why this toggle is guardrailed.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (source_dest_check)"
+    },
+    {
+      "id": "ec2-set-shutdown-behavior",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set shutdown behavior",
+      "description": "Set instance_initiated_shutdown_behavior to stop or terminate. 'terminate' means an in-guest shutdown destroys the instance, so this is guardrailed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the EC2 instance whose OS-shutdown behavior changes; the inventory picker limits the change to estate-managed hosts.",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true
+        },
+        {
+          "name": "behavior",
+          "label": "On OS shutdown",
+          "type": "string",
+          "source": "allowlist",
+          "help": "Sets instance_initiated_shutdown_behavior, what AWS does when the operating system shuts itself down: 'stop' keeps the instance and its disks while 'terminate' destroys the instance, and the allowlist contains only these two AWS-defined values.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "stop",
+              "terminate"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (instance_initiated_shutdown_behavior)"
+    },
+    {
+      "id": "ec2-instance-engineer-request",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to an EC2 instance",
+      "description": "Anything not offered as a bounded form \u2014 security groups, IAM instance profile, user_data, tenancy, or a replacement. An engineer authors and reviews the Terraform.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "help": "Select the instance your request is about so the engineer starts from the exact Terraform resource; the inventory picker keeps the request tied to an estate-managed host.",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Describe it; an engineer will author the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored"
+    },
+    {
+      "id": "ec2-toggle-associate-public-ip",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle public IP association",
+      "description": "Set associate_public_ip_address (true/false) on the instance's primary network interface. Controls public-internet exposure, a security boundary, so an engineer authors and reviews the change.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "enabled",
+          "label": "Associate public IP",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Toggle public IP association: true enables public ip association, false disables it."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (associate_public_ip_address)"
+    },
+    {
+      "id": "ec2-toggle-ebs-optimized",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle EBS optimization",
+      "description": "Set ebs_optimized (true/false) for dedicated EBS bandwidth. In-place, reversible, no forced downtime on current-gen instance types; cost/performance implication, so guardrailed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "enabled",
+          "label": "EBS optimized",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Toggle EBS optimization: true enables ebs optimization, false disables it."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (ebs_optimized)"
+    },
+    {
+      "id": "ec2-toggle-enable-primary-ipv6",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle primary IPv6 (GUA)",
+      "description": "Set enable_primary_ipv6 (true/false) to assign a primary IPv6 GUA. Enabling is in-place; per the provider doc, DISABLING after it has been enabled forces instance recreation \u2014 engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "enabled",
+          "label": "Primary IPv6",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Toggle primary IPv6 (GUA): true enables primary ipv6 (gua), false disables it."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (enable_primary_ipv6)"
+    },
+    {
+      "id": "ec2-toggle-force-destroy",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle force_destroy",
+      "description": "Set force_destroy (true/false, default false). When true it destroys the instance even if disable_api_termination or disable_api_stop is set \u2014 a guardrail bypass, so engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "enabled",
+          "label": "Force destroy",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Toggle force_destroy: true enables force_destroy, false disables it."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (force_destroy)"
+    },
+    {
+      "id": "ec2-toggle-get-password-data",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle get_password_data",
+      "description": "Set get_password_data (true/false). When true, Windows administrator password data is retrieved and exported to Terraform state (password_data) \u2014 credential-equivalent material, so engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "enabled",
+          "label": "Get password data",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Toggle get_password_data: true enables get_password_data, false disables it."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (get_password_data)"
+    },
+    {
+      "id": "ec2-toggle-hibernation",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle hibernation support",
+      "description": "Set hibernation (true/false), changing stop/shutdown semantics (in-memory state written to the root volume). The provider doc does not mark this as forcing replacement; reversible, no immediate downtime from the toggle. Guardrailed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "enabled",
+          "label": "Hibernation",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Toggle hibernation support: true enables hibernation support, false disables it."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (hibernation)"
+    },
+    {
+      "id": "ec2-set-tenancy",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set instance tenancy",
+      "description": "Set tenancy to default, dedicated, or host. The provider doc does not mark this ForceNew, but tenancy is known to force replacement in practice and is tied to BYOL/ERP licensing \u2014 engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "tenancy",
+          "label": "Tenancy",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "default",
+              "dedicated",
+              "host"
+            ]
+          },
+          "help": "Instance tenancy placement."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (tenancy)"
+    },
+    {
+      "id": "ec2-toggle-user-data-replace-on-change",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle user_data_replace_on_change",
+      "description": "Set user_data_replace_on_change (true/false, default false). When true, future user_data/user_data_base64 changes trigger a destroy-and-recreate instead of a stop/start \u2014 amplifies later blast radius, so engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "enabled",
+          "label": "Replace on user_data change",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Toggle user_data_replace_on_change: true enables user_data_replace_on_change, false disables it."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (user_data_replace_on_change)"
+    },
+    {
+      "id": "ec2-set-capacity-reservation-preference",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set capacity reservation preference",
+      "description": "Set capacity_reservation_specification.capacity_reservation_preference to open or none (default open). Per the provider doc, modifying it requires the instance to be in a stopped state \u2014 brief downtime; guardrailed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "preference",
+          "label": "Reservation preference",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "open",
+              "none"
+            ]
+          },
+          "help": "Capacity-reservation targeting: open uses any matching reservation, none uses on-demand capacity."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "stop required",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (capacity_reservation_preference)"
+    },
+    {
+      "id": "ec2-set-cpu-amd-sev-snp",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set CPU AMD SEV-SNP",
+      "description": "Set cpu_options.amd_sev_snp to enabled or disabled (M6a/R6a/C6a only). Per the provider doc, changing it destroys and recreates the instance; also a confidential-compute security feature \u2014 engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "amd_sev_snp",
+          "label": "AMD SEV-SNP",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "enabled",
+              "disabled"
+            ]
+          },
+          "help": "AMD SEV-SNP memory encryption: enabled or disabled."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "replacement (destroy/recreate)",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (cpu_options.amd_sev_snp)"
+    },
+    {
+      "id": "ec2-set-cpu-nested-virtualization",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set CPU nested virtualization",
+      "description": "Set cpu_options.nested_virtualization to enabled or disabled (8th-gen Intel only). Per the provider doc this is applied in-place but requires an instance stop/start; enabling also disables Virtual Secure Mode (VSM). Guardrailed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "nested_virtualization",
+          "label": "Nested virtualization",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "enabled",
+              "disabled"
+            ]
+          },
+          "help": "CPU nested virtualization: enabled or disabled."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "stop-start",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (cpu_options.nested_virtualization)"
+    },
+    {
+      "id": "ec2-set-cpu-credits",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set CPU credit mode",
+      "description": "Set credit_specification.cpu_credits to standard or unlimited (T2/T3 burst credits). Cost/performance implication, in-place, reversible, no downtime. Guardrailed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "cpu_credits",
+          "label": "CPU credits",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "standard",
+              "unlimited"
+            ]
+          },
+          "help": "Burstable-instance CPU credit mode: standard or unlimited."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (credit_specification.cpu_credits)"
+    },
+    {
+      "id": "ec2-toggle-root-delete-on-termination",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle root volume delete-on-termination",
+      "description": "Set root_block_device.delete_on_termination (true/false, default true), controlling whether the root EBS volume is deleted when the instance terminates \u2014 a data-loss guardrail, so engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "enabled",
+          "label": "Delete root volume on termination",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Toggle root volume delete-on-termination: true enables root volume delete-on-termination, false disables it."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (root_block_device.delete_on_termination)"
+    },
+    {
+      "id": "ec2-toggle-root-encrypted",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set root volume encryption",
+      "description": "Set root_block_device.encrypted (true/false, default false). Per the provider doc, modifying encryption on the root volume requires resource replacement (destroy/recreate) \u2014 engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "enabled",
+          "label": "Root volume encrypted",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Set root volume encryption: true enables root volume encryption, false disables it."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "replacement (destroy/recreate)",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (root_block_device.encrypted)"
+    },
+    {
+      "id": "ec2-add-root-volume-tag",
+      "service": "ec2",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to the root volume",
+      "description": "Add one metadata tag key/value to the instance's root_block_device.tags map (applied post-creation via a separate API call). Additive, reversible, no downtime. Key/value bounds mirror the shipped ec2-add-instance-tag operation.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{1,64}$"
+          },
+          "help": "Letters/digits/_/- , 2\u201365 chars. Governance keys are engineer-owned."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^.{1,128}$"
+          },
+          "help": "The tag value (1\u2013128 characters)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (root_block_device.tags add)"
+    },
+    {
+      "id": "ec2-set-root-volume-type",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set root volume type",
+      "description": "Set root_block_device.volume_type to one of standard, gp2, gp3, io1, io2, sc1, st1. Applied via online ModifyVolume \u2014 performance/cost implication, reversible, no downtime. Guardrailed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "volume_type",
+          "label": "Root volume type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "standard",
+              "gp2",
+              "gp3",
+              "io1",
+              "io2",
+              "sc1",
+              "st1"
+            ]
+          },
+          "help": "EBS volume type for the root device (gp3/gp2 general-purpose SSD, io1/io2 provisioned IOPS, st1/sc1 HDD, standard magnetic)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (root_block_device.volume_type)"
+    },
+    {
+      "id": "ec2-toggle-enclave-enabled",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set Nitro Enclaves",
+      "description": "Set enclave_options.enabled (true/false, default false). Per the provider doc, changing it destroys and recreates the instance; Nitro Enclaves is a confidential-compute security feature \u2014 engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "enabled",
+          "label": "Nitro Enclaves",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Set Nitro Enclaves: true enables nitro enclaves, false disables it."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "replacement (destroy/recreate)",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (enclave_options.enabled)"
+    },
+    {
+      "id": "ec2-set-auto-recovery",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set instance auto-recovery",
+      "description": "Set maintenance_options.auto_recovery to default or disabled. Disabling removes AWS automatic recovery on hardware impairment (removes a safety net). In-place, reversible, no downtime. Guardrailed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "auto_recovery",
+          "label": "Auto-recovery",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "default",
+              "disabled"
+            ]
+          },
+          "help": "Simplified automatic instance recovery: default (on where supported) or disabled."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (maintenance_options.auto_recovery)"
+    },
+    {
+      "id": "ec2-set-market-type",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set instance market type",
+      "description": "Set instance_market_options.market_type to spot, capacity-block, or interruptible-capacity-reservation (default spot). Choosing spot introduces AWS-initiated interruption risk for a production host \u2014 engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "market_type",
+          "label": "Market type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "spot",
+              "capacity-block",
+              "interruptible-capacity-reservation"
+            ]
+          },
+          "help": "Purchasing model for the instance."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (instance_market_options.market_type)"
+    },
+    {
+      "id": "ec2-set-spot-interruption-behavior",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set spot interruption behavior",
+      "description": "Set spot_options.instance_interruption_behavior to hibernate, stop, or terminate (default terminate). Controls whether a spot interruption destroys or recoverably stops the instance \u2014 engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "instance_interruption_behavior",
+          "label": "Interruption behavior",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "hibernate",
+              "stop",
+              "terminate"
+            ]
+          },
+          "help": "What happens when a Spot instance is interrupted: hibernate, stop, or terminate."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (spot_options.instance_interruption_behavior)"
+    },
+    {
+      "id": "ec2-set-spot-valid-until",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set spot request end date",
+      "description": "Set spot_options.valid_until, the end date of a persistent spot request, in UTC format YYYY-MM-DDTHH:MM:SSZ. Format-bounded by regex. Reversible, no downtime. Guardrailed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "valid_until",
+          "label": "Valid until (UTC)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+          },
+          "help": "UTC timestamp, e.g. 2026-12-31T23:59:59Z"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (spot_options.valid_until)"
+    },
+    {
+      "id": "ec2-set-imds-http-endpoint",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set IMDS http_endpoint",
+      "description": "Set metadata_options.http_endpoint to enabled or disabled (default enabled). Disabling IMDS can sever instance-profile credential retrieval for SSM/CloudWatch agents \u2014 engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "http_endpoint",
+          "label": "IMDS endpoint",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "enabled",
+              "disabled"
+            ]
+          },
+          "help": "Whether the instance metadata service (IMDS) is reachable: enabled or disabled."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (metadata_options.http_endpoint)"
+    },
+    {
+      "id": "ec2-set-imds-http-protocol-ipv6",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set IMDS IPv6 endpoint",
+      "description": "Set metadata_options.http_protocol_ipv6 to enabled or disabled (default disabled), toggling the IPv6 IMDS endpoint. Narrow scope, still gated by http_tokens; reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "http_protocol_ipv6",
+          "label": "IMDS IPv6 endpoint",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "enabled",
+              "disabled"
+            ]
+          },
+          "help": "Whether IMDS is reachable over IPv6: enabled or disabled."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (metadata_options.http_protocol_ipv6)"
+    },
+    {
+      "id": "ec2-set-imds-hop-limit",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set IMDS PUT response hop limit",
+      "description": "Set metadata_options.http_put_response_hop_limit to an integer from 1 to 64 (default 1). Secondary SSRF defense-in-depth knob \u2014 raising it widens reachability of the token endpoint. Reversible, no downtime. Guardrailed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "hop_limit",
+          "label": "Hop limit (1\u201364)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 64
+          },
+          "help": "A value between 1 and 64."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (metadata_options.http_put_response_hop_limit)"
+    },
+    {
+      "id": "ec2-set-imds-http-tokens",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set IMDS http_tokens (IMDSv2)",
+      "description": "Set metadata_options.http_tokens to optional or required. 'required' enforces IMDSv2; 'optional' weakens the SSRF-based credential-theft boundary \u2014 engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_instance",
+        "path": [
+          "metadata_options"
+        ]
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "http_tokens",
+          "label": "IMDS tokens",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "optional",
+              "required"
+            ]
+          },
+          "help": "IMDS session tokens: required enforces IMDSv2, optional also allows IMDSv1."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (metadata_options.http_tokens)"
+    },
+    {
+      "id": "ec2-set-imds-instance-metadata-tags",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set IMDS instance metadata tags",
+      "description": "Set metadata_options.instance_metadata_tags to enabled or disabled (default disabled), exposing instance tags via IMDS. Minor information-exposure consideration; narrow scope, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "instance_metadata_tags",
+          "label": "Instance metadata tags",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "enabled",
+              "disabled"
+            ]
+          },
+          "help": "Whether instance tags are exposed through IMDS: enabled or disabled."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (metadata_options.instance_metadata_tags)"
+    },
+    {
+      "id": "ec2-toggle-dns-aaaa-record",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle DNS AAAA record responses",
+      "description": "Set private_dns_name_options.enable_resource_name_dns_aaaa_record (true/false), controlling whether DNS AAAA queries for the instance hostname are answered \u2014 affects DNS-based discovery. In-place, reversible, no downtime. Guardrailed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "enabled",
+          "label": "Respond with AAAA records",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Toggle DNS AAAA record responses: true enables dns aaaa record responses, false disables it."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (private_dns_name_options.enable_resource_name_dns_aaaa_record)"
+    },
+    {
+      "id": "ec2-toggle-dns-a-record",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle DNS A record responses",
+      "description": "Set private_dns_name_options.enable_resource_name_dns_a_record (true/false), controlling whether DNS A queries for the instance hostname are answered \u2014 affects DNS-based discovery. In-place, reversible, no downtime. Guardrailed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "enabled",
+          "label": "Respond with A records",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Toggle DNS A record responses: true enables dns a record responses, false disables it."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (private_dns_name_options.enable_resource_name_dns_a_record)"
+    },
+    {
+      "id": "ec2-set-hostname-type",
+      "service": "ec2",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set private DNS hostname type",
+      "description": "Set private_dns_name_options.hostname_type to ip-name or resource-name. On AMIs where cloud-init derives the OS hostname from IMDS, this can change the visible hostname \u2014 risky for hostname-bound ERP licensing/profiles, so engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Instance",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_instance/address",
+          "required": true,
+          "help": "The instance to change, chosen from live inventory."
+        },
+        {
+          "name": "hostname_type",
+          "label": "Hostname type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ip-name",
+              "resource-name"
+            ]
+          },
+          "help": "How the private DNS name is formed: ip-name (from the IP) or resource-name (from the instance ID)."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (private_dns_name_options.hostname_type)"
+    },
+    {
+      "id": "ec2-add-key-pair-tag",
+      "service": "ec2",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag to a key pair",
+      "description": "Add one metadata tag key/value to an EC2 key pair (aws_key_pair `tags`). Additive and reversible, with no effect on the key material, SSH access, or any running instance that already uses the key.",
+      "target": {
+        "resourceType": "aws_key_pair"
+      },
+      "params": [
+        {
+          "name": "target",
+          "label": "Key pair",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_key_pair/address",
+          "required": true,
+          "help": "The key pair to change, chosen from live inventory."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{1,64}$"
+          },
+          "help": "Letters/digits/_/- , 2-65 chars. Governance keys are engineer-owned."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^.{1,128}$"
+          },
+          "help": "The tag value (1\u2013128 characters)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tag add)"
+    }
+  ]
+}

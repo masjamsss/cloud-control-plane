@@ -1,0 +1,55 @@
+# __generated__ by Terraform
+# Please review these resources and move them into your main configuration files.
+
+# __generated__ by Terraform from "i-0a0a0a0a0a0a0a001"
+resource "aws_instance" "app_server_1" {
+  ami                         = "ami-0f1x2t3u4r5e6f7a8"
+  instance_type               = "t3.large"
+  subnet_id                   = "subnet-0b0b0b0b0b0b0b001"
+  associate_public_ip_address = false
+  ebs_optimized               = null
+  user_data                   = <<-EOT
+    #!/bin/bash
+    echo "heredoc with a decoy { brace — a real parser must not miscount"
+  EOT
+  tags = {
+    Name = "app-server-1"
+  }
+}
+
+# __generated__ by Terraform from "vol-0c0c0c0c0c0c0c001"
+resource "aws_ebs_volume" "app_data" {
+  availability_zone    = "ap-southeast-5a"
+  size                 = 100
+  type                 = "gp3"
+  multi_attach_enabled = null
+  tags = {
+    Name = "app-data"
+  }
+}
+
+# __generated__ by Terraform from "example-app-logs"
+resource "aws_s3_bucket" "example_app_logs" {
+  bucket        = "example-app-logs"
+  force_destroy = null
+}
+
+# __generated__ by Terraform from "appdb-postgres"
+resource "aws_db_instance" "appdb_postgres" {
+  allocated_storage   = 100
+  engine              = "postgres"
+  engine_version      = "16.4"
+  identifier          = "appdb-postgres"
+  instance_class      = "db.t3.medium"
+  multi_az            = false
+  password            = null
+  skip_final_snapshot = null
+  username            = "fixtureadmin"
+}
+
+# __generated__ by Terraform from "fleet-0f0f0f0f0f0f0f001"
+resource "aws_gamelift_fleet" "unmapped_type_example" {
+  build_id          = "build-0f0f0f0f0f0f0f001"
+  ec2_instance_type = "c5.large"
+  name              = "unmapped-type-example"
+}

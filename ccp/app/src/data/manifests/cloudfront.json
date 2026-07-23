@@ -1,0 +1,1532 @@
+{
+  "service": "cloudfront",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_cloudfront_distribution"
+  ],
+  "summary": "Tune CloudFront delivery cost and performance — price class, compression, default TTL — plus tag housekeeping, a guardrailed alias addition, and two engineer-gated operations (WAF association and distribution deletion) that carry security or destructive blast radius.",
+  "operations": [
+    {
+      "id": "cloudfront-change-price-class",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change price class",
+      "summary": "Change which edge locations serve this distribution - fewer regions cost less but can add latency outside them.",
+      "description": "Changes which set of CloudFront edge locations serve this distribution; narrower price classes cost less but serve fewer regions, which can add latency for viewers outside them.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution"
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "CloudFront distribution",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "help": "Select the distribution to update."
+        },
+        {
+          "name": "new_price_class",
+          "label": "New price class",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "PriceClass_100",
+              "PriceClass_200",
+              "PriceClass_All"
+            ]
+          },
+          "help": "PriceClass_100 = US/Canada/Europe only; PriceClass_200 adds Asia/Africa/Middle East; PriceClass_All covers every edge location."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "scale-performance",
+      "pinned": 1
+    },
+    {
+      "id": "cloudfront-toggle-compression",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle automatic compression",
+      "summary": "Turn automatic compression on or off; turning it off can increase file sizes served to viewers.",
+      "description": "Turns CloudFront's automatic gzip/brotli compression on or off for the default cache behavior; disabling it increases payload size for compressible content but can help with origins that already compress responses.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution",
+        "path": [
+          "default_cache_behavior"
+        ]
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "CloudFront distribution",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "help": "Select the distribution to update."
+        },
+        {
+          "name": "compress",
+          "label": "Enable compression",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "default": true,
+          "help": "Whether CloudFront compresses eligible file types for this behavior."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "scale-performance",
+      "pinned": 2
+    },
+    {
+      "id": "cloudfront-change-default-ttl",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change default cache TTL",
+      "summary": "Change how long content stays cached at the edge before CloudFront rechecks the origin server.",
+      "description": "Adjusts how long, in seconds, CloudFront caches objects at the edge before re-checking the origin; lowering it freshens content faster at the cost of more origin requests, raising it reduces origin load but can serve stale content longer.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution",
+        "path": [
+          "default_cache_behavior"
+        ]
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "CloudFront distribution",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "help": "Select the distribution to update."
+        },
+        {
+          "name": "new_default_ttl",
+          "label": "Default TTL (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 31536000
+          },
+          "help": "Default object lifetime in the CloudFront cache. Origin cache-control headers can still override this per-object.",
+          "attr": "default_ttl"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "scale-performance",
+      "pinned": 3
+    },
+    {
+      "id": "cloudfront-add-tag",
+      "service": "cloudfront",
+      "macd": "Add",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add a tag",
+      "summary": "Add a tag for cost tracking or ownership. Metadata only - no effect on how it runs.",
+      "description": "Adds a single key/value tag to the distribution for cost allocation, ownership, or automation purposes; existing tags are left untouched.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "CloudFront distribution",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "help": "Select the distribution to tag."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9:_-]{0,127}$"
+          },
+          "help": "Tag key, e.g. cost-center or environment."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w .:/=+@-]{0,255}$"
+          },
+          "help": "Value to store under the tag key."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "create"
+    },
+    {
+      "id": "cloudfront-add-alternate-domain",
+      "service": "cloudfront",
+      "macd": "Add",
+      "codemodOp": "append_list_entry",
+      "title": "Add an alternate domain name (CNAME)",
+      "summary": "Add an alternate domain name to this distribution; it must already be covered by the certificate or HTTPS will fail.",
+      "description": "Adds an alternate domain name (CNAME/alias) that viewers can use to reach this distribution. The domain must already be covered by the distribution's ACM certificate SANs or viewer requests will fail TLS validation.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution",
+        "block": "aliases",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "CloudFront distribution",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "help": "Select the distribution to add the alias to."
+        },
+        {
+          "name": "new_alias",
+          "label": "Alternate domain name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(\\*\\.)?([a-z0-9-]+\\.)+[a-z]{2,}$",
+            "semantic": "must already be covered by the distribution's ACM certificate SANs"
+          },
+          "help": "Domain to add as a CNAME, e.g. app.example.com. Confirm the ACM certificate on this distribution covers it before submitting."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "create"
+    },
+    {
+      "id": "cloudfront-associate-waf",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_association_attribute",
+      "title": "Associate or change WAFv2 Web ACL",
+      "summary": "Attach or swap the firewall protecting this distribution; an engineer reviews it first since bad rules can block real traffic.",
+      "description": "Associates a global (CLOUDFRONT-scope) WAFv2 Web ACL with the distribution, or swaps the currently associated one. Misconfigured or overly strict ACL rules can block legitimate traffic, so this is authored and reviewed by an engineer.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution"
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "CloudFront distribution",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "help": "Select the distribution whose WAF association is changing."
+        },
+        {
+          "name": "web_acl_arn",
+          "label": "WAFv2 Web ACL ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^arn:aws:wafv2:us-east-1:\\d{12}:global/webacl/.+$",
+            "semantic": "must be a CLOUDFRONT-scope (global, us-east-1) WAFv2 Web ACL"
+          },
+          "help": "ARN of the global WAFv2 Web ACL to attach. Leave the field empty in a follow-up change request to remove WAF protection."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (web_acl_id)",
+      "group": "protection-backup"
+    },
+    {
+      "id": "cloudfront-delete-distribution",
+      "service": "cloudfront",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete a distribution",
+      "summary": "Permanently delete this distribution; an engineer reviews it first. This can't be undone, and content stops serving once it's removed.",
+      "description": "Permanently removes the CloudFront distribution. AWS requires the distribution to be disabled and fully propagated (typically 15-20 minutes) before it can be destroyed, and once removed the CDN endpoint, cached content, and any dependent CNAMEs stop resolving for viewers.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution"
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "CloudFront distribution",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "help": "Select the distribution to permanently delete. It must be disabled first."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "replace",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "cloudfront-toggle-ipv6",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle IPv6",
+      "summary": "Turn IPv6 access on or off for viewers reaching this distribution. Applies in place with no downtime.",
+      "description": "Enable or disable is_ipv6_enabled on the distribution. In-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution"
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing CloudFront distribution to update, chosen from the estate inventory so only a real, Terraform-managed distribution can be targeted; toggling IPv6 is an in-place update with no downtime.",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true
+        },
+        {
+          "name": "is_ipv6_enabled",
+          "label": "IPv6 enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "Controls whether viewers can reach the distribution over IPv6 in addition to IPv4 (true) or over IPv4 only (false); the change applies in place with no downtime and is fully reversible, so both allowed values are safe.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (is_ipv6_enabled)",
+      "group": "connectivity-access",
+      "pinned": 4
+    },
+    {
+      "id": "cloudfront-change-http-version",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change maximum HTTP version",
+      "summary": "Set the highest HTTP version this distribution offers viewers; older clients still connect using an earlier version.",
+      "description": "Set http_version (max HTTP version negotiated with viewers). Bounded enum, in-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution"
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing CloudFront distribution whose maximum viewer HTTP version is being changed, chosen from the estate inventory so only a real, Terraform-managed distribution can be targeted.",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true
+        },
+        {
+          "name": "http_version",
+          "label": "HTTP version",
+          "type": "string",
+          "source": "allowlist",
+          "help": "The highest HTTP version CloudFront will negotiate with viewers (http1.1 up to http2and3/http3); clients that do not support the chosen maximum automatically use an older version, so every value in this bounded list keeps existing viewers working.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "http1.1",
+              "http2",
+              "http2and3",
+              "http3"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (http_version)",
+      "group": "scale-performance",
+      "pinned": 5
+    },
+    {
+      "id": "cloudfront-set-default-root-object",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set default root object",
+      "summary": "Set which file this distribution serves when a viewer requests the root URL, such as index.html.",
+      "description": "Set default_root_object (the object CloudFront returns for a request to the root URL, e.g. index.html). In-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution"
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing CloudFront distribution whose default root object is being set, chosen from the estate inventory so only a real, Terraform-managed distribution can be targeted; the change is in-place and reversible.",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true
+        },
+        {
+          "name": "default_root_object",
+          "label": "Default root object",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._/-]{1,255}$"
+          },
+          "help": "Object path CloudFront serves at the root, e.g. index.html. No leading slash; up to 255 chars."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (default_root_object)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "cloudfront-set-comment",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Edit distribution comment",
+      "summary": "Edit this distribution's description. Cosmetic only - it has no effect on how traffic is served.",
+      "description": "Set the free-text comment/description (max 128 chars). Cosmetic, in-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution"
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing CloudFront distribution whose comment is being edited, chosen from the estate inventory so only a real, Terraform-managed distribution can be targeted; the comment is cosmetic metadata with no effect on traffic.",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true
+        },
+        {
+          "name": "comment",
+          "label": "Comment",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^.{1,128}$"
+          },
+          "help": "Human-readable description, up to 128 characters."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (comment)",
+      "group": "tags-naming"
+    },
+    {
+      "id": "cloudfront-toggle-smooth-streaming",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle Smooth Streaming",
+      "summary": "Turn support for Microsoft Smooth Streaming media on or off for this distribution's default caching behavior.",
+      "description": "Enable or disable smooth_streaming on the default cache behavior (Microsoft Smooth Streaming format). In-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution",
+        "path": [
+          "default_cache_behavior"
+        ]
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing CloudFront distribution whose default cache behavior is being toggled, chosen from the estate inventory so only a real, Terraform-managed distribution can be targeted; the change is in-place with no downtime.",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true
+        },
+        {
+          "name": "smooth_streaming",
+          "label": "Smooth Streaming",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "Controls whether the default cache behavior distributes media files in Microsoft Smooth Streaming format (true) or not (false); it only matters when the origin serves that media type, and the in-place, reversible toggle makes both allowed values safe.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (default_cache_behavior.smooth_streaming)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "cloudfront-change-max-ttl",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change default behavior max TTL",
+      "summary": "Set the longest time this distribution's default behavior can cache an object before rechecking the origin.",
+      "description": "Set max_ttl (seconds) on the default cache behavior. Bounded 0 to 31536000 (1 year). In-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution",
+        "path": [
+          "default_cache_behavior"
+        ]
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing CloudFront distribution whose default-behavior maximum cache TTL is being changed, chosen from the estate inventory so only a real, Terraform-managed distribution can be targeted.",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true
+        },
+        {
+          "name": "max_ttl",
+          "label": "Max TTL (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 31536000
+          },
+          "help": "Maximum time in seconds objects stay in the CloudFront cache. 0 to 31536000 (1 year)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (default_cache_behavior.max_ttl)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "cloudfront-change-min-ttl",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change default behavior min TTL",
+      "summary": "Set the shortest time this distribution's default behavior must cache an object before rechecking the origin.",
+      "description": "Set min_ttl (seconds) on the default cache behavior. Bounded 0 to 31536000 (1 year). In-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution",
+        "path": [
+          "default_cache_behavior"
+        ]
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing CloudFront distribution whose default-behavior minimum cache TTL is being changed, chosen from the estate inventory so only a real, Terraform-managed distribution can be targeted.",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true
+        },
+        {
+          "name": "min_ttl",
+          "label": "Min TTL (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 31536000
+          },
+          "help": "Minimum time in seconds objects stay in the CloudFront cache. 0 to 31536000 (1 year)."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (default_cache_behavior.min_ttl)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "cloudfront-toggle-log-cookies",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle cookie logging",
+      "summary": "Turn cookie logging on or off in this distribution's access logs; only what's recorded changes, never live traffic.",
+      "description": "Enable or disable include_cookies on logging_config (whether cookies are written to access logs). In-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution",
+        "path": [
+          "logging_config"
+        ]
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing CloudFront distribution whose access-log cookie setting is being changed, chosen from the estate inventory so only a real, Terraform-managed distribution can be targeted; only logging output is affected, never live traffic.",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true
+        },
+        {
+          "name": "include_cookies",
+          "label": "Log cookies",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "Controls whether viewer cookies are written into the distribution's access logs (true) or omitted (false); the setting only changes what appears in logs \u2014 note that logging cookies can capture session data, while serving of live traffic is never affected either way.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (logging_config.include_cookies)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "cloudfront-remove-tag",
+      "service": "cloudfront",
+      "macd": "Delete",
+      "codemodOp": "remove_foreach_entry",
+      "title": "Remove a tag",
+      "summary": "Remove a tag from this distribution. Metadata only - you can always add it back.",
+      "description": "Remove a single key from the tags map on the distribution. In-place, reversible (re-add), no downtime.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing CloudFront distribution to remove the tag from, chosen from the estate inventory so only a real, Terraform-managed distribution can be targeted; tags are metadata only and a removed key can be re-added.",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 +\\-=._:/@]{1,128}$"
+          },
+          "help": "The tag key to remove from this distribution."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tags)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "cloudfront-change-viewer-protocol-policy",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change viewer protocol policy",
+      "summary": "Set whether viewers must use HTTPS or may also use plain HTTP; allowing plain HTTP is the less secure choice.",
+      "description": "Set viewer_protocol_policy on the default cache behavior. Bounded enum but security-relevant (allow-all permits plain HTTP), so guardrailed. In-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution",
+        "path": [
+          "default_cache_behavior"
+        ]
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing CloudFront distribution whose viewer protocol policy is being changed, chosen from the estate inventory so only a real, Terraform-managed distribution can be targeted; the change is in-place but guardrailed because allow-all permits insecure HTTP.",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true
+        },
+        {
+          "name": "viewer_protocol_policy",
+          "label": "Viewer protocol policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "allow-all",
+              "https-only",
+              "redirect-to-https"
+            ]
+          },
+          "help": "allow-all permits insecure HTTP; redirect-to-https or https-only are the secure choices."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_cache_behavior.viewer_protocol_policy)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "cloudfront-toggle-enabled",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable the distribution",
+      "summary": "Turn this distribution on or off. Disabling it takes the site offline until it's re-enabled.",
+      "description": "Set enabled on the distribution. Disabling stops CloudFront from serving content (site goes offline) so it is guardrailed. In-place, reversible.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution"
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "help": "The existing CloudFront distribution to enable or disable, chosen from the estate inventory so only a real, Terraform-managed distribution can be targeted; disabling stops it serving all content until re-enabled, which is why this toggle is guardrailed.",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true
+        },
+        {
+          "name": "enabled",
+          "label": "Enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Setting false stops the distribution from serving content until re-enabled."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (enabled)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "cloudfront-cloudfront-distribution-engineer-request",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to CloudFront distribution",
+      "summary": "Request any other change to this distribution; an engineer writes and reviews the Terraform before it applies.",
+      "description": "Catch-all for any change to a CloudFront distribution not offered as a bounded form. An engineer authors and reviews the Terraform before apply.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution"
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true,
+          "help": "The distribution to change, chosen from live inventory."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "cloudfront-toggle-wait-for-deployment",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle wait-for-deployment",
+      "summary": "Choose whether applying this change waits for CloudFront to finish deploying, or returns right away. Viewers see no difference.",
+      "description": "Set the `wait_for_deployment` boolean on the distribution. This controls ONLY whether Terraform blocks during apply until the distribution status changes from InProgress to Deployed; it has no effect on the live distribution's serving configuration. Provider default is true.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution"
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true,
+          "help": "Select the distribution to update."
+        },
+        {
+          "name": "wait_for_deployment",
+          "label": "Wait for deployment",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true = Terraform waits for CloudFront propagation to finish; false = apply returns immediately. No effect on served content."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (wait_for_deployment)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "cloudfront-toggle-mtls-advertise-ca-names",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle mTLS trust-store CA-name advertisement",
+      "summary": "Choose whether this distribution hints its trusted certificate authorities to mutual-TLS viewers; accepted certificates don't change.",
+      "description": "Set `viewer_mtls_config.trust_store_config.advertise_trust_store_ca_names`, a viewer-mTLS discoverability aid that controls whether CloudFront advertises the trust store's CA names to clients during the TLS handshake. It does not change which client certificates are accepted. Provider default is false. Applies only when viewer mTLS is already configured on the distribution.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution",
+        "path": [
+          "viewer_mtls_config",
+          "trust_store_config"
+        ]
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true,
+          "help": "Select the distribution to update."
+        },
+        {
+          "name": "advertise_trust_store_ca_names",
+          "label": "Advertise trust-store CA names",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Discoverability aid only; helps clients pick a matching certificate. Does not change authentication outcomes."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (viewer_mtls_config.trust_store_config.advertise_trust_store_ca_names)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "cloudfront-change-ssl-support-method",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change SSL support method",
+      "summary": "Choose how this distribution serves HTTPS; dedicating it a fixed IP address costs extra versus the shared default.",
+      "description": "Set `viewer_certificate.ssl_support_method`, which selects how CloudFront serves HTTPS to viewers. Applicable only when a custom ACM/IAM certificate is configured. Guardrailed because vip and static-ip dedicate IP addresses and incur additional CloudFront charges.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution",
+        "path": [
+          "viewer_certificate"
+        ]
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true,
+          "help": "Select the distribution to update."
+        },
+        {
+          "name": "ssl_support_method",
+          "label": "SSL support method",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "vip",
+              "sni-only",
+              "static-ip"
+            ]
+          },
+          "help": "sni-only serves HTTPS via SNI at no extra cost; vip and static-ip dedicate IP addresses and incur additional CloudFront charges."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (viewer_certificate.ssl_support_method)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "cloudfront-toggle-staging",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle staging flag",
+      "summary": "Mark this distribution as a staging copy or not; applying REPLACES it - new identity and possible service interruption. Engineer-reviewed.",
+      "description": "Set the `staging` boolean on the distribution (whether it is a staging distribution used for continuous deployment). Provider default is false. On an already-live distribution this can change whether it serves public traffic, so an engineer authors and reviews the change.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution"
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true,
+          "help": "Select the distribution to update."
+        },
+        {
+          "name": "staging",
+          "label": "Staging distribution",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Provider default is false. Flipping this on a live distribution can stop it from serving public traffic."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "possible service interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (staging)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "cloudfront-toggle-retain-on-delete",
+      "service": "cloudfront",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle retain-on-delete",
+      "summary": "Control whether a future delete disables this distribution instead of destroying it; turning off this safeguard is engineer-reviewed.",
+      "description": "Set the `retain_on_delete` boolean, which controls whether a future Terraform destroy DISABLES the distribution instead of deleting it. Provider default is false. Setting it to false removes a data-loss safety guardrail, so an engineer authors and reviews the change. Changing this value has no effect on the currently-served content.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution"
+      },
+      "params": [
+        {
+          "name": "distribution",
+          "label": "Distribution",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_cloudfront_distribution/address",
+          "required": true,
+          "help": "Select the distribution to update."
+        },
+        {
+          "name": "retain_on_delete",
+          "label": "Retain on delete",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Provider default is false. true = a future Terraform destroy disables (rather than deletes) the distribution."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (retain_on_delete)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "cloudfront-create-distribution",
+      "service": "cloudfront",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new CloudFront distribution",
+      "summary": "Request a brand-new distribution in front of one origin; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new distribution as a complete specification: one origin, its default cache behavior, viewer certificate, and optional WAF association. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_cloudfront_distribution"
+      },
+      "params": [
+        {
+          "name": "distribution_name",
+          "label": "Distribution name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the distribution in the generated draft — CloudFront itself has no name field."
+        },
+        {
+          "name": "comment",
+          "label": "Comment",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "comment",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^.{1,128}$"
+          },
+          "help": "Human-readable description, up to 128 characters."
+        },
+        {
+          "name": "enabled",
+          "label": "Enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "enabled",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Whether the distribution serves traffic once created."
+        },
+        {
+          "name": "origin_domain_name",
+          "label": "Origin domain name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "domain_name",
+          "path": [
+            "origin"
+          ],
+          "group": "origin",
+          "bounds": {
+            "pattern": "^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$"
+          },
+          "help": "The origin's hostname, e.g. the load balancer's DNS name or a static site's endpoint."
+        },
+        {
+          "name": "origin_id",
+          "label": "Origin ID",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "primary-origin",
+          "attr": "origin_id",
+          "path": [
+            "origin"
+          ],
+          "group": "origin",
+          "help": "Internal wiring label linking the origin to the default cache behavior — fixed, never asked."
+        },
+        {
+          "name": "origin_protocol_policy",
+          "label": "Origin protocol policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "origin_protocol_policy",
+          "path": [
+            "origin",
+            "custom_origin_config"
+          ],
+          "group": "origin",
+          "bounds": {
+            "allowlist": [
+              "https-only",
+              "http-only",
+              "match-viewer"
+            ]
+          },
+          "default": "https-only",
+          "help": "How CloudFront talks to the origin. https-only is the secure default."
+        },
+        {
+          "name": "origin_http_port",
+          "label": "Origin HTTP port",
+          "type": "number",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": 80,
+          "attr": "http_port",
+          "path": [
+            "origin",
+            "custom_origin_config"
+          ],
+          "group": "origin",
+          "help": "Standard HTTP port — written into the draft, never asked."
+        },
+        {
+          "name": "origin_https_port",
+          "label": "Origin HTTPS port",
+          "type": "number",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": 443,
+          "attr": "https_port",
+          "path": [
+            "origin",
+            "custom_origin_config"
+          ],
+          "group": "origin",
+          "help": "Standard HTTPS port — written into the draft, never asked."
+        },
+        {
+          "name": "origin_ssl_protocols",
+          "label": "Origin SSL protocols",
+          "type": "list",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": [
+            "TLSv1.2"
+          ],
+          "attr": "origin_ssl_protocols",
+          "path": [
+            "origin",
+            "custom_origin_config"
+          ],
+          "group": "origin",
+          "help": "Modern TLS only — written into the draft, never asked."
+        },
+        {
+          "name": "target_origin_id",
+          "label": "Target origin ID",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "primary-origin",
+          "attr": "target_origin_id",
+          "path": [
+            "default_cache_behavior"
+          ],
+          "group": "cache",
+          "help": "Matches the origin above — fixed, never asked."
+        },
+        {
+          "name": "viewer_protocol_policy",
+          "label": "Viewer protocol policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "viewer_protocol_policy",
+          "path": [
+            "default_cache_behavior"
+          ],
+          "group": "cache",
+          "bounds": {
+            "allowlist": [
+              "redirect-to-https",
+              "allow-all",
+              "https-only"
+            ]
+          },
+          "default": "redirect-to-https",
+          "help": "allow-all permits insecure HTTP; redirect-to-https or https-only are the secure choices."
+        },
+        {
+          "name": "allowed_methods",
+          "label": "Allowed methods",
+          "type": "list",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": [
+            "GET",
+            "HEAD"
+          ],
+          "attr": "allowed_methods",
+          "path": [
+            "default_cache_behavior"
+          ],
+          "group": "cache",
+          "help": "Read-only methods for the common cacheable-content case — written into the draft, never asked."
+        },
+        {
+          "name": "cached_methods",
+          "label": "Cached methods",
+          "type": "list",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": [
+            "GET",
+            "HEAD"
+          ],
+          "attr": "cached_methods",
+          "path": [
+            "default_cache_behavior"
+          ],
+          "group": "cache",
+          "help": "Matches the allowed methods above — written into the draft, never asked."
+        },
+        {
+          "name": "compress",
+          "label": "Compress objects automatically",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "compress",
+          "path": [
+            "default_cache_behavior"
+          ],
+          "group": "cache",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Whether CloudFront compresses eligible file types."
+        },
+        {
+          "name": "cache_policy_id",
+          "label": "Cache policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "cache_policy_id",
+          "path": [
+            "default_cache_behavior"
+          ],
+          "group": "cache",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "Which AWS-managed or custom cache policy this behavior uses (e.g. CachingOptimized) — an engineer fills in the policy ID during review."
+        },
+        {
+          "name": "web_acl",
+          "label": "WAF web ACL",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_wafv2_web_acl/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "web_acl_id",
+          "group": "security",
+          "tier": "advanced",
+          "help": "Leave blank for no firewall; pick an existing CLOUDFRONT-scope web ACL to protect this distribution."
+        },
+        {
+          "name": "viewer_certificate_acm",
+          "label": "Custom domain certificate",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_acm_certificate/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "acm_certificate_arn",
+          "path": [
+            "viewer_certificate"
+          ],
+          "group": "security",
+          "help": "Leave blank to use the free default CloudFront certificate (*.cloudfront.net). Pick a certificate to serve a custom domain."
+        },
+        {
+          "name": "viewer_certificate_default",
+          "label": "Use default CloudFront certificate",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "cloudfront_default_certificate",
+          "path": [
+            "viewer_certificate"
+          ],
+          "dependsOn": {
+            "param": "viewer_certificate_acm",
+            "equals": ""
+          },
+          "group": "security",
+          "help": "Set automatically when no custom certificate is chosen above — never asked directly."
+        },
+        {
+          "name": "ssl_support_method",
+          "label": "SSL support method",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "sni-only",
+          "attr": "ssl_support_method",
+          "path": [
+            "viewer_certificate"
+          ],
+          "dependsOn": {
+            "param": "viewer_certificate_acm",
+            "notEquals": ""
+          },
+          "group": "security",
+          "help": "SNI at no extra cost — written into the draft, never asked."
+        },
+        {
+          "name": "minimum_protocol_version",
+          "label": "Minimum TLS protocol version",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "TLSv1.2_2021",
+          "attr": "minimum_protocol_version",
+          "path": [
+            "viewer_certificate"
+          ],
+          "dependsOn": {
+            "param": "viewer_certificate_acm",
+            "notEquals": ""
+          },
+          "group": "security",
+          "help": "The current recommended baseline — written into the draft, never asked."
+        },
+        {
+          "name": "geo_restriction_type",
+          "label": "Geo restriction",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "none",
+          "attr": "restriction_type",
+          "path": [
+            "restrictions",
+            "geo_restriction"
+          ],
+          "group": "security",
+          "help": "No country blocking for the common case — written into the draft, never asked."
+        },
+        {
+          "name": "resource_name",
+          "label": "Distribution name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this distribution serves",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this distribution."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new cloudfront distribution",
+        "provision cdn",
+        "new distribution",
+        "front an origin with cloudfront"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Cache policy choice (AWS-managed or custom) depends on the origin's content type",
+        "Additional ordered cache behaviors for extra path patterns are an engineer decision after creation",
+        "Multiple origins, origin groups (failover), and origin access control for private S3 origins are engineer decisions",
+        "Custom error responses, access/connection logging, and geo-restriction beyond none are engineer follow-ups",
+        "Field-level encryption, real-time logs, and function associations (Lambda@Edge, CloudFront Functions) are engineer decisions"
+      ]
+    }
+  ]
+}

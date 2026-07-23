@@ -1,0 +1,294 @@
+{
+  "service": "appflow",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_appflow_flow"
+  ],
+  "summary": "Provision new AppFlow data flows between AWS and SaaS connectors. Greenfield today (no flow exists yet in this estate) \u2014 the create stands up the connector-type/trigger/mapping shell; per-connector properties (bucket names, SaaS object fields) are engineer follow-ups.",
+  "operations": [
+    {
+      "id": "appflow-flow-create",
+      "service": "appflow",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new AppFlow flow",
+      "summary": "Request a brand-new AppFlow data flow; an engineer finishes the connector wiring and reviews the Terraform before it applies.",
+      "description": "Stand up a flow as a complete specification: source/destination connector types, trigger, and one field mapping. The connector-specific properties (bucket names, SaaS object settings) are authored by an engineer. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_appflow_flow"
+      },
+      "params": [
+        {
+          "name": "flow_name",
+          "label": "Flow name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,255}$"
+          },
+          "help": "Names the flow in the AppFlow console and the generated draft."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 2048
+          },
+          "help": "What this flow moves and why."
+        },
+        {
+          "name": "kms_arn",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "kms_arn",
+          "group": "identity",
+          "help": "Leave blank for the AWS-managed AppFlow key."
+        },
+        {
+          "name": "source_connector_type",
+          "label": "Source connector",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "connector_type",
+          "path": [
+            "source_flow_config"
+          ],
+          "group": "source",
+          "bounds": {
+            "allowlist": [
+              "S3",
+              "Salesforce",
+              "Marketo",
+              "Zendesk",
+              "ServiceNow",
+              "Slack",
+              "Singular",
+              "Trendmicro",
+              "Veeva",
+              "SAPOData",
+              "Amplitude",
+              "Datadog",
+              "Dynatrace",
+              "GoogleAnalytics",
+              "InforNexus",
+              "CustomConnector"
+            ]
+          },
+          "default": "S3",
+          "help": "Where the flow reads data from."
+        },
+        {
+          "name": "source_connector_profile_name",
+          "label": "Source connector profile",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "connector_profile_name",
+          "path": [
+            "source_flow_config"
+          ],
+          "group": "source",
+          "dependsOn": {
+            "param": "source_connector_type",
+            "notEquals": "S3"
+          },
+          "help": "The pre-configured aws_appflow_connector_profile name for the source SaaS account (not needed for S3)."
+        },
+        {
+          "name": "destination_connector_type",
+          "label": "Destination connector",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "connector_type",
+          "path": [
+            "destination_flow_config"
+          ],
+          "group": "destination",
+          "bounds": {
+            "allowlist": [
+              "S3",
+              "Redshift",
+              "Snowflake",
+              "Salesforce",
+              "Zendesk",
+              "Marketo",
+              "SAPOData",
+              "CustomerProfiles",
+              "EventBridge",
+              "Honeycode",
+              "LookoutMetrics",
+              "CustomConnector",
+              "Upsolver"
+            ]
+          },
+          "default": "S3",
+          "help": "Where the flow writes data to."
+        },
+        {
+          "name": "destination_connector_profile_name",
+          "label": "Destination connector profile",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "connector_profile_name",
+          "path": [
+            "destination_flow_config"
+          ],
+          "group": "destination",
+          "dependsOn": {
+            "param": "destination_connector_type",
+            "notEquals": "S3"
+          },
+          "help": "The pre-configured aws_appflow_connector_profile name for the destination SaaS account (not needed for S3)."
+        },
+        {
+          "name": "trigger_type",
+          "label": "Trigger type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "trigger_type",
+          "path": [
+            "trigger_config"
+          ],
+          "group": "trigger",
+          "bounds": {
+            "allowlist": [
+              "OnDemand",
+              "Scheduled",
+              "Event"
+            ]
+          },
+          "default": "OnDemand",
+          "help": "How the flow starts: manually/API (OnDemand), on a schedule, or on a source event."
+        },
+        {
+          "name": "task_type",
+          "label": "Field mapping type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "task_type",
+          "path": [
+            "task"
+          ],
+          "group": "mapping",
+          "bounds": {
+            "allowlist": [
+              "Map_all",
+              "Map",
+              "Filter",
+              "Mask",
+              "Merge",
+              "Truncate",
+              "Validate"
+            ]
+          },
+          "default": "Map_all",
+          "help": "Map_all passes every source field through unchanged \u2014 the common starting point."
+        },
+        {
+          "name": "task_source_fields",
+          "label": "Source fields",
+          "type": "list",
+          "source": "user_input",
+          "required": false,
+          "attr": "source_fields",
+          "path": [
+            "task"
+          ],
+          "group": "mapping",
+          "help": "Source field name(s) this mapping reads. Leave blank for Map_all (all fields)."
+        },
+        {
+          "name": "task_destination_field",
+          "label": "Destination field",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "destination_field",
+          "path": [
+            "task"
+          ],
+          "group": "mapping",
+          "help": "Destination field name this mapping writes to. Leave blank for Map_all (all fields)."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this flow moves",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this flow."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new appflow",
+        "provision data flow",
+        "new integration flow",
+        "saas data sync"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Source and destination connector properties (bucket names, object prefixes, SaaS-specific field settings) are engineer-authored after creation \u2014 AppFlow's per-connector schema is too heterogeneous to bound generically.",
+        "This form authors one field mapping (task); additional mappings/transformations are an engineer follow-up.",
+        "A Scheduled trigger's cron expression and Glue Data Catalog metadata export are engineer follow-ups."
+      ]
+    }
+  ]
+}

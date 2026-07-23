@@ -1,0 +1,1 @@
+{"service":"nat-gateway","types":{"azurerm_nat_gateway":{"attrs":[{"n":"location","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"idle_timeout_in_minutes","t":"json"},{"n":"sku_name","t":"string"},{"n":"tags","t":"map"},{"n":"zones","t":"list"}],"blocks":[]}}}

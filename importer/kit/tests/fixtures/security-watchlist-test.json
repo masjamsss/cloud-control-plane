@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "doctrine": "Test-local fixture standing in for scripts/drift/security-watchlist.json's additive creation_security_types key (§5.3), which does not exist in the repo yet (a later, separate lane). Proves statediff.py's advisory read path without depending on that lane landing first.",
+  "creation_security_types": ["aws_iam_policy"]
+}

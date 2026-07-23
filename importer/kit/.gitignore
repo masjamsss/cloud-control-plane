@@ -1,0 +1,4 @@
+# Live discovery output: capture dirs hold REAL resource ids/names for the
+# target account. They are working evidence, not repo content — keep them
+# here (ignored) or outside the repo entirely.
+work/

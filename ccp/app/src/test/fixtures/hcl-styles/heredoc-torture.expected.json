@@ -1,0 +1,20 @@
+{
+  "blockCount": 5,
+  "addresses": [
+    "aws_ssm_document.brace_at_col0",
+    "aws_ssm_document.fake_resource_inside",
+    "aws_lambda_function.two_heredocs",
+    "aws_ssm_document.terminator_substring",
+    "aws_instance.recovered"
+  ],
+  "probes": [
+    {
+      "address": "aws_ssm_document.brace_at_col0",
+      "exactSource": "resource \"aws_ssm_document\" \"brace_at_col0\" {\n  content = <<EOF\n{\n  \"schemaVersion\": \"2.2\"\n}\nEOF\n}"
+    },
+    {
+      "address": "aws_instance.recovered",
+      "exactSource": "resource \"aws_instance\" \"recovered\" {\n  instance_type = \"t3.small\"\n}"
+    }
+  ]
+}

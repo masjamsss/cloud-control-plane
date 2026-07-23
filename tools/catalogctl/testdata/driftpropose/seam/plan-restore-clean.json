@@ -1,0 +1,17 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_flow_log.vpc1",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "vpc_id": "vpc-0123456789abcdef0",
+          "traffic_type": "ALL",
+          "log_destination_type": "cloud-watch-logs"
+        }
+      }
+    }
+  ]
+}

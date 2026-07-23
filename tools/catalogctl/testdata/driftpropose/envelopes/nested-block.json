@@ -1,0 +1,49 @@
+{
+  "schema": "ccp.drift/v1",
+  "projectId": "sample",
+  "environment": "prod",
+  "capturedAt": "2026-07-20T03:17:04Z",
+  "runId": "16234567899",
+  "commit": "1370355444444444444444444444444444444444",
+  "cadenceHours": 6,
+  "planExitCode": 2,
+  "report": {
+    "meta": { "format_version": "1.2", "terraform_version": "1.9.0", "provider_tag": "aws-v6.53.0" },
+    "counts": { "benign_inplace": 1 },
+    "absorbed": [],
+    "invisible_to_plan": "out-of-band CREATED resources — detection is the importer-kit account sweep (resourcegroupstaggingapi), disposition import-and-adopt or delete-in-AWS (human)",
+    "verdicts": [
+      {
+        "address": "aws_instance.volbox01",
+        "type": "aws_instance",
+        "actions": ["update"],
+        "actionReason": null,
+        "driftEvidence": true,
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "recommendation": "NOTE (fixture intent): spec W1 — a single-instance nested-block leaf (root_block_device[0].volume_size), a non-watchlisted attribute of aws_instance (unlike metadata_options, which IS watchlisted — see the taxonomy's own 'on a non-watchlisted resource' qualifier).",
+        "neverDo": "Never adopt values you have not read.",
+        "executor": "Claude-preparable PR",
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "computedUnknown": [],
+        "notes": [],
+        "changedAttrs": [
+          {
+            "path": "root_block_device[0].volume_size",
+            "live": "100",
+            "code": "80",
+            "forceNew": "in_place",
+            "forceNewWhy": "not a schema-ForceNew attribute",
+            "noiseEqual": false,
+            "churn": "",
+            "sensitive": false,
+            "liveJson": 100,
+            "codeJson": 80,
+            "pathSegments": ["root_block_device", 0, "volume_size"]
+          }
+        ]
+      }
+    ]
+  }
+}

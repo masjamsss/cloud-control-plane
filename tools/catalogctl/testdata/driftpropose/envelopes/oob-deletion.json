@@ -1,0 +1,35 @@
+{
+  "schema": "ccp.drift/v1",
+  "projectId": "sample",
+  "environment": "prod",
+  "capturedAt": "2026-07-20T03:17:04Z",
+  "runId": "16234567895",
+  "commit": "1370355fffffffffffffffffffffffffffffff",
+  "cadenceHours": 6,
+  "planExitCode": 2,
+  "report": {
+    "meta": { "format_version": "1.2", "terraform_version": "1.9.0", "provider_tag": "aws-v6.53.0" },
+    "counts": { "oob_deletion": 1 },
+    "absorbed": [],
+    "invisible_to_plan": "out-of-band CREATED resources — detection is the importer-kit account sweep (resourcegroupstaggingapi), disposition import-and-adopt or delete-in-AWS (human)",
+    "verdicts": [
+      {
+        "address": "aws_flow_log.vpc1",
+        "type": "aws_flow_log",
+        "actions": ["create"],
+        "actionReason": null,
+        "driftEvidence": true,
+        "class": "oob_deletion",
+        "riskTier": "high",
+        "recommendation": "The resource exists in code+state but is GONE in AWS; the plan wants to recreate it. Decide: RECREATE or ACCEPT.",
+        "neverDo": "Never let a scheduled lane auto-recreate.",
+        "executor": "human decision; state surgery per state-recovery runbook",
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "computedUnknown": [],
+        "notes": ["resource_drift confirms the live object vanished"],
+        "changedAttrs": []
+      }
+    ]
+  }
+}

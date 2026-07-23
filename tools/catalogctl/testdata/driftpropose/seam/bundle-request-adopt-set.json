@@ -1,0 +1,130 @@
+{
+  "id": "REQ-01ARZ3NDEKTSV4RRFFQ69G5FC2",
+  "projectId": "sample",
+  "operationId": "system-drift-adopt",
+  "targetAddress": "aws_instance.sample01",
+  "status": "APPROVED",
+  "approvals": [
+    { "approver": "alice", "approved_at": "2026-07-20T04:00:00Z", "policy_version": "1", "decision": "approve" },
+    { "approver": "bob", "approved_at": "2026-07-20T04:05:00Z", "policy_version": "1", "decision": "approve" }
+  ],
+  "params": {
+    "attrs": [
+      {
+        "address": "aws_instance.sample01",
+        "path": "tags.Owner",
+        "pathSegments": ["tags", "Owner"],
+        "liveJson": "bi-team",
+        "codeJson": "platform"
+      }
+    ],
+    "verdicts": [
+      {
+        "address": "aws_instance.sample01",
+        "type": "aws_instance",
+        "actions": ["update"],
+        "driftEvidence": true,
+        "class": "benign_inplace",
+        "riskTier": "low",
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": [
+          {
+            "path": "tags.Owner",
+            "live": "\"bi-team\"",
+            "code": "\"platform\"",
+            "sensitive": false,
+            "liveJson": "bi-team",
+            "codeJson": "platform",
+            "pathSegments": ["tags", "Owner"]
+          }
+        ]
+      }
+    ],
+    "diff": "--- a/environments/prod/main.tf\n+++ b/environments/prod/main.tf\n@@ -3,7 +3,7 @@\n   instance_type = \"m5.xlarge\"\n \n   tags = {\n-    Owner = \"platform\"\n+    Owner = \"bi-team\"\n     Env   = \"prod\"\n   }\n }\n",
+    "proposalDigest": "933cd98f16e347f49e1cd0e623a24511bbef32987e6e1018dad3dd3e5dfd04c8",
+    "reportVersion": 12
+  },
+  "items": [
+    {
+      "operationId": "system-drift-adopt",
+      "params": {
+        "attrs": [
+          {
+            "address": "aws_instance.sample01",
+            "path": "tags.Owner",
+            "pathSegments": ["tags", "Owner"],
+            "liveJson": "bi-team",
+            "codeJson": "platform"
+          }
+        ],
+        "verdicts": [
+          {
+            "address": "aws_instance.sample01",
+            "type": "aws_instance",
+            "actions": ["update"],
+            "driftEvidence": true,
+            "class": "benign_inplace",
+            "riskTier": "low",
+            "forceNewAttrs": [],
+            "securityHits": [],
+            "changedAttrs": [
+              {
+                "path": "tags.Owner",
+                "live": "\"bi-team\"",
+                "code": "\"platform\"",
+                "sensitive": false,
+                "liveJson": "bi-team",
+                "codeJson": "platform",
+                "pathSegments": ["tags", "Owner"]
+              }
+            ]
+          }
+        ],
+        "diff": "--- a/environments/prod/main.tf\n+++ b/environments/prod/main.tf\n@@ -3,7 +3,7 @@\n   instance_type = \"m5.xlarge\"\n \n   tags = {\n-    Owner = \"platform\"\n+    Owner = \"bi-team\"\n     Env   = \"prod\"\n   }\n }\n",
+        "proposalDigest": "933cd98f16e347f49e1cd0e623a24511bbef32987e6e1018dad3dd3e5dfd04c8",
+        "reportVersion": 12
+      }
+    },
+    {
+      "operationId": "system-drift-adopt",
+      "params": {
+        "attrs": [
+          {
+            "address": "aws_instance.dottedbox01",
+            "path": "tags.kubernetes.io/role/elb",
+            "pathSegments": ["tags", "kubernetes.io/role/elb"],
+            "liveJson": "owned",
+            "codeJson": "shared"
+          }
+        ],
+        "verdicts": [
+          {
+            "address": "aws_instance.dottedbox01",
+            "type": "aws_instance",
+            "actions": ["update"],
+            "driftEvidence": true,
+            "class": "benign_inplace",
+            "riskTier": "low",
+            "forceNewAttrs": [],
+            "securityHits": [],
+            "changedAttrs": [
+              {
+                "path": "tags.kubernetes.io/role/elb",
+                "live": "\"owned\"",
+                "code": "\"shared\"",
+                "sensitive": false,
+                "liveJson": "owned",
+                "codeJson": "shared",
+                "pathSegments": ["tags", "kubernetes.io/role/elb"]
+              }
+            ]
+          }
+        ],
+        "diff": "--- a/environments/prod/extra-dotted-key.tf\n+++ b/environments/prod/extra-dotted-key.tf\n@@ -3,7 +3,7 @@\n   instance_type = \"m5.large\"\n \n   tags = {\n-    \"kubernetes.io/role/elb\" = \"shared\"\n+    \"kubernetes.io/role/elb\" = \"owned\"\n     Owner                    = \"platform\"\n   }\n }\n",
+        "proposalDigest": "759de3f5f44b80506d1184ba3ddf5503e2f13c4111c815347daff2640b9af433",
+        "reportVersion": 12
+      }
+    }
+  ]
+}

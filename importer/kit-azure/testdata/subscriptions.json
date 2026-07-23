@@ -1,0 +1,24 @@
+{
+  "data": [
+    {
+      "subscriptionId": "00000000-0000-0000-0000-000000000000",
+      "name": "sub-prod",
+      "tenantId": "11111111-1111-1111-1111-111111111111",
+      "mgChain": [
+        { "name": "mg-platform", "displayName": "Platform" },
+        { "name": "tenant-root", "displayName": "Tenant Root Group" }
+      ]
+    },
+    {
+      "subscriptionId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "name": "sub-dev",
+      "tenantId": "11111111-1111-1111-1111-111111111111",
+      "mgChain": [
+        { "name": "mg-platform", "displayName": "Platform" },
+        { "name": "tenant-root", "displayName": "Tenant Root Group" }
+      ]
+    }
+  ],
+  "count": 2,
+  "total_records": 2
+}

@@ -1,0 +1,7 @@
+{
+  "subscription": "00000000-0000-0000-0000-000000000000",
+  "tenant": "11111111-1111-1111-1111-111111111111",
+  "location": "southeastasia",
+  "capturedAt": "2026-07-18T00:00:00Z",
+  "tool": "importer/kit-azure/discover.sh (fixture)"
+}

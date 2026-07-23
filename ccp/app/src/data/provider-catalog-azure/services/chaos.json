@@ -1,0 +1,1 @@
+{"service":"chaos","types":{"azurerm_chaos_studio_capability":{"attrs":[{"n":"capability_type","t":"string","r":1},{"n":"chaos_studio_target_id","t":"string","r":1}],"blocks":[]},"azurerm_chaos_studio_target":{"attrs":[{"n":"location","t":"string","r":1},{"n":"target_resource_id","t":"string","r":1},{"n":"target_type","t":"string","r":1}],"blocks":[]}}}

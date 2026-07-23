@@ -1,0 +1,12 @@
+{
+  "repo": "clean-repo",
+  "verdict": "clean",
+  "findings": [],
+  "resourceBlocks": 2,
+  "moduleBlocks": 0,
+  "tfJsonFiles": 0,
+  "fmtDirtyFiles": 0,
+  "providerPins": {
+    "aws": "~\u003e 6.0"
+  }
+}

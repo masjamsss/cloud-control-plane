@@ -1,0 +1,257 @@
+{
+  "service": "ses",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_sesv2_email_identity",
+    "aws_sesv2_configuration_set"
+  ],
+  "summary": "Provision Simple Email Service (SESv2) for a new sending identity: a verified domain or address, plus an optional configuration set that governs how its sends are tracked and delivered. Both are engineer-gated creates — a verified identity can send mail on the account's behalf, so nothing here is blind self-service.",
+  "operations": [
+    {
+      "id": "ses-email-identity-create",
+      "service": "ses",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Verify a new sending identity",
+      "summary": "Request verification of a new domain or email address for SES. An engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Specify a new aws_sesv2_email_identity: a domain (verifies every address at that domain) or a specific email address, plus an optional configuration set to route its sending events through. DKIM signing and the DNS records needed to complete verification are always finished by the engineer. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_sesv2_email_identity"
+      },
+      "params": [
+        {
+          "name": "email_identity",
+          "label": "Domain or email address",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "email_identity",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$|^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$"
+          },
+          "help": "A domain (e.g. example.com) verifies every address at that domain; a specific email address (e.g. no-reply@example.com) verifies only that one address."
+        },
+        {
+          "name": "configuration_set",
+          "label": "Configuration set",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sesv2_configuration_set/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "configuration_set_name",
+          "attr": "configuration_set_name",
+          "group": "identity",
+          "help": "Optional. Routes this identity's sending events through a specific configuration set. Create one first (ses-configuration-set-create) or leave blank to use the account default."
+        },
+        {
+          "name": "resource_name",
+          "label": "Identity name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this identity sends",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this identity."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new ses identity",
+        "verify a domain",
+        "verify an email address",
+        "sesv2"
+      ],
+      "decisions": [
+        "DKIM signing (dkim_signing_attributes — BYODKIM or Easy DKIM) is an engineer follow-up; without it this identity still verifies, but sends without a custom DKIM key",
+        "A domain identity also needs its DNS verification/DKIM CNAME records published in the zone before mail sends successfully — the engineer confirms who controls that zone"
+      ]
+    },
+    {
+      "id": "ses-configuration-set-create",
+      "service": "ses",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a new configuration set",
+      "summary": "Request a new SES configuration set for sending and delivery options. An engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Specify a new aws_sesv2_configuration_set: whether sending starts enabled, whether reputation metrics publish to CloudWatch, and the TLS policy for delivery. Event destinations (SNS/CloudWatch/Kinesis Firehose) and a dedicated IP pool are always finished by the engineer. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_sesv2_configuration_set"
+      },
+      "params": [
+        {
+          "name": "configuration_set_name",
+          "label": "Configuration set name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "configuration_set_name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+          },
+          "help": "Letters, numbers, underscores and dashes."
+        },
+        {
+          "name": "sending_enabled",
+          "label": "Sending enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "sending_enabled",
+          "path": [
+            "sending_options"
+          ],
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Off pauses every send that uses this configuration set, without deleting it."
+        },
+        {
+          "name": "reputation_metrics_enabled",
+          "label": "Publish reputation metrics",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "reputation_metrics_enabled",
+          "path": [
+            "reputation_options"
+          ],
+          "group": "observability",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Publishes bounce/complaint reputation metrics for this configuration set to CloudWatch."
+        },
+        {
+          "name": "tls_policy",
+          "label": "TLS policy",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "tls_policy",
+          "path": [
+            "delivery_options"
+          ],
+          "group": "security",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              "REQUIRE",
+              "OPTIONAL"
+            ]
+          },
+          "default": "REQUIRE",
+          "help": "REQUIRE refuses delivery over a connection that isn't TLS-encrypted."
+        },
+        {
+          "name": "resource_name",
+          "label": "Configuration set name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this configuration set is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this configuration set."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new ses configuration set",
+        "sending options",
+        "email event destination"
+      ],
+      "decisions": [
+        "Event destinations (publishing sends/bounces/complaints to SNS, CloudWatch, or Kinesis Firehose) are engineer follow-ups — this form provisions the configuration set with none wired yet",
+        "Suppression list behavior (suppressed_reasons), a custom click-tracking redirect domain, and VDM (engagement/guardian) dashboard options keep SES account defaults unless an engineer sets them explicitly",
+        "A dedicated IP pool (sending_pool_name) is an engineer decision — omitted here uses the shared SES IP pool"
+      ]
+    }
+  ]
+}

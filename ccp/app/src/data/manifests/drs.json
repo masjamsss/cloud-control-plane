@@ -1,0 +1,373 @@
+{
+  "service": "drs",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_drs_replication_configuration_template"
+  ],
+  "summary": "Provision new DRS (Elastic Disaster Recovery) replication configuration templates. Every stand-up routes to an engineer for review \u2014 source-server association and day-2 operations land in a later wave.",
+  "operations": [
+    {
+      "id": "drs-replication-template-create",
+      "service": "drs",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new DRS replication configuration template",
+      "summary": "Request a brand-new DRS replication settings template; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new replication configuration template as a complete specification: staging area network placement, replication server sizing, encryption, and a point-in-time snapshot policy. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_drs_replication_configuration_template"
+      },
+      "params": [
+        {
+          "name": "template_name",
+          "label": "Template name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names this template in the generated draft \u2014 a replication configuration template has no name field of its own."
+        },
+        {
+          "name": "staging_area_subnet_id",
+          "label": "Staging area subnet",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "staging_area_subnet_id",
+          "group": "network",
+          "help": "Where DRS launches replication servers and staging-area volumes."
+        },
+        {
+          "name": "replication_servers_security_groups",
+          "label": "Replication server security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "replication_servers_security_groups_ids",
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "help": "Security groups attached to the replication servers DRS launches."
+        },
+        {
+          "name": "associate_default_security_group",
+          "label": "Also attach the VPC default security group",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "associate_default_security_group",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": false,
+          "help": "Off keeps replication traffic scoped to only the security groups picked above."
+        },
+        {
+          "name": "create_public_ip",
+          "label": "Assign a public IP",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "create_public_ip",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": false,
+          "help": "Off \u2014 replication servers stay private, matching the estate's no-public-IP convention."
+        },
+        {
+          "name": "data_plane_routing",
+          "label": "Data plane routing",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "data_plane_routing",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              "PRIVATE_IP",
+              "PUBLIC_IP"
+            ]
+          },
+          "default": "PRIVATE_IP",
+          "help": "PRIVATE_IP routes replicated data over the private network \u2014 the estate default."
+        },
+        {
+          "name": "replication_server_instance_type",
+          "label": "Replication server instance type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "replication_server_instance_type",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "t3.small",
+              "t3.medium",
+              "t3.large",
+              "m5.large",
+              "m5.xlarge"
+            ]
+          },
+          "default": "t3.small",
+          "help": "The EC2 instance type DRS launches replication servers as."
+        },
+        {
+          "name": "use_dedicated_replication_server",
+          "label": "Use a dedicated replication server",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "use_dedicated_replication_server",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": false,
+          "help": "On dedicates one replication server per source server instead of sharing one \u2014 higher cost, isolated throughput."
+        },
+        {
+          "name": "bandwidth_throttling",
+          "label": "Bandwidth throttling (Mbps)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "bandwidth_throttling",
+          "group": "compute",
+          "bounds": {
+            "min": 0,
+            "max": 100000
+          },
+          "default": 0,
+          "help": "Caps outbound replication traffic per server, in Mbps. 0 means unthrottled."
+        },
+        {
+          "name": "default_large_staging_disk_type",
+          "label": "Staging disk type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "default_large_staging_disk_type",
+          "group": "storage",
+          "bounds": {
+            "allowlist": [
+              "GP3",
+              "GP2",
+              "ST1",
+              "AUTO"
+            ]
+          },
+          "default": "GP3",
+          "help": "The EBS volume type used for large staging-area disks."
+        },
+        {
+          "name": "ebs_encryption",
+          "label": "EBS encryption",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "ebs_encryption",
+          "group": "storage",
+          "bounds": {
+            "allowlist": [
+              "DEFAULT",
+              "CUSTOM"
+            ]
+          },
+          "default": "DEFAULT",
+          "help": "CUSTOM lets you pick a customer-managed key below; DEFAULT uses the AWS-owned key."
+        },
+        {
+          "name": "ebs_encryption_key",
+          "label": "Encryption key",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_kms_key/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "ebs_encryption_key_arn",
+          "group": "storage",
+          "tier": "advanced",
+          "dependsOn": {
+            "param": "ebs_encryption",
+            "equals": "CUSTOM"
+          },
+          "help": "Required when EBS encryption is CUSTOM; leave blank for DEFAULT."
+        },
+        {
+          "name": "staging_area_name_tag",
+          "label": "Staging area Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "staging_area_tags.Name",
+          "group": "storage",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Applied as the Name tag on every staging-area resource DRS creates (volumes, snapshots)."
+        },
+        {
+          "name": "auto_replicate_new_disks",
+          "label": "Auto-replicate new disks",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "auto_replicate_new_disks",
+          "group": "storage",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Automatically starts replicating a disk added to a source server after it is already protected."
+        },
+        {
+          "name": "pit_interval",
+          "label": "Snapshot interval (hours)",
+          "type": "number",
+          "source": "allowlist",
+          "required": true,
+          "attr": "interval",
+          "path": [
+            "pit_policy"
+          ],
+          "group": "protection",
+          "bounds": {
+            "allowlist": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              24
+            ]
+          },
+          "default": 1,
+          "help": "How often point-in-time snapshots are taken."
+        },
+        {
+          "name": "pit_units",
+          "label": "Snapshot interval unit",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "HOUR",
+          "attr": "units",
+          "group": "protection",
+          "help": "Hour-based cadence for this starter rule \u2014 written into the draft, never asked.",
+          "path": [
+            "pit_policy"
+          ]
+        },
+        {
+          "name": "pit_retention_duration",
+          "label": "Retention (hours)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "retention_duration",
+          "path": [
+            "pit_policy"
+          ],
+          "group": "protection",
+          "bounds": {
+            "min": 1,
+            "max": 720
+          },
+          "default": 24,
+          "help": "How many hours of point-in-time history to retain before the oldest snapshot is dropped."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this replication template does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this replication template."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new drs replication template",
+        "provision disaster recovery template",
+        "elastic disaster recovery",
+        "new replication settings"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Additional point-in-time policy tiers (e.g. a coarser daily rule on top of the hourly one authored here) are an engineer follow-up",
+        "Associating this template with specific source servers happens after the template exists",
+        "A launch configuration template (right-sizing, licensing, tags for the recovered instance) is a separate, later engineer step"
+      ]
+    }
+  ]
+}

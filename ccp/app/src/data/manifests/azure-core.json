@@ -1,0 +1,131 @@
+{
+  "service": "azure-core",
+  "scope": "estate",
+  "resourceTypes": ["azurerm_resource_group"],
+  "summary": "Azure resource groups — the container every other Azure resource in a subscription lives in. Provisioning a new resource group is engineer-reviewed; tag updates are guardrailed here because resource-group tags often carry estate-wide governance and cost-allocation meaning.",
+  "operations": [
+    {
+      "id": "azure-core-resource-group-create",
+      "service": "azure-core",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new resource group",
+      "summary": "Request a brand-new resource group; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new resource group — the container every other Azure resource in this subscription is created inside. Submitting routes the naming and region choice to an engineer with a draft Terraform block to review and finish; nothing is applied without review.",
+      "target": { "resourceType": "azurerm_resource_group" },
+      "params": [
+        {
+          "name": "rg_name",
+          "label": "Resource group name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._()-]{0,88}[A-Za-z0-9_()-]$" },
+          "help": "Letters, numbers, underscores, parentheses, hyphens and periods, 2-90 characters, must not end with a period. Names the container in Azure and in the generated draft."
+        },
+        {
+          "name": "location",
+          "label": "Region",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "location",
+          "group": "identity",
+          "bounds": { "allowlist": ["engineer-decides"] },
+          "default": "engineer-decides",
+          "help": "The Azure region this resource group and everything created inside it lives in. The engineer picks the region during review — it is a data-residency and architecture decision this form does not make for the operator."
+        },
+        {
+          "name": "resource_name",
+          "label": "Resource group name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": { "pattern": "^[A-Za-z0-9 ._-]{2,60}$" },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this resource group holds",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": { "maxLength": 200 },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": { "pattern": "^[A-Za-z0-9 ._@-]{2,60}$" },
+          "help": "Who to call about this resource group."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": ["new resource group", "new azure container", "provision resource group"],
+      "decisions": [
+        "Region choice is a data-residency and architecture decision — confirmed by the engineer before applying",
+        "Naming should follow the account's resource-group naming convention"
+      ]
+    },
+    {
+      "id": "azure-core-resource-group-update-tags",
+      "service": "azure-core",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update tags on a resource group",
+      "summary": "Set or update this resource group's tags. Many teams rely on them for governance and cost reporting, so this stays guardrailed.",
+      "description": "Sets or merges tags on the resource group via the `tags` map. Resource-group tags are often relied on for cost allocation and governance reporting across every resource inside the group, so the change is guardrailed even though it is non-disruptive and reversible.",
+      "target": { "resourceType": "azurerm_resource_group", "block": "tags" },
+      "params": [
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_resource_group/address",
+          "help": "The resource group to tag, chosen from the estate inventory so only a Terraform-managed resource group can be targeted."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "bounds": { "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,256}$", "semantic": "azure_tag_map" },
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "keywords": ["retag resource group", "governance tags", "cost allocation tags"],
+      "group": "tags-naming"
+    }
+  ]
+}

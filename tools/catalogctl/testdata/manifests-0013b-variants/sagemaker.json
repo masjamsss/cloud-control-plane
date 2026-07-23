@@ -1,0 +1,235 @@
+{
+  "service": "sagemaker",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_sagemaker_domain"
+  ],
+  "summary": "0013b M0/M1 refusal fixtures — variant sagemaker ops that each trip one fail-closed resolution code. Hand-crafted to exercise ResolveTarget's runtime gates (the zod schema + CI manifest lint make these unreachable via the SPA repo).",
+  "operations": [
+    {
+      "id": "sagemaker-attach-noensure",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Attach lifecycle config (ensurePath OFF)",
+      "description": "Identical to sagemaker-attach-domain-lifecycle-config but WITHOUT ensurePath: a missing app-settings block stays PATH_NOT_FOUND (pre-0013b descent behavior preserved).",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "{param:app_type}"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "app_type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "role": "discriminator",
+          "bounds": {
+            "allowlist": [
+              "JupyterServer",
+              "KernelGateway"
+            ]
+          },
+          "segments": {
+            "JupyterServer": "jupyter_server_app_settings",
+            "KernelGateway": "kernel_gateway_app_settings"
+          }
+        },
+        {
+          "name": "lifecycle_config_arn",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "lifecycle_config_arns",
+          "wrap": "list",
+          "bounds": {
+            "pattern": "^arn:aws:sagemaker:ap-southeast-5:123456789012:studio-lifecycle-config/.+$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "terraformCapability": "~ update (default_user_settings.{app_type}.lifecycle_config_arns)"
+    },
+    {
+      "id": "sagemaker-attach-unmapped",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Attach lifecycle config (segments omit KernelGateway)",
+      "description": "Manifest-drift fixture: KernelGateway is in the allowlist (so Validate passes) but absent from the segments map, so ResolveTarget refuses UNRESOLVED_DYNAMIC_SEGMENT.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "{param:app_type}"
+        ],
+        "ensurePath": true
+      },
+      "params": [
+        {
+          "name": "domain",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "app_type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "role": "discriminator",
+          "bounds": {
+            "allowlist": [
+              "JupyterServer",
+              "KernelGateway"
+            ]
+          },
+          "segments": {
+            "JupyterServer": "jupyter_server_app_settings"
+          }
+        },
+        {
+          "name": "lifecycle_config_arn",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "lifecycle_config_arns",
+          "wrap": "list",
+          "bounds": {
+            "pattern": "^arn:aws:sagemaker:ap-southeast-5:123456789012:studio-lifecycle-config/.+$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "terraformCapability": "~ update (default_user_settings.{app_type}.lifecycle_config_arns)"
+    },
+    {
+      "id": "sagemaker-attach-nondisc",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Attach lifecycle config ({param:x} names a non-discriminator)",
+      "description": "Manifest-authoring fixture: the path uses {param:app_type} but app_type is an ordinary value param (no role:discriminator), so ResolveTarget refuses MALFORMED_DYNAMIC_TARGET.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "{param:app_type}"
+        ],
+        "ensurePath": true
+      },
+      "params": [
+        {
+          "name": "domain",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "app_type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "JupyterServer",
+              "KernelGateway"
+            ]
+          }
+        },
+        {
+          "name": "lifecycle_config_arn",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "lifecycle_config_arns",
+          "wrap": "list",
+          "bounds": {
+            "pattern": "^arn:aws:sagemaker:ap-southeast-5:123456789012:studio-lifecycle-config/.+$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "terraformCapability": "~ update (default_user_settings.{app_type}.lifecycle_config_arns)"
+    },
+    {
+      "id": "sagemaker-attach-badident",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Attach lifecycle config (segments value not an HCL ident)",
+      "description": "Defense-in-depth fixture: the KernelGateway segment resolves to a value with spaces, which fails IsValidBlockIdent, so ResolveTarget refuses MALFORMED_DYNAMIC_TARGET rather than emit a non-ident name.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "{param:app_type}"
+        ],
+        "ensurePath": true
+      },
+      "params": [
+        {
+          "name": "domain",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "app_type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "role": "discriminator",
+          "bounds": {
+            "allowlist": [
+              "JupyterServer",
+              "KernelGateway"
+            ]
+          },
+          "segments": {
+            "JupyterServer": "jupyter_server_app_settings",
+            "KernelGateway": "kernel gateway app settings"
+          }
+        },
+        {
+          "name": "lifecycle_config_arn",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "lifecycle_config_arns",
+          "wrap": "list",
+          "bounds": {
+            "pattern": "^arn:aws:sagemaker:ap-southeast-5:123456789012:studio-lifecycle-config/.+$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "terraformCapability": "~ update (default_user_settings.{app_type}.lifecycle_config_arns)"
+    }
+  ]
+}

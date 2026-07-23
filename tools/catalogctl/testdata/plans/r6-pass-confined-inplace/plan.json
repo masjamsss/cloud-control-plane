@@ -1,0 +1,30 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_instance.sample02",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "instance_type": "c5.large",
+          "monitoring": false,
+          "tags_all": {
+            "Name": "poc"
+          },
+          "id": "i-abc"
+        },
+        "after": {
+          "instance_type": "c6i.2xlarge",
+          "monitoring": false,
+          "tags_all": {
+            "Name": "poc",
+            "Managed": "terraform"
+          },
+          "id": "i-abc"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "REQ-01ARZ3NDEKTSV4RRFFQ69G5FAZ",
+  "projectId": "sample",
+  "operationId": "system-drift-revert",
+  "targetAddress": "aws_security_group.sg1",
+  "status": "APPROVED",
+  "approvals": [],
+  "params": {
+    "attrs": [
+      {
+        "address": "aws_security_group.sg1",
+        "path": "ingress[0].cidr_blocks",
+        "liveJson": ["0.0.0.0/0"],
+        "codeJson": ["10.0.0.0/16"]
+      }
+    ]
+  }
+}

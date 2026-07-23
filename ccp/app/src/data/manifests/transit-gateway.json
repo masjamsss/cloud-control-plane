@@ -1,0 +1,319 @@
+{
+  "service": "transit-gateway",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_ec2_transit_gateway",
+    "aws_ec2_transit_gateway_vpc_attachment"
+  ],
+  "summary": "Provision a new transit gateway and attach VPCs to it. Greenfield today (no transit gateway exists yet in this estate) \u2014 the gateway create stands up an unattached hub; each attachment create joins one VPC to it, subject to the gateway's own route-table associations/propagations.",
+  "operations": [
+    {
+      "id": "transit-gateway-create",
+      "service": "transit-gateway",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new transit gateway",
+      "summary": "Request a brand-new transit gateway; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new aws_ec2_transit_gateway as a complete specification: description, ASN and default route-table behavior. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review. This provisions the transit gateway itself, with no VPCs attached yet.",
+      "target": {
+        "resourceType": "aws_ec2_transit_gateway"
+      },
+      "params": [
+        {
+          "name": "tgw_name",
+          "label": "Transit gateway name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the gateway in the generated draft \u2014 a transit gateway has no name field of its own."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "description",
+          "group": "identity",
+          "bounds": {
+            "maxLength": 255
+          },
+          "help": "Shown in the console; distinct from the Name tag."
+        },
+        {
+          "name": "amazon_side_asn",
+          "label": "Amazon-side ASN",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "amazon_side_asn",
+          "group": "network",
+          "default": 64512,
+          "bounds": {
+            "min": 64512,
+            "max": 65534
+          },
+          "help": "Private 16-bit ASN for the Amazon side of any BGP sessions. Leave at the default unless on-prem needs a specific value."
+        },
+        {
+          "name": "default_route_table_association",
+          "label": "Auto-associate new attachments",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "default_route_table_association",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              "enable",
+              "disable"
+            ]
+          },
+          "default": "enable",
+          "help": "enable puts every new attachment into the default route table automatically \u2014 the common case for a simple hub-and-spoke."
+        },
+        {
+          "name": "default_route_table_propagation",
+          "label": "Auto-propagate routes",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "default_route_table_propagation",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              "enable",
+              "disable"
+            ]
+          },
+          "default": "enable",
+          "help": "enable propagates every new attachment's routes into the default route table automatically."
+        },
+        {
+          "name": "dns_support",
+          "label": "DNS support",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "dns_support",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              "enable",
+              "disable"
+            ]
+          },
+          "default": "enable",
+          "help": "Resolves DNS hostnames across attachments."
+        },
+        {
+          "name": "resource_name",
+          "label": "Transit gateway name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this gateway is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this gateway."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new transit gateway",
+        "provision tgw",
+        "hub and spoke networking"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Auto-associate and auto-propagate default to enabled \u2014 a simple hub-and-spoke where every attachment shares one route table. Turn both off first if this gateway needs isolated route tables per attachment (network segmentation)",
+        "Multicast support, auto-accept for shared attachments, and additional transit gateway CIDR blocks are engineer decisions",
+        "VPC attachments are created as a separate follow-up step (the existing create-a-VPC-attachment action) \u2014 this transit gateway starts with nothing attached"
+      ]
+    },
+    {
+      "id": "transit-gateway-create-vpc-attachment",
+      "service": "transit-gateway",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new transit gateway VPC attachment",
+      "summary": "Request a brand-new VPC attachment to an existing transit gateway; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new aws_ec2_transit_gateway_vpc_attachment as a complete specification: transit gateway, VPC and subnets. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_ec2_transit_gateway_vpc_attachment"
+      },
+      "params": [
+        {
+          "name": "attachment_key",
+          "label": "Attachment identifier",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names the attachment in the generated draft."
+        },
+        {
+          "name": "transit_gateway",
+          "label": "Transit gateway",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_ec2_transit_gateway/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "transit_gateway_id",
+          "group": "network",
+          "help": "The existing transit gateway this VPC attaches to. Create a transit gateway first if the picker is empty."
+        },
+        {
+          "name": "vpc",
+          "label": "VPC",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_vpc/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc_id",
+          "group": "network",
+          "help": "The VPC being attached."
+        },
+        {
+          "name": "subnets",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnet_ids",
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "help": "One subnet per Availability Zone the attachment should use \u2014 the transit gateway places an interface in each."
+        },
+        {
+          "name": "dns_support",
+          "label": "DNS support",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "dns_support",
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              "enable",
+              "disable"
+            ]
+          },
+          "default": "enable",
+          "help": "Resolves DNS hostnames across the transit gateway for this attachment."
+        },
+        {
+          "name": "resource_name",
+          "label": "Attachment name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this attachment is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this attachment."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new tgw attachment",
+        "attach vpc to transit gateway"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Attaching a VPC to a transit gateway can expose it to every other VPC or on-prem network already attached, depending on the transit gateway's route table associations \u2014 confirm the target route table policy before attaching, especially on a shared hub",
+        "Appliance mode (for symmetric routing through a firewall/appliance VPC) and IPv6 support are engineer decisions",
+        "Transit gateway route table associations/propagations beyond the gateway's own default are engineer decisions (the transit gateway's own route table actions)"
+      ]
+    }
+  ]
+}

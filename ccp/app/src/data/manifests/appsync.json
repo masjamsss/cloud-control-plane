@@ -1,0 +1,152 @@
+{
+  "service": "appsync",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_appsync_graphql_api"
+  ],
+  "summary": "Provision AWS AppSync for a new GraphQL API. Creating the API container is an engineer-gated form; the schema, data sources, and resolvers that give it behavior are always finished by the engineer afterward.",
+  "operations": [
+    {
+      "id": "appsync-api-create",
+      "service": "appsync",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a new GraphQL API",
+      "summary": "Request a new AppSync GraphQL API. An engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Specify a new aws_appsync_graphql_api: its name and authentication mode. The GraphQL schema (SDL), data sources, and resolvers are always finished by the engineer — this form provisions the empty API container. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_appsync_graphql_api"
+      },
+      "params": [
+        {
+          "name": "api_name",
+          "label": "API name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_-]{1,50}$"
+          },
+          "help": "The API's name in the AppSync console."
+        },
+        {
+          "name": "authentication_type",
+          "label": "Authentication mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "authentication_type",
+          "group": "security",
+          "bounds": {
+            "allowlist": [
+              "API_KEY",
+              "AWS_IAM",
+              "AMAZON_COGNITO_USER_POOLS",
+              "OPENID_CONNECT",
+              "AWS_LAMBDA"
+            ]
+          },
+          "default": "API_KEY",
+          "help": "API_KEY is the simplest for prototyping (a shareable key, expires by default); AWS_IAM authenticates callers with their AWS credentials. The other three need extra required configuration an engineer completes during review."
+        },
+        {
+          "name": "visibility",
+          "label": "Visibility",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "visibility",
+          "group": "settings",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              "GLOBAL",
+              "PRIVATE"
+            ]
+          },
+          "default": "GLOBAL",
+          "help": "PRIVATE restricts the API to requests that originate inside the VPC."
+        },
+        {
+          "name": "xray_enabled",
+          "label": "AWS X-Ray tracing",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "xray_enabled",
+          "group": "observability",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": false,
+          "help": "Traces requests through resolvers and data sources for debugging and latency analysis."
+        },
+        {
+          "name": "resource_name",
+          "label": "API name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this API is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this API."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new appsync api",
+        "graphql api",
+        "new graphql endpoint"
+      ],
+      "decisions": [
+        "The GraphQL schema (SDL), data sources, resolvers, and functions are engineer follow-ups — this form provisions the empty API container",
+        "Choosing AMAZON_COGNITO_USER_POOLS, OPENID_CONNECT, or AWS_LAMBDA authentication requires additional required configuration (user_pool_config / openid_connect_config / lambda_authorizer_config) that an engineer completes during review",
+        "Additional authentication providers (additional_authentication_provider) beyond the primary mode are an engineer decision"
+      ]
+    }
+  ]
+}

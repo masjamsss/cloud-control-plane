@@ -1,0 +1,17 @@
+{
+ "aws_vpn_gateway.main": {
+  "file": "ccp/app/fixtures-estate/vpn.tf",
+  "line": 3,
+  "source": "resource \"aws_vpn_gateway\" \"main\" {\n  vpc_id          = aws_vpc.main.id\n  amazon_side_asn = 64512\n\n  tags = {\n    Name = \"app-vgw\"\n    PIC  = \"user02@example.com\"\n  }\n}"
+ },
+ "aws_customer_gateway.onprem": {
+  "file": "ccp/app/fixtures-estate/vpn.tf",
+  "line": 13,
+  "source": "resource \"aws_customer_gateway\" \"onprem\" {\n  bgp_asn    = 65000\n  ip_address = \"203.0.113.10\"\n  type       = \"ipsec.1\"\n\n  tags = {\n    Name = \"onprem-cgw\"\n    PIC  = \"user02@example.com\"\n  }\n}"
+ },
+ "aws_vpn_connection.site_to_site": {
+  "file": "ccp/app/fixtures-estate/vpn.tf",
+  "line": 24,
+  "source": "resource \"aws_vpn_connection\" \"site_to_site\" {\n  vpn_gateway_id      = aws_vpn_gateway.main.id\n  customer_gateway_id = aws_customer_gateway.onprem.id\n  type                = \"ipsec.1\"\n  static_routes_only  = true\n\n  tags = {\n    Name = \"onprem-vpn\"\n    PIC  = \"user02@example.com\"\n  }\n}"
+ }
+}

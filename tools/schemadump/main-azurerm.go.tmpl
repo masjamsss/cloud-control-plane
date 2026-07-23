@@ -1,0 +1,180 @@
+// Command schemadump (azurerm variant) builds the azurerm provider's SDKv2
+// provider in-process and reflects its resource schemas into an authoritative
+// per-attribute JSON dump (including ForceNew, which the JSON schema omits).
+//
+// This file is NOT compiled as part of tools/schemadump (it imports the
+// provider's internal/ packages, importable only from inside the provider
+// module). gen.sh (PROVIDER=azurerm) renders it — the SAME sed pass that
+// substitutes main.go.tmpl's (AWS) import placeholders finds nothing to
+// replace here, so it passes through byte-for-byte — into
+// <provider-src>/cmd/schemadump/main.go, copies schemadump.go beside it as
+// `package main`, and builds there. The .tmpl extension keeps the Go
+// toolchain from trying to compile it in place.
+//
+// Unlike main.go.tmpl (AWS), this template's import paths are spelled out in
+// full below (github.com/hashicorp/terraform-provider-azurerm/internal/...)
+// rather than sed-substituted at render time: azurerm's module path is fixed
+// (no /v6-style SIV suffix to parameterize around, matching the AWS
+// provider's own quirk — see README.md). CAUTION for future editors: because
+// gen.sh's placeholder substitution still RUNS (harmlessly) over this file,
+// never spell either AWS template's two placeholder tokens out literally
+// anywhere in this file, including in comments — doing so would make the sed
+// pass rewrite that occurrence too. A future azurerm major version that moves
+// these packages would need a template edit, not just a new TAG/MODULE env
+// var (0039 F1 spike, F2 wiring).
+//
+// azurerm exposes its SDKv2 provider via AzureProvider() (no ctx/err, unlike
+// AWS's NewProvider(ctx) error-returning constructor) and a separate
+// NewFrameworkV5Provider() for the terraform-plugin-framework half; the
+// framework provider is enumerated for TYPE NAMES ONLY inside a recover()
+// (framework construction is unverified outside the F1 spike's own run and
+// must never take the whole dump down with it), exactly mirroring the AWS
+// variant's framework_unreflected fail-closed rule: ForceNew is not reliably
+// introspectable from plan-modifier-based RequiresReplace, so those resources
+// are marked framework_unreflected=true rather than guessed.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"runtime"
+	"runtime/debug"
+	"strings"
+	"time"
+
+	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
+
+	sdkv2 "github.com/hashicorp/terraform-provider-azurerm/internal/provider"
+	framework "github.com/hashicorp/terraform-provider-azurerm/internal/provider/framework"
+)
+
+func main() {
+	var typesFile, outFile, provenanceFile, version, tag, module string
+	flag.StringVar(&typesFile, "types", "", "file of resource type names, one per line (blank/`#` lines ignored); empty = all")
+	flag.StringVar(&outFile, "out", "", "output JSON path (default stdout)")
+	flag.StringVar(&provenanceFile, "provenance", "", "JSON file embedded verbatim as metadata.source_provenance")
+	flag.StringVar(&version, "version", "4.81.0", "provider version for metadata")
+	flag.StringVar(&tag, "tag", "v4.81.0", "provider VCS tag for metadata")
+	flag.StringVar(&module, "module", "github.com/hashicorp/terraform-provider-azurerm", "provider module path")
+	flag.Parse()
+
+	ctx := context.Background()
+
+	// SDKv2 provider — azurerm exposes it without ctx/err (provider.go:26).
+	primary := sdkv2.AzureProvider()
+	sdk := primary.ResourcesMap
+
+	// Framework provider — type names only (RequiresReplace not introspectable;
+	// those resources are marked framework_unreflected, fail-closed).
+	fwTypes := map[string]bool{}
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "schemadump: framework enumeration panicked (%v) — continuing with SDKv2 only; framework types will be MISSING, not silently in_place\n", r)
+			}
+		}()
+		fwProv := framework.NewFrameworkV5Provider()
+		for _, factory := range fwProv.Resources(ctx) {
+			r := factory()
+			var resp fwresource.MetadataResponse
+			r.Metadata(ctx, fwresource.MetadataRequest{ProviderTypeName: "azurerm"}, &resp)
+			if resp.TypeName != "" {
+				fwTypes[resp.TypeName] = true
+			}
+		}
+	}()
+
+	requested := readTypeList(typesFile)
+
+	meta := Metadata{
+		Provider:         "hashicorp/azurerm",
+		ProviderVersion:  version,
+		ProviderModule:   module,
+		ProviderTag:      tag,
+		GeneratedAt:      time.Now().UTC().Format(time.RFC3339),
+		Generator:        "tools/schemadump (compile-and-reflect; 0013d G0; azurerm variant 0039 F1)",
+		GoVersion:        runtime.Version(),
+		SDKVersion:       depVersion("github.com/hashicorp/terraform-plugin-sdk/v2"),
+		FrameworkVersion: depVersion("github.com/hashicorp/terraform-plugin-framework"),
+		Note: "SDKv2 resources reflected authoritatively (per-attribute ForceNew from " +
+			"helper/schema). Framework resources marked framework_unreflected=true " +
+			"(fail-closed). `terraform providers schema -json` omits ForceNew; this dump " +
+			"is the authoritative source (0009 L1, 0013d §2.1; azurerm per 0039/ADR-0015).",
+		SourceProvenance: readRawJSON(provenanceFile),
+	}
+
+	dump := BuildDump(sdk, fwTypes, requested, meta)
+
+	out, err := json.MarshalIndent(dump, "", "  ")
+	if err != nil {
+		fatalf("marshaling dump: %v", err)
+	}
+	out = append(out, '\n')
+	if outFile == "" {
+		os.Stdout.Write(out)
+	} else if err := os.WriteFile(outFile, out, 0o644); err != nil {
+		fatalf("writing %s: %v", outFile, err)
+	}
+
+	s := dump.Metadata.Summary
+	fmt.Fprintf(os.Stderr,
+		"schemadump: requested=%d sdkv2=%d framework_unreflected=%d missing=%d | attrs=%d forcenew_true=%d forcenew_false=%d\n",
+		s.Requested, s.SDKv2Reflected, s.FrameworkUnreflected, s.Missing,
+		s.TotalAttributes, s.AttrsForceNewTrue, s.AttrsForceNewFalse)
+	if len(s.MissingTypes) > 0 {
+		fmt.Fprintf(os.Stderr, "schemadump: MISSING types: %s\n", strings.Join(s.MissingTypes, ", "))
+	}
+}
+
+func readTypeList(path string) []string {
+	if path == "" {
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		fatalf("reading types file %s: %v", path, err)
+	}
+	var out []string
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+func readRawJSON(path string) interface{} {
+	if path == "" {
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		fatalf("reading provenance file %s: %v", path, err)
+	}
+	return json.RawMessage(b)
+}
+
+// depVersion returns the module version linked into this binary, from the Go
+// build info — authoritative for the versions actually compiled in.
+func depVersion(module string) string {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	for _, d := range bi.Deps {
+		if d.Path == module {
+			return d.Version
+		}
+	}
+	return ""
+}
+
+func fatalf(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "schemadump: "+format+"\n", args...)
+	os.Exit(1)
+}

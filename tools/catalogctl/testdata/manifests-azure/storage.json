@@ -1,0 +1,160 @@
+{
+  "service": "azure-fixtures",
+  "scope": "estate",
+  "resourceTypes": ["azurerm_storage_account", "azurerm_resource_group"],
+  "summary": "Fixture manifest for Lane B azurerm create_resource golden cases (0039 Azure-seam Wave-1) — proves the provider-shape tables let create_resource emit azurerm_* resources and render azurerm_* references as HCL expressions, not string literals. Extended by Lane K with a set_attribute tags map-merge op for the azurerm tag-key case-collision guard golden fixtures, and by the catalogctl Azure-executability verify lane with a scalar target.attr min_tls_version op (mirrors the real azure-storage-account-set-min-tls-version).",
+  "operations": [
+    {
+      "id": "azure-create-storage-account",
+      "service": "storage",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a storage account",
+      "description": "Creates a new azurerm_storage_account top-level resource block.",
+      "target": {
+        "resourceType": "azurerm_storage_account"
+      },
+      "riskFloor": "MEDIUM",
+      "exposure": "l1_with_guardrails",
+      "terraformCapability": "+ create",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "storage_account_name",
+          "label": "Storage account name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name"
+        },
+        {
+          "name": "location",
+          "label": "Location",
+          "type": "string",
+          "source": "user_input",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "azure-create-storage-account-with-rg-ref",
+      "service": "storage",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a storage account inside an existing resource group",
+      "description": "Creates a new azurerm_storage_account whose resource_group_name references an existing azurerm_resource_group.",
+      "target": {
+        "resourceType": "azurerm_storage_account"
+      },
+      "riskFloor": "MEDIUM",
+      "exposure": "l1_with_guardrails",
+      "terraformCapability": "+ create",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "storage_account_name",
+          "label": "Storage account name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name"
+        },
+        {
+          "name": "resource_group",
+          "label": "Resource group",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "attr": "resource_group_name",
+          "refAttr": "name",
+          "enumSource": "inventory://azurerm_resource_group/name"
+        }
+      ]
+    },
+    {
+      "id": "azure-update-storage-account-tags",
+      "service": "storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update storage account tags",
+      "description": "Sets or merges tags on the storage account. Non-disruptive, takes effect immediately.",
+      "target": {
+        "resourceType": "azurerm_storage_account",
+        "block": "tags"
+      },
+      "params": [
+        {
+          "name": "storage_account",
+          "label": "Storage account",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_storage_account/address",
+          "help": "The storage account to tag."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "default": {},
+          "help": "Key/value tags to set; existing keys not listed here are left untouched."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update"
+    },
+    {
+      "id": "azure-storage-account-set-min-tls-version",
+      "service": "azure-storage",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set minimum TLS version",
+      "description": "Sets the minimum TLS version accepted for requests to the storage account. Tighten-only: this operation offers TLS 1.2 only; moving to an older, weaker minimum is engineer-authored.",
+      "target": {
+        "resourceType": "azurerm_storage_account",
+        "attr": "min_tls_version"
+      },
+      "params": [
+        {
+          "name": "storage_account",
+          "label": "Storage account",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://azurerm_storage_account/address",
+          "help": "The storage account whose minimum TLS version to set."
+        },
+        {
+          "name": "min_tls_version",
+          "label": "Minimum TLS version",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "TLS1_2"
+            ]
+          },
+          "help": "The minimum TLS version clients must use to connect. Only the modern, secure minimum (TLS 1.2) is offered here."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (min_tls_version)"
+    }
+  ]
+}

@@ -1,0 +1,2186 @@
+{
+  "service": "autoscaling",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_autoscaling_group",
+    "aws_autoscaling_policy"
+  ],
+  "summary": "Adjust Auto Scaling capacity and behavior once an ASG exists: min/max/desired capacity, bounded target-tracking scaling policies, guarded instance refreshes, suspending and resuming ASG processes during maintenance, scheduled scaling for recurring batch windows, and reversibly removing a policy. The first stand-up of an ASG stays with an engineer because AMI, subnet, IAM, security-group, and sizing choices are architecture decisions. Every operation changes capacity, cost, or behavior, so all stay human-approved within policy caps; none auto-apply.",
+  "operations": [
+    {
+      "id": "autoscaling-adjust-capacity",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Adjust min / max / desired capacity on an ASG",
+      "summary": "Change how many servers this group runs (minimum, maximum, and target). Takes effect right away with no downtime.",
+      "description": "In-place update of an existing ASG's capacity bounds (min_size, max_size, and/or desired_capacity) \u2014 the single most common day-2 ask, e.g. bump the app tier from 2 to 4 under load. No launch-template change and no replacement; scale-out launches real instances (cost delta) and scale-in can terminate a serving instance, so it is capped by policy and stays human-approved.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling Group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true,
+          "help": "The ASG whose capacity you want to change."
+        },
+        {
+          "name": "new_desired_capacity",
+          "label": "Desired capacity",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "New running instance count. Must sit within the effective min/max after this change.",
+          "bounds": {
+            "min": 0,
+            "max": 20,
+            "semantic": "instance_count"
+          }
+        },
+        {
+          "name": "new_min_size",
+          "label": "Minimum size",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "default": null,
+          "help": "Leave blank to keep the current minimum. Must be <= max size.",
+          "bounds": {
+            "min": 0,
+            "max": 20,
+            "semantic": "instance_count"
+          }
+        },
+        {
+          "name": "new_max_size",
+          "label": "Maximum size",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "default": null,
+          "help": "Leave blank to keep the current maximum. Above the policy cap of 20 the request routes to an engineer.",
+          "bounds": {
+            "min": 1,
+            "max": 20,
+            "semantic": "instance_count"
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "scale-performance"
+    },
+    {
+      "id": "autoscaling-add-target-tracking-policy",
+      "service": "autoscaling",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a target-tracking scaling policy to an ASG",
+      "summary": "Add a policy that automatically scales this group to hold a target, like average CPU. Existing size limits still cap how far it scales.",
+      "description": "Attach a new aws_autoscaling_policy (policy_type=TargetTrackingScaling) to an existing ASG \u2014 the AWS-recommended scaling mode, e.g. hold average CPU at 60%. Additive (a new block; does not modify the ASG's own attributes) and bounded: metric picked from an allowlist and the ASG's existing max_size still caps how far it can scale. Reversible by deleting the policy.",
+      "target": {
+        "resourceType": "aws_autoscaling_group",
+        "block": "environments/prod/autoscaling.tf"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling Group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true,
+          "help": "The ASG the new scaling policy attaches to."
+        },
+        {
+          "name": "predefined_metric_type",
+          "label": "Metric to track",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "The predefined metric the policy holds at the target value.",
+          "bounds": {
+            "allowlist": [
+              "ASGAverageCPUUtilization",
+              "ASGAverageNetworkIn",
+              "ASGAverageNetworkOut",
+              "ALBRequestCountPerTarget"
+            ]
+          }
+        },
+        {
+          "name": "target_value",
+          "label": "Target value",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "The value the metric is held at. For CPU utilisation use 10-90 (percent); for request-count use requests-per-target.",
+          "bounds": {
+            "min": 1,
+            "max": 100000
+          }
+        },
+        {
+          "name": "policy_name",
+          "label": "Policy name",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "tt-cpu",
+          "help": "Name for the new policy. Defaults to tt-<metric>.",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._-]{1,255}$"
+          }
+        },
+        {
+          "name": "disable_scale_in",
+          "label": "Scale-out only",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "default": false,
+          "help": "If true the policy only scales out and never scales in."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "autoscaling-start-instance-refresh",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "append_block",
+      "title": "Start a rolling instance refresh on an ASG",
+      "summary": "Roll every server in this group onto its current setup, a few at a time. Can't be undone once it starts; brief interruption.",
+      "description": "Configure/trigger an instance_refresh on an existing ASG to roll every instance onto the ASG's current launch-template configuration, honouring a minimum-healthy-percentage so the tier keeps serving throughout. Used to bake in a config already published by an engineer. It replaces instances in a rolling fashion (brief per-instance interruption) and is not cleanly undoable once instances are cycled, so it stays capped and human-approved.",
+      "target": {
+        "resourceType": "aws_autoscaling_group",
+        "block": "instance_refresh",
+        "singleton": true
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling Group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true,
+          "help": "The ASG whose instances will be rolled."
+        },
+        {
+          "name": "strategy",
+          "label": "Refresh strategy",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "default": "Rolling",
+          "help": "Instance-refresh strategy. Only Rolling is supported.",
+          "bounds": {
+            "allowlist": [
+              "Rolling"
+            ]
+          },
+          "role": "const",
+          "const": "Rolling"
+        },
+        {
+          "name": "min_healthy_percentage",
+          "label": "Minimum healthy percentage",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "default": 90,
+          "help": "How much of the ASG must stay healthy during the roll. Lower = faster but less capacity headroom.",
+          "bounds": {
+            "min": 50,
+            "max": 100
+          },
+          "path": [
+            "preferences"
+          ]
+        },
+        {
+          "name": "instance_warmup",
+          "label": "Instance warmup (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "default": 300,
+          "help": "Seconds a replaced instance warms up before the refresh counts it healthy and proceeds.",
+          "bounds": {
+            "min": 0,
+            "max": 3600,
+            "semantic": "duration_seconds"
+          },
+          "path": [
+            "preferences"
+          ]
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": false,
+      "downtime": "brief-interruption",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "autoscaling-suspend-processes",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Suspend / resume ASG scaling processes",
+      "summary": "Pause or resume this group's automatic scaling and health actions, for example during a maintenance window.",
+      "description": "Set the ASG's suspended_processes list to pause selected Auto Scaling activities (e.g. suspend Launch, Terminate, HealthCheck, ReplaceUnhealthy during a maintenance window so the ASG does not fight a manual intervention), then clear the list to resume. In-place, fully reversible, no replacement \u2014 but suspending HealthCheck/ReplaceUnhealthy leaves unhealthy instances in service, so it stays guarded. Set to an empty list to resume all processes.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling Group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true,
+          "help": "The ASG whose processes you want to suspend or resume."
+        },
+        {
+          "name": "new_suspended_processes",
+          "label": "Processes to suspend",
+          "type": "list",
+          "source": "allowlist",
+          "required": true,
+          "help": "Processes to suspend. Send an empty list to resume everything.",
+          "bounds": {
+            "allowlist": [
+              "Launch",
+              "Terminate",
+              "HealthCheck",
+              "ReplaceUnhealthy",
+              "AZRebalance",
+              "AlarmNotification",
+              "ScheduledActions",
+              "AddToLoadBalancer",
+              "InstanceRefresh"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "autoscaling-add-scheduled-action",
+      "service": "autoscaling",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a scheduled scaling action to an ASG",
+      "summary": "Schedule this group to change capacity at set times, e.g. scale up before a nightly batch and back down after.",
+      "description": "Add a new aws_autoscaling_schedule so the ASG changes capacity on a timer \u2014 the classic batch pattern (scale a tier up before a recurring run, back down after). Additive and reversible (delete the schedule); the desired/max it can set share the same policy caps as capacity changes, so a schedule cannot be used to bypass the ceiling. Cron is validated in policy.yaml.",
+      "target": {
+        "resourceType": "aws_autoscaling_group",
+        "block": "environments/prod/autoscaling.tf"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling Group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true,
+          "help": "The ASG the scheduled action attaches to."
+        },
+        {
+          "name": "scheduled_action_name",
+          "label": "Action name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Unique name for the scheduled action within this ASG.",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._-]{1,255}$"
+          }
+        },
+        {
+          "name": "desired_capacity",
+          "label": "Desired capacity at fire time",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "Instance count the action sets when it fires. Capped by the same policy ceiling as manual capacity changes.",
+          "bounds": {
+            "min": 0,
+            "max": 20,
+            "semantic": "instance_count"
+          }
+        },
+        {
+          "name": "recurrence",
+          "label": "Recurrence (cron)",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "5-field cron for when the action fires, e.g. '0 22 * * *' for 22:00 daily.",
+          "bounds": {
+            "pattern": "^([^ ]+ ){4}[^ ]+$",
+            "semantic": "cron"
+          }
+        },
+        {
+          "name": "time_zone",
+          "label": "Time zone",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "Asia/Tokyo",
+          "help": "IANA timezone the cron is evaluated in.",
+          "bounds": {
+            "semantic": "iana_timezone",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z_]+(/[A-Za-z0-9_+-]+){0,2}$"
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "autoscaling-delete-scaling-policy",
+      "service": "autoscaling",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Remove a scaling policy from an ASG",
+      "summary": "Remove one scaling policy so this group no longer fires it. Can't be undone; re-adding it later is a fresh policy.",
+      "description": "Destroy one specifically-identified aws_autoscaling_policy chosen from inventory (e.g. retire a superseded target-tracking or step policy). The L1 picks the exact policy \u2014 never free-typed \u2014 and the codemod removes that one block. It destroys only a controller (no compute or state) and reduces autonomous behaviour, but removing the wrong policy can leave the tier unable to scale under load, so it is guarded and requires a typed confirmation.",
+      "target": {
+        "resourceType": "aws_autoscaling_policy",
+        "block": "environments/prod/autoscaling.tf"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Scaling policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_policy/address",
+          "required": true,
+          "help": "The exact scaling policy to remove, selected from the ASG's current policies."
+        },
+        {
+          "name": "confirm_remove_policy",
+          "label": "Confirm removal",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "help": "Typed confirmation that this policy will be destroyed and the ASG will no longer scale on it.",
+          "bounds": {
+            "allowlist": [
+              true
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "autoscaling-toggle-policy-enabled",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable a scaling policy",
+      "summary": "Pause or resume a scaling policy without deleting it. Reversible; no downtime.",
+      "description": "Flip the `enabled` flag on an aws_autoscaling_policy to pause or resume it without deleting it. In-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_autoscaling_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Scaling policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_policy/address",
+          "required": true,
+          "help": "Pick the scaling policy to update."
+        },
+        {
+          "name": "enabled",
+          "label": "Enabled",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true resumes the policy; false pauses it. The policy is retained either way."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (enabled)",
+      "group": "scale-performance",
+      "pinned": 1
+    },
+    {
+      "id": "autoscaling-set-cooldown",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set simple-scaling cooldown",
+      "summary": "Set how long the group waits between scaling actions (simple scaling). Reversible; no downtime.",
+      "description": "Set `cooldown` (seconds between scaling activities, SimpleScaling only) on an aws_autoscaling_policy. Bounded threshold, in-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_autoscaling_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Scaling policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_policy/address",
+          "required": true,
+          "help": "Pick the SimpleScaling policy to update."
+        },
+        {
+          "name": "cooldown",
+          "label": "Cooldown (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 3600
+          },
+          "help": "Seconds to wait after a scaling activity before another can start. 0\u20133600."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (cooldown)",
+      "group": "scale-performance",
+      "pinned": 2
+    },
+    {
+      "id": "autoscaling-set-estimated-instance-warmup",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set estimated instance warmup",
+      "summary": "Set how long a new server warms up before its metrics count toward scaling. Reversible; no downtime.",
+      "description": "Set `estimated_instance_warmup` (seconds until a new instance's metrics count toward the ASG) on an aws_autoscaling_policy. Bounded threshold, in-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_autoscaling_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Scaling policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_policy/address",
+          "required": true,
+          "help": "Pick the scaling policy to update."
+        },
+        {
+          "name": "estimated_instance_warmup",
+          "label": "Warmup (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 3600
+          },
+          "help": "Seconds before a newly launched instance's metrics are included in aggregate. 0\u20133600."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (estimated_instance_warmup)",
+      "group": "scale-performance",
+      "pinned": 3
+    },
+    {
+      "id": "autoscaling-set-min-adjustment-magnitude",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set minimum adjustment magnitude",
+      "summary": "Set the fewest servers a percentage-based scaling step may add or remove at once. Reversible; no downtime.",
+      "description": "Set `min_adjustment_magnitude` (minimum instances to scale when adjustment_type is PercentChangeInCapacity) on an aws_autoscaling_policy. Bounded threshold, in-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_autoscaling_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Scaling policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_policy/address",
+          "required": true,
+          "help": "Pick the scaling policy to update."
+        },
+        {
+          "name": "min_adjustment_magnitude",
+          "label": "Minimum adjustment magnitude",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 1000
+          },
+          "help": "Floor on the number of instances a PercentChangeInCapacity step will move. 0 disables the floor."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (min_adjustment_magnitude)",
+      "group": "scale-performance",
+      "pinned": 4
+    },
+    {
+      "id": "autoscaling-set-metric-aggregation-type",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set step-scaling metric aggregation type",
+      "summary": "Choose how the metric is summarized (minimum, maximum, or average) for step-scaling decisions. Reversible.",
+      "description": "Set `metric_aggregation_type` (how CloudWatch aggregates the metric for StepScaling decisions) on an aws_autoscaling_policy. Bounded enum, in-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_autoscaling_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Scaling policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_policy/address",
+          "required": true,
+          "help": "Pick the StepScaling policy to update."
+        },
+        {
+          "name": "metric_aggregation_type",
+          "label": "Aggregation type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "Minimum",
+              "Maximum",
+              "Average"
+            ]
+          },
+          "help": "How the trigger metric is aggregated over the evaluation window."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (metric_aggregation_type)",
+      "group": "monitoring-alarms",
+      "pinned": 5
+    },
+    {
+      "id": "autoscaling-set-adjustment-type",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set scaling adjustment type",
+      "summary": "Choose how a scaling step is applied: add a fixed number, set an exact number, or a percentage. Changes future scaling.",
+      "description": "Set `adjustment_type`, which reinterprets how scaling_adjustment is applied (add N, set exactly N, or percent). In-place and reversible with no downtime, but it changes scaling behavior on the next trigger \u2014 guardrailed.",
+      "target": {
+        "resourceType": "aws_autoscaling_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Scaling policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_policy/address",
+          "required": true,
+          "help": "Pick the scaling policy to update."
+        },
+        {
+          "name": "adjustment_type",
+          "label": "Adjustment type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "ChangeInCapacity",
+              "ExactCapacity",
+              "PercentChangeInCapacity"
+            ]
+          },
+          "help": "Determines whether scaling_adjustment adds instances, sets an exact count, or a percentage. Verify scaling_adjustment still makes sense afterward."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (adjustment_type)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "autoscaling-set-scaling-adjustment",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set simple-scaling adjustment amount",
+      "summary": "Set how much this policy scales the group each time it fires. Directly changes capacity on the next trigger.",
+      "description": "Set `scaling_adjustment` (SimpleScaling amount to scale, interpreted per adjustment_type) on an aws_autoscaling_policy. In-place and reversible with no downtime, but it directly controls capacity change on the next trigger \u2014 guardrailed.",
+      "target": {
+        "resourceType": "aws_autoscaling_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Scaling policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_policy/address",
+          "required": true,
+          "help": "Pick the SimpleScaling policy to update."
+        },
+        {
+          "name": "scaling_adjustment",
+          "label": "Scaling adjustment",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": -100,
+            "max": 100
+          },
+          "help": "Instances (or percent, per adjustment_type) to add (positive) or remove (negative) per trigger. -100 to 100."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (scaling_adjustment)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "autoscaling-autoscaling-policy-engineer-request",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to Auto Scaling policy",
+      "summary": "Request a scaling-policy change that isn't offered as a form; an engineer writes and reviews the Terraform.",
+      "description": "Catch-all for any aws_autoscaling_policy change not offered as a bounded form (e.g. policy_type switch, step_adjustment / target_tracking / predictive_scaling blocks, rename). An engineer authors the Terraform.",
+      "target": {
+        "resourceType": "aws_autoscaling_policy"
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Scaling policy",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "enumSource": "inventory://aws_autoscaling_policy/address",
+          "help": "The scaling policy this request is about, when the estate already tracks one. Leave blank when describing one that is not tracked yet."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "scale-performance"
+    },
+    {
+      "id": "autoscaling-set-health-check-type",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set health check type on Auto Scaling group",
+      "summary": "Choose whether health is judged by the server or the load balancer. The load-balancer option can replace servers it marks unhealthy.",
+      "description": "Switch health_check_type between EC2 and ELB. ELB uses load-balancer health checks, which can mark instances unhealthy and trigger replacement, so this is guardrailed.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The Auto Scaling group whose health-check type will change, picked from groups already managed in Terraform so the change cannot target an unknown or hand-built group.",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true
+        },
+        {
+          "name": "health_check_type",
+          "label": "Health check type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "EC2",
+              "ELB"
+            ]
+          },
+          "help": "ELB marks instances unhealthy on load-balancer health-check failure, which can trigger replacement."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (health_check_type)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "autoscaling-set-default-cooldown",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set default cooldown on Auto Scaling group",
+      "summary": "Set the default wait between scaling actions for this group. Reversible; no downtime.",
+      "description": "Adjust default_cooldown, the seconds between scaling activities. Reversible timing threshold, no downtime.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The Auto Scaling group whose scaling cooldown you are adjusting; the dropdown lists only Terraform-managed groups, so a free-typed name can never point at the wrong resource.",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true
+        },
+        {
+          "name": "default_cooldown",
+          "label": "Default cooldown (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 86400
+          },
+          "help": "Seconds between scaling activities. Provider default is 300."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (default_cooldown)",
+      "group": "scale-performance",
+      "pinned": 1
+    },
+    {
+      "id": "autoscaling-set-health-check-grace-period",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set health check grace period on Auto Scaling group",
+      "summary": "Set how long after a server launches before health checks begin. Reversible; no downtime.",
+      "description": "Adjust health_check_grace_period, the seconds after launch before health checks begin. Reversible timing threshold, no downtime.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The Auto Scaling group whose health-check grace period you are adjusting, selected from Terraform inventory so only groups the estate already manages can be modified.",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true
+        },
+        {
+          "name": "health_check_grace_period",
+          "label": "Health check grace period (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 7200
+          },
+          "help": "Grace period before health checks start after an instance launches. Provider default is 300."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (health_check_grace_period)",
+      "group": "availability-lifecycle",
+      "pinned": 2
+    },
+    {
+      "id": "autoscaling-toggle-capacity-rebalance",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle capacity rebalance on Auto Scaling group",
+      "summary": "Turn on or off proactively replacing Spot servers that are at risk of interruption. Reversible; no downtime.",
+      "description": "Enable or disable capacity_rebalance so the group proactively replaces Spot instances at elevated interruption risk. Reversible bool toggle, no downtime.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The Auto Scaling group to toggle capacity rebalancing on, chosen from Terraform-managed groups so the change is scoped to a known resource.",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true
+        },
+        {
+          "name": "capacity_rebalance",
+          "label": "Capacity rebalance",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "When true, the group acts on EC2 Spot rebalance recommendations and launches a replacement before an at-risk Spot instance is interrupted; the allowlist permits only true or false, so nothing else about the group can change.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (capacity_rebalance)",
+      "group": "availability-lifecycle",
+      "pinned": 3
+    },
+    {
+      "id": "autoscaling-toggle-protect-from-scale-in",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle default scale-in protection on Auto Scaling group",
+      "summary": "Turn on or off protecting new servers in this group from being removed when it scales in. Reversible.",
+      "description": "Enable or disable protect_from_scale_in, the default instance scale-in protection for new instances. Reversible bool toggle, no downtime.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The Auto Scaling group whose default scale-in protection you are toggling, picked from Terraform inventory so only managed groups are selectable.",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true
+        },
+        {
+          "name": "protect_from_scale_in",
+          "label": "Default scale-in protection",
+          "type": "bool",
+          "source": "allowlist",
+          "help": "When true, instances the group launches from now on are protected from termination during scale-in events (manual termination and unhealthy-instance replacement still apply); only true or false is accepted.",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (protect_from_scale_in)",
+      "group": "availability-lifecycle",
+      "pinned": 4
+    },
+    {
+      "id": "autoscaling-set-default-instance-warmup",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set default instance warmup on Auto Scaling group",
+      "summary": "Set how long a new server warms up before it counts toward this group's metrics. Reversible; no downtime.",
+      "description": "Adjust default_instance_warmup, the seconds before a new instance contributes to aggregated metrics. Reversible timing threshold, no downtime.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The Auto Scaling group whose default instance warmup you are setting, limited to groups already in Terraform inventory so the timing change lands on a known resource.",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true
+        },
+        {
+          "name": "default_instance_warmup",
+          "label": "Default instance warmup (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 0,
+            "max": 3600
+          },
+          "help": "Warm-up time before an instance is counted toward aggregated instance metrics."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (default_instance_warmup)",
+      "group": "scale-performance",
+      "pinned": 5
+    },
+    {
+      "id": "autoscaling-set-max-instance-lifetime",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set max instance lifetime on Auto Scaling group",
+      "summary": "Set a maximum age after which servers are automatically replaced. Drives rolling replacement, cycling running servers over time.",
+      "description": "Set max_instance_lifetime so instances older than the limit are rolling-replaced. Stateful behavior change that drives instance churn, so guardrailed. Range 86400-31536000 seconds; disabling (0) is engineer-only.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The Auto Scaling group whose maximum instance lifetime you are setting; selection is restricted to Terraform-managed groups so the rolling-replacement churn this drives applies only to a known resource.",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true
+        },
+        {
+          "name": "max_instance_lifetime",
+          "label": "Max instance lifetime (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 86400,
+            "max": 31536000
+          },
+          "help": "Instances older than this are replaced via rolling activity. Valid range 86400-31536000. Use the engineer request to set 0 (disable)."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (max_instance_lifetime)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "autoscaling-set-termination-policies",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set termination policies on Auto Scaling group",
+      "summary": "Choose the order that decides which servers are removed first when scaling in. It changes which servers are terminated, with no downtime.",
+      "description": "Set the ordered termination_policies that decide which instances are selected on scale-in. Reversible config change, no downtime, but affects which instances are terminated, so guardrailed.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The Auto Scaling group whose scale-in termination order you are changing, chosen from Terraform inventory so this guardrailed change targets only a managed group.",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true
+        },
+        {
+          "name": "termination_policies",
+          "label": "Termination policies (ordered)",
+          "type": "list",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "Default",
+              "OldestInstance",
+              "NewestInstance",
+              "OldestLaunchConfiguration",
+              "ClosestToNextInstanceHour",
+              "OldestLaunchTemplate",
+              "AllocationStrategy"
+            ]
+          },
+          "help": "Priority order used to pick instances for scale-in."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (termination_policies)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "autoscaling-set-enabled-metrics",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable group metrics on Auto Scaling group",
+      "summary": "Turn on detailed one-minute group metrics for monitoring. Reversible; no effect on running servers.",
+      "description": "Set enabled_metrics to collect CloudWatch group metrics at 1-minute granularity. Observability-only, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The Auto Scaling group to enable CloudWatch group metrics on, selected from Terraform-managed groups; the change is observability-only for that group.",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true
+        },
+        {
+          "name": "enabled_metrics",
+          "label": "Group metrics to enable",
+          "type": "list",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "GroupMinSize",
+              "GroupMaxSize",
+              "GroupDesiredCapacity",
+              "GroupInServiceInstances",
+              "GroupPendingInstances",
+              "GroupStandbyInstances",
+              "GroupTerminatingInstances",
+              "GroupTotalInstances",
+              "GroupInServiceCapacity",
+              "GroupPendingCapacity",
+              "GroupStandbyCapacity",
+              "GroupTerminatingCapacity",
+              "GroupTotalCapacity"
+            ]
+          },
+          "help": "CloudWatch group metrics collected at 1-minute granularity."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (enabled_metrics)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "autoscaling-add-tag",
+      "service": "autoscaling",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a tag to Auto Scaling group",
+      "summary": "Add a metadata tag to this group. No effect on how it runs; reversible.",
+      "description": "Append a tag block (key/value/propagate_at_launch) to the group. Cosmetic metadata change, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_autoscaling_group",
+        "block": "tag"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The Auto Scaling group receiving the new tag, picked from Terraform inventory so the metadata lands on a known group.",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "help": "The tag's key (name), restricted to 1-128 characters from a tag-safe character set (letters, digits, and _ + . : / @ -; no spaces or =), so it cannot break the rendered configuration.",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w.:/+@-]{1,128}$"
+          }
+        },
+        {
+          "name": "value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "help": "The tag's value, limited to at most 256 characters from the set AWS allows for tag values (it may be empty), matching what EC2 accepts for tags.",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w\\s+=.:/@-]{0,256}$"
+          }
+        },
+        {
+          "name": "propagate_at_launch",
+          "label": "Propagate at launch",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "Whether the tag is applied to instances launched by the group."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tag)",
+      "group": "create"
+    },
+    {
+      "id": "autoscaling-remove-tag",
+      "service": "autoscaling",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Remove a tag from Auto Scaling group",
+      "summary": "Remove a metadata tag from this group. No effect on how it runs; reversible.",
+      "description": "Remove a tag block by key from the group. Cosmetic metadata change, reversible by re-adding, no downtime.",
+      "target": {
+        "resourceType": "aws_autoscaling_group",
+        "path": [
+          "tag"
+        ]
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "help": "The Auto Scaling group to remove the tag from, chosen from Terraform inventory so only a managed group's metadata changes.",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true
+        },
+        {
+          "name": "key",
+          "label": "Tag key to remove",
+          "type": "string",
+          "source": "user_input",
+          "help": "The key of the existing tag block to delete, constrained to AWS's tag-key character set and 1-128 length; removal only touches metadata and is reversible by re-adding the tag.",
+          "required": true,
+          "bounds": {
+            "pattern": "^[\\w.:/+@-]{1,128}$"
+          },
+          "role": "selector",
+          "matchAttr": "key"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (tag)",
+      "group": "danger-zone"
+    },
+    {
+      "id": "autoscaling-autoscaling-group-engineer-request",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Request another change to Auto Scaling group",
+      "summary": "Request a group change that isn't offered as a form; an engineer writes and reviews the Terraform.",
+      "description": "Catch-all for any change to an Auto Scaling group not offered as a bounded self-service form. An engineer authors and reviews the Terraform.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "required": false,
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "help": "The Auto Scaling group this request is about, when the estate already tracks one. Leave blank when describing one that is not tracked yet."
+        },
+        {
+          "name": "purpose",
+          "label": "What change do you need?",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Anything not offered as a bounded form \u2014 an engineer authors the Terraform."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ engineer-authored",
+      "group": "scale-performance"
+    },
+    {
+      "id": "autoscaling-set-az-distribution-strategy",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set Availability Zone capacity distribution strategy",
+      "summary": "Choose how new servers are spread across Availability Zones. Reversible; affects the resilience of future launches.",
+      "description": "Set availability_zone_distribution.capacity_distribution_strategy on an ASG - balanced-only or balanced-best-effort (provider default) - controlling how new capacity is spread across Availability Zones. In-place and reversible with no downtime; because it changes cross-AZ capacity balancing it stays guardrailed.",
+      "target": {
+        "resourceType": "aws_autoscaling_group",
+        "path": [
+          "availability_zone_distribution"
+        ]
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true,
+          "help": "The ASG whose AZ distribution strategy you want to set."
+        },
+        {
+          "name": "capacity_distribution_strategy",
+          "label": "Capacity distribution strategy",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "balanced-only",
+              "balanced-best-effort"
+            ]
+          },
+          "help": "How capacity is distributed across Availability Zones. Provider default is balanced-best-effort."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (availability_zone_distribution.capacity_distribution_strategy)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "autoscaling-set-capacity-reservation-preference",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set capacity reservation preference on Auto Scaling group",
+      "summary": "Choose how this group uses On-Demand Capacity Reservations for new servers. Reversible; affects cost and placement.",
+      "description": "Set capacity_reservation_specification.capacity_reservation_preference on an ASG (default, capacity-reservations-only, capacity-reservations-first, or none), controlling how the group prioritizes On-Demand Capacity Reservations for future launches. In-place and reversible; the optional capacity_reservation_target (specific reservation IDs/ARNs) is not exposed here and stays reachable via the engineer catch-all. Guardrailed.",
+      "target": {
+        "resourceType": "aws_autoscaling_group",
+        "path": [
+          "capacity_reservation_specification"
+        ]
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true,
+          "help": "The ASG whose capacity reservation preference you want to set."
+        },
+        {
+          "name": "capacity_reservation_preference",
+          "label": "Capacity reservation preference",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "default",
+              "capacity-reservations-only",
+              "capacity-reservations-first",
+              "none"
+            ]
+          },
+          "help": "How the ASG prioritizes On-Demand Capacity Reservations for future launches. Provider default is default."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (capacity_reservation_specification.capacity_reservation_preference)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "autoscaling-set-desired-capacity-type",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set desired capacity type on Auto Scaling group",
+      "summary": "Choose whether target capacity is counted in servers, vCPUs, or memory. A mismatch can over- or under-provision.",
+      "description": "Set desired_capacity_type - the unit desired_capacity is measured in: units, vcpu, or memory-mib. Supported for attribute-based instance type selection. In-place and reversible, but a unit/value mismatch can under- or over-provision, so guardrailed.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true,
+          "help": "The ASG whose desired capacity type you want to set."
+        },
+        {
+          "name": "desired_capacity_type",
+          "label": "Desired capacity type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "units",
+              "vcpu",
+              "memory-mib"
+            ]
+          },
+          "help": "Unit desired_capacity is measured in. Applies to attribute-based instance type selection."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (desired_capacity_type)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "autoscaling-toggle-ignore-failed-scaling-activities",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle ignore failed scaling activities",
+      "summary": "Turn on or off ignoring failed scaling attempts during apply. Turning it on can hide real scaling failures.",
+      "description": "Enable or disable ignore_failed_scaling_activities (provider default false). When true, Terraform ignores failed scaling activities while waiting for capacity - reversible bool toggle with no downtime, but it masks failed scaling activities, so guardrailed.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true,
+          "help": "The ASG whose ignore_failed_scaling_activities flag you want to set."
+        },
+        {
+          "name": "ignore_failed_scaling_activities",
+          "label": "Ignore failed scaling activities",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "When true, failed scaling activities are ignored while waiting for capacity. Provider default is false."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (ignore_failed_scaling_activities)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "autoscaling-set-metrics-granularity",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set metrics granularity on Auto Scaling group",
+      "summary": "Set how often group metrics are collected (one minute). Reversible; no effect on running servers.",
+      "description": "Set metrics_granularity, the granularity of ASG CloudWatch metrics collection. The only valid (and default) value is 1Minute. In-place, reversible, no downtime - a fully bounded, cosmetic setting.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true,
+          "help": "The ASG whose metrics granularity you want to set."
+        },
+        {
+          "name": "metrics_granularity",
+          "label": "Metrics granularity",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "1Minute"
+            ]
+          },
+          "help": "Granularity of collected ASG metrics. The only valid (and default) value is 1Minute."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (metrics_granularity)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "autoscaling-set-wait-for-capacity-timeout",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set wait-for-capacity timeout on Auto Scaling group",
+      "summary": "Set how long an apply waits for new servers to become healthy before giving up. Affects the apply only, not live servers.",
+      "description": "Set wait_for_capacity_timeout, the maximum Golang-duration time (e.g. 10m) Terraform waits for ASG instances to become healthy during apply; 0 disables capacity waiting. Governs only apply-time waiting, not live AWS state - in-place, reversible, no downtime.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true,
+          "help": "The ASG whose wait-for-capacity timeout you want to set."
+        },
+        {
+          "name": "wait_for_capacity_timeout",
+          "label": "Wait-for-capacity timeout",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(0|([0-9]+(h|m|s))+)$"
+          },
+          "help": "Golang duration string (e.g. 10m) for how long apply waits for healthy capacity; 0 disables waiting. Apply-time only - no effect on live AWS state."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (wait_for_capacity_timeout)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "autoscaling-set-launch-template-version",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set launch template version on Auto Scaling group",
+      "summary": "Choose which launch-template version new servers use. Existing servers are unchanged and only future launches use the new version.",
+      "description": "Set the launch_template.version the ASG uses for future launches - a specific version number, $Latest, or $Default (provider default). Only the version is repointed; the launch template id/name is unchanged and stays engineer-only via the catch-all. Affects future launches only - in-place, reversible, no downtime - but changing which template version launches new instances stays guardrailed.",
+      "target": {
+        "resourceType": "aws_autoscaling_group",
+        "path": [
+          "launch_template"
+        ]
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true,
+          "help": "The ASG (using a launch_template) whose template version you want to set."
+        },
+        {
+          "name": "launch_template_version",
+          "label": "Launch template version",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(\\$Latest|\\$Default|[0-9]+)$"
+          },
+          "help": "Launch template version future instances use: a version number, $Latest, or $Default. Only the version is changed; the template id/name is untouched.",
+          "attr": "version"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (launch_template.version)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "autoscaling-toggle-force-delete",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle force delete on Auto Scaling group",
+      "summary": "Turn on or off letting this group be deleted without gracefully shutting servers down first. Removes a safety guardrail; engineer-only.",
+      "description": "Enable or disable force_delete, which allows a later deletion of the ASG to proceed without waiting for all instances to terminate gracefully. Toggling the flag is in-place and reversible, but enabling it removes a data-safety guardrail (instances can be force-terminated on destroy), so every application is engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true,
+          "help": "The ASG whose force_delete flag you want to set."
+        },
+        {
+          "name": "force_delete",
+          "label": "Force delete",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "When true, a later ASG delete proceeds without waiting for instances to terminate gracefully. Removes a data-safety guardrail."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (force_delete)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "autoscaling-toggle-force-delete-warm-pool",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle force delete warm pool on Auto Scaling group",
+      "summary": "Turn on or off letting deletion skip a graceful shutdown of warm-pool servers. Removes a safety guardrail; engineer-only.",
+      "description": "Enable or disable force_delete_warm_pool, which allows a later deletion of the ASG to proceed without waiting for all warm-pool instances to terminate gracefully. Same guardrail-removal pattern as force_delete, scoped to warm-pool instances, so every application is engineer-reviewed.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true,
+          "help": "The ASG whose force_delete_warm_pool flag you want to set."
+        },
+        {
+          "name": "force_delete_warm_pool",
+          "label": "Force delete warm pool",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "When true, a later ASG delete proceeds without waiting for warm-pool instances to terminate gracefully. Removes a data-safety guardrail."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (force_delete_warm_pool)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "autoscaling-set-disable-scale-in",
+      "service": "autoscaling",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle scale-in on a target-tracking scaling policy",
+      "summary": "Stop or allow a target-tracking policy from scaling in. Leaving scale-in off can keep paying for extra servers.",
+      "description": "Set target_tracking_configuration.disable_scale_in on an existing TargetTrackingScaling aws_autoscaling_policy. When true the policy only scales out and never scales in (risking sustained overprovisioning/cost if left on); false lets it scale in again. In-place, reversible, no downtime; guardrailed because it changes live scaling behaviour.",
+      "target": {
+        "resourceType": "aws_autoscaling_policy",
+        "path": [
+          "target_tracking_configuration"
+        ]
+      },
+      "params": [
+        {
+          "name": "policy",
+          "label": "Scaling policy",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_policy/address",
+          "required": true,
+          "help": "Pick the TargetTrackingScaling policy to update."
+        },
+        {
+          "name": "disable_scale_in",
+          "label": "Disable scale-in",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "true",
+              "false"
+            ]
+          },
+          "help": "true = scale-out only (never scales in); false = allow scale-in. Provider default is false."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (disable_scale_in)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "autoscaling-create-group",
+      "service": "autoscaling",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Auto Scaling group",
+      "summary": "Request a brand-new Auto Scaling group; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new group as a complete specification: capacity bounds, network placement, health checking, and the launch template it runs. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_autoscaling_group"
+      },
+      "params": [
+        {
+          "name": "group_name",
+          "label": "Group name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, like app-tier-asg. Names the group in AWS and in the generated draft."
+        },
+        {
+          "name": "min_size",
+          "label": "Minimum size",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "min_size",
+          "group": "capacity",
+          "bounds": {
+            "min": 0,
+            "max": 20,
+            "semantic": "instance_count"
+          },
+          "default": 1,
+          "help": "Fewest instances the group ever runs."
+        },
+        {
+          "name": "max_size",
+          "label": "Maximum size",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "max_size",
+          "group": "capacity",
+          "bounds": {
+            "min": 1,
+            "max": 20,
+            "semantic": "instance_count"
+          },
+          "default": 4,
+          "help": "Most instances the group may scale up to."
+        },
+        {
+          "name": "desired_capacity",
+          "label": "Desired capacity",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "desired_capacity",
+          "group": "capacity",
+          "bounds": {
+            "min": 0,
+            "max": 20,
+            "semantic": "instance_count"
+          },
+          "default": 2,
+          "help": "Starting instance count; leave blank to let AWS use the minimum size."
+        },
+        {
+          "name": "subnets",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "vpc_zone_identifier",
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "help": "Where new instances launch. Pick subnets spanning at least two Availability Zones for resilience."
+        },
+        {
+          "name": "health_check_type",
+          "label": "Health check type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "health_check_type",
+          "group": "availability",
+          "bounds": {
+            "allowlist": [
+              "EC2",
+              "ELB"
+            ]
+          },
+          "default": "EC2",
+          "help": "ELB uses load-balancer health checks and can trigger replacement; pick it once a target group is attached."
+        },
+        {
+          "name": "health_check_grace_period",
+          "label": "Health check grace period (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "health_check_grace_period",
+          "group": "availability",
+          "bounds": {
+            "min": 0,
+            "max": 7200
+          },
+          "default": 300,
+          "help": "Seconds after launch before health checks begin."
+        },
+        {
+          "name": "launch_template_id",
+          "label": "Launch template",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "id",
+          "path": [
+            "launch_template"
+          ],
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The engineer picks and validates the launch template during review — it fixes the AMI, instance type, and IAM profile new instances launch with."
+        },
+        {
+          "name": "launch_template_version",
+          "label": "Launch template version",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "version",
+          "path": [
+            "launch_template"
+          ],
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "$Latest",
+              "$Default"
+            ]
+          },
+          "default": "$Latest",
+          "help": "Which version of the launch template new instances use."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "value",
+          "path": [
+            "tag"
+          ],
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the Name tag on the group and, when propagated, on every instance it launches."
+        },
+        {
+          "name": "tag_key_name",
+          "label": "Name tag key",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "Name",
+          "attr": "key",
+          "path": [
+            "tag"
+          ],
+          "group": "tags",
+          "help": "Always Name — written into the draft, never asked."
+        },
+        {
+          "name": "tag_propagate",
+          "label": "Propagate tag to instances",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": true,
+          "attr": "propagate_at_launch",
+          "path": [
+            "tag"
+          ],
+          "group": "tags",
+          "help": "Always propagated to launched instances — written into the draft, never asked."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new autoscaling group",
+        "new asg",
+        "provision autoscaling group",
+        "stand up a scaling group"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Launch template choice and validation (AMI, instance type, IAM profile)",
+        "Attaching to a load balancer target group is a follow-up step",
+        "Description and person-in-charge tags: add via the existing tag operation after creation — an Auto Scaling group's tags are a repeated block, not a map, so only the Name tag is seeded here",
+        "Mixed instances policy, warm pool, and instance refresh settings are engineer decisions"
+      ]
+    },
+    {
+      "id": "autoscaling-create-policy",
+      "service": "autoscaling",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new scaling policy",
+      "summary": "Request a new target-tracking scaling policy on an existing group; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new aws_autoscaling_policy as a complete specification: the target-tracking metric and value it holds. Target tracking is the AWS-recommended scaling mode. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_autoscaling_policy"
+      },
+      "params": [
+        {
+          "name": "policy_name",
+          "label": "Policy name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._-]{1,255}$"
+          },
+          "default": "tt-cpu",
+          "help": "Name for the new policy, like tt-cpu. Defaults to tt-<metric>."
+        },
+        {
+          "name": "asg",
+          "label": "Auto Scaling group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_autoscaling_group/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "name",
+          "attr": "autoscaling_group_name",
+          "group": "identity",
+          "help": "The group this policy scales. Create the group first if the list is empty."
+        },
+        {
+          "name": "policy_type",
+          "label": "Policy type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "TargetTrackingScaling",
+          "attr": "policy_type",
+          "group": "scaling",
+          "help": "Always target tracking, the AWS-recommended mode — written into the draft, never asked."
+        },
+        {
+          "name": "predefined_metric_type",
+          "label": "Metric to track",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "predefined_metric_type",
+          "path": [
+            "target_tracking_configuration",
+            "predefined_metric_specification"
+          ],
+          "group": "scaling",
+          "bounds": {
+            "allowlist": [
+              "ASGAverageCPUUtilization",
+              "ASGAverageNetworkIn",
+              "ASGAverageNetworkOut",
+              "ALBRequestCountPerTarget"
+            ]
+          },
+          "help": "The predefined metric the policy holds at the target value."
+        },
+        {
+          "name": "resource_label",
+          "label": "Resource label",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "resource_label",
+          "path": [
+            "target_tracking_configuration",
+            "predefined_metric_specification"
+          ],
+          "group": "scaling",
+          "dependsOn": {
+            "param": "predefined_metric_type",
+            "equals": "ALBRequestCountPerTarget"
+          },
+          "bounds": {
+            "maxLength": 1023
+          },
+          "help": "Required only for ALBRequestCountPerTarget: the target group's resource label, e.g. app/my-alb/50dc6c495c0c9188/targetgroup/my-targets/73e2d6bc24d8a067."
+        },
+        {
+          "name": "target_value",
+          "label": "Target value",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "target_value",
+          "path": [
+            "target_tracking_configuration"
+          ],
+          "group": "scaling",
+          "bounds": {
+            "min": 1,
+            "max": 100000
+          },
+          "help": "The value the metric is held at. For CPU utilisation use 10-90 (percent); for request-count use requests-per-target."
+        },
+        {
+          "name": "disable_scale_in",
+          "label": "Scale-out only",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "attr": "disable_scale_in",
+          "path": [
+            "target_tracking_configuration"
+          ],
+          "group": "scaling",
+          "default": false,
+          "help": "If true the policy only scales out and never scales in."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new scaling policy",
+        "provision scaling policy",
+        "target tracking policy"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Step scaling and predictive scaling policy types are an engineer decision — this form covers the recommended target-tracking case only",
+        "A customized (non-predefined) metric specification is an engineer decision"
+      ]
+    }
+  ]
+}

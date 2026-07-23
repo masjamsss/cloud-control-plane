@@ -1,0 +1,615 @@
+{
+  "service": "ssm",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_ssm_document",
+    "aws_ssm_parameter"
+  ],
+  "summary": "Manage Systems Manager Parameter Store: add a parameter, update a value strictly by reference (never raw secrets), retag and re-describe, change storage tier, and delete with engineer review.",
+  "operations": [
+    {
+      "id": "ssm-parameter-add",
+      "service": "ssm",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Add a new SSM parameter",
+      "summary": "Create a new parameter, copying the path and tier from an existing one. Secrets must be a pointer, never pasted in directly.",
+      "description": "Creates a new Parameter Store entry alongside an existing reference parameter, inheriting its path prefix and tier conventions. For SecureString type, the value must be supplied as a pointer to an existing Secrets Manager secret, never a literal secret.",
+      "target": {
+        "resourceType": "aws_ssm_parameter"
+      },
+      "params": [
+        {
+          "name": "parameter",
+          "label": "Reference parameter (for path/tier context)",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_ssm_parameter/address",
+          "help": "Pick an existing parameter in the same namespace to copy path prefix and tagging conventions from."
+        },
+        {
+          "name": "new_path",
+          "label": "New parameter path",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^/[a-zA-Z0-9_.\\-/]+$",
+            "semantic": "full SSM parameter path, must start with /"
+          },
+          "help": "Full hierarchical path for the new parameter, e.g. /myapp/prod/app/new_setting."
+        },
+        {
+          "name": "type",
+          "label": "Parameter type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "default": "String",
+          "bounds": {
+            "allowlist": [
+              "String",
+              "StringList",
+              "SecureString"
+            ]
+          },
+          "help": "String for plain config, StringList for comma-separated values, SecureString for KMS-encrypted secrets."
+        },
+        {
+          "name": "tier",
+          "label": "Parameter tier",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "default": "Standard",
+          "bounds": {
+            "allowlist": [
+              "Standard",
+              "Advanced",
+              "Intelligent-Tiering"
+            ]
+          },
+          "help": "Advanced allows larger values and policies but incurs additional cost."
+        },
+        {
+          "name": "new_value_reference",
+          "label": "Value or value pointer",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(arn:aws:secretsmanager:[^\\s]+|ssm:/[^\\s]+)$",
+            "semantic": "for SecureString this must be a Secrets Manager ARN pointer, never a literal secret value; for String/StringList it may be the literal config value"
+          },
+          "help": "Plain config value, or for SecureString a pointer (Secrets Manager ARN) to the actual secret."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "",
+          "bounds": {
+            "max": 1024
+          },
+          "help": "Short human-readable description of what this parameter controls."
+        },
+        {
+          "name": "key_id",
+          "label": "KMS key (SecureString only)",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "alias/aws/ssm",
+          "help": "KMS key alias or ARN used to encrypt SecureString values."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "ssm-parameter-update-value-by-reference",
+      "service": "ssm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update parameter value by reference",
+      "summary": "Point this parameter at a new value or secret pointer, without ever handling the raw secret here. Consuming apps must re-read it.",
+      "description": "Repoints an existing parameter's value to a new source of truth without ever handling the raw secret in this workflow. For SecureString parameters, the reference must be a Secrets Manager ARN; consuming applications should be verified to re-read the parameter after the change.",
+      "target": {
+        "resourceType": "aws_ssm_parameter"
+      },
+      "params": [
+        {
+          "name": "parameter",
+          "label": "Parameter",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_ssm_parameter/address",
+          "help": "Select the parameter whose value should be updated."
+        },
+        {
+          "name": "new_value_reference",
+          "label": "New value or value pointer",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^(arn:aws:secretsmanager:[^\\s]+|ssm:/[^\\s]+)$",
+            "semantic": "must be a pointer (Secrets Manager ARN or another SSM path) for SecureString parameters, never a literal secret value"
+          },
+          "help": "For SecureString, provide a Secrets Manager ARN pointer. For plain String/StringList, the literal new value is acceptable."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup",
+      "pinned": 3
+    },
+    {
+      "id": "ssm-parameter-update-description",
+      "service": "ssm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update parameter description",
+      "summary": "Update this parameter's description text. Documentation only — no effect on consumers.",
+      "description": "Changes the human-readable description on an existing parameter for documentation purposes only; no functional impact on consumers.",
+      "target": {
+        "resourceType": "aws_ssm_parameter"
+      },
+      "params": [
+        {
+          "name": "parameter",
+          "label": "Parameter",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_ssm_parameter/address",
+          "help": "Select the parameter to update."
+        },
+        {
+          "name": "new_description",
+          "label": "New description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "max": 1024
+          },
+          "help": "Short description of what this parameter is used for."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "pinned": 1
+    },
+    {
+      "id": "ssm-parameter-update-tags",
+      "service": "ssm",
+      "macd": "Change",
+      "codemodOp": "append_foreach_entry",
+      "title": "Add or update a parameter tag",
+      "summary": "Add or update a metadata tag on this parameter. Metadata only — no effect on its value or consumers.",
+      "description": "Adds a new tag key/value pair or updates an existing one on a parameter for cost allocation and ownership tracking; does not affect the parameter value or consumers.",
+      "target": {
+        "resourceType": "aws_ssm_parameter",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "parameter",
+          "label": "Parameter",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_ssm_parameter/address",
+          "help": "Select the parameter to tag."
+        },
+        {
+          "name": "tag_key",
+          "label": "Tag key",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9_.:/=+\\-@]{1,128}$"
+          },
+          "help": "Tag key, e.g. Environment, Service, CostCentre."
+        },
+        {
+          "name": "tag_value",
+          "label": "Tag value",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9_.:/=+\\-@ ]{1,256}$"
+          },
+          "help": "Tag value to associate with the key."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "pinned": 2
+    },
+    {
+      "id": "ssm-parameter-change-tier",
+      "service": "ssm",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change parameter tier",
+      "summary": "Move this parameter between storage tiers. Advanced costs more but allows bigger values; downgrading can fail if it no longer fits.",
+      "description": "Moves a parameter between Standard, Advanced and Intelligent-Tiering. Advanced tier supports larger values and parameter policies but incurs additional per-parameter cost; downgrading from Advanced can fail if the current value or policy count exceeds Standard limits.",
+      "target": {
+        "resourceType": "aws_ssm_parameter"
+      },
+      "params": [
+        {
+          "name": "parameter",
+          "label": "Parameter",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_ssm_parameter/address",
+          "help": "Select the parameter to re-tier."
+        },
+        {
+          "name": "new_tier",
+          "label": "New tier",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "Standard",
+              "Advanced",
+              "Intelligent-Tiering"
+            ]
+          },
+          "help": "Advanced costs more and supports larger values (up to 8KB) and policies; Standard is free and capped at 4KB."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "protection-backup",
+      "pinned": 4
+    },
+    {
+      "id": "ssm-parameter-delete",
+      "service": "ssm",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete an SSM parameter",
+      "summary": "Permanently delete this parameter. This can't be undone, and anything still reading it breaks immediately; an engineer reviews it first.",
+      "description": "Permanently removes a parameter from Parameter Store. Any application or automation reading this parameter at runtime will fail to resolve it immediately after deletion; confirm no live consumers before proceeding.",
+      "target": {
+        "resourceType": "aws_ssm_parameter"
+      },
+      "params": [
+        {
+          "name": "parameter",
+          "label": "Parameter",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_ssm_parameter/address",
+          "help": "Select the parameter to permanently delete."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "ssm-provision-document",
+      "service": "ssm",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision an SSM document",
+      "summary": "Create the SSM document shell. The content can run arbitrary commands, so it is engineer-authored.",
+      "consoleLabel": "Documents",
+      "description": "Create an aws_ssm_document shell: name, type, and format. The document CONTENT can run arbitrary commands on managed instances, so it is never captured here - it is authored and reviewed by an engineer. Submitting drafts the resource and routes it to an engineer to complete and own.",
+      "target": {
+        "resourceType": "aws_ssm_document"
+      },
+      "params": [
+        {
+          "name": "document_name",
+          "label": "Document name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "help": "The name of the document (written to the name attribute).",
+          "attr": "name",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_.-]{3,128}$"
+          }
+        },
+        {
+          "name": "document_type",
+          "label": "Document type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "document_type",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "Command",
+              "Automation",
+              "Session",
+              "Policy"
+            ]
+          },
+          "default": "Command",
+          "help": "Command runs on instances; Automation runs a workflow; Session configures Session Manager; Policy is an inventory or compliance policy."
+        },
+        {
+          "name": "document_format",
+          "label": "Document format",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "document_format",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              "JSON",
+              "YAML"
+            ]
+          },
+          "default": "JSON",
+          "help": "The format the engineer authors the content in."
+        },
+        {
+          "name": "content",
+          "label": "Content",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "content",
+          "group": "content",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The document content (SSM steps or commands) is authored and reviewed by an engineer, never typed or run from this form, because it can execute arbitrary commands on managed instances."
+        },
+        {
+          "name": "description_tag",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "help": "A short description recorded as the resource's Description tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "help": "The team or person accountable for this resource, recorded as its PIC tag.",
+          "bounds": {
+            "maxLength": 200
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "ssm document",
+        "systems manager document",
+        "automation runbook",
+        "runbook"
+      ],
+      "decisions": [
+        "The document content can run arbitrary commands on managed instances; the content is authored and reviewed by an engineer, never captured or run from this form.",
+        "Confirm the document type and target scope: a Command or Automation document executes on whatever it targets, so the target type is confirmed at review."
+      ]
+    },
+    {
+      "id": "ssm-parameter-create",
+      "service": "ssm",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new SSM parameter",
+      "summary": "Create a new Parameter Store entry; the value is captured as a pointer only, never a raw secret.",
+      "description": "Stand up a Parameter Store entry as a complete specification: path, type, and tier. The value itself must be supplied as a pointer to an existing Secrets Manager secret or another SSM parameter, never a literal — the same convention ssm-parameter-add and ssm-parameter-update-value-by-reference already use. Submitting routes it to an engineer with a draft Terraform block to review and finish — nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_ssm_parameter"
+      },
+      "params": [
+        {
+          "name": "parameter_name",
+          "label": "Parameter path",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^/[a-zA-Z0-9_.\\-/]+$"
+          },
+          "help": "Full hierarchical path, e.g. /myapp/prod/app/new_setting. Names the parameter in the generated draft."
+        },
+        {
+          "name": "type",
+          "label": "Parameter type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "type",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "String",
+              "StringList",
+              "SecureString"
+            ]
+          },
+          "default": "String",
+          "help": "String for plain config, StringList for comma-separated values, SecureString for KMS-encrypted secrets."
+        },
+        {
+          "name": "value_reference",
+          "label": "Value or value pointer",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "value",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^(arn:aws:secretsmanager:[^\\s]+|ssm:/[^\\s]+)$"
+          },
+          "sensitive": true,
+          "help": "A pointer only — a Secrets Manager ARN or another SSM parameter path — never a literal value, matching how this parameter's value is updated afterward (ssm-parameter-update-value-by-reference)."
+        },
+        {
+          "name": "tier",
+          "label": "Parameter tier",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "tier",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "Standard",
+              "Advanced",
+              "Intelligent-Tiering"
+            ]
+          },
+          "default": "Standard",
+          "help": "Advanced allows larger values and parameter policies but incurs additional cost."
+        },
+        {
+          "name": "key_id",
+          "label": "KMS key (SecureString only)",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "key_id",
+          "group": "identity",
+          "default": "alias/aws/ssm",
+          "dependsOn": {
+            "param": "type",
+            "equals": "SecureString"
+          },
+          "help": "KMS key alias or ARN used to encrypt SecureString values."
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "attr": "description",
+          "group": "identity",
+          "bounds": {
+            "max": 1024
+          },
+          "help": "Short human-readable description of what this parameter controls."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this parameter controls",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this parameter."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new ssm parameter",
+        "provision parameter store",
+        "new config parameter"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Parameter policies (expiration, expiration notification, NoChangeNotification) and a custom allowed_pattern validation regex are engineer follow-ups after creation."
+      ]
+    }
+  ]
+}

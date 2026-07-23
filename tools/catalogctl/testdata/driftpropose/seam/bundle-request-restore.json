@@ -1,0 +1,30 @@
+{
+  "id": "REQ-01ARZ3NDEKTSV4RRFFQ69G5FC4",
+  "projectId": "sample",
+  "operationId": "system-drift-restore",
+  "targetAddress": "aws_flow_log.vpc1",
+  "status": "APPROVED",
+  "approvals": [
+    { "approver": "alice", "approved_at": "2026-07-21T04:00:00Z", "policy_version": "1", "decision": "approve" },
+    { "approver": "bob", "approved_at": "2026-07-21T04:05:00Z", "policy_version": "1", "decision": "approve" }
+  ],
+  "params": {
+    "attrs": [],
+    "verdicts": [
+      {
+        "address": "aws_flow_log.vpc1",
+        "type": "aws_flow_log",
+        "actions": ["create"],
+        "driftEvidence": true,
+        "class": "oob_deletion",
+        "riskTier": "high",
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "changedAttrs": []
+      }
+    ],
+    "diff": null,
+    "proposalDigest": "9f650fe330579c166c59f0c39e16a2f0ca5a87e2ea6c21f35152779bfef20b8d",
+    "reportVersion": 12
+  }
+}

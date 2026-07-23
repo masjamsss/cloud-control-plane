@@ -1,0 +1,247 @@
+{
+  "service": "apprunner",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_apprunner_service"
+  ],
+  "summary": "Provision AWS App Runner to run a container image as a fully-managed web service, with no cluster or load balancer to operate. Creating a service is an engineer-gated form — it's a public-facing compute surface by default, so nothing here is blind self-service.",
+  "operations": [
+    {
+      "id": "apprunner-service-create",
+      "service": "apprunner",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a new App Runner service",
+      "summary": "Request a new App Runner service that runs a container image. An engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Specify a new aws_apprunner_service that deploys from a container image in ECR: the image, its port, and the instance size. Deploying from a connected source-code repository (GitHub/Bitbucket) instead is a separate, engineer-authored path. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_apprunner_service"
+      },
+      "params": [
+        {
+          "name": "service_name",
+          "label": "Service name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "service_name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{3,39}$"
+          },
+          "help": "4-40 characters, starting with a letter."
+        },
+        {
+          "name": "image_identifier",
+          "label": "Container image",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "image_identifier",
+          "path": [
+            "source_configuration",
+            "image_repository"
+          ],
+          "group": "source",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9._/:-]{1,512}$"
+          },
+          "help": "The ECR image URI including tag or digest, e.g. <account>.dkr.ecr.<region>.amazonaws.com/repo:tag or public.ecr.aws/…"
+        },
+        {
+          "name": "image_repository_type",
+          "label": "Image repository type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "image_repository_type",
+          "path": [
+            "source_configuration",
+            "image_repository"
+          ],
+          "group": "source",
+          "bounds": {
+            "allowlist": [
+              "ECR",
+              "ECR_PUBLIC"
+            ]
+          },
+          "default": "ECR",
+          "help": "ECR is a private repository in this account; ECR_PUBLIC is a public Amazon ECR Public Gallery image."
+        },
+        {
+          "name": "port",
+          "label": "Container port",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "port",
+          "path": [
+            "source_configuration",
+            "image_repository",
+            "image_configuration"
+          ],
+          "group": "source",
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "default": 8080,
+          "help": "The port the container listens on."
+        },
+        {
+          "name": "auto_deployments_enabled",
+          "label": "Auto-deploy on new image push",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "auto_deployments_enabled",
+          "path": [
+            "source_configuration"
+          ],
+          "group": "source",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": false,
+          "help": "On redeploys automatically whenever a new image is pushed to this repository/tag."
+        },
+        {
+          "name": "cpu",
+          "label": "CPU",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "cpu",
+          "path": [
+            "instance_configuration"
+          ],
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "0.25 vCPU",
+              "0.5 vCPU",
+              "1 vCPU",
+              "2 vCPU",
+              "4 vCPU"
+            ]
+          },
+          "default": "1 vCPU",
+          "help": "Not every CPU/memory pairing is valid — App Runner rejects an unsupported combination at apply time."
+        },
+        {
+          "name": "memory",
+          "label": "Memory",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "memory",
+          "path": [
+            "instance_configuration"
+          ],
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "0.5 GB",
+              "1 GB",
+              "2 GB",
+              "3 GB",
+              "4 GB",
+              "6 GB",
+              "8 GB",
+              "10 GB",
+              "12 GB"
+            ]
+          },
+          "default": "2 GB",
+          "help": "Must be a combination the chosen CPU size supports."
+        },
+        {
+          "name": "is_publicly_accessible",
+          "label": "Publicly accessible",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "is_publicly_accessible",
+          "path": [
+            "network_configuration",
+            "ingress_configuration"
+          ],
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Off makes this service reachable only through a VPC ingress connection, configured as an engineer follow-up."
+        },
+        {
+          "name": "resource_name",
+          "label": "Service name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this service runs",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this service."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new app runner service",
+        "container app",
+        "deploy container image",
+        "apprunner"
+      ],
+      "decisions": [
+        "Deploying from a source-code repository (code_repository + an aws_apprunner_connection) instead of a container image is a separate, engineer-authored path — this form covers the common container-image deploy",
+        "Private ECR repository access (authentication_configuration.access_role_arn) is an engineer follow-up when image_repository_type is ECR and the repository isn't public",
+        "VPC egress (reaching private resources through an aws_apprunner_vpc_connector), a custom health check, and encryption_configuration (a customer-managed KMS key) are engineer decisions after creation",
+        "Auto Scaling configuration and observability configuration keep App Runner's account defaults; attach custom ones as an engineer follow-up"
+      ]
+    }
+  ]
+}

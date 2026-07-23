@@ -1,0 +1,12 @@
+{
+ "aws_kms_key.app_key": {
+  "file": "ccp/app/fixtures-estate/kms.tf",
+  "line": 3,
+  "source": "resource \"aws_kms_key\" \"app_key\" {\n  description             = \"App data encryption key\"\n  deletion_window_in_days = 30\n  enable_key_rotation     = true\n\n  tags = {\n    Name = \"app-key\"\n    PIC  = \"user01@example.com\"\n  }\n}"
+ },
+ "aws_kms_alias.app_key": {
+  "file": "ccp/app/fixtures-estate/kms.tf",
+  "line": 14,
+  "source": "resource \"aws_kms_alias\" \"app_key\" {\n  name          = \"alias/app-key\"\n  target_key_id = aws_kms_key.app_key.key_id\n}"
+ }
+}

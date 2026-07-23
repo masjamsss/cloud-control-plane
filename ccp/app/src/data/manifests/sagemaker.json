@@ -1,0 +1,1769 @@
+{
+  "service": "sagemaker",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_sagemaker_domain",
+    "aws_sagemaker_user_profile",
+    "aws_sagemaker_pipeline"
+  ],
+  "summary": "Operate SageMaker Studio: onboard a user profile, change the default app instance type (engineer-owned), tag domains and profiles for cost allocation, attach a Studio lifecycle config, and offboard (delete) a user profile. Runtime stop/start of Studio apps is not a Terraform operation and is excluded. Domains are delete-protected, so no operation replaces or destroys a domain.",
+  "operations": [
+    {
+      "id": "sagemaker-add-studio-user-profile",
+      "service": "sagemaker",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Onboard a new Studio user profile to a domain",
+      "summary": "Give a new analyst access to SageMaker Studio by creating their user profile. Doesn't disrupt existing users.",
+      "description": "Creates a new aws_sagemaker_user_profile in the selected domain so an analyst can sign in to SageMaker Studio. Additive and non-disruptive to existing users; the profile inherits the domain default execution role unless one is supplied.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "block": "aws_sagemaker_user_profile"
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "Studio domain the new user profile is created under."
+        },
+        {
+          "name": "user_profile_name",
+          "label": "User profile name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Unique profile name within the domain, e.g. analyst-firmansyah. Cannot be changed after creation.",
+          "bounds": {
+            "pattern": "^[a-zA-Z0-9](-*[a-zA-Z0-9]){0,62}$",
+            "semantic": "sagemaker_user_profile_name"
+          }
+        },
+        {
+          "name": "execution_role_arn",
+          "label": "Execution role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": false,
+          "help": "IAM role the profile assumes for Studio jobs, picked from the account inventory. Leave empty to inherit the domain default; a console-created role must be adopted into the estate before it appears here.",
+          "role": "reference",
+          "refAttr": "arn"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "sagemaker-set-user-profile-instance-type",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a user profile's default app instance type",
+      "summary": "Change this user's default Studio compute size. Running apps must restart to apply it, causing brief downtime.",
+      "description": "Updates the default_resource_spec instance_type for the profile's JupyterServer or KernelGateway app. Applies to the next app launch and affects per-hour Studio cost, so it is engineer-owned; running apps must be restarted to pick up the change.",
+      "target": {
+        "resourceType": "aws_sagemaker_user_profile",
+        "path": [
+          "user_settings",
+          "{param:app_type}",
+          "default_resource_spec"
+        ],
+        "ensurePath": true
+      },
+      "params": [
+        {
+          "name": "user_profile",
+          "label": "Target user profile",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_user_profile/address",
+          "required": true,
+          "help": "The Studio user profile whose default app instance type will change."
+        },
+        {
+          "name": "app_type",
+          "label": "App type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Which Studio app's default instance type to set.",
+          "bounds": {
+            "allowlist": [
+              "JupyterServer",
+              "KernelGateway"
+            ]
+          },
+          "role": "discriminator",
+          "segments": {
+            "JupyterServer": "jupyter_server_app_settings",
+            "KernelGateway": "kernel_gateway_app_settings"
+          }
+        },
+        {
+          "name": "new_instance_type",
+          "label": "New instance type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Approved Studio instance types. Larger types raise hourly cost.",
+          "bounds": {
+            "allowlist": [
+              "ml.t3.medium",
+              "ml.t3.large",
+              "ml.m5.large",
+              "ml.m5.xlarge",
+              "ml.m5.2xlarge",
+              "ml.c5.large",
+              "ml.c5.xlarge"
+            ]
+          },
+          "attr": "instance_type"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "brief-interruption",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "scale-performance"
+    },
+    {
+      "id": "sagemaker-set-user-profile-tags",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update tags on a Studio user profile",
+      "summary": "Add or update tags on this user profile; only the tags you list change. Metadata only, no effect on running apps.",
+      "description": "Sets or updates the tags map on a user profile for cost allocation and ownership tracking. Metadata-only change with no effect on running Studio apps.",
+      "target": {
+        "resourceType": "aws_sagemaker_user_profile",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "user_profile",
+          "label": "Target user profile",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_user_profile/address",
+          "required": true,
+          "help": "The Studio user profile to retag."
+        },
+        {
+          "name": "new_tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "help": "Full tag map to apply, e.g. {\"cost-center\":\"research\",\"owner\":\"firmansyah\"}. Replaces the existing tag set.",
+          "bounds": {
+            "semantic": "aws_tags",
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "pinned": 1
+    },
+    {
+      "id": "sagemaker-attach-domain-lifecycle-config",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_association_attribute",
+      "title": "Attach a Studio lifecycle config to a domain default",
+      "summary": "Attach a startup script that runs when users launch this app type. A broken script can block everyone's app start, so it's reviewed first.",
+      "description": "Sets the lifecycle_config_arns association on the domain's default app settings so a startup script runs when users launch that app type. Affects all users under the domain on their next app start; a broken script can block app startup, so it is guardrailed.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "{param:app_type}"
+        ],
+        "ensurePath": true
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "Domain whose default app settings will reference the lifecycle config."
+        },
+        {
+          "name": "app_type",
+          "label": "App type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Which default app settings the lifecycle config attaches to.",
+          "bounds": {
+            "allowlist": [
+              "JupyterServer",
+              "KernelGateway"
+            ]
+          },
+          "role": "discriminator",
+          "segments": {
+            "JupyterServer": "jupyter_server_app_settings",
+            "KernelGateway": "kernel_gateway_app_settings"
+          }
+        },
+        {
+          "name": "lifecycle_config_arn",
+          "label": "Lifecycle config ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "ARN of an existing aws_sagemaker_studio_lifecycle_config in this account/region. Change-by-reference only.",
+          "bounds": {
+            "pattern": "^arn:aws:sagemaker:[a-z0-9-]+:[0-9]{12}:studio-lifecycle-config/.+$",
+            "semantic": "sagemaker_lifecycle_config_arn"
+          },
+          "attr": "lifecycle_config_arns",
+          "wrap": "list"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "availability-lifecycle",
+      "pinned": 5
+    },
+    {
+      "id": "sagemaker-set-domain-tags",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update tags on a Studio domain",
+      "summary": "Add or update tags on this Studio domain; only the tags you list change. Metadata only, doesn't affect storage or running apps.",
+      "description": "Sets or updates the tags map on a SageMaker domain for cost allocation and ownership. Metadata-only; does not affect the domain's home EFS or any running apps.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The Studio domain to retag."
+        },
+        {
+          "name": "new_tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "help": "Full tag map to apply, e.g. {\"env\":\"prod\",\"owner\":\"data-platform\"}. Replaces the existing tag set.",
+          "bounds": {
+            "semantic": "aws_tags",
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$"
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "pinned": 1
+    },
+    {
+      "id": "sagemaker-delete-studio-user-profile",
+      "service": "sagemaker",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Offboard (delete) a Studio user profile",
+      "summary": "Permanently remove this user's Studio access and profile. This can't be undone, and unsaved files are lost; an engineer reviews it first.",
+      "description": "Destroys a user profile so the analyst can no longer access Studio. Irreversible; all of the profile's apps must already be deleted, and any files in the domain home directory that are not backed up elsewhere are lost. Engineer-owned.",
+      "target": {
+        "resourceType": "aws_sagemaker_user_profile"
+      },
+      "params": [
+        {
+          "name": "user_profile",
+          "label": "Target user profile",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_user_profile/address",
+          "required": true,
+          "help": "The Studio user profile to permanently remove."
+        },
+        {
+          "name": "acknowledge_data_loss",
+          "label": "Acknowledge irreversible data loss",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "default": false,
+          "help": "Confirm the profile has no running apps and its home directory data is no longer needed.",
+          "bounds": {
+            "semantic": "confirmation",
+            "allowlist": [
+              true
+            ]
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "sagemaker-set-domain-auth-mode",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set domain authentication mode (IAM or SSO)",
+      "summary": "Switch domain sign-in between IAM and SSO. Recreates the whole domain: an outage, and everyone must re-authenticate; engineer-handled.",
+      "description": "Sets the domain's auth_mode argument, switching how members sign in between IAM and SSO (IAM Identity Center). Domain-wide; every user must re-authenticate under the new mode.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain"
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "auth_mode",
+          "label": "Authentication mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "IAM or SSO. Changing this re-authenticates all domain members.",
+          "bounds": {
+            "allowlist": [
+              "IAM",
+              "SSO"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "re-authentication required",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (auth_mode)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-set-domain-default-auto-mount-home-efs",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set domain default EFS auto-mount for new profiles",
+      "summary": "Set whether new Studio profiles automatically mount their home storage by default. Existing profiles aren't affected.",
+      "description": "Sets default_user_settings.auto_mount_home_efs, the default home-directory EFS auto-mount behavior applied to newly created user profiles in the domain. Existing profiles are unaffected.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "auto_mount_mode",
+          "label": "Auto-mount EFS mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Default home-EFS auto-mount behavior for new profiles.",
+          "bounds": {
+            "allowlist": [
+              "Enabled",
+              "Disabled",
+              "DefaultAsDomain"
+            ]
+          },
+          "attr": "auto_mount_home_efs"
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (default_user_settings.auto_mount_home_efs)",
+      "group": "connectivity-access",
+      "pinned": 2
+    },
+    {
+      "id": "sagemaker-set-domain-default-studio-web-portal",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set domain default Studio web portal access for new profiles",
+      "summary": "Set whether new Studio profiles can access the Studio web interface by default. Existing profiles aren't affected.",
+      "description": "Sets default_user_settings.studio_web_portal (ENABLED or DISABLED), the domain default controlling whether newly created user profiles can access the Studio web UI. Existing profiles are unaffected.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "studio_web_portal",
+          "label": "Studio web portal (default)",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether new profiles can access the Studio web portal by default.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (default_user_settings.studio_web_portal)",
+      "group": "connectivity-access",
+      "pinned": 3
+    },
+    {
+      "id": "sagemaker-set-domain-rstudio-access-status",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set domain default RStudioServerPro app access status",
+      "summary": "Set whether new Studio profiles can open the RStudio app by default. Existing profiles aren't affected.",
+      "description": "Sets default_user_settings.r_studio_server_pro_app_settings.access_status (ENABLED or DISABLED), the domain default controlling whether new profiles can open the RStudioServerPro app. Grants no new IAM permission.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "r_studio_server_pro_app_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "access_status",
+          "label": "RStudioServerPro access status (default)",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether new profiles can open the RStudioServerPro app by default.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (default_user_settings.r_studio_server_pro_app_settings.access_status)",
+      "group": "connectivity-access",
+      "pinned": 4
+    },
+    {
+      "id": "sagemaker-set-domain-rstudio-user-group",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set domain default RStudioServerPro permission level",
+      "summary": "Set the default RStudio permission level for new profiles. Granting admin rights is a privilege escalation, so an engineer reviews it.",
+      "description": "Sets default_user_settings.r_studio_server_pro_app_settings.user_group to R_STUDIO_USER or R_STUDIO_ADMIN, the domain-default RStudio permission level for new profiles. R_STUDIO_ADMIN grants administrative rights over the RStudioServerPro workbench (a privilege escalation), so an engineer authors and reviews the change.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "r_studio_server_pro_app_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "user_group",
+          "label": "RStudioServerPro permission level (default)",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "R_STUDIO_ADMIN grants workbench-admin rights.",
+          "bounds": {
+            "allowlist": [
+              "R_STUDIO_USER",
+              "R_STUDIO_ADMIN"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_user_settings.r_studio_server_pro_app_settings.user_group)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-set-domain-canvas-oauth-data-source",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set Canvas OAuth data source (domain default)",
+      "summary": "Choose which external data source Canvas connects to by default for new profiles: Salesforce Genie or Snowflake.",
+      "description": "Sets default_user_settings.canvas_app_settings.identity_provider_oauth_settings.data_source_name to SalesforceGenie or Snowflake, selecting which external data source Canvas connects to via OAuth for the domain default.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "canvas_app_settings",
+          "identity_provider_oauth_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "data_source_name",
+          "label": "Canvas OAuth data source",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "External data source Canvas connects to via OAuth.",
+          "bounds": {
+            "allowlist": [
+              "SalesforceGenie",
+              "Snowflake"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_user_settings.canvas_app_settings.identity_provider_oauth_settings.data_source_name)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-set-domain-canvas-oauth-status",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable Canvas OAuth connection (domain default)",
+      "summary": "Turn the Canvas OAuth connection to the configured data source on or off, as the default for new profiles.",
+      "description": "Sets default_user_settings.canvas_app_settings.identity_provider_oauth_settings.status (ENABLED or DISABLED), toggling whether the Canvas OAuth connection to the configured external data source is active for the domain default.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "canvas_app_settings",
+          "identity_provider_oauth_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "status",
+          "label": "Canvas OAuth status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether the Canvas OAuth data-source connection is enabled.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_user_settings.canvas_app_settings.identity_provider_oauth_settings.status)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-set-domain-canvas-emr-serverless-status",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable Canvas EMR Serverless jobs (domain default)",
+      "summary": "Turn Canvas's ability to run EMR Serverless jobs on or off, as the default for new profiles.",
+      "description": "Sets default_user_settings.canvas_app_settings.emr_serverless_settings.status (ENABLED or DISABLED), toggling whether the EMR Serverless job capability is enabled in Canvas for the domain default (using the already-configured execution role).",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "canvas_app_settings",
+          "emr_serverless_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "status",
+          "label": "Canvas EMR Serverless status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether EMR Serverless job capability is enabled in Canvas.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_user_settings.canvas_app_settings.emr_serverless_settings.status)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-set-domain-canvas-kendra-status",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable Canvas Kendra document querying (domain default)",
+      "summary": "Turn Canvas's document search (Kendra) feature on or off, as the default for new profiles.",
+      "description": "Sets default_user_settings.canvas_app_settings.kendra_settings.status (ENABLED or DISABLED), toggling the document-querying (Kendra) feature in Canvas for the domain default.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "canvas_app_settings",
+          "kendra_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "status",
+          "label": "Canvas Kendra status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether Kendra document querying is enabled in Canvas.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_user_settings.canvas_app_settings.kendra_settings.status)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-set-domain-canvas-model-register-status",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable Canvas model registry integration (domain default)",
+      "summary": "Turn Canvas's model registry integration on or off, as the default for new profiles.",
+      "description": "Sets default_user_settings.canvas_app_settings.model_register_settings.status (ENABLED or DISABLED), toggling the cross-account model-registry integration in Canvas for the domain default (using the already-configured role).",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "canvas_app_settings",
+          "model_register_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "status",
+          "label": "Canvas model registry status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether the Canvas model-registry integration is enabled.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_user_settings.canvas_app_settings.model_register_settings.status)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-set-domain-canvas-forecasting-status",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable Canvas time series forecasting (domain default)",
+      "summary": "Turn Canvas's time series forecasting feature on or off, as the default for new profiles.",
+      "description": "Sets default_user_settings.canvas_app_settings.time_series_forecasting_settings.status (ENABLED or DISABLED), toggling the time-series-forecasting capability in Canvas for the domain default (using the already-configured Amazon Forecast role).",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "canvas_app_settings",
+          "time_series_forecasting_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "status",
+          "label": "Canvas forecasting status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether time series forecasting is enabled in Canvas.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_user_settings.canvas_app_settings.time_series_forecasting_settings.status)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-set-domain-canvas-direct-deploy-status",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable Canvas direct model deployment (domain default)",
+      "summary": "Allow or block Canvas from deploying models straight to production, as the domain default. Security-sensitive, so an engineer reviews it.",
+      "description": "Sets default_user_settings.canvas_app_settings.direct_deploy_settings.status (ENABLED or DISABLED). ENABLED grants permission to deploy ML models directly to production endpoints from Canvas, so an engineer authors and reviews the change.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "canvas_app_settings",
+          "direct_deploy_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "status",
+          "label": "Canvas direct-deploy status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether direct model deployment to production endpoints is enabled in Canvas.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_user_settings.canvas_app_settings.direct_deploy_settings.status)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-set-domain-default-notebook-output-sharing",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set domain default notebook output sharing",
+      "summary": "Set whether notebook output is included by default when new profiles share their notebooks.",
+      "description": "Sets default_user_settings.sharing_settings.notebook_output_option (Allowed or Disabled), the domain default controlling whether notebook cell output is included when new profiles share notebooks. Distinct from the user-profile-scoped sagemaker-toggle-notebook-output-sharing.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "sharing_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "notebook_output_option",
+          "label": "Notebook output sharing (default)",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether notebook cell output is included when sharing notebooks.",
+          "bounds": {
+            "allowlist": [
+              "Allowed",
+              "Disabled"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (default_user_settings.sharing_settings.notebook_output_option)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-configure-domain-default-idle-shutdown",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Configure domain default app idle-shutdown policy",
+      "summary": "Set the default idle-shutdown timeout and allowed range for Studio apps, so unused sessions stop automatically.",
+      "description": "Configures the app_lifecycle_management.idle_settings idle-shutdown policy in the domain's default_user_settings for the chosen app type: whether idle shutdown is active (lifecycle_management), the default idle timeout, and the min/max timeout users may set. Only JupyterLab and Code Editor support this block. Groups these tightly-coupled fields into one operation because min <= default <= max must hold together.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "default_user_settings",
+          "{param:app_type}",
+          "app_lifecycle_management",
+          "idle_settings"
+        ],
+        "ensurePath": true
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "app_type",
+          "label": "App type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Which domain-default app's idle-shutdown policy to configure. Only JupyterLab and Code Editor support app_lifecycle_management.",
+          "bounds": {
+            "allowlist": [
+              "JupyterLab",
+              "CodeEditor"
+            ]
+          },
+          "role": "discriminator",
+          "segments": {
+            "JupyterLab": "jupyter_lab_app_settings",
+            "CodeEditor": "code_editor_app_settings"
+          }
+        },
+        {
+          "name": "lifecycle_management",
+          "label": "Idle shutdown activation",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether idle shutdown is activated for the selected app type.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "attr": "lifecycle_management"
+        },
+        {
+          "name": "idle_timeout_in_minutes",
+          "label": "Idle timeout (minutes)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "Minutes SageMaker waits after an app becomes idle before shutting it down. Doc range 60-525600.",
+          "bounds": {
+            "min": 60,
+            "max": 525600
+          },
+          "attr": "idle_timeout_in_minutes"
+        },
+        {
+          "name": "min_idle_timeout_in_minutes",
+          "label": "Minimum idle timeout (minutes)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "help": "Lower bound (minutes) users may set for custom idle shutdown. Doc range 60-525600.",
+          "bounds": {
+            "min": 60,
+            "max": 525600
+          },
+          "attr": "min_idle_timeout_in_minutes"
+        },
+        {
+          "name": "max_idle_timeout_in_minutes",
+          "label": "Maximum idle timeout (minutes)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "help": "Upper bound (minutes) users may set for custom idle shutdown. Doc range 60-525600.",
+          "bounds": {
+            "min": 60,
+            "max": 525600
+          },
+          "attr": "max_idle_timeout_in_minutes"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (app_lifecycle_management.idle_settings)",
+      "group": "availability-lifecycle"
+    },
+    {
+      "id": "sagemaker-set-domain-docker-access",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable domain Docker access",
+      "summary": "Allow or block everyone in this domain from building and running containers. This expands the attack surface, so an engineer reviews it.",
+      "description": "Sets domain_settings.docker_settings.enable_docker_access (ENABLED or DISABLED), which grants or removes the domain-wide ability to build, pull, and run containers. Expands attack surface for every user under the domain, so an engineer authors and reviews the change.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "domain_settings",
+          "docker_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "enable_docker_access",
+          "label": "Docker access",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether the domain can access Docker (build/pull/run containers).",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (domain_settings.docker_settings.enable_docker_access)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-set-domain-execution-role-identity-config",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set domain execution-role source-identity config",
+      "summary": "Turn per-user CloudTrail attribution on or off for this domain. Disabling it hides who did what, so an engineer reviews it.",
+      "description": "Sets domain_settings.execution_role_identity_config to USER_PROFILE_NAME or DISABLED, controlling whether the user-profile name is attached to the execution role as sts:SourceIdentity. DISABLED removes per-user attribution in CloudTrail domain-wide, so an engineer authors and reviews the change.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "domain_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "execution_role_identity_config",
+          "label": "Execution-role source identity",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "USER_PROFILE_NAME attaches the profile name as sts:SourceIdentity; DISABLED removes it.",
+          "bounds": {
+            "allowlist": [
+              "USER_PROFILE_NAME",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (domain_settings.execution_role_identity_config)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-set-domain-trusted-identity-propagation",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable Trusted Identity Propagation",
+      "summary": "Turn Trusted Identity Propagation on or off for this domain. Affects how user identity reaches other services; an engineer reviews it.",
+      "description": "Sets domain_settings.trusted_identity_propagation_settings.status (ENABLED or DISABLED). ENABLED is only valid when auth_mode is SSO. Affects how end-user identity is propagated to downstream AWS services for authorization decisions, so an engineer authors and reviews the change.",
+      "target": {
+        "resourceType": "aws_sagemaker_domain",
+        "path": [
+          "domain_settings",
+          "trusted_identity_propagation_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "domain",
+          "label": "Target domain",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_domain/address",
+          "required": true,
+          "help": "The SageMaker Studio domain to modify."
+        },
+        {
+          "name": "status",
+          "label": "Trusted Identity Propagation status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether Trusted Identity Propagation is enabled. ENABLED requires auth_mode = SSO.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (domain_settings.trusted_identity_propagation_settings.status)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-set-rstudio-app-access-status",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set RStudioServerPro app access for a user profile",
+      "summary": "Allow or block this user from opening the RStudio app. Takes effect the next time they launch it.",
+      "description": "Sets user_settings.r_studio_server_pro_app_settings.access_status (ENABLED or DISABLED) to control whether this Studio user profile can open the RStudioServerPro app. Reversible toggle that takes effect on next app launch; grants no new IAM permission on its own.",
+      "target": {
+        "resourceType": "aws_sagemaker_user_profile",
+        "path": [
+          "user_settings",
+          "r_studio_server_pro_app_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "user_profile",
+          "label": "Target user profile",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_user_profile/address",
+          "required": true,
+          "help": "The Studio user profile whose RStudioServerPro app access will change."
+        },
+        {
+          "name": "access_status",
+          "label": "RStudioServerPro app access",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "ENABLED lets the profile open the RStudioServerPro app; DISABLED blocks it.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": true,
+      "terraformCapability": "~ update (user_settings.r_studio_server_pro_app_settings.access_status)",
+      "group": "connectivity-access",
+      "pinned": 2
+    },
+    {
+      "id": "sagemaker-set-rstudio-user-group",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set RStudioServerPro permission level (user group) for a user profile",
+      "summary": "Set this user's RStudio permission level. Granting admin rights is a privilege escalation, so an engineer reviews it.",
+      "description": "Sets user_settings.r_studio_server_pro_app_settings.user_group to R_STUDIO_USER or R_STUDIO_ADMIN. R_STUDIO_ADMIN grants administrative rights over the RStudioServerPro workbench (a privilege escalation that can affect other users/licenses), so an engineer authors and reviews the change.",
+      "target": {
+        "resourceType": "aws_sagemaker_user_profile",
+        "path": [
+          "user_settings",
+          "r_studio_server_pro_app_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "user_profile",
+          "label": "Target user profile",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_user_profile/address",
+          "required": true,
+          "help": "The Studio user profile whose RStudioServerPro permission level will change."
+        },
+        {
+          "name": "user_group",
+          "label": "RStudioServerPro permission level",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "R_STUDIO_USER is standard access; R_STUDIO_ADMIN grants workbench administrative rights.",
+          "bounds": {
+            "allowlist": [
+              "R_STUDIO_USER",
+              "R_STUDIO_ADMIN"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (user_settings.r_studio_server_pro_app_settings.user_group)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-set-canvas-direct-deploy-status",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set Canvas direct-deploy permission for a user profile",
+      "summary": "Allow or block this user from deploying models straight to production through Canvas. Security-sensitive, so an engineer reviews it.",
+      "description": "Sets user_settings.canvas_app_settings.direct_deploy_settings.status (ENABLED or DISABLED), which grants or removes permission to deploy ML models directly to production endpoints from SageMaker Canvas. Security-sensitive permission change, so an engineer authors and reviews it.",
+      "target": {
+        "resourceType": "aws_sagemaker_user_profile",
+        "path": [
+          "user_settings",
+          "canvas_app_settings",
+          "direct_deploy_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "user_profile",
+          "label": "Target user profile",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_user_profile/address",
+          "required": true,
+          "help": "The Studio user profile whose Canvas direct-deploy permission will change."
+        },
+        {
+          "name": "status",
+          "label": "Canvas direct-deploy permission",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "ENABLED lets Canvas deploy models directly to production endpoints; DISABLED removes that permission.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (user_settings.canvas_app_settings.direct_deploy_settings.status)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-configure-canvas-oauth-data-source",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Configure Canvas OAuth data-source connection for a user profile",
+      "summary": "Choose this user's Canvas data source (Salesforce Genie or Snowflake) and turn the OAuth connection on or off.",
+      "description": "Sets the Canvas identity_provider_oauth_settings data_source_name (SalesforceGenie or Snowflake) and status (ENABLED or DISABLED) for this profile: which external data source Canvas connects to via OAuth and whether that connection is active. The stored credential reference (secret_arn) is managed separately by an engineer.",
+      "target": {
+        "resourceType": "aws_sagemaker_user_profile",
+        "path": [
+          "user_settings",
+          "canvas_app_settings",
+          "identity_provider_oauth_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "user_profile",
+          "label": "Target user profile",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_user_profile/address",
+          "required": true,
+          "help": "The Studio user profile whose Canvas OAuth data-source connection will change."
+        },
+        {
+          "name": "data_source_name",
+          "label": "OAuth data source",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "External data source Canvas connects to via OAuth.",
+          "bounds": {
+            "allowlist": [
+              "SalesforceGenie",
+              "Snowflake"
+            ]
+          }
+        },
+        {
+          "name": "oauth_status",
+          "label": "OAuth connection status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether the OAuth connection to the selected data source is active.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "attr": "status"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (user_settings.canvas_app_settings.identity_provider_oauth_settings.data_source_name / .status)",
+      "group": "connectivity-access",
+      "pinned": 3
+    },
+    {
+      "id": "sagemaker-set-canvas-emr-serverless-status",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable Canvas EMR Serverless for a user profile",
+      "summary": "Allow or block this user from running EMR Serverless jobs through Canvas.",
+      "description": "Sets user_settings.canvas_app_settings.emr_serverless_settings.status (ENABLED or DISABLED), toggling whether this profile can run EMR Serverless jobs from Canvas using the already-configured execution role. The role itself (execution_role_arn) is managed separately by an engineer.",
+      "target": {
+        "resourceType": "aws_sagemaker_user_profile",
+        "path": [
+          "user_settings",
+          "canvas_app_settings",
+          "emr_serverless_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "user_profile",
+          "label": "Target user profile",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_user_profile/address",
+          "required": true,
+          "help": "The Studio user profile whose Canvas EMR Serverless capability will change."
+        },
+        {
+          "name": "status",
+          "label": "Canvas EMR Serverless status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether EMR Serverless job capability is enabled in Canvas for this profile.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (user_settings.canvas_app_settings.emr_serverless_settings.status)",
+      "group": "connectivity-access",
+      "pinned": 4
+    },
+    {
+      "id": "sagemaker-set-canvas-kendra-status",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable Canvas document querying (Kendra) for a user profile",
+      "summary": "Turn this user's Canvas document search (Kendra) feature on or off.",
+      "description": "Sets user_settings.canvas_app_settings.kendra_settings.status (ENABLED or DISABLED), toggling the Kendra-backed document-querying feature in Canvas for this profile. The kendra_settings block carries no other field, so this fully covers it.",
+      "target": {
+        "resourceType": "aws_sagemaker_user_profile",
+        "path": [
+          "user_settings",
+          "canvas_app_settings",
+          "kendra_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "user_profile",
+          "label": "Target user profile",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_user_profile/address",
+          "required": true,
+          "help": "The Studio user profile whose Canvas document-querying feature will change."
+        },
+        {
+          "name": "status",
+          "label": "Canvas Kendra status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether the document-querying (Kendra) feature is enabled in Canvas.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (user_settings.canvas_app_settings.kendra_settings.status)",
+      "group": "connectivity-access",
+      "pinned": 5
+    },
+    {
+      "id": "sagemaker-set-canvas-model-register-status",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable Canvas model-registry integration for a user profile",
+      "summary": "Turn this user's Canvas model registry integration on or off.",
+      "description": "Sets user_settings.canvas_app_settings.model_register_settings.status (ENABLED or DISABLED), toggling the model-registry integration in Canvas for this profile. The cross-account model-register role ARN is managed separately by an engineer.",
+      "target": {
+        "resourceType": "aws_sagemaker_user_profile",
+        "path": [
+          "user_settings",
+          "canvas_app_settings",
+          "model_register_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "user_profile",
+          "label": "Target user profile",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_user_profile/address",
+          "required": true,
+          "help": "The Studio user profile whose Canvas model-registry integration will change."
+        },
+        {
+          "name": "status",
+          "label": "Canvas model-registry status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether the model-registry integration is enabled in Canvas.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (user_settings.canvas_app_settings.model_register_settings.status)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-set-canvas-time-series-forecasting-status",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Enable or disable Canvas time-series forecasting for a user profile",
+      "summary": "Turn this user's Canvas time series forecasting feature on or off.",
+      "description": "Sets user_settings.canvas_app_settings.time_series_forecasting_settings.status (ENABLED or DISABLED), toggling the time-series-forecasting capability in Canvas for this profile. The Amazon Forecast role ARN is managed separately by an engineer.",
+      "target": {
+        "resourceType": "aws_sagemaker_user_profile",
+        "path": [
+          "user_settings",
+          "canvas_app_settings",
+          "time_series_forecasting_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "user_profile",
+          "label": "Target user profile",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_user_profile/address",
+          "required": true,
+          "help": "The Studio user profile whose Canvas time-series forecasting capability will change."
+        },
+        {
+          "name": "status",
+          "label": "Canvas time-series forecasting status",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether time-series forecasting is enabled in Canvas.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (user_settings.canvas_app_settings.time_series_forecasting_settings.status)",
+      "group": "connectivity-access"
+    },
+    {
+      "id": "sagemaker-configure-app-idle-shutdown",
+      "service": "sagemaker",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Configure idle-shutdown settings for a user-profile JupyterLab app",
+      "summary": "Set the idle-shutdown timeout and allowed range for this user's JupyterLab app, so an unused session stops automatically.",
+      "description": "Configures user_settings.jupyter_lab_app_settings.app_lifecycle_management.idle_settings for this user profile: whether idle shutdown is active (lifecycle_management), the idle timeout, and the min/max timeout a user may self-select. All timeout values are bounded to the documented 60-525600 minute range. Cost/performance setting, reversible, no security impact. Only JupyterLab is offered: per the provider docs, code_editor_app_settings on aws_sagemaker_user_profile does not expose app_lifecycle_management (it supports only default_resource_spec, lifecycle_config_arns, custom_image).",
+      "target": {
+        "resourceType": "aws_sagemaker_user_profile",
+        "path": [
+          "user_settings",
+          "jupyter_lab_app_settings",
+          "app_lifecycle_management",
+          "idle_settings"
+        ]
+      },
+      "params": [
+        {
+          "name": "user_profile",
+          "label": "Target user profile",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_sagemaker_user_profile/address",
+          "required": true,
+          "help": "The Studio user profile whose JupyterLab idle-shutdown settings will change."
+        },
+        {
+          "name": "app_type",
+          "label": "App type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Which app's idle-shutdown settings to configure. On aws_sagemaker_user_profile only JupyterLab exposes app_lifecycle_management (Code Editor does not), so JupyterLab is the only valid value.",
+          "bounds": {
+            "allowlist": [
+              "JupyterLab"
+            ]
+          },
+          "role": "selector"
+        },
+        {
+          "name": "lifecycle_management",
+          "label": "Idle shutdown activated",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Whether idle shutdown is activated for the JupyterLab app.",
+          "bounds": {
+            "allowlist": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          }
+        },
+        {
+          "name": "idle_timeout_in_minutes",
+          "label": "Idle timeout (minutes)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "help": "Minutes SageMaker waits after the app becomes idle before shutting it down. Doc range 60-525600.",
+          "bounds": {
+            "min": 60,
+            "max": 525600
+          }
+        },
+        {
+          "name": "min_idle_timeout_in_minutes",
+          "label": "Minimum user-configurable idle timeout (minutes)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "help": "Minimum idle timeout a user may set for custom idle shutdown. Doc range 60-525600.",
+          "bounds": {
+            "min": 60,
+            "max": 525600
+          }
+        },
+        {
+          "name": "max_idle_timeout_in_minutes",
+          "label": "Maximum user-configurable idle timeout (minutes)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "help": "Maximum idle timeout a user may set for custom idle shutdown. Doc range 60-525600.",
+          "bounds": {
+            "min": 60,
+            "max": 525600
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (user_settings.jupyter_lab_app_settings.app_lifecycle_management.idle_settings)",
+      "group": "availability-lifecycle"
+    }
+  ]
+}

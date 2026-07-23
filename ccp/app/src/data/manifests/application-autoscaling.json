@@ -1,0 +1,374 @@
+{
+  "service": "application-autoscaling",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_appautoscaling_target",
+    "aws_appautoscaling_policy"
+  ],
+  "summary": "Provision new Application Auto Scaling targets and target-tracking policies for ECS services. Every stand-up routes to an engineer for review \u2014 other service namespaces and day-2 operations land in a later wave.",
+  "operations": [
+    {
+      "id": "appautoscaling-target-create",
+      "service": "application-autoscaling",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Application Auto Scaling target",
+      "summary": "Request a brand-new scaling target for an ECS service; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Register a new scalable target as a complete specification: capacity bounds and the ECS service it scales. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_appautoscaling_target"
+      },
+      "params": [
+        {
+          "name": "target_name",
+          "label": "Target name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes. Names this target in the generated draft \u2014 a scalable target has no name field of its own."
+        },
+        {
+          "name": "service_namespace",
+          "label": "Service namespace",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "ecs",
+          "attr": "service_namespace",
+          "group": "identity",
+          "help": "Scoped to ECS service scaling \u2014 the common case; other namespaces (DynamoDB, RDS, Spot Fleet, SageMaker\u2026) are an engineer decision via the catch-all request."
+        },
+        {
+          "name": "scalable_dimension",
+          "label": "Scalable dimension",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "ecs:service:DesiredCount",
+          "attr": "scalable_dimension",
+          "group": "identity",
+          "help": "The one ECS scaling dimension \u2014 written into the draft, never asked."
+        },
+        {
+          "name": "resource_id",
+          "label": "ECS scaling target id",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "resource_id",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^service/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+          },
+          "help": "The form service/<cluster name>/<service name>, matching the ECS cluster and service being scaled."
+        },
+        {
+          "name": "min_capacity",
+          "label": "Minimum capacity",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "min_capacity",
+          "group": "capacity",
+          "bounds": {
+            "min": 0,
+            "max": 5000,
+            "semantic": "task_count"
+          },
+          "default": 1,
+          "help": "Fewest tasks the service is ever scaled down to."
+        },
+        {
+          "name": "max_capacity",
+          "label": "Maximum capacity",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "max_capacity",
+          "group": "capacity",
+          "bounds": {
+            "min": 1,
+            "max": 5000,
+            "semantic": "task_count"
+          },
+          "default": 4,
+          "help": "Most tasks the service may scale up to."
+        },
+        {
+          "name": "role_arn",
+          "label": "IAM role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "role_arn",
+          "group": "identity",
+          "tier": "advanced",
+          "help": "Leave blank to use the AWS service-linked role for ECS scaling."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this scaling target does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this scaling target."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new appautoscaling target",
+        "provision scaling target",
+        "register scalable target",
+        "ecs autoscaling"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Registering a target for a non-ECS namespace (DynamoDB, RDS, Spot Fleet, SageMaker, custom resources) is an engineer decision \u2014 use the request-a-change catch-all",
+        "Suspended-state overrides (pausing scale-in/scale-out/scheduled scaling) are an engineer follow-up after creation"
+      ]
+    },
+    {
+      "id": "appautoscaling-policy-create",
+      "service": "application-autoscaling",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new Application Auto Scaling policy",
+      "summary": "Request a brand-new target-tracking scaling policy for an ECS service; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new target-tracking scaling policy as a complete specification: the metric it tracks and the scaling target it attaches to. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_appautoscaling_policy"
+      },
+      "params": [
+        {
+          "name": "policy_name",
+          "label": "Policy name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, like tt-cpu-60. Names the policy in AWS and in the generated draft."
+        },
+        {
+          "name": "policy_type",
+          "label": "Policy type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "TargetTrackingScaling",
+          "attr": "policy_type",
+          "group": "identity",
+          "help": "Target tracking is the common case \u2014 step scaling and predictive scaling are engineer decisions."
+        },
+        {
+          "name": "resource_id",
+          "label": "ECS scaling target id",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "resource_id",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^service/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+          },
+          "help": "The existing scaling target this policy attaches to: service/<cluster name>/<service name>, matching an already-registered aws_appautoscaling_target."
+        },
+        {
+          "name": "scalable_dimension",
+          "label": "Scalable dimension",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "ecs:service:DesiredCount",
+          "attr": "scalable_dimension",
+          "group": "identity",
+          "help": "Matches the ECS scaling target above \u2014 written into the draft, never asked."
+        },
+        {
+          "name": "service_namespace",
+          "label": "Service namespace",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "ecs",
+          "attr": "service_namespace",
+          "group": "identity",
+          "help": "Scoped to ECS service scaling \u2014 written into the draft, never asked."
+        },
+        {
+          "name": "predefined_metric_type",
+          "label": "Metric",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "predefined_metric_type",
+          "path": [
+            "target_tracking_scaling_policy_configuration",
+            "predefined_metric_specification"
+          ],
+          "group": "metric",
+          "bounds": {
+            "allowlist": [
+              "ECSServiceAverageCPUUtilization",
+              "ECSServiceAverageMemoryUtilization"
+            ]
+          },
+          "default": "ECSServiceAverageCPUUtilization",
+          "help": "The built-in ECS metric this policy targets."
+        },
+        {
+          "name": "target_value",
+          "label": "Target value",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "target_value",
+          "path": [
+            "target_tracking_scaling_policy_configuration"
+          ],
+          "group": "metric",
+          "bounds": {
+            "min": 1,
+            "max": 100
+          },
+          "default": 60,
+          "help": "The target percentage the metric should hover around."
+        },
+        {
+          "name": "scale_out_cooldown",
+          "label": "Scale-out cooldown (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "scale_out_cooldown",
+          "path": [
+            "target_tracking_scaling_policy_configuration"
+          ],
+          "group": "metric",
+          "tier": "advanced",
+          "bounds": {
+            "min": 0,
+            "max": 3600
+          },
+          "default": 60,
+          "help": "Seconds to wait after a scale-out before another scale-out can start."
+        },
+        {
+          "name": "scale_in_cooldown",
+          "label": "Scale-in cooldown (seconds)",
+          "type": "number",
+          "source": "user_input",
+          "required": false,
+          "attr": "scale_in_cooldown",
+          "path": [
+            "target_tracking_scaling_policy_configuration"
+          ],
+          "group": "metric",
+          "tier": "advanced",
+          "bounds": {
+            "min": 0,
+            "max": 3600
+          },
+          "default": 300,
+          "help": "Seconds to wait after a scale-in before another scale-in can start."
+        },
+        {
+          "name": "disable_scale_in",
+          "label": "Disable scale-in",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "disable_scale_in",
+          "path": [
+            "target_tracking_scaling_policy_configuration"
+          ],
+          "group": "metric",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": false,
+          "help": "On prevents this policy from ever scaling capacity down \u2014 scale-in stays a manual/other-policy decision."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new appautoscaling policy",
+        "provision scaling policy",
+        "target tracking policy",
+        "ecs cpu autoscaling"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Step scaling and predictive scaling policy types are engineer decisions \u2014 this form covers the common target-tracking case",
+        "A customized CloudWatch metric (customized_metric_specification) instead of a predefined ECS metric is an engineer decision",
+        "This resource carries no tags attribute in the provider schema \u2014 it is not taggable"
+      ]
+    }
+  ]
+}

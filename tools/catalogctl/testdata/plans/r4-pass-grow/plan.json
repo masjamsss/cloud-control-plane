@@ -1,0 +1,19 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_ebs_volume.sample01_sdb",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "size": 20
+        },
+        "after": {
+          "size": 40
+        }
+      }
+    }
+  ]
+}

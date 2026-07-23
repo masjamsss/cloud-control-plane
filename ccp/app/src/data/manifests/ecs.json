@@ -1,0 +1,650 @@
+{
+  "service": "ecs",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_ecs_cluster",
+    "aws_ecs_task_definition",
+    "aws_ecs_service"
+  ],
+  "summary": "Provision new ECS clusters, task definitions, and services. Every stand-up routes to an engineer for review \u2014 day-2 operations on existing ECS resources land in a later wave.",
+  "operations": [
+    {
+      "id": "ecs-cluster-create",
+      "service": "ecs",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new ECS cluster",
+      "summary": "Request a brand-new ECS cluster; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new ECS cluster as a complete specification: name, Container Insights observability, and tags. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_ecs_cluster"
+      },
+      "params": [
+        {
+          "name": "cluster_name",
+          "label": "Cluster name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, like app-tier-cluster. Names the cluster in AWS and in the generated draft."
+        },
+        {
+          "name": "container_insights",
+          "label": "Container Insights",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "value",
+          "path": [
+            "setting"
+          ],
+          "group": "observability",
+          "bounds": {
+            "allowlist": [
+              "enabled",
+              "disabled"
+            ]
+          },
+          "default": "enabled",
+          "help": "Enhanced CloudWatch observability (CPU/memory/network per service and task) for everything running on this cluster."
+        },
+        {
+          "name": "container_insights_setting_name",
+          "label": "Container Insights setting key",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "role": "const",
+          "const": "containerInsights",
+          "attr": "name",
+          "group": "observability",
+          "help": "Fixed setting key \u2014 written into the draft, never asked.",
+          "path": [
+            "setting"
+          ]
+        },
+        {
+          "name": "execute_command_logging",
+          "label": "ECS Exec session logging",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "logging",
+          "path": [
+            "configuration",
+            "execute_command_configuration"
+          ],
+          "group": "observability",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              "DEFAULT",
+              "OVERRIDE",
+              "NONE"
+            ]
+          },
+          "default": "DEFAULT",
+          "help": "How ECS Exec (interactive container debugging) sessions are logged. DEFAULT uses the account's CloudWatch/S3 defaults."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this cluster does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this cluster."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new ecs cluster",
+        "provision ecs cluster",
+        "new container cluster",
+        "stand up a cluster"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Capacity providers (Fargate, Fargate Spot, or an Auto Scaling group-backed EC2 provider) are attached as an engineer follow-up",
+        "Service Connect namespace defaults and KMS-backed execute-command encryption are engineer decisions"
+      ]
+    },
+    {
+      "id": "ecs-task-definition-create",
+      "service": "ecs",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new ECS task definition",
+      "summary": "Request a brand-new ECS task definition; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new task definition as a complete specification: launch compatibility, sizing, network mode, and IAM roles. Submitting routes it to an engineer with a draft Terraform block \u2014 including the container spec \u2014 to review and finish. Nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_ecs_task_definition"
+      },
+      "params": [
+        {
+          "name": "family",
+          "label": "Family",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "family",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, like checkout-api. Groups revisions of this task definition together."
+        },
+        {
+          "name": "container_definitions",
+          "label": "Container definitions",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "container_definitions",
+          "group": "containers",
+          "bounds": {
+            "allowlist": [
+              "engineer-decides"
+            ]
+          },
+          "default": "engineer-decides",
+          "help": "The JSON container spec \u2014 image, port mappings, environment, log configuration \u2014 an engineer authors this to match the workload's image and runtime needs."
+        },
+        {
+          "name": "requires_compatibility",
+          "label": "Launch type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "requires_compatibilities",
+          "wrap": "list",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "FARGATE",
+              "EC2"
+            ]
+          },
+          "default": "FARGATE",
+          "help": "Which ECS launch type this task definition supports."
+        },
+        {
+          "name": "network_mode",
+          "label": "Network mode",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "network_mode",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "awsvpc",
+              "bridge",
+              "host",
+              "none"
+            ]
+          },
+          "default": "awsvpc",
+          "help": "awsvpc is required for Fargate and gives every task its own elastic network interface."
+        },
+        {
+          "name": "cpu",
+          "label": "Task CPU units",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "cpu",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "256",
+              "512",
+              "1024",
+              "2048",
+              "4096"
+            ]
+          },
+          "default": "512",
+          "help": "Total vCPU units for the task (1024 = 1 vCPU)."
+        },
+        {
+          "name": "memory",
+          "label": "Task memory (MiB)",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "memory",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "512",
+              "1024",
+              "2048",
+              "3072",
+              "4096",
+              "8192",
+              "16384",
+              "30720"
+            ]
+          },
+          "default": "1024",
+          "help": "Total memory for the task. Must be a combination Fargate accepts for the chosen CPU."
+        },
+        {
+          "name": "execution_role",
+          "label": "Execution role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "execution_role_arn",
+          "group": "iam",
+          "help": "The role ECS assumes to pull the image and write logs \u2014 required for Fargate tasks."
+        },
+        {
+          "name": "task_role",
+          "label": "Task role",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_iam_role/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "task_role_arn",
+          "group": "iam",
+          "tier": "advanced",
+          "help": "The role the CONTAINERS assume at runtime. Leave blank if the task needs no AWS API access."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this task definition does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this task definition."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new ecs task definition",
+        "provision task definition",
+        "new container spec",
+        "register task definition"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "The container spec (image, port mappings, environment, log driver) is an engineer decision, matched to the workload's built image",
+        "CPU architecture / operating system family (runtime_platform), volumes, and placement constraints are engineer follow-ups",
+        "A CPU/memory combination outside Fargate's accepted pairs is caught at apply time \u2014 the engineer reviewing confirms the pair is valid"
+      ]
+    },
+    {
+      "id": "ecs-service-create",
+      "service": "ecs",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Provision a new ECS service",
+      "summary": "Request a brand-new ECS service; an engineer finalizes and reviews the Terraform before it applies.",
+      "description": "Stand up a new service as a complete specification: the cluster and task definition it runs, desired count, network placement, and an optional load balancer target group. Submitting routes it to an engineer with a draft Terraform block to review and finish \u2014 nothing is applied without review.",
+      "target": {
+        "resourceType": "aws_ecs_service"
+      },
+      "params": [
+        {
+          "name": "service_name",
+          "label": "Service name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{2,60}$"
+          },
+          "help": "Lower-case letters, numbers and dashes, like checkout-api-svc. Names the service in AWS and in the generated draft."
+        },
+        {
+          "name": "cluster",
+          "label": "Cluster",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_ecs_cluster/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "cluster",
+          "group": "identity",
+          "help": "The ECS cluster this service runs on. Create the cluster first (ecs-cluster-create) if none exists yet."
+        },
+        {
+          "name": "task_definition",
+          "label": "Task definition",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_ecs_task_definition/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "task_definition",
+          "group": "identity",
+          "help": "The task definition this service runs. Create the task definition first (ecs-task-definition-create) if none exists yet."
+        },
+        {
+          "name": "launch_type",
+          "label": "Launch type",
+          "type": "string",
+          "source": "allowlist",
+          "required": false,
+          "attr": "launch_type",
+          "group": "compute",
+          "bounds": {
+            "allowlist": [
+              "FARGATE",
+              "EC2"
+            ]
+          },
+          "default": "FARGATE",
+          "help": "FARGATE runs tasks on serverless capacity; EC2 runs them on the cluster's registered container instances."
+        },
+        {
+          "name": "desired_count",
+          "label": "Desired count",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "desired_count",
+          "group": "compute",
+          "bounds": {
+            "min": 0,
+            "max": 100,
+            "semantic": "task_count"
+          },
+          "default": 2,
+          "help": "How many copies of the task this service keeps running."
+        },
+        {
+          "name": "subnets",
+          "label": "Subnets",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_subnet/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "subnets",
+          "path": [
+            "network_configuration"
+          ],
+          "group": "network",
+          "bounds": {
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "help": "Where tasks launch. Pick subnets spanning at least two Availability Zones for resilience."
+        },
+        {
+          "name": "security_groups",
+          "label": "Security groups",
+          "type": "list",
+          "source": "inventory",
+          "enumSource": "inventory://aws_security_group/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "security_groups",
+          "path": [
+            "network_configuration"
+          ],
+          "group": "network",
+          "bounds": {
+            "maxItems": 5
+          },
+          "help": "Who can reach this service's tasks. Leave blank to use the VPC default security group."
+        },
+        {
+          "name": "assign_public_ip",
+          "label": "Assign public IP",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "assign_public_ip",
+          "path": [
+            "network_configuration"
+          ],
+          "group": "network",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": false,
+          "help": "Off for the estate's internal-only tasks. Only turn on for a task in a public subnet with no NAT."
+        },
+        {
+          "name": "target_group",
+          "label": "Target group",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_lb_target_group/address",
+          "required": false,
+          "role": "reference",
+          "refAttr": "arn",
+          "attr": "target_group_arn",
+          "path": [
+            "load_balancer"
+          ],
+          "group": "loadbalancing",
+          "tier": "advanced",
+          "help": "Leave blank for a service with no load balancer. Picking one requires the container name and port below too."
+        },
+        {
+          "name": "lb_container_name",
+          "label": "Container name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "container_name",
+          "path": [
+            "load_balancer"
+          ],
+          "group": "loadbalancing",
+          "tier": "advanced",
+          "dependsOn": {
+            "param": "target_group",
+            "notEquals": ""
+          },
+          "bounds": {
+            "pattern": "^[A-Za-z0-9_-]{1,255}$"
+          },
+          "help": "Must match a container name inside the task definition's container spec."
+        },
+        {
+          "name": "lb_container_port",
+          "label": "Container port",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "attr": "container_port",
+          "path": [
+            "load_balancer"
+          ],
+          "group": "loadbalancing",
+          "tier": "advanced",
+          "dependsOn": {
+            "param": "target_group",
+            "notEquals": ""
+          },
+          "bounds": {
+            "min": 1,
+            "max": 65535
+          },
+          "default": 80,
+          "help": "The port on the container the target group forwards traffic to."
+        },
+        {
+          "name": "enable_execute_command",
+          "label": "Enable ECS Exec",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "enable_execute_command",
+          "group": "compute",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": false,
+          "help": "Turns on interactive container debugging (ecs execute-command) for this service's tasks."
+        },
+        {
+          "name": "resource_name",
+          "label": "Name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere \u2014 consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this service does",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this service."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "keywords": [
+        "new ecs service",
+        "provision ecs service",
+        "run a task definition",
+        "stand up a service"
+      ],
+      "group": "create",
+      "draftSkeleton": true,
+      "decisions": [
+        "Deployment circuit breaker, deployment strategy (rolling/blue-green), and capacity provider strategy are engineer decisions",
+        "Service Connect / service discovery registration is an engineer follow-up after creation",
+        "Multiple load balancer target groups or an ALB advanced (weighted / blue-green) configuration are engineer decisions \u2014 this form wires one target group"
+      ]
+    }
+  ]
+}

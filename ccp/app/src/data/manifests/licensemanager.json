@@ -1,0 +1,426 @@
+{
+  "service": "licensemanager",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_licensemanager_license_configuration",
+    "aws_licensemanager_association"
+  ],
+  "summary": "Track BYOL license compliance with License Manager: create and retire license configurations, adjust license counts, toggle hard-limit enforcement, retag configurations, and associate or disassociate EC2 resources.",
+  "operations": [
+    {
+      "id": "licensemanager-add-license-configuration",
+      "service": "licensemanager",
+      "macd": "Add",
+      "codemodOp": "instantiate_module",
+      "title": "Create a new license configuration",
+      "summary": "Set up a new license pool to track how software licenses are used. An engineer reviews and applies it.",
+      "description": "Provisions a new AWS License Manager license configuration to track BYOL entitlements (counting type, count, hard-limit enforcement) for a new application or licensing pool.",
+      "target": {
+        "resourceType": "aws_licensemanager_license_configuration"
+      },
+      "params": [
+        {
+          "name": "config_name",
+          "label": "Configuration name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "Short identifying name, e.g. app-core-license-config.",
+          "bounds": {
+            "pattern": "^[a-z0-9][a-z0-9-]{2,62}$"
+          }
+        },
+        {
+          "name": "description",
+          "label": "Description",
+          "type": "string",
+          "source": "user_input",
+          "required": false,
+          "default": "",
+          "help": "Free-text note on what this configuration licenses."
+        },
+        {
+          "name": "license_counting_type",
+          "label": "Counting type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "help": "Unit AWS uses to count consumed licenses. Cannot be changed after creation.",
+          "bounds": {
+            "allowlist": [
+              "vCPU",
+              "Instance",
+              "Core",
+              "Socket"
+            ]
+          }
+        },
+        {
+          "name": "license_count",
+          "label": "License count",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "Total number of licenses available in this pool.",
+          "bounds": {
+            "min": 1,
+            "max": 100000
+          }
+        },
+        {
+          "name": "license_count_hard_limit",
+          "label": "Enforce hard limit",
+          "type": "bool",
+          "source": "user_input",
+          "required": false,
+          "default": false,
+          "help": "If true, new launches are blocked once the count is exhausted."
+        },
+        {
+          "name": "tags",
+          "label": "Tags",
+          "type": "map",
+          "source": "user_input",
+          "required": false,
+          "default": {},
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Key/value tags applied at creation."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "licensemanager-add-resource-association",
+      "service": "licensemanager",
+      "macd": "Add",
+      "codemodOp": "append_block",
+      "title": "Associate a resource with a license configuration",
+      "summary": "Link a server or image to a license pool so its usage counts toward that license.",
+      "description": "Links an existing EC2 instance or AMI to a license configuration so its consumption counts against that licensing pool for compliance tracking.",
+      "target": {
+        "resourceType": "aws_licensemanager_association"
+      },
+      "params": [
+        {
+          "name": "license_config",
+          "label": "License configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_licensemanager_license_configuration/address",
+          "help": "The license configuration the resource will be associated with."
+        },
+        {
+          "name": "resource_arn",
+          "label": "Resource ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "ARN of the EC2 instance, AMI, or host resource to associate.",
+          "bounds": {
+            "pattern": "^arn:aws:[a-z0-9-]+:[a-z0-9-]*:[0-9]{12}:.+$"
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create",
+      "group": "create"
+    },
+    {
+      "id": "licensemanager-update-license-count",
+      "service": "licensemanager",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update license count",
+      "summary": "Change how many licenses this pool tracks, for example after buying more.",
+      "description": "Changes the total number of licenses tracked by a license configuration, e.g. after purchasing additional BYOL entitlements or reconciling a compliance audit.",
+      "target": {
+        "resourceType": "aws_licensemanager_license_configuration"
+      },
+      "params": [
+        {
+          "name": "license_config",
+          "label": "License configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_licensemanager_license_configuration/address",
+          "help": "The license configuration to update."
+        },
+        {
+          "name": "new_license_count",
+          "label": "New license count",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "help": "Total licenses available after the change.",
+          "bounds": {
+            "min": 1,
+            "max": 100000
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "scale-performance",
+      "pinned": 2
+    },
+    {
+      "id": "licensemanager-toggle-hard-limit",
+      "service": "licensemanager",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Toggle license hard-limit enforcement",
+      "summary": "Turn hard-limit enforcement on or off. When on, new server launches are blocked once the licenses run out.",
+      "description": "Enables or disables hard-limit enforcement on a license configuration. Enabling it will block new EC2 launches once the license count is exhausted, so review current consumption first.",
+      "target": {
+        "resourceType": "aws_licensemanager_license_configuration"
+      },
+      "params": [
+        {
+          "name": "license_config",
+          "label": "License configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_licensemanager_license_configuration/address",
+          "help": "The license configuration to update."
+        },
+        {
+          "name": "new_hard_limit",
+          "label": "Enforce hard limit",
+          "type": "bool",
+          "source": "user_input",
+          "required": true,
+          "help": "true blocks further consumption above the license count; false only reports overages.",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "attr": "license_count_hard_limit"
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "scale-performance",
+      "pinned": 3
+    },
+    {
+      "id": "licensemanager-update-tags",
+      "service": "licensemanager",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Update license configuration tags",
+      "summary": "Add or update tags on a license pool. Only the tags you list change; others are left alone. No effect on tracking.",
+      "description": "Sets or merges cost-allocation or ownership tags on a license configuration. Only the keys you supply change; tags you do not list are left untouched.",
+      "target": {
+        "resourceType": "aws_licensemanager_license_configuration",
+        "block": "tags",
+        "ensureAttr": true
+      },
+      "params": [
+        {
+          "name": "license_config",
+          "label": "License configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_licensemanager_license_configuration/address",
+          "help": "The license configuration to retag."
+        },
+        {
+          "name": "new_tags",
+          "label": "New tags",
+          "type": "map",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 _.:/=+@-]{1,128}$",
+            "semantic": "aws_tag_map"
+          },
+          "help": "Full key/value tag set to apply, replacing the existing tags."
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_self_service",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update",
+      "group": "tags-naming",
+      "pinned": 1
+    },
+    {
+      "id": "licensemanager-remove-resource-association",
+      "service": "licensemanager",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Disassociate a resource from a license configuration",
+      "summary": "Unlink a server or image from a license pool so its usage no longer counts. The resource itself is unaffected.",
+      "description": "Removes the link between an EC2 instance or AMI and a license configuration, stopping that resource's consumption from counting against the licensing pool. The resource itself is unaffected.",
+      "target": {
+        "resourceType": "aws_licensemanager_association"
+      },
+      "params": [
+        {
+          "name": "association",
+          "label": "Resource association",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_licensemanager_association/address",
+          "help": "The resource-to-license-configuration association to remove."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "licensemanager-delete-license-configuration",
+      "service": "licensemanager",
+      "macd": "Delete",
+      "codemodOp": "remove_block",
+      "title": "Delete a license configuration",
+      "summary": "Permanently delete a license pool and its compliance history. Can't be undone; an engineer reviews it first.",
+      "description": "Permanently removes a license configuration and its compliance history. Any resources still associated with it must be disassociated first, and any related License Manager reporting is lost.",
+      "target": {
+        "resourceType": "aws_licensemanager_license_configuration"
+      },
+      "params": [
+        {
+          "name": "license_config",
+          "label": "License configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_licensemanager_license_configuration/address",
+          "help": "The license configuration to permanently delete."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "- destroy",
+      "group": "danger-zone"
+    },
+    {
+      "id": "licensemanager-change-association-license-configuration",
+      "service": "licensemanager",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Re-point association to a different license configuration",
+      "summary": "Move an existing link to a different license pool. Applying replaces the link, briefly interrupting tracking; engineer-only.",
+      "description": "Changes which license configuration an existing association tracks consumption against by updating the license_configuration_arn argument; the association is immutable in the provider, so it is destroyed and recreated to re-point, briefly interrupting tracking. The target configuration is chosen from existing License Manager license configurations in inventory (never free-text). Re-pointing shifts this resource's consumption into the new pool, which could push that pool over its hard limit, so review the target pool's headroom first.",
+      "target": {
+        "resourceType": "aws_licensemanager_association"
+      },
+      "params": [
+        {
+          "name": "association",
+          "label": "Resource association",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_licensemanager_association/address",
+          "help": "The existing resource-to-license-configuration association to re-point."
+        },
+        {
+          "name": "new_license_config",
+          "label": "New license configuration",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_licensemanager_license_configuration/address",
+          "help": "The license configuration the association will now track consumption against; resolves to its ARN."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (license_configuration_arn)",
+      "group": "scale-performance"
+    },
+    {
+      "id": "licensemanager-change-association-resource",
+      "service": "licensemanager",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Re-point association to a different resource",
+      "summary": "Move an existing link to a different server or image. Applying replaces the link, briefly interrupting tracking; engineer-only.",
+      "description": "Changes which AWS resource (EC2 instance or AMI) an existing association tracks by updating the resource_arn argument; the association is immutable in the provider, so it is destroyed and recreated to re-point, briefly interrupting tracking. The new ARN is validated against a strict ARN format pattern. Re-pointing moves consumption from the old resource to the new one within the same license configuration.",
+      "target": {
+        "resourceType": "aws_licensemanager_association"
+      },
+      "params": [
+        {
+          "name": "association",
+          "label": "Resource association",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://aws_licensemanager_association/address",
+          "help": "The existing resource-to-license-configuration association to re-point."
+        },
+        {
+          "name": "new_resource_arn",
+          "label": "New resource ARN",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "help": "ARN of the EC2 instance or AMI the association will now track.",
+          "bounds": {
+            "pattern": "^arn:aws:[a-z0-9-]+:[a-z0-9-]*:[0-9]{12}:.+$"
+          }
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": true,
+      "autoEligible": false,
+      "terraformCapability": "~ update (resource_arn)",
+      "group": "scale-performance"
+    }
+  ]
+}

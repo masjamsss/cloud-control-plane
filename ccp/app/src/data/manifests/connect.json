@@ -1,0 +1,201 @@
+{
+  "service": "connect",
+  "scope": "greenfield",
+  "resourceTypes": [
+    "aws_connect_instance"
+  ],
+  "summary": "Provision Amazon Connect to stand up a new contact center instance. Creating an instance is an engineer-gated form — it anchors an entire contact center's telephony, queues, and agents, so nothing here is blind self-service.",
+  "operations": [
+    {
+      "id": "connect-instance-create",
+      "service": "connect",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a new Connect instance",
+      "summary": "Request a new Amazon Connect contact center instance. An engineer finalizes and reviews the Terraform before it's applied.",
+      "description": "Specify a new aws_connect_instance: its alias, how users are managed, and whether inbound/outbound calling is enabled. Hours of operation, queues, routing profiles, phone numbers, and contact flows are always finished by the engineer afterward — this form provisions the instance shell. Submitting routes it to an engineer with a draft Terraform block to review and finish.",
+      "target": {
+        "resourceType": "aws_connect_instance"
+      },
+      "params": [
+        {
+          "name": "instance_alias",
+          "label": "Instance alias",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "instance_alias",
+          "group": "identity",
+          "bounds": {
+            "pattern": "^[a-z][a-z0-9-]{1,61}[a-z0-9]$"
+          },
+          "help": "Becomes part of this instance's admin URL (<alias>.my.connect.aws) — must be unique across all of Amazon Connect."
+        },
+        {
+          "name": "identity_management_type",
+          "label": "Identity management",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "attr": "identity_management_type",
+          "group": "identity",
+          "bounds": {
+            "allowlist": [
+              "CONNECT_MANAGED",
+              "EXISTING_DIRECTORY",
+              "SAML"
+            ]
+          },
+          "default": "CONNECT_MANAGED",
+          "help": "CONNECT_MANAGED creates a self-contained user directory (simplest); EXISTING_DIRECTORY joins an AWS Directory Service directory already in the account; SAML federates sign-in to an external identity provider."
+        },
+        {
+          "name": "directory",
+          "label": "Directory",
+          "type": "string",
+          "source": "inventory",
+          "enumSource": "inventory://aws_directory_service_directory/address",
+          "required": true,
+          "role": "reference",
+          "refAttr": "id",
+          "attr": "directory_id",
+          "group": "identity",
+          "dependsOn": {
+            "param": "identity_management_type",
+            "equals": "EXISTING_DIRECTORY"
+          },
+          "help": "Required only when identity management is EXISTING_DIRECTORY."
+        },
+        {
+          "name": "inbound_calls_enabled",
+          "label": "Inbound calls",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "inbound_calls_enabled",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Allows this instance to receive inbound calls."
+        },
+        {
+          "name": "outbound_calls_enabled",
+          "label": "Outbound calls",
+          "type": "bool",
+          "source": "allowlist",
+          "required": true,
+          "attr": "outbound_calls_enabled",
+          "group": "settings",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Allows agents on this instance to place outbound calls."
+        },
+        {
+          "name": "contact_flow_logs_enabled",
+          "label": "Contact flow logs",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "contact_flow_logs_enabled",
+          "group": "observability",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Sends contact flow execution logs to CloudWatch Logs."
+        },
+        {
+          "name": "contact_lens_enabled",
+          "label": "Contact Lens analytics",
+          "type": "bool",
+          "source": "allowlist",
+          "required": false,
+          "attr": "contact_lens_enabled",
+          "group": "observability",
+          "tier": "advanced",
+          "bounds": {
+            "allowlist": [
+              true,
+              false
+            ]
+          },
+          "default": true,
+          "help": "Turns on AI-powered call and chat analytics."
+        },
+        {
+          "name": "resource_name",
+          "label": "Instance name tag",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Name",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._-]{2,60}$"
+          },
+          "help": "Shown as the name everywhere — consoles, tickets, this portal."
+        },
+        {
+          "name": "description_tag",
+          "label": "What this instance is for",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.Description",
+          "group": "tags",
+          "bounds": {
+            "maxLength": 200
+          },
+          "help": "One line an operator can act on at 3 AM."
+        },
+        {
+          "name": "pic",
+          "label": "Person in charge",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "attr": "tags.PIC",
+          "group": "tags",
+          "bounds": {
+            "pattern": "^[A-Za-z0-9 ._@-]{2,60}$"
+          },
+          "help": "Who to call about this instance."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "engineer_only",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (new resource)",
+      "group": "create",
+      "draftSkeleton": true,
+      "keywords": [
+        "new connect instance",
+        "contact center",
+        "call center instance"
+      ],
+      "decisions": [
+        "Hours of operation, queues, routing profiles, phone numbers, users, and contact flows are all engineer follow-ups added after the instance exists — this form provisions the instance shell",
+        "SAML federation metadata is an engineer decision when identity management is SAML",
+        "Storage configuration for call recordings, transcripts, and chat transcripts (the companion aws_connect_instance_storage_config, pointing at S3/Kinesis) is an engineer follow-up"
+      ]
+    }
+  ]
+}

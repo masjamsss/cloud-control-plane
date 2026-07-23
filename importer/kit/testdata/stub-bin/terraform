@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Stub `terraform` for verify.sh tests — no real terraform, no AWS. Env-driven:
+#   STUB_FMT_EXIT / STUB_INIT_EXIT / STUB_VALIDATE_EXIT   exit codes (default 0)
+#   STUB_PLAN_FILE   file whose contents `plan` prints
+#   STUB_PLAN_EXIT   exit code for `plan` (default 0)
+set -u
+case "${1:-}" in
+  fmt)      exit "${STUB_FMT_EXIT:-0}" ;;
+  init)     exit "${STUB_INIT_EXIT:-0}" ;;
+  validate) echo "Success! The configuration is valid."; exit "${STUB_VALIDATE_EXIT:-0}" ;;
+  plan)
+    if [ -n "${STUB_PLAN_FILE:-}" ] && [ -f "${STUB_PLAN_FILE}" ]; then cat "${STUB_PLAN_FILE}"; fi
+    exit "${STUB_PLAN_EXIT:-0}"
+    ;;
+  *) exit 0 ;;
+esac

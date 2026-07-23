@@ -1,0 +1,1 @@
+{"service":"app-security-group","types":{"azurerm_application_security_group":{"attrs":[{"n":"location","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"tags","t":"map"}],"blocks":[]}}}

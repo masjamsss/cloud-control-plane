@@ -1,0 +1,9 @@
+--- a/environments/prod/storage.tf
++++ b/environments/prod/storage.tf
+@@ -4,5 +4,6 @@
+ 
+   tags = {
+     Owner = "x"
++    team  = "z"
+   }
+ }

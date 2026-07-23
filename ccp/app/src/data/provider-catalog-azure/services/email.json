@@ -1,0 +1,1 @@
+{"service":"email","types":{"azurerm_email_communication_service_domain_sender_username":{"attrs":[{"n":"email_service_domain_id","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"display_name","t":"string"}],"blocks":[]}}}

@@ -1,0 +1,1 @@
+{"service":"cloudcontrolapi","types":{"aws_cloudcontrolapi_resource":{"attrs":[{"n":"desired_state","t":"string","r":1},{"n":"type_name","t":"string","r":1},{"n":"region","t":"string"},{"n":"role_arn","t":"string"},{"n":"schema","t":"string","s":1},{"n":"type_version_id","t":"string"}],"blocks":[]}}}

@@ -1,0 +1,1 @@
+{"service":"ip-group","types":{"azurerm_ip_group":{"attrs":[{"n":"location","t":"string","r":1},{"n":"name","t":"string","r":1},{"n":"resource_group_name","t":"string","r":1},{"n":"cidrs","t":"list"},{"n":"tags","t":"map"}],"blocks":[]}}}

@@ -1,0 +1,481 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--bg-canvas);
+}
+
+.shell__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: 0 var(--space-8);
+  height: 60px;
+  /* Ledger quiet bar: sits on the canvas (not a raised white surface) with
+     only a bottom hairline separating it — the chrome recedes so the page
+     content underneath carries the weight. */
+  background: var(--bg-canvas);
+  border-bottom: 1px solid var(--border-hairline);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.shell__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.shell__brand:hover {
+  text-decoration: none;
+}
+
+.shell__mark {
+  color: var(--accent);
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* Hidden only below the 480px breakpoint (F-08) — see that block. Its own
+   rule (rather than folding straight into .shell__brand) so the mark can
+   stay put while just the text disappears. */
+.shell__wordmark {
+  display: inline;
+}
+
+.shell__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.shell__link {
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-2);
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.shell__link:hover {
+  color: var(--text-primary);
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+/* Ledger active-nav: an accent underline on the link itself, not a filled
+   pill — the quiet-chrome contract's one exception to "no color in nav". */
+.shell__link--active {
+  color: var(--text-primary);
+  background: none;
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* Mobile overflow-nav trigger — hidden entirely at desktop widths; the
+   @media (max-width: 720px) block below is the ONLY place that reveals it, at
+   the exact breakpoint where .shell__nav is hidden, so the two never overlap. */
+.shell__nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  transition: border-color var(--dur-base) var(--ease-standard), background-color var(--dur-base) var(--ease-standard);
+}
+.shell__nav-toggle:hover {
+  border-color: var(--border-hairline);
+  background: var(--surface-2);
+}
+.shell__nav-toggle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Overflow-nav menu content — same surface/entrance idiom as
+   .acctmenu__menu/.projswitch__menu (Radix popper, portalled). */
+.shell__navmenu {
+  min-width: 200px;
+  padding: var(--space-3);
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  box-shadow: 0 2px 4px rgba(20, 28, 38, 0.04), 0 14px 36px rgba(20, 28, 38, 0.14);
+  z-index: 40;
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+  animation: menu-pop var(--dur-base) var(--ease-emphasized);
+}
+.shell__navmenu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  border: none;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  text-decoration: none;
+}
+.shell__navmenu-item:hover,
+.shell__navmenu-item[data-highlighted] {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.shell__navmenu-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+/* Current route (Ledger's one accent exception, mirrored from
+   .shell__link--active's underline as a left bar in this vertical layout). */
+.shell__navmenu-item[aria-current='page'] {
+  color: var(--text-primary);
+  font-weight: 600;
+  background: var(--surface-2);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* Visible search entry (Task 2) — sits between nav and spacer. Opens the same
+   Cmd/Ctrl+K palette as the keyboard shortcut; a discoverable affordance for
+   anyone who doesn't already know the shortcut exists. */
+.shell__search {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.2;
+  transition: border-color var(--dur-base) var(--ease-standard), background-color var(--dur-base) var(--ease-standard);
+}
+.shell__search:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.shell__search:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.shell__search-icon {
+  font-size: 14px;
+  color: var(--text-faint);
+}
+.shell__search-kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-1);
+  background: var(--surface-2);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.shell__spacer {
+  flex: 1 1 auto;
+}
+
+.shell__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.shell__main {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--space-9) var(--space-8) var(--space-11);
+}
+
+/* Estate-wide freeze banner (LD-4) — sticks directly under the 60px header
+   bar (same sticky idiom, one z-index below it) so it stays visible while
+   scrolling any page, not just the top of the first one. Same --warn
+   semantic Settings' own change-freeze indicator uses
+   (settings-admin.css's .settings__freeze--on), so "frozen" reads as the
+   same state wherever it's seen. */
+.shell__freeze {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-8);
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface-1));
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 40%, var(--border-default));
+  position: sticky;
+  top: 60px;
+  z-index: 29;
+}
+.shell__freeze-icon {
+  flex: 0 0 auto;
+  color: var(--warn);
+  font-size: 14px;
+}
+.shell__freeze-text {
+  flex: 1 1 auto;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.shell__freeze-link {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .shell__bar {
+    gap: var(--space-5);
+    padding: 0 var(--space-5);
+  }
+
+  /* Primary nav has no room at phone widths (Leads have five destinations:
+     Home, My requests, Approvals, Dashboard, Admin) and previously just got
+     squeezed toward zero width instead of clipping gracefully — reachable in
+     the DOM but not in practice. Below this breakpoint it's fully replaced by
+     the .shell__nav-toggle overflow menu, which renders the exact same
+     role-gated destinations; .shell__spacer keeps its default flex-grow so
+     search + notifications + account stay pinned to the right edge same as
+     desktop. */
+  .shell__nav {
+    display: none;
+  }
+  .shell__nav-toggle {
+    display: inline-flex;
+  }
+
+  .shell__meta {
+    flex: 0 0 auto;
+    gap: var(--space-4);
+  }
+
+  .shell__main {
+    padding: var(--space-7) var(--space-5) var(--space-10);
+  }
+
+  /* Icon-only below 720px (Task 2) — the label + kbd hint would crowd an
+     already-tight phone-width bar. */
+  .shell__search {
+    flex: 0 0 auto;
+    padding: var(--space-3);
+  }
+  .shell__search-label,
+  .shell__search-kbd {
+    display: none;
+  }
+
+  .shell__freeze {
+    padding: var(--space-4) var(--space-5);
+    flex-wrap: wrap;
+  }
+}
+
+/* F-08: at 380px the bar still measured ~426px wide even with the 720px
+   overflow-nav swap above — the brand wordmark (the instance name
+   at 17px bold, non-shrinkable: white-space:nowrap and no max-width) was
+   the single largest fixed-width element left. Below this width the ◆ mark
+   alone stands in for it (the link and its aria-label are unchanged), and
+   the bar's own gaps/padding tighten a step further. Acceptance: body
+   scrollWidth === innerWidth at 380px on every route. */
+@media (max-width: 480px) {
+  .shell__bar {
+    gap: var(--space-3);
+    padding: 0 var(--space-4);
+  }
+
+  .shell__wordmark {
+    display: none;
+  }
+
+  .shell__meta {
+    gap: var(--space-3);
+  }
+
+  .shell__freeze {
+    padding: var(--space-3) var(--space-4);
+    gap: var(--space-3);
+  }
+}
+
+/* Skip link — visible only on keyboard focus (UIUX-13 a11y) */
+.shell__skip {
+  position: absolute;
+  left: var(--space-4);
+  top: -48px;
+  z-index: 60;
+  padding: var(--space-3) var(--space-5);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-radius: var(--radius-2);
+  text-decoration: none;
+  transition: top var(--dur-fast) var(--ease-standard);
+}
+.shell__skip:focus-visible {
+  top: var(--space-4);
+  outline: 2px solid var(--accent-ink);
+  outline-offset: 2px;
+}
+#main-content:focus {
+  outline: none;
+}
+/* Skip-link / anchor jumps must clear the 60px sticky bar, not land under it. */
+#main-content {
+  scroll-margin-top: 72px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shell__skip {
+    transition: none;
+  }
+  .shell__nav-toggle {
+    transition: none;
+  }
+  .shell__navmenu {
+    animation: none;
+  }
+}
+
+/* Project identity chip — reads from the runtime project config (R3), so the
+   same build labels whichever estate it serves. Also the ProjectSwitcher's
+   trigger (R3 §5.4b) when more than one project is registered. */
+.shell__project {
+  display: inline-flex;
+  align-items: center;
+  max-width: 220px;
+  /* F-19: overflow:hidden below gives this pill an automatic min-width of
+     0 in the flex row (the brand wordmark and nav links have no such
+     escape hatch, so they never shrink) — it silently absorbed ALL of the
+     bar's crowding, down to whatever was left, which is how six nav items
+     (a lead's full set) squeezed it to "Example Est…" while four (a
+     requester's) left it whole. A floor stops it being crushed past
+     legibility; the title attr (ProjectSwitcher.tsx) covers whatever still
+     truncates. */
+  min-width: 96px;
+  margin-left: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+@media (max-width: 720px) {
+  .shell__project {
+    display: none;
+  }
+}
+
+/* Switcher variant: a real button (Radix DropdownMenu.Trigger), so it needs
+   the interactive affordances the plain read-only chip doesn't. */
+.shell__project--switcher {
+  gap: var(--space-2);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-2);
+  font: inherit;
+  cursor: pointer;
+}
+.shell__project--switcher:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+.shell__project--switcher:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.shell__project-caret {
+  font-size: 9px;
+  color: var(--text-faint);
+}
+
+.projswitch__menu {
+  min-width: 260px;
+  max-width: 340px;
+  padding: var(--space-3);
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-3);
+  box-shadow: 0 2px 4px rgba(20, 28, 38, 0.04), 0 14px 36px rgba(20, 28, 38, 0.14);
+  z-index: 40;
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+  animation: menu-pop var(--dur-base) var(--ease-emphasized);
+}
+.projswitch__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4);
+  border: none;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.projswitch__item:hover,
+.projswitch__item[data-highlighted] {
+  background: var(--surface-2);
+}
+.projswitch__item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.projswitch__check {
+  display: inline-flex;
+  width: 14px;
+  justify-content: center;
+  color: var(--accent);
+  font-size: 12px;
+}
+.projswitch__label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.projswitch__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.projswitch__meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

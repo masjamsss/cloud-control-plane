@@ -1,0 +1,12 @@
+# Build-context excludes for the api image (context = ccp/, see api/Dockerfile).
+# NEVER ship host-built node_modules (wrong platform for the linux image) or any
+# runtime secret/state into the build context.
+**/node_modules
+**/dist
+**/.ccp-data
+**/coverage
+**/*.log
+**/.env
+**/.env.*
+.git
+.DS_Store

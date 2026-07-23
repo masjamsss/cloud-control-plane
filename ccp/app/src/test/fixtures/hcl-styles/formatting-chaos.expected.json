@@ -1,0 +1,21 @@
+{
+  "blockCount": 6,
+  "addresses": [
+    "aws_instance.tabs",
+    "aws_instance.four_space",
+    "aws_s3_bucket.indented_top_level",
+    "aws_instance.oneliner",
+    "aws_instance.no_gap_above",
+    "aws_ebs_volume.trailing_ws"
+  ],
+  "probes": [
+    {
+      "address": "aws_instance.oneliner",
+      "exactSource": "resource \"aws_instance\" \"oneliner\" { instance_type = \"c6i.large\" }"
+    },
+    {
+      "address": "aws_s3_bucket.indented_top_level",
+      "exactSource": "resource \"aws_s3_bucket\" \"indented_top_level\" {\n    bucket = \"legal-but-indented\"\n  }"
+    }
+  ]
+}

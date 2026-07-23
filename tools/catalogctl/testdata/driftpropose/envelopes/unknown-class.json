@@ -1,0 +1,49 @@
+{
+  "schema": "ccp.drift/v1",
+  "projectId": "sample",
+  "environment": "prod",
+  "capturedAt": "2026-07-20T03:17:04Z",
+  "runId": "16234567894",
+  "commit": "1370355eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "cadenceHours": 6,
+  "planExitCode": 2,
+  "report": {
+    "meta": { "format_version": "1.2", "terraform_version": "1.9.0", "provider_tag": "aws-v6.53.0" },
+    "counts": { "some_future_class_z": 1 },
+    "absorbed": [],
+    "invisible_to_plan": "out-of-band CREATED resources — detection is the importer-kit account sweep (resourcegroupstaggingapi), disposition import-and-adopt or delete-in-AWS (human)",
+    "verdicts": [
+      {
+        "address": "aws_instance.futurebox01",
+        "type": "aws_instance",
+        "actions": ["update"],
+        "actionReason": null,
+        "driftEvidence": true,
+        "class": "some_future_class_z",
+        "riskTier": "low",
+        "recommendation": "NOTE (fixture intent): a class id outside the closed eleven-id D1-D11 enum — a hypothetical future/additive classifier class. Every consumer must fail closed on this, per the 0027 §2.4.3 stability contract, even though every other field on this row looks adopt-shaped.",
+        "neverDo": "n/a (fixture)",
+        "executor": "n/a (fixture)",
+        "forceNewAttrs": [],
+        "securityHits": [],
+        "computedUnknown": [],
+        "notes": [],
+        "changedAttrs": [
+          {
+            "path": "tags.Owner",
+            "live": "\"a\"",
+            "code": "\"b\"",
+            "forceNew": "in_place",
+            "forceNewWhy": "tags are provider-wide in-place (dedicated update path)",
+            "noiseEqual": false,
+            "churn": "",
+            "sensitive": false,
+            "liveJson": "a",
+            "codeJson": "b",
+            "pathSegments": ["tags", "Owner"]
+          }
+        ]
+      }
+    ]
+  }
+}

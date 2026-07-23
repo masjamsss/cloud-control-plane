@@ -1,0 +1,29 @@
+/* ============================================================================
+   AdvisoryGate — the §0 arming wrapper. A control rendered inside it before
+   ccp-api is authoritative is visible but inert; the note explains why.
+   ============================================================================ */
+.advisory-gate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+.advisory-gate:disabled,
+.advisory-gate[disabled] {
+  opacity: 0.72;
+}
+.advisory-gate__note {
+  margin: 0;
+  padding: var(--space-3) var(--space-5);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  /* Quieter than the old dashed border-hover (Ledger idiom — hairline, not a
+     heavier decorative border). */
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+}

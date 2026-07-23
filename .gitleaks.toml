@@ -1,0 +1,68 @@
+# .gitleaks.toml — publish-gate PG-9 configuration (scripts/publish-gate.sh).
+#
+# Extends gitleaks' built-in ruleset (AWS keys, generic high-entropy secrets, private
+# keys, etc. — see https://github.com/gitleaks/gitleaks for the catalogue) and layers
+# allowlist exceptions, all DELIBERATELY PUBLIC PLACEHOLDERS, never a real value:
+#
+#   1. The scrub-sentinel GUID — an obviously-fake GUID used as a shared test oracle.
+#      GUID-shaped on purpose so shape-based secret detection still exercises the same
+#      code path; it was never a live credential.
+#   2. .env.example templates — repo-wide, placeholder-only by convention:
+#      CCP_TOTP_KEY=REPLACE_ME__run: openssl rand -base64 48 and
+#      CCP_TOTP_KEY=change-me-to-a-long-random-value are deliberately secret-shaped
+#      so operators know what to fill in, never usable as-is.
+#   3. catalogctl golden HCL test corpus (tools/catalogctl/testdata/golden/**) — the
+#      tool's fixtures DELIBERATELY carry secret-shaped SYNTHETIC values (VPN-tunnel
+#      pre-shared keys like PriorKeyTunnelOne0001, EFS creation tokens) so the
+#      redaction / PSK-rotation code paths are exercised. Exempt the whole fixture class
+#      (like .env.example) rather than chase individual lines; never real secrets.
+#
+# This file ships public. It must never gain a real account id, real AKIA id, a real
+# email, or a customer domain. Any real-literal detection belongs in the untracked
+# `.estate-denylist.json` consumed by `scripts/publish-gate.sh --denylist`, never here.
+
+title = "cloud-control-plane publish-gate gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Deliberate public placeholders — never real secrets"
+
+# The re-oracle sentinel GUID, and identical constants in
+# tools/catalogctl/internal/hclops/redact_test.go and the ccp/app/src/test/*.test.ts
+# suites that swap in for the old test oracle.
+regexes = [
+  '''12345678-1234-5678-1234-567812345678''',
+  # Legacy-era localStorage key NAMES (read-only migration keys in
+  # ccp/app/src/lib/*.ts) — identifiers, never secrets.
+  '''gerbang\.[a-z-]+\.v1''',
+  # RFC 6238 Appendix B standard TOTP test seed (ASCII "12345678901234567890"
+  # in base32) — a published standards-body known-answer vector used by the TOTP
+  # unit tests (authFlow.test.ts, totpQr.test.tsx); never a real secret.
+  '''GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ''',
+]
+
+# .env.example files are placeholder-only by convention — exempt the whole file class
+# rather than chase individual lines (there are 3: ccp/.env.example,
+# ccp/api/.env.example, ccp/app/.env.example).
+paths = [
+  '''(^|/)\.env\.example$''',
+  # catalogctl golden HCL test corpus (see exception 3 above): synthetic secret-shaped
+  # fixtures, never real values.
+  '''(^|/)tools/catalogctl/testdata/golden/.+\.(tf|ya?ml)$''',
+  # v1 migration-export test fixture: documented synthetic accounts (password
+  # 'test-password-1', fixed salt — see the file's own _README).
+  '''(^|/)ccp/api/test/fixtures/v1-export\.json$''',
+]
+
+# Placeholder markers that make otherwise secret-shaped example values self-evidently
+# fake. Matched case-sensitively against the candidate secret text by gitleaks; both
+# casings used in-repo today are listed explicitly rather than relying on a case-fold.
+stopwords = [
+  "REPLACE_ME",
+  "replace_me",
+  "CHANGE_ME",
+  "change-me",
+  "changeme",
+]

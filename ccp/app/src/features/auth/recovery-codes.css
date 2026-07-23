@@ -1,0 +1,43 @@
+/* ============================================================================
+   The one-time recovery-code save ceremony (RecoveryCodesCeremony.tsx).
+   Shared by the forced first sign-in flow and the standing Account page.
+   ============================================================================ */
+
+.codes-ceremony {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.codes-ceremony__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: var(--space-5);
+  list-style: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2);
+}
+
+.codes-ceremony__code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+  user-select: all;
+}
+
+.codes-ceremony__download {
+  align-self: flex-start;
+  width: auto;
+  padding: 4px 0;
+}
+
+@media (max-width: 420px) {
+  .codes-ceremony__grid {
+    grid-template-columns: 1fr;
+  }
+}

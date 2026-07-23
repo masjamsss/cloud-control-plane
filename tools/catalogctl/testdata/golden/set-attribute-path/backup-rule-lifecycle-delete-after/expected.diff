@@ -1,0 +1,11 @@
+--- a/environments/prod/backup.tf
++++ b/environments/prod/backup.tf
+@@ -7,7 +7,7 @@
+     schedule          = "cron(0 5 ? * * *)"
+ 
+     lifecycle {
+-      delete_after = 30
++      delete_after = 120
+     }
+   }
+ 

@@ -1,0 +1,62 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.15.7",
+  "resource_changes": [
+    {
+      "address": "data.aws_ami.al2",
+      "mode": "data",
+      "type": "aws_ami",
+      "name": "al2",
+      "change": {
+        "actions": ["read"],
+        "before": null,
+        "after": { "id": "ami-0abc" },
+        "after_unknown": {},
+        "before_sensitive": false,
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "aws_instance.stable",
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "stable",
+      "change": {
+        "actions": ["no-op"],
+        "before": { "instance_type": "r6i.large" },
+        "after": { "instance_type": "r6i.large" },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "aws_security_group.legacy",
+      "mode": "managed",
+      "type": "aws_security_group",
+      "name": "legacy",
+      "change": {
+        "actions": ["delete"],
+        "before": { "name": "legacy-sg", "description": "AZURE_TO_AWS_SG" },
+        "after": null,
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "aws_db_instance.reporting",
+      "mode": "managed",
+      "type": "aws_db_instance",
+      "name": "reporting",
+      "change": {
+        "actions": ["update"],
+        "before": { "allocated_storage": 100, "password": "old-secret" },
+        "after": { "allocated_storage": 200, "password": "new-secret" },
+        "after_unknown": {},
+        "before_sensitive": { "password": true },
+        "after_sensitive": { "password": true }
+      }
+    }
+  ]
+}

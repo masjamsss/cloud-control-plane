@@ -1,0 +1,60 @@
+{
+  "service": "backup",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_backup_plan"
+  ],
+  "summary": "AWS Backup plan rule editing via 0010 U1 (2-deep path + rule selector).",
+  "operations": [
+    {
+      "id": "backup-set-rule-delete-after",
+      "service": "backup",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set a backup rule's retention (lifecycle.delete_after)",
+      "description": "Set delete_after inside the lifecycle block of one selected rule of a backup plan.",
+      "target": {
+        "resourceType": "aws_backup_plan",
+        "path": [
+          "rule",
+          "lifecycle"
+        ]
+      },
+      "params": [
+        {
+          "name": "plan",
+          "label": "Backup plan",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "rule_name",
+          "label": "Rule",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "selector",
+          "matchAttr": "rule_name"
+        },
+        {
+          "name": "delete_after",
+          "label": "Retention (days)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 36500
+          }
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "terraformCapability": "~ update (rule[selected].lifecycle.delete_after)"
+    }
+  ]
+}

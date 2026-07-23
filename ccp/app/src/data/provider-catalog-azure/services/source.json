@@ -1,0 +1,1 @@
+{"service":"source","types":{"azurerm_source_control_token":{"attrs":[{"n":"token","t":"string","r":1,"s":1},{"n":"type","t":"string","r":1},{"n":"token_secret","t":"string","s":1}],"blocks":[]}}}

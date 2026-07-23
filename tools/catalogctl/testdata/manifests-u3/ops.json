@@ -1,0 +1,160 @@
+{
+  "service": "u3-fixtures",
+  "operations": [
+    {
+      "id": "dynamodb-resize-capacity",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Resize a DynamoDB table's provisioned capacity",
+      "target": {
+        "resourceType": "aws_dynamodb_table"
+      },
+      "terraformCapability": "~ update",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "table",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "read_capacity",
+          "source": "user_input",
+          "type": "number",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "growOnly": true
+          }
+        },
+        {
+          "name": "write_capacity",
+          "source": "user_input",
+          "type": "number",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "growOnly": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "dynamodb-set-sse-dotted",
+      "service": "dynamodb",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Set a nested (dotted) attribute — unsupported path",
+      "target": {
+        "resourceType": "aws_dynamodb_table"
+      },
+      "terraformCapability": "~ update",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "table",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "sse_enabled",
+          "source": "user_input",
+          "type": "boolean",
+          "required": true,
+          "attr": "server_side_encryption.enabled"
+        }
+      ]
+    },
+    {
+      "id": "lb-tune-health-check",
+      "service": "elbv2",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Tune a target group's health-check thresholds (nested block)",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "health_check"
+        ]
+      },
+      "terraformCapability": "~ update",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "target_group",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "interval",
+          "source": "user_input",
+          "type": "number",
+          "required": true,
+          "bounds": {
+            "min": 1
+          }
+        },
+        {
+          "name": "timeout",
+          "source": "user_input",
+          "type": "number",
+          "required": true,
+          "bounds": {
+            "min": 1
+          }
+        },
+        {
+          "name": "healthy_threshold",
+          "source": "user_input",
+          "type": "number",
+          "required": true,
+          "bounds": {
+            "min": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "lb-grow-hc-interval",
+      "service": "elbv2",
+      "macd": "Change",
+      "codemodOp": "set_attributes",
+      "title": "Raise a target group's health-check interval (nested grow-only)",
+      "target": {
+        "resourceType": "aws_lb_target_group",
+        "path": [
+          "health_check"
+        ]
+      },
+      "terraformCapability": "~ update",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "target_group",
+          "source": "inventory",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "interval",
+          "source": "user_input",
+          "type": "number",
+          "required": true,
+          "bounds": {
+            "growOnly": true
+          }
+        },
+        {
+          "name": "timeout",
+          "source": "user_input",
+          "type": "number",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

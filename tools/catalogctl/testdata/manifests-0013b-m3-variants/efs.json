@@ -1,0 +1,60 @@
+{
+  "service": "efs",
+  "scope": "estate",
+  "resourceTypes": [
+    "aws_efs_file_system"
+  ],
+  "summary": "0013b M3 refusal fixtures — variant efs ops that each trip one fail-closed matchPresence code. Hand-crafted to exercise selectByPresence's runtime gates.",
+  "operations": [
+    {
+      "id": "efs-set-lifecycle-transition-to-ia-noensure",
+      "service": "efs",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Set the IA transition (ensurePath OFF)",
+      "description": "Identical to efs-set-lifecycle-transition-to-ia but WITHOUT ensurePath: zero lifecycle_policy siblings carrying transition_to_ia stays PATH_NOT_FOUND instead of creating one.",
+      "target": {
+        "resourceType": "aws_efs_file_system",
+        "path": [
+          "lifecycle_policy"
+        ],
+        "matchPresence": {
+          "lifecycle_policy": "transition_to_ia"
+        }
+      },
+      "params": [
+        {
+          "name": "file_system",
+          "type": "string",
+          "source": "inventory",
+          "required": true
+        },
+        {
+          "name": "transition_to_ia",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "AFTER_1_DAY",
+              "AFTER_7_DAYS",
+              "AFTER_14_DAYS",
+              "AFTER_30_DAYS",
+              "AFTER_60_DAYS",
+              "AFTER_90_DAYS",
+              "AFTER_180_DAYS",
+              "AFTER_270_DAYS",
+              "AFTER_365_DAYS"
+            ]
+          }
+        }
+      ],
+      "riskFloor": "LOW",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "terraformCapability": "~ update (lifecycle_policy[transition_to_ia].transition_to_ia)"
+    }
+  ]
+}

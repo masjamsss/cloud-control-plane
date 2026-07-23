@@ -1,0 +1,22 @@
+{
+ "aws_s3_bucket.app_data": {
+  "file": "ccp/app/fixtures-estate/s3.tf",
+  "line": 3,
+  "source": "resource \"aws_s3_bucket\" \"app_data\" {\n  bucket = \"example-estate-app-data\"\n\n  tags = {\n    Name        = \"app-data\"\n    PIC         = \"user01@example.com\"\n    Description = \"Application data bucket\"\n  }\n\n  lifecycle {\n    prevent_destroy = true\n  }\n}"
+ },
+ "aws_s3_bucket_versioning.app_data": {
+  "file": "ccp/app/fixtures-estate/s3.tf",
+  "line": 17,
+  "source": "resource \"aws_s3_bucket_versioning\" \"app_data\" {\n  bucket = aws_s3_bucket.app_data.id\n  versioning_configuration {\n    status = \"Enabled\"\n  }\n}"
+ },
+ "aws_s3_bucket_server_side_encryption_configuration.app_data": {
+  "file": "ccp/app/fixtures-estate/s3.tf",
+  "line": 24,
+  "source": "resource \"aws_s3_bucket_server_side_encryption_configuration\" \"app_data\" {\n  bucket = aws_s3_bucket.app_data.id\n  rule {\n    apply_server_side_encryption_by_default {\n      sse_algorithm     = \"aws:kms\"\n      kms_master_key_id = aws_kms_key.app_key.arn\n    }\n  }\n}"
+ },
+ "aws_s3_bucket.logs": {
+  "file": "ccp/app/fixtures-estate/s3.tf",
+  "line": 34,
+  "source": "resource \"aws_s3_bucket\" \"logs\" {\n  bucket = \"example-estate-access-logs\"\n\n  tags = {\n    Name        = \"logs\"\n    PIC         = \"user02@example.com\"\n    Description = \"Access log bucket\"\n  }\n\n  lifecycle {\n    prevent_destroy = true\n  }\n}"
+ }
+}

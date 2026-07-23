@@ -1,0 +1,11 @@
+--- a/environments/prod/disk.tf
++++ b/environments/prod/disk.tf
+@@ -4,7 +4,7 @@
+   location             = "eastus"
+   storage_account_type = "Premium_LRS"
+   create_option        = "Empty"
+-  disk_size_gb         = 128
++  disk_size_gb         = 256
+ 
+   tags = {
+     Owner = "platform"

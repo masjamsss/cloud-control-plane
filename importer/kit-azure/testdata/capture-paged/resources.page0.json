@@ -1,0 +1,16 @@
+{
+  "data": [
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-app/providers/Microsoft.Network/virtualNetworks/vnet-page0",
+      "name": "vnet-page0",
+      "type": "microsoft.network/virtualnetworks",
+      "location": "southeastasia",
+      "resourceGroup": "rg-app",
+      "subscriptionId": "00000000-0000-0000-0000-000000000000",
+      "tags": {}
+    }
+  ],
+  "count": 1,
+  "total_records": 2,
+  "skip_token": "PAGE0TOKEN=="
+}

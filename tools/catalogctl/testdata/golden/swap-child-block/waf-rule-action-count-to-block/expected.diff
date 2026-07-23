@@ -1,0 +1,12 @@
+--- a/environments/prod/waf.tf
++++ b/environments/prod/waf.tf
+@@ -79,7 +79,8 @@
+     priority = 3
+ 
+     action {
+-      count {}
++      block {
++      }
+     }
+ 
+     statement {
