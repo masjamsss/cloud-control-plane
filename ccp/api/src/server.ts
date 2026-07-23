@@ -60,6 +60,25 @@ async function start(): Promise<void> {
     ensureProjectDataRoot(resolveProjectDataRoot());
   }
 
+  if (process.env.CCP_BOOTSTRAP === '1') {
+    // Refuse bootstrap when a data file is PRESENT on disk regardless of contents
+    // (adversarial finding): a present-but-accountless file (valid `[]`, zeroed,
+    // half-restored) must not reseed a fresh admin over a vanished chain.
+    // bootstrap()'s own account-presence check can't see this — an emptied file
+    // loads 0 accounts. Only a truly ABSENT file is a fresh deploy.
+    //
+    // This check MUST run before the store opens: FileStore.open and the boot-time
+    // settlement pass both materialize/touch the store file, so checking after them
+    // would refuse EVERY fresh first boot against the file this very process just
+    // created (the exact failure the install smoke caught on its first CI run).
+    if (dataFile !== null && existsSync(dataFile)) {
+      console.error(
+        `ccp-api: bootstrap refused — data file ${dataFile} already exists on disk; refusing to re-provision (remove it to start fresh).`,
+      );
+      process.exit(1);
+    }
+  }
+
   const store = await selectStore();
   const app = createApp(store);
 
@@ -92,18 +111,8 @@ async function start(): Promise<void> {
   }
 
   if (process.env.CCP_BOOTSTRAP === '1') {
-    // Refuse bootstrap when a data file is PRESENT on disk regardless of contents
-    // (adversarial finding): a present-but-accountless file (valid `[]`,
-    // zeroed, half-restored) must not reseed a fresh admin over a vanished chain.
-    // bootstrap()'s own account-presence check can't see this — an emptied file
-    // loads 0 accounts. Only a truly ABSENT file is a fresh deploy.
-    const file = resolveDataFile();
-    if (file !== null && existsSync(file)) {
-      console.error(
-        `ccp-api: bootstrap refused — data file ${file} already exists on disk; refusing to re-provision (remove it to start fresh).`,
-      );
-      process.exit(1);
-    }
+    // Disk-presence refusal ran BEFORE the store opened (see above). What remains here
+    // is the store-level account-presence refusal for non-file backends.
     const res = await bootstrap(store);
     if (!res.ok) {
       console.error(`ccp-api: bootstrap refused (${res.reason}) — the backend already holds data; refusing to re-provision.`);
