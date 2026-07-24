@@ -1,10 +1,13 @@
 import { createHash } from 'node:crypto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store/memoryStore';
 import type { ConfigStore } from '../src/store/configStore';
-import type { AuditItem } from '../src/store/schema';
+import type { AuditItem, ProjectOnboardTokenItem } from '../src/store/schema';
+import { onboardTokenKey } from '../src/store/schema';
 import { __resetKnownProjectsForTests, isKnownProject } from '../src/projects';
+import { __setNow } from '../src/clock';
+import { UPLOAD_RATE_CAPACITY, __resetUploadRateLimitForTests } from '../src/middleware/rateLimit';
 import { seed, seedAccount, sessionCookieFor } from './helpers/seed';
 
 /**
@@ -119,7 +122,11 @@ async function auditActions(store: ConfigStore, projectId = 'sample'): Promise<s
   return items.map((i) => i.action);
 }
 
-beforeEach(() => __resetKnownProjectsForTests());
+beforeEach(() => {
+  __resetKnownProjectsForTests();
+  __resetUploadRateLimitForTests();
+});
+afterEach(() => __setNow(null));
 
 describe('authz — every endpoint refuses the wrong caller (fail closed)', () => {
   it('GET /projects: no session → 401; any bound session → 200', async () => {
@@ -504,6 +511,384 @@ describe('PUT /projects/:id/trust-request — the artifact upload + sha binding'
     const res = await upload(app, lina);
     expect(res.status).toBe(409);
     expect((await res.json()).code).toBe('STATE_CONFLICT');
+  });
+});
+
+/* ═══ pre-trust onboarding tokens (easy-first-import spec §3 A-ii/A-iii) ══
+ * A SEPARATE credential from the CI upload token (projectData.test.ts):
+ * separate key namespace, EXACT INVERSE status gate (draft/pending-trust
+ * only), and it authorizes exactly one verb — the Bearer lane grafted onto
+ * PUT /:id/trust-request below. */
+
+async function mintOnboard(app: App, cookie: string, id = 'acme', body?: unknown): Promise<Response> {
+  return app.request(`/projects/${id}/onboard-tokens`, {
+    method: 'POST',
+    headers: hdrs(cookie, { json: true }),
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+}
+
+async function mintOnboardToken(app: App, cookie: string, id = 'acme'): Promise<{ tokenId: string; token: string; expiresAt: string }> {
+  const res = await mintOnboard(app, cookie, id);
+  expect(res.status).toBe(201);
+  return (await res.json()) as { tokenId: string; token: string; expiresAt: string };
+}
+
+/** The onboard-token Bearer lane: NO cookie, NO CSRF client header — a CI
+ * flow, mirrors projectData.test.ts's `upload` helper for PUT /:id/data. */
+async function uploadViaOnboardToken(app: App, token: string, body: unknown = artifacts(), id = 'acme'): Promise<Response> {
+  return app.request(`/projects/${id}/trust-request`, {
+    method: 'PUT',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+/** register → upload trust artifacts (session) → propose → second-admin ack. */
+async function driveToTrusted(app: App, putra: string, lina: string, root: string, id = 'acme'): Promise<void> {
+  await register(app, putra, { id, name: id, github: { owner: 'acme-co', repo: 'terraform-acme' } });
+  await upload(app, lina, artifacts(), id);
+  const pending = await (await proposeTrust(app, putra, id)).json();
+  const ack = await app.request(`/admin/config-changes/${pending.id}/ack`, { method: 'POST', headers: hdrs(root) });
+  expect(ack.status).toBe(200);
+}
+
+describe('POST /projects/:id/onboard-tokens — mint (lead+isAdmin, draft/pending-trust only)', () => {
+  it('mints at draft: 201 {tokenId, token, expiresAt}; the secret is shown once, only its argon2id hash is stored, revokedAt absent, audited to the TARGET chain (not the acting scope)', async () => {
+    const { app, store, putra } = await setup();
+    expect((await register(app, putra)).status).toBe(201); // draft
+
+    const res = await mintOnboard(app, putra);
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { tokenId: string; token: string; expiresAt: string };
+    expect(body.token.startsWith(`${body.tokenId}.`)).toBe(true);
+    expect(Date.parse(body.expiresAt)).toBeGreaterThan(Date.now());
+
+    const k = onboardTokenKey('acme', body.tokenId);
+    const row = (await store.get(k.PK, k.SK)) as ProjectOnboardTokenItem;
+    expect(row.secretHash.startsWith('$argon2id$')).toBe(true);
+    expect(row.revokedAt).toBeUndefined();
+    const secret = body.token.split('.')[1]!;
+    expect(JSON.stringify(row)).not.toContain(secret);
+
+    expect(await auditActions(store, 'acme')).toContain('onboard-token-mint');
+    // Registry lifecycle (register) stays on the acting scope's chain; the
+    // credential mint against 'acme' must NOT also hide there.
+    expect(await auditActions(store)).not.toContain('onboard-token-mint');
+  });
+
+  it('mints at pending-trust too (the other half of the allowed window)', async () => {
+    const { app, putra, lina } = await setup();
+    await register(app, putra);
+    expect((await upload(app, lina)).status).toBe(200); // -> pending-trust
+    expect((await mintOnboard(app, putra)).status).toBe(201);
+  });
+
+  it('refuses once trusted (409) and once archived (409) — the EXACT INVERSE of the upload token gate; unknown project → 404', async () => {
+    const { app, putra, lina, root } = await setup();
+    expect((await mintOnboard(app, putra, 'ghost')).status).toBe(404);
+
+    await driveToTrusted(app, putra, lina, root);
+    const trusted = await mintOnboard(app, putra);
+    expect(trusted.status).toBe(409);
+    expect((await trusted.json()).code).toBe('STATE_CONFLICT');
+    // 'ready' takes the SAME `ONBOARDABLE.has(status)` false branch as
+    // 'trusted' above — not re-driven through data upload/activation here
+    // (that whole ladder is projectData.test.ts's job) to keep this file
+    // filesystem-free; both are equally excluded from {draft, pending-trust}.
+
+    // A fresh DRAFT project can be archived directly (archive has no status
+    // precondition of its own) — proves the archived branch independently
+    // of the trusted branch above.
+    const reg2 = await register(app, putra, { id: 'beta', name: 'Beta estate' });
+    expect(reg2.status).toBe(201);
+    const archive = await app.request('/projects/beta/archive', { method: 'POST', headers: hdrs(putra, { json: true }) });
+    expect(archive.status).toBe(200);
+    const archived = await mintOnboard(app, putra, 'beta');
+    expect(archived.status).toBe(409);
+    expect((await archived.json()).code).toBe('STATE_CONFLICT');
+  });
+
+  it('refuses the wrong caller: requester/approver 403 FORBIDDEN_ROLE, non-admin lead 403 NOT_ADMIN', async () => {
+    const { app, putra, sari, budi, lina } = await setup();
+    await register(app, putra);
+    for (const [cookie, code] of [
+      [sari, 'FORBIDDEN_ROLE'],
+      [budi, 'FORBIDDEN_ROLE'],
+      [lina, 'NOT_ADMIN'],
+    ] as const) {
+      const res = await mintOnboard(app, cookie);
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as { code: string }).code).toBe(code);
+    }
+  });
+
+  it('validates ttlMinutes bounds strictly (below 5 / above 7 days / junk key → 422)', async () => {
+    const { app, putra } = await setup();
+    await register(app, putra);
+    for (const body of [{ ttlMinutes: 1 }, { ttlMinutes: 999999 }, { evil: true }]) {
+      const res = await mintOnboard(app, putra, 'acme', body);
+      expect(res.status, JSON.stringify(body)).toBe(422);
+    }
+  });
+});
+
+describe('DELETE /projects/:id/onboard-tokens/:tokenId — revoke (soft: revokedAt stamped, row survives)', () => {
+  it('revokes: revokedAt is stamped, the token stops working on the Bearer lane, audited; already-revoked/unknown → 404', async () => {
+    const { app, store, putra } = await setup();
+    await register(app, putra);
+    const { tokenId, token } = await mintOnboardToken(app, putra);
+
+    const revoke = await app.request(`/projects/acme/onboard-tokens/${tokenId}`, { method: 'DELETE', headers: hdrs(putra) });
+    expect(revoke.status).toBe(200);
+    expect(await auditActions(store, 'acme')).toContain('onboard-token-revoke');
+
+    // The row SURVIVES (unlike the upload token's hard delete) — tombstoned.
+    const k = onboardTokenKey('acme', tokenId);
+    const row = (await store.get(k.PK, k.SK)) as ProjectOnboardTokenItem;
+    expect(row).not.toBeNull();
+    expect(typeof row.revokedAt).toBe('string');
+
+    const res = await uploadViaOnboardToken(app, token);
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe('ONBOARD_TOKEN_INVALID');
+
+    const again = await app.request(`/projects/acme/onboard-tokens/${tokenId}`, { method: 'DELETE', headers: hdrs(putra) });
+    expect(again.status).toBe(404);
+  });
+
+  it('refuses the wrong caller and an unknown token', async () => {
+    const { app, putra, sari } = await setup();
+    await register(app, putra);
+    const { tokenId } = await mintOnboardToken(app, putra);
+    const res = await app.request(`/projects/acme/onboard-tokens/${tokenId}`, { method: 'DELETE', headers: hdrs(sari) });
+    expect(res.status).toBe(403);
+    const ghost = await app.request('/projects/acme/onboard-tokens/01ARZ3NDEKTSV4RRFFQ69G5FAV', { method: 'DELETE', headers: hdrs(putra) });
+    expect(ghost.status).toBe(404);
+  });
+});
+
+describe('PUT /projects/:id/trust-request — the onboard-token Bearer lane (easy-first-import spec §3 A-iii)', () => {
+  it('accepts a live token WITHOUT any session cookie or CSRF header, runs the SAME validation pipeline, records uploadedBy onboard-token:<id> + optional ci provenance, and audits to the TARGET chain (not the acting/sample scope)', async () => {
+    const { app, store, putra, root } = await setup();
+    await register(app, putra);
+    const { tokenId, token } = await mintOnboardToken(app, putra);
+
+    const ci = { host: 'github' as const, runUrl: 'https://github.com/acme-co/terraform-acme/actions/runs/123456' };
+    const res = await uploadViaOnboardToken(app, token, { ...artifacts(), ci });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; trustRequest: { uploadedBy: string; ci?: typeof ci } };
+    expect(body.status).toBe('pending-trust');
+    expect(body.trustRequest.uploadedBy).toBe(`onboard-token:${tokenId}`);
+    expect(body.trustRequest.ci).toEqual(ci);
+
+    // The rich (lead+isAdmin) GET projection carries it too.
+    const list = (await (await app.request('/projects', { headers: hdrs(root) })).json()) as Array<Record<string, unknown>>;
+    const acme = list.find((p) => p.id === 'acme') as { trustRequest: { uploadedBy: string; ci?: typeof ci } };
+    expect(acme.trustRequest.uploadedBy).toBe(`onboard-token:${tokenId}`);
+    expect(acme.trustRequest.ci).toEqual(ci);
+
+    // Audits to the TARGET ('acme') chain — a Bearer token has no acting
+    // scope, exactly the upload-token lane's own reasoning — NOT 'sample'
+    // (the default acting scope every OTHER call in this suite writes to).
+    expect(await auditActions(store, 'acme')).toContain('project-trust-request');
+    expect(await auditActions(store)).not.toContain('project-trust-request');
+
+    // The two-admin trust ceremony downstream is completely unaffected by
+    // which lane produced the pending-trust record.
+    const propose = await proposeTrust(app, putra);
+    expect(propose.status).toBe(202);
+    const pending = (await propose.json()) as { id: string };
+    const selfAck = await app.request(`/admin/config-changes/${pending.id}/ack`, { method: 'POST', headers: hdrs(putra) });
+    expect(selfAck.status).toBe(403);
+    const ack = await app.request(`/admin/config-changes/${pending.id}/ack`, { method: 'POST', headers: hdrs(root) });
+    expect(ack.status).toBe(200);
+    const after = (await (await app.request('/projects', { headers: hdrs(putra) })).json()) as Array<Record<string, unknown>>;
+    expect(after.find((p) => p.id === 'acme')!.status).toBe('trusted');
+  });
+
+  it('a malformed ci block is refused whole (422); an absent ci block is fine (byte-identical to before this field existed)', async () => {
+    const { app, putra } = await setup();
+    await register(app, putra);
+    const { token } = await mintOnboardToken(app, putra);
+    for (const bad of [
+      { ...artifacts(), ci: { host: 'bitbucket', runUrl: 'https://example.com/run/1' } },
+      { ...artifacts(), ci: { host: 'github', runUrl: 'http://not-https.example/run/1' } },
+      { ...artifacts(), ci: { host: 'github' } },
+      { ...artifacts(), ci: { host: 'github', runUrl: 'https://x/y', extra: true } },
+    ]) {
+      const res = await uploadViaOnboardToken(app, token, bad);
+      expect(res.status, JSON.stringify(bad)).toBe(422);
+    }
+    // fresh token (the project is still pending-trust-eligible; re-mint since
+    // none of the above consumed the project's draft/pending-trust window)
+    const clean = await uploadViaOnboardToken(app, token, artifacts());
+    expect(clean.status).toBe(200);
+    expect(((await clean.json()) as { trustRequest: { ci?: unknown } }).trustRequest.ci).toBeUndefined();
+  });
+
+  it('runs the IDENTICAL validation as the session lane: sha mismatch, malformed report, and repo disagreement all refuse the same way', async () => {
+    const { app, putra } = await setup();
+    await register(app, putra);
+    const { token } = await mintOnboardToken(app, putra);
+
+    const a = artifacts();
+    const shaMismatch = await uploadViaOnboardToken(app, token, { ...a, prescanReport: a.prescanReport.replace('12', '13') });
+    expect(shaMismatch.status).toBe(422);
+    expect(((await shaMismatch.json()) as { code: string }).code).toBe('PRESCAN_SHA_MISMATCH');
+
+    const raw = reportText({ repo: 'some-other-repo' });
+    const repoMismatch = await uploadViaOnboardToken(app, token, {
+      trustRequest: { repo: 'terraform-acme', commitSha: COMMIT, prescanSha256: sha256(raw) },
+      prescanReport: raw,
+    });
+    expect(repoMismatch.status).toBe(422);
+
+    // A reject verdict uploads fine (findings must persist for review) —
+    // exactly like the session lane — it just can never be trusted.
+    const rejectReport = reportText({ verdict: 'reject', findings: [{ code: 'PROVISIONER', file: 'main.tf', line: 12 }] });
+    const reject = await uploadViaOnboardToken(app, token, {
+      trustRequest: { repo: 'terraform-acme', commitSha: COMMIT, prescanSha256: sha256(rejectReport) },
+      prescanReport: rejectReport,
+    });
+    expect(reject.status).toBe(200);
+    const trustReject = await app.request('/projects/acme/trust', {
+      method: 'POST',
+      headers: hdrs(putra, { json: true }),
+      body: JSON.stringify({ commitSha: COMMIT, prescanSha256: sha256(rejectReport) }),
+    });
+    expect(trustReject.status).toBe(422);
+    expect(((await trustReject.json()) as { code: string }).code).toBe('TRUST_VERDICT_NOT_CLEAN');
+  });
+
+  it('fail-closes (401 ONBOARD_TOKEN_INVALID, no enumeration): malformed bearer, unknown tokenId, wrong secret, wrong project, expired, revoked; a request with no Authorization at all stays under the normal session gate', async () => {
+    const { app, putra } = await setup();
+    await register(app, putra);
+    const { tokenId, token } = await mintOnboardToken(app, putra);
+
+    // No Authorization header → the normal session gate answers (this lane never opens).
+    const anon = await app.request('/projects/acme/trust-request', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'x-ccp-client': 'ccp-spa' },
+      body: JSON.stringify(artifacts()),
+    });
+    expect(anon.status).toBe(401);
+    expect(((await anon.json()) as { code: string }).code).toBe('NO_SESSION');
+
+    for (const bad of [
+      'not-even-a-token',
+      `${tokenId}`, // missing secret half
+      `${tokenId}.wrong-secret-wrong-secret`, // wrong secret
+      `01ARZ3NDEKTSV4RRFFQ69G5FAV.${token.split('.')[1]}`, // unknown tokenId, real secret
+    ]) {
+      const res = await uploadViaOnboardToken(app, bad);
+      expect(res.status, bad).toBe(401);
+      expect(((await res.json()) as { code: string }).code).toBe('ONBOARD_TOKEN_INVALID');
+    }
+
+    // A token minted for acme opens nothing on another project.
+    const reg2 = await app.request('/projects', {
+      method: 'POST',
+      headers: hdrs(putra, { json: true }),
+      body: JSON.stringify({ ...REGISTER, id: 'beta', name: 'Beta estate' }),
+    });
+    expect(reg2.status).toBe(201);
+    const cross = await uploadViaOnboardToken(app, token, artifacts(), 'beta');
+    expect(cross.status).toBe(401);
+    expect(((await cross.json()) as { code: string }).code).toBe('ONBOARD_TOKEN_INVALID');
+
+    // Expired.
+    const minted = await mintOnboard(app, putra, 'beta', { ttlMinutes: 5 });
+    expect(minted.status).toBe(201);
+    const short = (await minted.json()) as { token: string };
+    __setNow(() => Date.now() + 6 * 60_000);
+    const expired = await uploadViaOnboardToken(app, short.token, artifacts(), 'beta');
+    expect(expired.status).toBe(401);
+    expect(((await expired.json()) as { code: string }).code).toBe('ONBOARD_TOKEN_INVALID');
+    __setNow(null);
+
+    // Revoked.
+    await app.request(`/projects/acme/onboard-tokens/${tokenId}`, { method: 'DELETE', headers: hdrs(putra) });
+    const revoked = await uploadViaOnboardToken(app, token);
+    expect(revoked.status).toBe(401);
+    expect(((await revoked.json()) as { code: string }).code).toBe('ONBOARD_TOKEN_INVALID');
+  });
+
+  it('a valid token cannot bypass the project state gate (defense in depth, mirrors the upload lane): a trusted project → 409 even with a hand-planted token row', async () => {
+    const { app, store, putra, lina, root } = await setup();
+    await driveToTrusted(app, putra, lina, root); // acme is now trusted — mint refuses it (tested above)
+    // Mint on a second, still-draft project, then re-point a copy of that row
+    // at 'acme' with a KNOWN hash — the only way to get a "valid" token onto
+    // a trusted project, since mint itself refuses it (proving the handler's
+    // OWN status re-check, not just the mint-time gate, is what is fail-closed).
+    await register(app, putra, { id: 'beta', name: 'Beta estate' });
+    const { token } = await mintOnboardToken(app, putra, 'beta');
+    const [tokenId, secret] = token.split('.') as [string, string];
+    const bKey = onboardTokenKey('beta', tokenId);
+    const row = (await store.get(bKey.PK, bKey.SK)) as ProjectOnboardTokenItem;
+    await store.put({ ...row, ...onboardTokenKey('acme', tokenId), projectId: 'acme' });
+    const res = await uploadViaOnboardToken(app, `${tokenId}.${secret}`, artifacts(), 'acme');
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('STATE_CONFLICT');
+  });
+
+  it('throttles per tokenId BEFORE the argon2 verify (mirrors the upload lane exactly): a wrong-secret flood gets a burst of 401s then 429s; other tokens unaffected; refills over time', async () => {
+    const { app, putra } = await setup();
+    await register(app, putra);
+    const { tokenId, token } = await mintOnboardToken(app, putra);
+    const wrong = `${tokenId}.${'A'.repeat(43)}`;
+    for (let i = 0; i < UPLOAD_RATE_CAPACITY; i++) {
+      const res = await uploadViaOnboardToken(app, wrong);
+      expect(res.status, `burst attempt ${i}`).toBe(401);
+    }
+    const over = await uploadViaOnboardToken(app, wrong);
+    expect(over.status).toBe(429);
+    expect(((await over.json()) as { code: string }).code).toBe('RATE_LIMITED');
+    expect(Number(over.headers.get('retry-after'))).toBeGreaterThanOrEqual(1);
+    // Even the CORRECT secret is refused — the gate sits BEFORE verify.
+    expect((await uploadViaOnboardToken(app, token)).status).toBe(429);
+
+    __setNow(() => Date.now() + 61_000);
+    expect((await uploadViaOnboardToken(app, token)).status).toBe(200);
+  });
+
+  it('the token authorizes EXACTLY ONE verb: unusable as a Bearer on PUT /:id/data (wrong namespace); an upload token is equally unusable on THIS lane (cross-direction)', async () => {
+    const { app, store, putra, lina, root } = await setup();
+    await register(app, putra);
+    const { token: onboardToken } = await mintOnboardToken(app, putra);
+
+    // The onboard token on the CI upload-data route: looked up in the
+    // UPLOADTOKEN# namespace, where it does not exist — refused, and by the
+    // OTHER lane's own code (UPLOAD_TOKEN_INVALID, not ONBOARD_TOKEN_INVALID).
+    const onData = await app.request('/projects/acme/data', {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${onboardToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(onData.status).toBe(401);
+    expect(((await onData.json()) as { code: string }).code).toBe('UPLOAD_TOKEN_INVALID');
+
+    // A plain Bearer header on an unrelated route (not a recognized lane at
+    // all) stays under the ordinary session gate.
+    const onList = await app.request('/projects', { headers: { authorization: `Bearer ${onboardToken}` } });
+    expect(onList.status).toBe(401);
+    expect(((await onList.json()) as { code: string }).code).toBe('NO_SESSION');
+
+    // Cross-direction: a REAL upload token (minted post-trust) cannot drive
+    // the onboard-token Bearer lane either — it is looked up in the
+    // ONBOARDTOKEN# namespace, where IT does not exist.
+    await driveToTrusted(app, putra, lina, root, 'beta');
+    const upToken = await app.request('/projects/beta/upload-tokens', { method: 'POST', headers: hdrs(putra, { json: true }) });
+    expect(upToken.status).toBe(201);
+    const { token: uploadToken } = (await upToken.json()) as { token: string };
+    // 'beta' is already trusted, so this also independently proves the
+    // status gate refuses it — but the token itself is looked up first and
+    // is simply not found in the onboard-token namespace.
+    const crossLane = await uploadViaOnboardToken(app, uploadToken, artifacts(), 'beta');
+    expect(crossLane.status).toBe(401);
+    expect(((await crossLane.json()) as { code: string }).code).toBe('ONBOARD_TOKEN_INVALID');
+    const missing = onboardTokenKey('beta', uploadToken.split('.')[0]!);
+    expect(await store.get(missing.PK, missing.SK)).toBeNull();
   });
 });
 

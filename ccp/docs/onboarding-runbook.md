@@ -69,6 +69,32 @@ written). The server recomputes the report's sha256 and refuses the upload if
 it does not match the trust request — if you see `PRESCAN_SHA_MISMATCH`, you
 pasted edited or truncated bytes; re-copy the whole file.
 
+**One-command variant.** As of 2026-07-24 the server also accepts this upload
+from the CLI directly, so you do not have to paste the two files by hand. A
+Lead with admin capability mints a short-lived, single-purpose onboarding
+token — today via the api directly (`POST /projects/:id/onboard-tokens`,
+optional `{ttlMinutes}`, default 24h; the response's `token` field is shown
+exactly once — save it now); a dedicated "Onboarding token" button in the
+wizard is planned but not built yet (Phase 2 of this work). With that token,
+add `--server <ccp-api url>` and set `CCP_ONBOARD_TOKEN` in the environment
+(env only — **never** a flag, so it never lands in shell history or a process
+list):
+
+```
+CCP_ONBOARD_TOKEN=<tokenId>.<secret> \
+  catalogctl onboard <path-to-your-checkout> --project-id <id> --server <url> --out out/
+```
+
+The files still land in `out/` either way; the upload is just one fewer manual
+step. This token is narrow and short-lived on purpose: it can only PUT to this
+one project's trust-request, and it stops working the moment the project
+leaves draft/pending-trust or a Lead revokes it
+(`DELETE /projects/:id/onboard-tokens/:tokenId`). It is a separate credential
+from the CI upload token in step 5 — do not confuse the two. (Phase 2 of the
+easy-first-import work replaces this whole step with a one-shot workflow run
+in the estate repo's own CI, so there is no laptop step at all; until then,
+both the paste and this one-command variant remain.)
+
 ## Step 3 — review the verdict and findings
 
 The wizard renders the server's stored copy of the report: the verdict badge,
