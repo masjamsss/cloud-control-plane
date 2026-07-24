@@ -75,6 +75,12 @@ type Opts struct {
 	// CCP_UPLOAD_TOKEN). Both Server and OnboardToken must be non-empty for
 	// an upload to be attempted.
 	OnboardToken string
+	// CI, when non-nil, is the {host, runUrl} provenance attached to a Server
+	// upload so the two reviewing admins can check the scan against the forge's
+	// own run log (ADR-0031 option A). The CLI (run) sets it from the ambient CI
+	// environment via detectCIProvenance(); nil ⇒ a local run, and the upload
+	// body simply omits the block.
+	CI *CiProvenance
 }
 
 // Runner is the sandbox seam. The real implementation shells to terraform under
@@ -556,6 +562,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		OutDir:        *outDir,
 		Server:        *server,
 		OnboardToken:  os.Getenv(onboardTokenEnv), // env only — never a flag (see onboardTokenEnv)
+		CI:            detectCIProvenance(),       // {host, runUrl} when run in CI; nil for a local run
 	}
 	return Run(opts, execRunner{}, httpUploader{}, stdout)
 }

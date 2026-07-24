@@ -28,15 +28,17 @@
 
 ## What you need before starting
 
-- A local checkout of the repository to onboard, and a `terraform` binary that
-  satisfies the repo's `required_version`.
-- The `catalogctl` binary (`go build ./tools/catalogctl/cmd/catalogctl`).
-- A shell **without cloud credentials** — the scan refuses to run if any
-  `AWS_*`, `GOOGLE_*`, `ARM_*`, or `TF_TOKEN_*` variable is present. This is the
-  sandbox contract, not a nuisance: onboarding must not be able to touch a real
-  backend or authenticate anywhere.
-- An Cloud Control Plane session as a Lead with admin capability, and a second admin
-  available for the dual-control confirmations.
+- **The recommended path (step 2 runs in the repo's own CI):** nothing local at all —
+  just the ability to open a pull request against the estate repo and, once it merges,
+  click "Run workflow" (GitHub) or "Run pipeline" (GitLab).
+- **The fallback path (step 2 runs on a laptop):** a local checkout of the repository to
+  onboard, a `terraform` binary that satisfies the repo's `required_version`, the
+  `catalogctl` binary (`go build ./tools/catalogctl/cmd/catalogctl`), and a shell
+  **without cloud credentials** — the scan refuses to run if any `AWS_*`, `GOOGLE_*`,
+  `ARM_*`, or `TF_TOKEN_*` variable is present. This is the sandbox contract, not a
+  nuisance: onboarding must not be able to touch a real backend or authenticate anywhere.
+- Either way: an Cloud Control Plane session as a Lead with admin capability, and a second
+  admin available for the dual-control confirmations.
 
 ## Step 1 — register the project (Admin → Projects)
 
@@ -47,7 +49,49 @@ subscription id (both GUIDs), and the location — the subscription is defined
 here, at onboarding, not beforehand. This creates a **draft** — a draft grants
 nothing: it is not a valid request scope and no account can be bound to it.
 
-## Step 2 — scan the repository locally
+## Step 2 — get the first scan into the wizard
+
+The scan only reads the repository's Terraform — nothing executes, and this server never
+checks out repositories or runs terraform itself (`onboarding-security.md` is the full
+contract). The wizard's step 2 offers two tabs; **"Run in the repo's CI" is the recommended
+one** — no laptop involved at all. "Run locally" remains, unchanged, as the fallback for an
+air-gapped estate or one with no usable CI.
+
+### Run in the repo's CI (recommended)
+
+A one-shot, dispatch-only workflow scans the repository where its own code already lives,
+then sends the two files here itself — nothing to copy by hand.
+
+1. Commit the workflow file the wizard shows — `.github/workflows/ccp-onboard.yml` (GitHub)
+   or `.gitlab/ci/ccp-onboard.gitlab-ci.yml` (GitLab; copy it in, or `include:` it) — as a
+   normal, reviewed pull request. **It can ship in the same pull request as the recurring
+   data-lane file from step 5** (`.github/workflows/ccp-data.yml` /
+   `.gitlab/ci/ccp-data.gitlab-ci.yml`, `docs/runbooks/account-data-ci.md`), so one reviewed
+   change wires the whole repository instead of two. GitHub only shows the "Run workflow"
+   button once the file is on the default branch.
+2. In the wizard, mint an onboarding token (a Lead with admin capability; the response's
+   `token` field is shown exactly once — save it now) and set it as the repository's CI
+   secret `CCP_ONBOARD_TOKEN`. This token is narrow and short-lived on purpose: it authorizes
+   exactly one thing — uploading THIS project's scan — and it stops working the moment the
+   project leaves draft/pending-trust or a Lead revokes it
+   (`DELETE /projects/:id/onboard-tokens/:tokenId`). It is a SEPARATE credential from the CI
+   upload token in step 5 — do not confuse the two; neither can do the other's job.
+3. Set two CI variables next to it: `CCP_CONTROL_PLANE_URL` (this control plane's address)
+   and `CCP_PROJECT_ID` (this project's id) — the same two names step 5's data lane uses.
+4. Click "Run workflow" (GitHub) — or, on GitLab, start "Run pipeline" on the default branch
+   and click the `ccp-onboard` job's own play button once that pipeline is running (GitLab
+   has no per-workflow dispatch button, so the job ships `when: manual` inside a normal
+   pipeline instead).
+5. The two files land in the wizard on their own once the run finishes — reload the page, or
+   use its "Check for the uploaded scan" button.
+
+Nothing here executes anything from the repository beyond the static parse: no terraform, no
+`--trusted-commit`, no cloud credential — see `onboarding-security.md`'s "Where the first scan
+may run" section for the exact invariant list this workflow is built to. If the control plane
+can't be reached from that runner (an air-gapped estate), the workflow still keeps the two
+files as a downloadable run artifact — pick them up with the "Run locally" tab below.
+
+### Run locally (fallback)
 
 Run the command the wizard shows (copy button provided):
 
@@ -64,36 +108,23 @@ and stops at the trust gate, writing two files into `out/`:
   blocks, module count, JSON-syntax files, unformatted files, provider pins).
   Written on **both** verdicts, so a rejection's findings are reviewable too.
 
-Upload both files in the wizard (paste each file's full contents exactly as
-written). The server recomputes the report's sha256 and refuses the upload if
-it does not match the trust request — if you see `PRESCAN_SHA_MISMATCH`, you
-pasted edited or truncated bytes; re-copy the whole file.
+Pick both files in the wizard (paste also works — the picker just reads exact bytes, which a
+clipboard round-trip can't always guarantee). The server recomputes the report's sha256 and
+refuses the upload if it does not match the trust request — if you see `PRESCAN_SHA_MISMATCH`,
+you picked edited or truncated bytes; re-copy the whole file.
 
-**One-command variant.** As of 2026-07-24 the server also accepts this upload
-from the CLI directly, so you do not have to paste the two files by hand. A
-Lead with admin capability mints a short-lived, single-purpose onboarding
-token — today via the api directly (`POST /projects/:id/onboard-tokens`,
-optional `{ttlMinutes}`, default 24h; the response's `token` field is shown
-exactly once — save it now); a dedicated "Onboarding token" button in the
-wizard is planned but not built yet (Phase 2 of this work). With that token,
-add `--server <ccp-api url>` and set `CCP_ONBOARD_TOKEN` in the environment
-(env only — **never** a flag, so it never lands in shell history or a process
-list):
+**One-command variant.** The server also accepts this upload from the CLI directly, so there
+is nothing to paste by hand — mint the SAME onboarding token described above (it works from
+either tab; a laptop run is just another caller of the identical upload lane), then add
+`--server <ccp-api url>` and set `CCP_ONBOARD_TOKEN` in the environment (env only — **never**
+a flag, so it never lands in shell history or a process list):
 
 ```
 CCP_ONBOARD_TOKEN=<tokenId>.<secret> \
   catalogctl onboard <path-to-your-checkout> --project-id <id> --server <url> --out out/
 ```
 
-The files still land in `out/` either way; the upload is just one fewer manual
-step. This token is narrow and short-lived on purpose: it can only PUT to this
-one project's trust-request, and it stops working the moment the project
-leaves draft/pending-trust or a Lead revokes it
-(`DELETE /projects/:id/onboard-tokens/:tokenId`). It is a separate credential
-from the CI upload token in step 5 — do not confuse the two. (Phase 2 of the
-easy-first-import work replaces this whole step with a one-shot workflow run
-in the estate repo's own CI, so there is no laptop step at all; until then,
-both the paste and this one-command variant remain.)
+The files still land in `out/` either way; the upload is just one fewer manual step.
 
 ## Step 3 — review the verdict and findings
 
@@ -122,17 +153,10 @@ Once acked, the project is **trusted** and the audit chain carries
 
 ## Step 5 — generate data and finish
 
-1. Re-run the scan with the trusted commit (the wizard shows this command):
+Reaching **ready** needs no laptop — it is the same token → CI → activate path the estate
+repeats on every later change:
 
-   ```
-   catalogctl onboard <path-to-your-checkout> --project-id <id> --trusted-commit <sha> --out out/
-   ```
-
-   Only now does the sandboxed `terraform init -backend=false` +
-   `providers schema` run, writing `providers-schema.json` and printing the
-   scaffold checklist.
-
-2. Mint an upload token for this project (the wizard's "Connect the repo's CI" step — a Lead
+1. Mint an upload token for this project (the wizard's "Connect the repo's CI" step — a Lead
    with admin capability; the token is shown once, so copy it immediately). Install the
    recurring CI job in the estate repo with that token as a secret —
    `docs/runbooks/account-data-ci.md` has the full setup. Project data (inventory and block
@@ -140,26 +164,41 @@ Once acked, the project is **trusted** and the audit chain carries
    generate it on a laptop; local runs are not reproducible (the `python-hcl2` pin is a CI
    contract) — and `PUT` to the control plane as a staged version. Nothing is served yet.
 
-3. Review and activate the staged version (the wizard's "Review & activate data" step). The
+2. Review and activate the staged version (the wizard's "Review & activate data" step). The
    server recomputes and stores its own digests over the uploaded bundle — there is nothing to
    type. A **second**, different admin activating it is what flips the project to **ready**: it
    appears in the project switcher, becomes a valid request scope, and accounts can be bound to
    it.
 
-4. Define this account's teams and their service ownership (Admin → Teams, on the newly-ready
+3. Define this account's teams and their service ownership (Admin → Teams, on the newly-ready
    project's scope). Not required to reach `ready`, but required before a plain requester can
    submit anything: with no teams defined yet, approvers and leads can already request (they
    bypass team scoping), while a requester with no owning team can submit nothing — the correct
    fail-closed default for a brand-new estate, not a bug
    ([ADR-0022](../../docs/adr/0022-ccp-teams-per-estate-onboarding.md)).
 
+**Day-2, optional — the provider-schema run.** Re-running the scan against the trusted commit
+is the only step that executes terraform (the sandboxed `terraform init -backend=false` +
+`providers schema`, writing `providers-schema.json` and printing the scaffold checklist):
+
+```
+catalogctl onboard <path-to-your-checkout> --project-id <id> --trusted-commit <sha> --out out/
+```
+
+It is **not** on the path to `ready` and produces nothing the control plane consumes —
+`providers-schema.json` has no upload endpoint and is not part of the data bundle. It exists for
+the day-2 provider-version / ForceNew audit (`onboarding-security.md` §"Provider-version
+binding"), so run it when you enable that project's day-2 ops, not to finish onboarding. Being
+the one step that runs an external repo's terraform, it is bound by the sandbox-container
+invariant for any repo but the self-trusted in-repo root (`onboarding-security.md`).
+
 ## Status ladder (what each state permits)
 
 | Status | Meaning | Grants |
 |---|---|---|
-| draft | registered, nothing verified | nothing |
-| pending-trust | scan artifacts uploaded and sha-verified | nothing |
-| trusted | a clean verdict trusted by two admins | the CLI's post-trust run |
+| draft | registered, nothing verified | mint a pre-trust onboarding token (CI or local first scan) |
+| pending-trust | scan artifacts uploaded and sha-verified | nothing (awaiting two-admin trust) |
+| trusted | a clean verdict trusted by two admins | mint the data-CI upload token (→ ready); the optional day-2 provider-schema run |
 | ready | data digests recorded | routable scope; account bindings; switcher entry |
 
 ## Undoing things
@@ -178,7 +217,9 @@ Once acked, the project is **trusted** and the audit chain carries
 | CLI: `REFUSE PRESCAN_REJECT` | the repo contains a construct the scan refuses (see the findings) | fix the repo; findings are in `prescan-report.json` and reviewable in the wizard |
 | CLI: `REFUSE UNTRUSTED_COMMIT` | HEAD moved since the trust ack | re-run steps 2–4 for the new commit |
 | CLI: refuses with a credential name | cloud credentials in the environment | unset them; the scan must run credential-free |
-| Upload: `PRESCAN_SHA_MISMATCH` | pasted report bytes differ from what the CLI hashed | re-copy the full, unmodified file |
+| CI: `ONBOARD_TOKEN_INVALID` | the onboarding token is wrong, expired, revoked, or the project already left draft/pending-trust | mint a fresh onboarding token in the wizard and update the repo's `CCP_ONBOARD_TOKEN` secret |
+| CI: `catalogctl module not found` | the estate repo doesn't also carry the control-plane tools | uncomment the second checkout step in `ccp-onboard.yml` (its own comments walk this) |
+| Upload: `PRESCAN_SHA_MISMATCH` | pasted or uploaded report bytes differ from what was hashed | re-copy/re-run; never hand-edit an artifact file |
 | Trust: `TRUST_VERDICT_NOT_CLEAN` | the stored verdict is reject | there is nothing to trust; fix and re-scan |
 | Ack: `STALE_PROPOSAL` | artifacts changed between propose and ack | review the new upload, propose again |
 | Complete: `STATE_CONFLICT` | project is not in the trusted state | walk the earlier steps first |

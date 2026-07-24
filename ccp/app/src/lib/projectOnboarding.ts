@@ -1,4 +1,5 @@
 import type {
+  OnboardTokenMint,
   PrescanReportWire,
   ProjectDataVersion,
   ProjectDataVersions,
@@ -76,15 +77,28 @@ interface StoredUploadToken {
   expiresAt: string;
 }
 
+/** The non-secret record of a minted PRE-TRUST onboarding token — same
+ * no-readable-secret posture as {@link StoredUploadToken}, but tracked in
+ * its own array so the two credentials never share a namespace, mirroring
+ * the server's separate onboardTokenKey (schema.ts). */
+interface StoredOnboardToken {
+  tokenId: string;
+  createdBy: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
 /** The stored record: the public projection plus the raw report bytes the
  * trust step re-verifies (the server keeps those bytes too — `rawReport` —
  * and never serves them; listLocalProjects strips them the same way), the
- * upload-token rows, and the CI data-version rows behind the versions list.
- * An INTERSECTION (not `extends`) because {@link ServerProject} is a
- * provider-discriminated union — the extras ride on either arm. */
+ * upload-token rows, the onboard-token rows, and the CI data-version rows
+ * behind the versions list. An INTERSECTION (not `extends`) because
+ * {@link ServerProject} is a provider-discriminated union — the extras ride
+ * on either arm. */
 type StoredExtras = {
   rawReport?: string;
   uploadTokens?: StoredUploadToken[];
+  onboardTokens?: StoredOnboardToken[];
   dataVersions?: StoredDataVersion[];
 };
 type StoredProject = ServerProject & StoredExtras;
@@ -148,7 +162,10 @@ function actorId(): string {
 
 /** A stored version row with its `status` derived from the active pointer —
  * the same projection routes/projectData.ts serves. */
-function publicVersion(v: StoredDataVersion, activeVersion: number | undefined): ProjectDataVersion {
+function publicVersion(
+  v: StoredDataVersion,
+  activeVersion: number | undefined,
+): ProjectDataVersion {
   return { ...v, status: v.version === activeVersion ? 'active' : 'staged' };
 }
 
@@ -156,7 +173,13 @@ function publicVersion(v: StoredDataVersion, activeVersion: number | undefined):
  * version rows never leave the store (the wire serves versions only through
  * {@link listLocalProjectDataVersions}, exactly like `GET /projects/:id/data`). */
 function publicProject(p: StoredProject): ServerProject {
-  const { rawReport: _raw, uploadTokens: _tokens, dataVersions: _versions, ...rest } = p;
+  const {
+    rawReport: _raw,
+    uploadTokens: _tokens,
+    onboardTokens: _onboardTokens,
+    dataVersions: _versions,
+    ...rest
+  } = p;
   return rest;
 }
 
@@ -374,6 +397,59 @@ function randomHex(bytes: number): string {
   return [...buf].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/* ── the pre-trust onboarding token (mint/revoke) — a SEPARATE credential
+ * from the upload token below, own storage array, own status gate. Against
+ * a real server the estate's own CI PUTs the scan artifacts with this token
+ * (`PUT /projects/:id/trust-request`); this browser's registry has no CI to
+ * simulate that upload, so minting here just enforces the same fail-closed
+ * status gate the server does and returns a token — the actual artifact
+ * upload still goes through {@link uploadLocalTrustRequest} (the "Run
+ * locally" tab), unchanged. */
+
+/** Statuses whose onboarding is still legitimate — the EXACT INVERSE of the
+ * upload token's trusted/ready gate below (mirrors routes/projects.ts'
+ * ONBOARDABLE): an onboard token and an upload token are never the right
+ * credential for the same project at the same time. */
+const ONBOARDABLE = new Set<ServerProject['status']>(['draft', 'pending-trust']);
+
+/** Mint a pre-trust onboarding token — returned ONCE, never stored readable.
+ * Legal only while draft/pending-trust; a trusted/ready project refuses,
+ * exactly like `POST /projects/:id/onboard-tokens`. */
+export async function mintLocalOnboardToken(id: string): Promise<OnboardTokenMint> {
+  const projects = load();
+  const project = mustFind(projects, id);
+  notArchived(project);
+  if (!ONBOARDABLE.has(project.status)) {
+    fail(
+      'This project has already passed trust review — an onboarding token would have nothing left to do.',
+    );
+  }
+  const tokenId = randomHex(8);
+  const token = `${tokenId}.${randomHex(24)}`;
+  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
+  project.onboardTokens = [
+    ...(project.onboardTokens ?? []),
+    { tokenId, createdBy: actorId(), createdAt: nowIso(), expiresAt },
+  ];
+  save(projects);
+  recordAudit(actorId(), 'Minted an onboarding token', `${id} (token ${tokenId})`);
+  return { tokenId, token, expiresAt };
+}
+
+/** Revoke a pre-trust onboarding token by its id — mirrors
+ * `DELETE /projects/:id/onboard-tokens/:tokenId`. */
+export function revokeLocalOnboardToken(id: string, tokenId: string): void {
+  const projects = load();
+  const project = mustFind(projects, id);
+  const rows = project.onboardTokens ?? [];
+  if (!rows.some((t) => t.tokenId === tokenId)) {
+    fail('No such onboarding token on this project — it may already be revoked.');
+  }
+  project.onboardTokens = rows.filter((t) => t.tokenId !== tokenId);
+  save(projects);
+  recordAudit(actorId(), 'Revoked an onboarding token', `${id} (token ${tokenId})`);
+}
+
 /** The demo's stand-in for the repo's CI upload: one staged version derived
  * deterministically from the trusted scan's census, in the server's own row
  * shape (digests over the "uploaded" content, counts, provenance). */
@@ -382,15 +458,16 @@ async function demoStagedVersion(
   tokenId: string,
 ): Promise<StoredDataVersion> {
   const census = project.trustRequest?.report;
-  const sourceCommit =
-    project.trust?.commitSha ?? project.trustRequest?.commitSha ?? randomHex(20);
+  const sourceCommit = project.trust?.commitSha ?? project.trustRequest?.commitSha ?? randomHex(20);
   const version = Math.max(0, ...(project.dataVersions ?? []).map((v) => v.version)) + 1;
   const warnings: string[] = [];
   if ((census?.fmtDirtyFiles ?? 0) > 0) {
     warnings.push(`${census?.fmtDirtyFiles} files are not terraform-formatted`);
   }
   if ((census?.moduleBlocks ?? 0) > 0) {
-    warnings.push(`${census?.moduleBlocks} module blocks — resources behind modules are not imported`);
+    warnings.push(
+      `${census?.moduleBlocks} module blocks — resources behind modules are not imported`,
+    );
   }
   const digest = async (kind: string): Promise<string> =>
     sha256Hex(`${project.id}:${version}:${sourceCommit}:${kind}`);

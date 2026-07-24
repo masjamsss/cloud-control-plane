@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -33,14 +34,60 @@ type TrustRequestTriple struct {
 // TrustRequestUpload is the exact `PUT /projects/:id/trust-request` body: the
 // trust-request triple plus the RAW prescan-report.json bytes as text — the
 // server recomputes sha256 over prescanReport itself, so it is sent verbatim
-// and never re-serialized client-side (ccp/app/src/lib/httpApi.ts:563-570;
-// ccp/api/openapi/ccp-api.yaml:681-686). The optional `ci: {host, runUrl}`
-// provenance block documented alongside that schema belongs to the Phase-2
-// estate-CI lane (ADR-0031 option A) — deliberately omitted here, since a
-// local CLI run has no CI run to describe.
+// and never re-serialized client-side (ccp/app/src/lib/httpApi.ts;
+// ccp/api/openapi/ccp-api.yaml). The optional `ci` block names the CI run that
+// produced the upload so the two reviewing admins can check it against the
+// forge's own run log (ADR-0031 option A); it is omitted (nil) on a local run.
 type TrustRequestUpload struct {
 	TrustRequest  TrustRequestTriple `json:"trustRequest"`
 	PrescanReport string             `json:"prescanReport"`
+	Ci            *CiProvenance      `json:"ci,omitempty"`
+}
+
+// CiProvenance is the optional {host, runUrl} block identifying the CI run that
+// produced an onboarding upload. It mirrors ccp/api's own CiProvenance zod
+// schema (store/schema.ts) byte-for-byte: `host` is exactly "github" or
+// "gitlab", `runUrl` is an https URL — the server's schema is `.strict()`, so a
+// malformed block is REJECTED rather than ignored. detectCIProvenance therefore
+// only ever returns a block it has already validated, and returns nil otherwise
+// (a local run, or a CI env missing the vars) so the field is simply omitted.
+type CiProvenance struct {
+	Host   string `json:"host"`
+	RunUrl string `json:"runUrl"`
+}
+
+// detectCIProvenance reads the ambient CI environment and returns the run's
+// {host, runUrl} when — and only when — it can assemble a valid https URL under
+// the server's length cap; otherwise nil. Kept env-driven and standalone so the
+// CLI wiring (run) sets it once and the pure upload path stays deterministic
+// given Opts. Supported: GitHub Actions and GitLab CI (the two forges the
+// one-shot onboarding workflow ships for, ADR-0031 §3-A-i).
+func detectCIProvenance() *CiProvenance {
+	// GitHub Actions: GITHUB_SERVER_URL is the forge origin (https://github.com
+	// or an Enterprise host), GITHUB_REPOSITORY is owner/name.
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		server, repo, runID := os.Getenv("GITHUB_SERVER_URL"), os.Getenv("GITHUB_REPOSITORY"), os.Getenv("GITHUB_RUN_ID")
+		if server != "" && repo != "" && runID != "" {
+			u := strings.TrimRight(server, "/") + "/" + repo + "/actions/runs/" + runID
+			if validRunURL(u) {
+				return &CiProvenance{Host: "github", RunUrl: u}
+			}
+		}
+	}
+	// GitLab CI: CI_PIPELINE_URL is the run page directly.
+	if os.Getenv("GITLAB_CI") == "true" {
+		if u := os.Getenv("CI_PIPELINE_URL"); validRunURL(u) {
+			return &CiProvenance{Host: "gitlab", RunUrl: u}
+		}
+	}
+	return nil
+}
+
+// validRunURL enforces exactly what the server's CiProvenance.runUrl requires
+// (https scheme, <=500 chars) so detectCIProvenance never emits a block the
+// strict server schema would 422 on.
+func validRunURL(u string) bool {
+	return strings.HasPrefix(u, "https://") && len(u) <= 500
 }
 
 // Uploader is the upload seam: Run() calls it only after both artifacts are
@@ -126,7 +173,7 @@ func attemptUpload(w io.Writer, opts Opts, uploader Uploader, tr TrustRequestTri
 		fmt.Fprintln(w, "internal: --server set but no uploader wired; skipping upload")
 		return false
 	}
-	body := TrustRequestUpload{TrustRequest: tr, PrescanReport: string(prescanBytes)}
+	body := TrustRequestUpload{TrustRequest: tr, PrescanReport: string(prescanBytes), Ci: opts.CI}
 	if err := uploader.UploadTrustRequest(opts.Server, opts.ProjectID, opts.OnboardToken, body); err != nil {
 		dir := opts.OutDir
 		if dir == "" {
