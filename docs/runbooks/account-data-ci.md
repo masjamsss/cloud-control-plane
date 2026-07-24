@@ -2,7 +2,14 @@
 
 > Audience: whoever operates an onboarded account/estate repo. Covers the recurring CI job
 > that keeps that account's inventory and block sources fresh in the portal. Companion:
-> [`ccp/docs/onboarding-runbook.md`](../../ccp/docs/onboarding-runbook.md) (first onboarding).
+> [`ccp/docs/onboarding-runbook.md`](../../ccp/docs/onboarding-runbook.md) (first onboarding) —
+> that runbook's step 2 now has a ONE-SHOT sibling of this recurring job,
+> `.github/workflows/ccp-onboard.yml` / `.gitlab/ci/ccp-onboard.gitlab-ci.yml`, which runs the
+> FIRST scan in the estate repo's own CI instead of on a laptop. Both workflow files can ship
+> in the same pull request — see that runbook's step 2 for the one-shot lane, and
+> [`ccp/docs/onboarding-security.md`](../../ccp/docs/onboarding-security.md)'s "Where the
+> first scan may run" for the trust-boundary contract it holds to (prescan only — no
+> terraform, no `--trusted-commit`, no cloud secret).
 
 ## What this job does
 
@@ -22,6 +29,14 @@ The moving parts:
 What the control plane receives is **staged, not live**: an admin still reviews
 and activates it in the portal (Admin → Projects). Uploading grants nothing by
 itself.
+
+> **The one-shot sibling.** `.github/workflows/ccp-onboard.yml` /
+> `.gitlab/ci/ccp-onboard.gitlab-ci.yml` are a DIFFERENT job, dispatch-only, that runs once
+> per project: the FIRST scan (`catalogctl onboard`, prescan only — no terraform anywhere in
+> that workflow), uploaded over a separate, pre-trust-only onboarding token
+> (`CCP_ONBOARD_TOKEN`, never `CCP_UPLOAD_TOKEN` above — the two never overlap in time). Set
+> up alongside this recurring lane in the same pull request if convenient; full setup steps
+> are in [`ccp/docs/onboarding-runbook.md`](../../ccp/docs/onboarding-runbook.md) step 2.
 
 > **Contract note.** The upload endpoint — `PUT <control-plane>/projects/<id>/data`
 > with an `Authorization: Bearer <upload key>` header, body = the bundle

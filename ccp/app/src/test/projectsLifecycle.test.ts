@@ -36,9 +36,14 @@ import {
 } from '@/features/admin/projectsFlow';
 import {
   GITHUB_CI_PATH,
+  GITHUB_ONBOARD_CI_PATH,
   GITLAB_CI_PATH,
+  GITLAB_ONBOARD_CI_PATH,
   githubDataWorkflow,
+  githubOnboardWorkflow,
   gitlabDataPipeline,
+  gitlabOnboardPipeline,
+  ONBOARD_KEY_SECRET,
   PROJECT_ID_VAR,
   SERVER_URL_VAR,
   UPLOAD_KEY_SECRET,
@@ -117,9 +122,10 @@ beforeEach(() => {
 
 describe('repoRefFromForm — the host toggle to the wire shape', () => {
   it('builds github and gitlab.com refs without a server address', () => {
-    expect(repoRefFromForm({ host: 'github', baseUrl: '', owner: 'acme-co', name: 'tf' })).toEqual(
-      { ok: true, repo: { host: 'github', owner: 'acme-co', name: 'tf' } },
-    );
+    expect(repoRefFromForm({ host: 'github', baseUrl: '', owner: 'acme-co', name: 'tf' })).toEqual({
+      ok: true,
+      repo: { host: 'github', owner: 'acme-co', name: 'tf' },
+    });
     expect(
       repoRefFromForm({ host: 'gitlab', baseUrl: 'ignored', owner: 'grp/sub', name: 'tf' }),
     ).toEqual({ ok: true, repo: { host: 'gitlab', owner: 'grp/sub', name: 'tf' } });
@@ -158,7 +164,12 @@ describe('register — host-agnostic, one repo shape per call (the server rule)'
       ...REGISTER,
       github: undefined,
       id: 'plat',
-      repo: { host: 'gitlab', baseUrl: 'https://gitlab.example.com', owner: 'platform/infra', name: 'tf-estate' },
+      repo: {
+        host: 'gitlab',
+        baseUrl: 'https://gitlab.example.com',
+        owner: 'platform/infra',
+        name: 'tf-estate',
+      },
     });
     expect(created.repo).toEqual({
       host: 'gitlab',
@@ -240,7 +251,10 @@ describe('readArtifactFile — the exact-bytes rule the picker exists for', () =
 
   it('refuses a non-text file and an oversized file, naming the file', async () => {
     const binary = await readArtifactFile(asFile(new Uint8Array([0xff, 0xfe, 0x00]), 'plan.zip'));
-    expect(binary).toEqual({ ok: false, reason: 'plan.zip is not a text file — pick the JSON file the scan wrote.' });
+    expect(binary).toEqual({
+      ok: false,
+      reason: 'plan.zip is not a text file — pick the JSON file the scan wrote.',
+    });
     const huge = await readArtifactFile({
       name: 'big.json',
       size: 2_000_000,
@@ -520,5 +534,69 @@ describe('CI templates — the ready-to-commit files behind the step-4 tabs', ()
     expect(githubDataWorkflow()).toContain(`secrets.${UPLOAD_KEY_SECRET}`);
     expect(githubDataWorkflow()).toContain('permissions:');
     expect(gitlabDataPipeline()).toContain('$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH');
+  });
+});
+
+describe('onboarding CI templates — the one-shot first-scan lane behind step 2’s CI tab', () => {
+  // Same drift-pinning discipline as the data lane above (ADR-0031 Phase 2,
+  // easy-first-import spec §3 option A): the wizard shows the REAL workflow
+  // files, verbatim.
+  const repoRoot = join(__dirname, '..', '..', '..', '..');
+
+  it('the GitHub tab is byte-identical to the repo’s real onboarding workflow file', () => {
+    expect(GITHUB_ONBOARD_CI_PATH).toBe('.github/workflows/ccp-onboard.yml');
+    expect(githubOnboardWorkflow()).toBe(
+      readFileSync(join(repoRoot, GITHUB_ONBOARD_CI_PATH), 'utf8'),
+    );
+  });
+
+  it('the GitLab tab is byte-identical to the repo’s real onboarding job file', () => {
+    expect(GITLAB_ONBOARD_CI_PATH).toBe('.gitlab/ci/ccp-onboard.gitlab-ci.yml');
+    expect(gitlabOnboardPipeline()).toBe(
+      readFileSync(join(repoRoot, GITLAB_ONBOARD_CI_PATH), 'utf8'),
+    );
+  });
+
+  it('both files wire the pinned setting names, the onboard token via environment only', () => {
+    expect(ONBOARD_KEY_SECRET).toBe('CCP_ONBOARD_TOKEN');
+    // A separate name/credential from the data lane's upload key — the two
+    // must never be confused in the repo's CI settings (I10).
+    expect(ONBOARD_KEY_SECRET).not.toBe(UPLOAD_KEY_SECRET);
+    for (const body of [githubOnboardWorkflow(), gitlabOnboardPipeline()]) {
+      expect(body).toContain(ONBOARD_KEY_SECRET);
+      expect(body).toContain(SERVER_URL_VAR);
+      expect(body).toContain(PROJECT_ID_VAR);
+      // The token rides the environment; it is never interpolated onto a
+      // command line a CI log would print, and never handed to catalogctl as
+      // a flag (onboard.go's own rule for CCP_ONBOARD_TOKEN).
+      expect(body).not.toMatch(/--key\s/);
+      expect(body).not.toMatch(/(curl|catalogctl|bash).*\$\{?CCP_ONBOARD_TOKEN/);
+    }
+    expect(githubOnboardWorkflow()).toContain(`secrets.${ONBOARD_KEY_SECRET}`);
+    expect(githubOnboardWorkflow()).toContain('permissions:');
+    expect(githubOnboardWorkflow()).toContain('  contents: read');
+    expect(githubOnboardWorkflow()).toContain('workflow_dispatch:');
+    expect(gitlabOnboardPipeline()).toContain('$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH');
+    expect(gitlabOnboardPipeline()).toContain('when: manual');
+  });
+
+  it('the prescan-only invariant holds in both files: no terraform execution, no --trusted-commit', () => {
+    for (const body of [githubOnboardWorkflow(), gitlabOnboardPipeline()]) {
+      // "terraform" and "--trusted-commit" legitimately appear in PROSE
+      // explaining the invariant ("NO TERRAFORM…"; "Do not add a
+      // --trusted-commit re-run…") — what must never appear is an actual
+      // terraform setup/execution step, or that flag on the real invocation.
+      expect(body).not.toMatch(/hashicorp\/setup-terraform/);
+      expect(body).not.toMatch(/\bterraform (init|providers|apply|plan|destroy)\b/);
+      const invocationLines = body.split('\n').filter((l) => l.includes('onboard "'));
+      expect(invocationLines.length).toBeGreaterThan(0);
+      for (const line of invocationLines) {
+        expect(line).not.toContain('--trusted-commit');
+      }
+      // No cloud credential is ever referenced.
+      expect(body).not.toMatch(/AWS_[A-Z_]*(KEY|SECRET|TOKEN)/);
+      expect(body).not.toMatch(/ARM_(CLIENT|TENANT)_SECRET/);
+      expect(body).not.toMatch(/GOOGLE_(APPLICATION_)?CREDENTIALS/);
+    }
   });
 });

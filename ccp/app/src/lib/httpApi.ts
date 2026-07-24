@@ -8,7 +8,13 @@ import type {
   ServiceManifest,
   User,
 } from '@/types';
-import type { ApiClient, DriftCheckResult, DriftGenerateResult, MutationResult, SubmitResult } from '@/lib/api';
+import type {
+  ApiClient,
+  DriftCheckResult,
+  DriftGenerateResult,
+  MutationResult,
+  SubmitResult,
+} from '@/lib/api';
 import type { DriftProposal, DriftReport, DriftStatus } from '@/types/drift';
 import { noCapabilities, type ServerInfo } from '@/lib/serverInfo';
 import { currentProjectId, SAMPLE_ESTATE_ID } from '@/lib/projectScope';
@@ -361,6 +367,22 @@ export interface PrescanReportWire {
 export type ServerProjectStatus = 'draft' | 'pending-trust' | 'trusted' | 'ready';
 
 /**
+ * CI-run provenance recorded on a trust-request uploaded through the
+ * pre-trust onboarding-token lane (design:
+ * docs/superpowers/specs/2026-07-24-easy-first-import.md, option A) —
+ * present only when the estate's own CI workflow uploaded the scan
+ * artifacts (the wizard's "Run in the repo's CI" tab). Absent on every
+ * session-uploaded ("Run locally") row, and on every row written before this
+ * field existed. The wizard renders it in step 3 as a link so the two
+ * reviewing admins can cross-check it against the repo's own Actions/pipeline
+ * log — it is provenance for the human review, never a substitute for it.
+ */
+export interface CiProvenanceWire {
+  host: 'github' | 'gitlab';
+  runUrl: string;
+}
+
+/**
  * HOST-AGNOSTIC repo reference — the migration target for the GitHub-only
  * `github` pair. `baseUrl` only for a self-hosted forge; `owner` may carry
  * `/`-separated group segments (GitLab subgroups).
@@ -422,6 +444,9 @@ export interface ServerProjectBase {
     uploadedBy: string;
     uploadedAt: string;
     report: PrescanReportWire;
+    /** Present only when the estate's own CI uploaded this artifact pair
+     * (see {@link CiProvenanceWire}) — absent for a session/local upload. */
+    ci?: CiProvenanceWire;
   };
   trust?: { trustedBy: string; trustedAt: string; preScanReportSha256: string; commitSha: string };
   /** The go-live digest record — written by the FIRST data activation's ack
@@ -521,6 +546,21 @@ export type RegisterProjectInput = RegisterProjectAwsInput | RegisterProjectAzur
 
 /** `POST /projects/:id/upload-tokens` — the clear token is shown exactly once. */
 export interface UploadTokenMint {
+  tokenId: string;
+  token: string;
+  expiresAt: string;
+}
+
+/**
+ * `POST /projects/:id/onboard-tokens` — the clear token is shown exactly
+ * once, same shape and same one-time-reveal UX as {@link UploadTokenMint},
+ * but a SEPARATE credential: legal to mint only while draft/pending-trust
+ * (the exact inverse of the upload token's trusted/ready gate), and it
+ * authorizes exactly one verb — the Bearer lane on
+ * `PUT /projects/:id/trust-request`. Never interchangeable with an upload
+ * token; the two never share a key namespace server-side (I10).
+ */
+export interface OnboardTokenMint {
   tokenId: string;
   token: string;
   expiresAt: string;
@@ -770,7 +810,10 @@ export interface HttpApiClient extends ApiClient {
    * uses.
    */
   getInstance(): Promise<{ name: string | null; tagline: string | null }>;
-  setInstance(input: { name: string; tagline: string }): Promise<{ name: string; tagline: string; version: number }>;
+  setInstance(input: {
+    name: string;
+    tagline: string;
+  }): Promise<{ name: string; tagline: string; version: number }>;
 
   /**
    * Admin — the five estate-governance flows (approval policy, settings incl.
@@ -819,6 +862,18 @@ export interface HttpApiClient extends ApiClient {
   ): Promise<AdminWriteOutcome>;
   /** DELETE /projects/:id — always 202 (two-admin envelope). */
   deregisterProject(id: string): Promise<AdminWriteOutcome>;
+
+  /**
+   * The PRE-TRUST onboarding-token lane — mint/revoke the narrow,
+   * short-lived credential the estate's own CI uses to PUT the first scan's
+   * artifacts straight to
+   * `PUT /projects/:id/trust-request`, no laptop and no paste. Mint is legal
+   * only while draft/pending-trust; a trusted/ready/archived project refuses
+   * (`STATE_CONFLICT`). A SEPARATE credential from {@link mintUploadToken} —
+   * never interchangeable, never shown twice.
+   */
+  mintOnboardToken(projectId: string, opts?: { ttlMinutes?: number }): Promise<OnboardTokenMint>;
+  revokeOnboardToken(projectId: string, tokenId: string): Promise<void>;
 
   /**
    * The per-account DATA plane (the app-rebuild killer): mint/revoke the CI
@@ -1039,7 +1094,10 @@ export function createHttpApiClient(baseUrl: string, opts?: HttpApiOptions): Htt
         // proposals is approver+ only server-side (absent entirely for a
         // Requester) — carried through exactly as received, never defaulted
         // to an empty array (presence follows duty).
-        return { report: body.report, ...(body.proposals !== undefined ? { proposals: body.proposals } : {}) };
+        return {
+          report: body.report,
+          ...(body.proposals !== undefined ? { proposals: body.proposals } : {}),
+        };
       } catch {
         return null;
       }
@@ -1071,7 +1129,9 @@ export function createHttpApiClient(baseUrl: string, opts?: HttpApiOptions): Htt
           body: JSON.stringify({
             justification: input.justification,
             schedule: input.schedule,
-            ...(input.alsoDigests && input.alsoDigests.length > 0 ? { alsoDigests: input.alsoDigests } : {}),
+            ...(input.alsoDigests && input.alsoDigests.length > 0
+              ? { alsoDigests: input.alsoDigests }
+              : {}),
           }),
         },
       );
@@ -1720,6 +1780,29 @@ export function createHttpApiClient(baseUrl: string, opts?: HttpApiOptions): Htt
       const res = await request(`/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
       if (!res.ok) await throwRefusal(res);
       return writeOutcome(res);
+    },
+
+    /* ── the pre-trust onboarding-token lane (mint/revoke only — the token's
+     * OWN upload happens from the estate's CI, never from this SPA) ────────── */
+
+    async mintOnboardToken(
+      projectId: string,
+      opts?: { ttlMinutes?: number },
+    ): Promise<OnboardTokenMint> {
+      const res = await request(`/projects/${encodeURIComponent(projectId)}/onboard-tokens`, {
+        method: 'POST',
+        body: JSON.stringify(opts?.ttlMinutes !== undefined ? { ttlMinutes: opts.ttlMinutes } : {}),
+      });
+      if (!res.ok) await throwRefusal(res);
+      return (await res.json()) as OnboardTokenMint;
+    },
+
+    async revokeOnboardToken(projectId: string, tokenId: string): Promise<void> {
+      const res = await request(
+        `/projects/${encodeURIComponent(projectId)}/onboard-tokens/${encodeURIComponent(tokenId)}`,
+        { method: 'DELETE' },
+      );
+      if (!res.ok) await throwRefusal(res);
     },
 
     /* ── the per-account data plane (upload tokens / versions / activate) ──────

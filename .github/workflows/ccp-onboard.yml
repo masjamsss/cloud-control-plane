@@ -1,0 +1,111 @@
+# The FIRST onboarding scan for a new Cloud Control Plane project, run once
+# in the estate repo's own CI instead of on a laptop. Design and full
+# background: ccp/docs/onboarding-runbook.md and ccp/docs/onboarding-security.md
+# in the control-plane repository. This is a SIBLING of the recurring data
+# lane (.github/workflows/ccp-data.yml), not a replacement for it: same
+# vars.CI_RUNNER skip-guard, same .ccp-tools/ checkout pattern, same "keep the
+# artifact regardless" fallback. Dispatch only — an operator clicks "Run
+# workflow" after minting a short-lived onboarding token in Admin → Projects
+# (wizard step 2, "Run in the repo's CI" tab).
+#
+# THE TRUST BOUNDARY THIS WORKFLOW MUST NEVER CROSS
+# (ccp/docs/onboarding-security.md is the full contract):
+#   - PRESCAN ONLY. catalogctl onboard is invoked with NO --trusted-commit, so
+#     the run stops at the trust gate by construction, before any terraform
+#     call — nothing from this untrusted repo is ever executed.
+#   - NO TERRAFORM. There is no terraform setup step anywhere in this file.
+#   - NO CLOUD SECRET. Nothing below references an AWS/GOOGLE/ARM credential —
+#     only the narrow, pre-trust-only CCP_ONBOARD_TOKEN.
+#   - permissions: contents: read — this workflow only ever reads the repo.
+# Do not add a --trusted-commit re-run to this workflow, ever, without first
+# shipping the sandboxed container (tools/catalogctl/sandbox/) that invariant
+# requires for running any external repo's schema step (I7).
+#
+# Per-repo setup (details: ccp/docs/onboarding-runbook.md):
+#   secret   CCP_ONBOARD_TOKEN       the short-lived, single-purpose onboarding
+#                                       token minted in Admin → Projects (shown
+#                                       once at mint) — a SEPARATE credential
+#                                       from CCP_UPLOAD_TOKEN (the recurring
+#                                       data lane's key below); it can only PUT
+#                                       this one project's trust-request, and
+#                                       only before that project is trusted
+#   variable CCP_CONTROL_PLANE_URL   e.g. https://ccp.example.com/api
+#                                       (unset = scan only, keep the artifact)
+#   variable CCP_PROJECT_ID          the control-plane project id (must still
+#                                       be draft or pending-trust — minting the
+#                                       token above already checked that)
+#
+# Action pins: checkout/upload-artifact as ccp-data.yml pins them; go setup as
+# .github/workflows/catalogctl.yml pins it.
+
+name: ccp-onboard
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan-and-upload:
+    name: prescan + upload trust request
+    if: ${{ vars.CI_RUNNER != '' }} # estate-side job: runs only where a deployment configures vars.CI_RUNNER — this public repo ships it as a TEMPLATE and the job stays skipped here (see the header comment)
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    steps:
+      # Shallow (default fetch-depth 1) is enough — the scan only ever needs
+      # HEAD, never history.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # Foreign estate repo (catalogctl's source lives in the control-plane
+      # repo, not here)? Uncomment this second checkout — the next step finds
+      # it under .ccp-tools/ automatically. The control-plane repo's own
+      # self-onboarding (and importer/bootstrap, the self-trusted in-repo root
+      # — onboarding-security.md's "in-repo exception") needs no second
+      # checkout: tools/catalogctl is already on disk.
+      # - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      #   with:
+      #     repository: <owner>/<control-plane-repo>
+      #     token: ${{ secrets.CCP_TOOLS_READ_TOKEN }} # read-only PAT
+      #     path: .ccp-tools
+
+      - name: Locate the catalogctl module
+        id: locate
+        run: |
+          if [ -f tools/catalogctl/go.mod ]; then
+            DIR=tools/catalogctl
+          elif [ -f .ccp-tools/tools/catalogctl/go.mod ]; then
+            DIR=.ccp-tools/tools/catalogctl
+          else
+            echo "::error title=ccp-onboard::catalogctl module not found. Estate repos must also check out the control-plane repo (see the commented step above and ccp/docs/onboarding-runbook.md)."
+            exit 1
+          fi
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ steps.locate.outputs.dir }}/go.mod
+
+      - name: Build catalogctl
+        working-directory: ${{ steps.locate.outputs.dir }}
+        run: go build -o "$RUNNER_TEMP/catalogctl" ./cmd/catalogctl
+
+      - name: Prescan the repository and upload the trust request
+        env:
+          CCP_CONTROL_PLANE_URL: ${{ vars.CCP_CONTROL_PLANE_URL }}
+          CCP_ONBOARD_TOKEN: ${{ secrets.CCP_ONBOARD_TOKEN }}
+          CCP_PROJECT_ID: ${{ vars.CCP_PROJECT_ID }}
+        run: |
+          "$RUNNER_TEMP/catalogctl" onboard "$GITHUB_WORKSPACE" --project-id "$CCP_PROJECT_ID" --out "$RUNNER_TEMP/ccp-onboard-out" --server "$CCP_CONTROL_PLANE_URL"
+
+      # Manual-upload fallback: if the control plane was unreachable (or no
+      # URL is configured yet) the two scan files still land here — pick them
+      # from this artifact in the wizard's "Run locally" tab (Admin → Projects,
+      # step 2) exactly as a local run's output.
+      - name: Keep the scan artifacts as a run artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ccp-onboard-out
+          path: ${{ runner.temp }}/ccp-onboard-out
+          retention-days: 14
+          if-no-files-found: warn

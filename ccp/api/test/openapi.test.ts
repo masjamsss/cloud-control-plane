@@ -102,6 +102,19 @@ describe('OpenAPI contract (spec §3, extracted verbatim)', () => {
     expect(yaml).toContain('TWO-TIER');
   });
 
+  it('easy-first-import spec §3 A-ii/A-iii (Phase 1): the onboard-token mint/revoke paths and the trust-request Bearer alternative are declared', () => {
+    for (const p of ['/projects/{id}/onboard-tokens:', '/projects/{id}/onboard-tokens/{tokenId}:']) {
+      expect(yaml, p).toContain(p);
+    }
+    expect(yaml).toContain('onboard-token-mint');
+    expect(yaml).toContain('onboard-token-revoke');
+    expect(yaml).toContain('ONBOARD_TOKEN_INVALID');
+    // the Bearer lane is documented on the SAME existing trust-request path — no new route for it
+    const trustRequestBlock = yaml.slice(yaml.indexOf('\n  /projects/{id}/trust-request:'), yaml.indexOf('\n  /projects/{id}/trust:'));
+    expect(trustRequestBlock).toContain('Bearer');
+    expect(trustRequestBlock).toContain('onboard-token:<tokenId>');
+  });
+
   it('OOB provisioning-import spec §6/WI-S6: the import flavor is declared on the existing submit route — no new route', () => {
     // No new path — the whole feature rides the EXISTING submit route (spec §6/§11: "no new routes").
     expect(yaml, '/projects/{id}/drift/proposals/{digest}/submit:').toContain('/projects/{id}/drift/proposals/{digest}/submit:');

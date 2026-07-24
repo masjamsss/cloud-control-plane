@@ -76,7 +76,7 @@ func TestRejectedRepo_InitNeverRuns(t *testing.T) {
 				ProjectID:     "x",
 				TrustedCommit: "deadbeefdeadbeef", // even WITH trust, a rejected repo never inits
 				OutDir:        dir,
-			}, fr, &out)
+			}, fr, nil, &out)
 			if code != 2 {
 				t.Fatalf("exit = %d, want 2 (refusal)\n%s", code, out.String())
 			}
@@ -119,7 +119,7 @@ func TestCleanUntrusted_StopsAtTrustRequest(t *testing.T) {
 	fr := &fakeRunner{}
 	var out bytes.Buffer
 	dir := t.TempDir()
-	code := Run(Opts{Root: filepath.Join(fixtures, "clean-repo"), ProjectID: "bootstrap", OutDir: dir}, fr, &out)
+	code := Run(Opts{Root: filepath.Join(fixtures, "clean-repo"), ProjectID: "bootstrap", OutDir: dir}, fr, nil, &out)
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0\n%s", code, out.String())
 	}
@@ -174,7 +174,7 @@ func TestPrescanReportShape_IsTheWizardContract(t *testing.T) {
 	withStubs(t, "abc123def456", "1.15.7", nil)
 	var out bytes.Buffer
 	dir := t.TempDir()
-	if code := Run(Opts{Root: filepath.Join(fixtures, "clean-repo"), ProjectID: "bootstrap", OutDir: dir}, &fakeRunner{}, &out); code != 0 {
+	if code := Run(Opts{Root: filepath.Join(fixtures, "clean-repo"), ProjectID: "bootstrap", OutDir: dir}, &fakeRunner{}, nil, &out); code != 0 {
 		t.Fatalf("exit = %d, want 0\n%s", code, out.String())
 	}
 	rep := readReport(t, dir)
@@ -206,7 +206,7 @@ func TestCleanTrusted_RunsInitThenSchema(t *testing.T) {
 		ProjectID:     "bootstrap",
 		TrustedCommit: "abc123def456",
 		OutDir:        dir,
-	}, fr, &out)
+	}, fr, nil, &out)
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0\n%s", code, out.String())
 	}
@@ -231,7 +231,7 @@ func TestTrustedCommitMismatch_Refuses(t *testing.T) {
 		ProjectID:     "x",
 		TrustedCommit: "0000badcommit0",
 		OutDir:        t.TempDir(),
-	}, fr, &out)
+	}, fr, nil, &out)
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2\n%s", code, out.String())
 	}
@@ -254,7 +254,7 @@ func TestEmptyInventory_RefusesAfterSandbox(t *testing.T) {
 		ProjectID:     "x",
 		TrustedCommit: "abc123def456",
 		OutDir:        t.TempDir(),
-	}, fr, &out)
+	}, fr, nil, &out)
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2\n%s", code, out.String())
 	}
@@ -276,7 +276,7 @@ func TestRequiredVersionUnsatisfied_Refuses(t *testing.T) {
 		ProjectID:     "x",
 		TrustedCommit: "abc123def456",
 		OutDir:        t.TempDir(),
-	}, fr, &out)
+	}, fr, nil, &out)
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2\n%s", code, out.String())
 	}

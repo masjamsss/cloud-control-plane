@@ -3,7 +3,13 @@ import type { ChangeEvent, FormEvent, JSX } from 'react';
 import type { ProjectConfig } from '@/types/project';
 import { listProjects } from '@/lib/projectRegistry';
 import { authClient } from '@/lib/api';
-import type { ProjectDataVersion, ProjectDataVersions, ServerProject, UploadTokenMint } from '@/lib/httpApi';
+import type {
+  OnboardTokenMint,
+  ProjectDataVersion,
+  ProjectDataVersions,
+  ServerProject,
+  UploadTokenMint,
+} from '@/lib/httpApi';
 import { formatProjectTime } from '@/lib/datetime';
 import { getInstanceIdentity } from '@/lib/instanceIdentity';
 import { Card } from '@/components/ui/Card';
@@ -14,13 +20,16 @@ import {
   activatedAgeLabel,
   activateProjectDataVia,
   archiveProjectVia,
+  ciProvenanceLabel,
   dataCountsLabel,
   deregisterProjectVia,
   groupDataVersions,
   listProjectDataVersionsVia,
   loadServerProjectsVia,
+  mintOnboardTokenVia,
   mintUploadTokenVia,
   onboardCommand,
+  onboardDispatchUrl,
   projectCloudLabel,
   projectIdentityRows,
   proposeTrustVia,
@@ -31,6 +40,7 @@ import {
   repoHostLabel,
   repoLabel,
   repoRefFromForm,
+  revokeOnboardTokenVia,
   revokeUploadTokenVia,
   staleDataNotice,
   statusLabel,
@@ -39,15 +49,21 @@ import {
   summaryFromWire,
   trustControlRenders,
   unarchiveProjectVia,
+  uploadedByLabel,
   uploadTrustRequestVia,
   type PrescanReportSummary,
   type RepoHostChoice,
 } from './projectsFlow';
 import {
   GITHUB_CI_PATH,
+  GITHUB_ONBOARD_CI_PATH,
   GITLAB_CI_PATH,
+  GITLAB_ONBOARD_CI_PATH,
   githubDataWorkflow,
+  githubOnboardWorkflow,
   gitlabDataPipeline,
+  gitlabOnboardPipeline,
+  ONBOARD_KEY_SECRET,
   PROJECT_ID_VAR,
   UPLOAD_KEY_SECRET,
   SERVER_URL_VAR,
@@ -326,12 +342,17 @@ export function ProjectsAdmin(): JSX.Element {
     tenantId: '',
     location: '',
   });
-  // Step 2 — the two scan artifacts (filled by the file picker, or pasted)
+  // Step 2 — which method tab is showing, the two scan artifacts (filled by
+  // the file picker, or pasted, for the "Run locally" tab), and the one-time
+  // onboarding-token reveal (the "Run in the repo's CI" tab)
+  const [scanMethod, setScanMethod] = useState<'ci' | 'local'>('ci');
   const [trustReqText, setTrustReqText] = useState('');
   const [reportText, setReportText] = useState('');
   const [trustReqSource, setTrustReqSource] = useState<ArtifactSource>(null);
   const [reportSource, setReportSource] = useState<ArtifactSource>(null);
-  // Step 4 — CI tab + the one-time key reveal
+  const [mintedOnboard, setMintedOnboard] = useState<OnboardTokenMint | null>(null);
+  // Step 2 CI tab + step 4 — CI host tab (shared: one repo, one host) + the
+  // one-time upload-key reveal
   const [ciTab, setCiTab] = useState<'github' | 'gitlab'>('github');
   const [minted, setMinted] = useState<UploadTokenMint | null>(null);
   // Step 5 + lifecycle — the selected project's uploaded data versions
@@ -390,9 +411,11 @@ export function ProjectsAdmin(): JSX.Element {
   }, [dataStepLive, selectedId, authoritative, writable]);
 
   // A newly selected project starts on its own repo's tab, with any previous
-  // one-time key reveal gone (it belongs to the project it was minted for).
+  // one-time key/token reveal gone (each belongs to the project it was
+  // minted for).
   useEffect(() => {
     setMinted(null);
+    setMintedOnboard(null);
     setCiTab(selected?.repo?.host === 'gitlab' ? 'gitlab' : 'github');
     // Only the identity matters — repo host is fixed at registration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -527,6 +550,47 @@ export function ProjectsAdmin(): JSX.Element {
     });
   }
 
+  function onMintOnboardToken(): void {
+    run(async () => {
+      if (!selected) throw new Error('Select a registered project first.');
+      const mint = await mintOnboardTokenVia(authoritative, authClient, selected.id);
+      setMintedOnboard(mint);
+      await refresh(selected.id);
+      return {
+        kind: 'ok',
+        text: `Onboarding token minted — paste it into the repo’s CI secret ${ONBOARD_KEY_SECRET} now; it is not shown again.`,
+      };
+    });
+  }
+
+  function onRevokeOnboardToken(): void {
+    run(async () => {
+      // The server never lists tokens back (only their argon2id hashes exist
+      // server-side), so revoke targets the token THIS session just minted.
+      if (!selected || !mintedOnboard) throw new Error('Mint a token first — revoke targets it.');
+      await revokeOnboardTokenVia(authoritative, authClient, selected.id, mintedOnboard.tokenId);
+      setMintedOnboard(null);
+      return {
+        kind: 'ok',
+        text: 'Onboarding token revoked — the repo’s CI can no longer upload with it.',
+      };
+    });
+  }
+
+  /** A plain, read-only recheck of the registry — the CI tab's upload
+   * happens outside this browser tab entirely, so there is nothing else here
+   * to poll it automatically. */
+  function onCheckForUpload(): void {
+    run(async () => {
+      if (!selected) throw new Error('Select a registered project first.');
+      await refresh(selected.id);
+      return {
+        kind: 'ok',
+        text: 'Refreshed — once the workflow finishes, the uploaded scan appears for review below (step 3).',
+      };
+    });
+  }
+
   function onTrust(): void {
     run(async () => {
       if (!selected?.trustRequest) throw new Error('Upload the scan files first.');
@@ -650,6 +714,13 @@ export function ProjectsAdmin(): JSX.Element {
   const ciFileName = ciTab === 'github' ? GITHUB_CI_PATH : GITLAB_CI_PATH;
   const ciFileBody = ciTab === 'github' ? githubDataWorkflow() : gitlabDataPipeline();
 
+  // Step 2's "Run in the repo's CI" tab — the one-shot onboarding workflow
+  // (same host tab as step 4, since a repo has exactly one host) and the
+  // deep link to its dispatch page, known once step 1's repo is on record.
+  const onboardFileName = ciTab === 'github' ? GITHUB_ONBOARD_CI_PATH : GITLAB_ONBOARD_CI_PATH;
+  const onboardFileBody = ciTab === 'github' ? githubOnboardWorkflow() : gitlabOnboardPipeline();
+  const dispatchUrl = onboardDispatchUrl(selected?.repo);
+
   const artifactStatus = (
     source: ArtifactSource,
     parsedOk: boolean,
@@ -677,16 +748,17 @@ export function ProjectsAdmin(): JSX.Element {
         </div>
         <ol className="projadmin__how">
           <li>
-            Add the project — name, where the code lives, and the cloud identity: an AWS account
-            and region, or an Azure subscription, tenant and location.
+            Add the project — name, where the code lives, and the cloud identity: an AWS account and
+            region, or an Azure subscription, tenant and location.
           </li>
           <li>
-            Scan the repository locally with <code>catalogctl onboard</code>, then pick the two
-            files it writes.
+            Scan the repository — the repo&apos;s own CI can run the one-shot first scan and send it
+            here itself (recommended, no laptop), or run <code>catalogctl onboard</code> locally and
+            pick the two files it writes.
           </li>
           <li>
-            Review the scan verdict and findings, then trust the commit — a person reads them, and
-            a second admin confirms the decision.
+            Review the scan verdict and findings, then trust the commit — a person reads them, and a
+            second admin confirms the decision.
           </li>
           <li>
             Connect the repository&apos;s CI: commit the ready-made CI file and give it an upload
@@ -1039,7 +1111,7 @@ export function ProjectsAdmin(): JSX.Element {
         </GateFieldset>
       </section>
 
-      {/* ── Step 2 — scan + pick the two files ───────────────────────────────── */}
+      {/* ── Step 2 — get the first scan into the wizard ──────────────────────── */}
       <section className="projadmin__section" aria-labelledby="projadmin-scan">
         <div className="projadmin__section-head">
           <h2 className="projadmin__section-title" id="projadmin-scan">
@@ -1051,132 +1123,319 @@ export function ProjectsAdmin(): JSX.Element {
           </h2>
         </div>
         <p className="projadmin__lead">
-          Run this where your repository checkout and the terraform binary live. The scan is local
-          on purpose: it refuses to run with cloud credentials in the environment, and this server
-          never checks out repositories or runs terraform.
-        </p>
-        <CommandBlock
-          command={onboardCommand(selected?.id ?? '<project-id>')}
-          copyLabel="Copy the onboarding scan command"
-        />
-        <p className="projadmin__lead">
-          The run stops at the trust gate and writes two files into <code>out/</code>. Pick each
-          one here — the picker reads the file&apos;s exact bytes, which the server checks against
-          the fingerprint in the trust request.
+          The scan only reads the repository&apos;s Terraform — nothing executes, and this server
+          never checks out repositories or runs terraform itself. Run it in the repo&apos;s own CI
+          (no laptop, recommended) or on your own machine.
         </p>
 
-        <div className="projadmin__paste-grid">
-          <div className="projadmin__filefield">
-            <label className="projadmin__paste-label" htmlFor="projadmin-file-tr">
-              trust-request.json
-            </label>
-            <input
-              id="projadmin-file-tr"
-              className="projadmin__file"
-              type="file"
-              accept=".json,application/json"
-              onChange={onPickArtifact('trust')}
-            />
-            {artifactStatus(
-              trustReqSource,
-              parsedTrustReq !== null,
-              'Pick the trust-request.json the scan wrote.',
-            )}
-            {trustReqText.trim().length > 0 && (
-              <p
-                className={`projadmin__msg${parsedTrustReq ? '' : ' projadmin__msg--error'}`}
-                role={parsedTrustReq ? undefined : 'alert'}
-              >
-                {parsedTrustReq
-                  ? `Commit ${parsedTrustReq.commitSha.slice(0, 12)} of ${parsedTrustReq.repo}.`
-                  : 'Not a trust-request.json — expected the three fields repo, commitSha and prescanSha256.'}
-              </p>
-            )}
-          </div>
-          <div className="projadmin__filefield">
-            <label className="projadmin__paste-label" htmlFor="projadmin-file-rep">
-              prescan-report.json
-            </label>
-            <input
-              id="projadmin-file-rep"
-              className="projadmin__file"
-              type="file"
-              accept=".json,application/json"
-              onChange={onPickArtifact('report')}
-            />
-            {artifactStatus(
-              reportSource,
-              parsedReport !== null,
-              'Pick the prescan-report.json the scan wrote.',
-            )}
-            {reportText.trim().length > 0 && !parsedReport && (
-              <p className="projadmin__msg projadmin__msg--error" role="alert">
-                Not a prescan-report.json — pick the whole file the scan wrote.
-              </p>
-            )}
-          </div>
+        <div className="projadmin__tabs" role="tablist" aria-label="How to run the first scan">
+          {(['ci', 'local'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              role="tab"
+              id={`projadmin-scantab-${tab}`}
+              aria-selected={scanMethod === tab}
+              aria-controls="projadmin-scanpanel"
+              tabIndex={scanMethod === tab ? 0 : -1}
+              className={`projadmin__tab${scanMethod === tab ? ' projadmin__tab--active' : ''}`}
+              onClick={() => setScanMethod(tab)}
+            >
+              {tab === 'ci' ? "Run in the repo's CI (recommended)" : 'Run locally'}
+            </button>
+          ))}
         </div>
 
-        <details className="projadmin__fallback">
-          <summary>Paste the file contents instead</summary>
-          <p className="projadmin__hint">
-            If you can&apos;t pick files from here, paste each file&apos;s full contents exactly as
-            written — a shortened paste fails the fingerprint check.
-          </p>
-          <div className="projadmin__paste-grid">
-            <div>
-              <label className="projadmin__paste-label" htmlFor="projadmin-paste-tr">
-                trust-request.json
-              </label>
-              <textarea
-                id="projadmin-paste-tr"
-                className="projadmin__paste"
-                value={trustReqText}
-                onChange={(e) => {
-                  setTrustReqText(e.target.value);
-                  setTrustReqSource({ kind: 'paste' });
-                }}
-                placeholder='{"repo": "...", "commitSha": "...", "prescanSha256": "..."}'
-                rows={5}
-                spellCheck={false}
-              />
-            </div>
-            <div>
-              <label className="projadmin__paste-label" htmlFor="projadmin-paste-rep">
-                prescan-report.json
-              </label>
-              <textarea
-                id="projadmin-paste-rep"
-                className="projadmin__paste"
-                value={reportText}
-                onChange={(e) => {
-                  setReportText(e.target.value);
-                  setReportSource({ kind: 'paste' });
-                }}
-                placeholder='{"repo": "...", "verdict": "clean", "findings": [], ...}'
-                rows={5}
-                spellCheck={false}
-              />
-            </div>
-          </div>
-        </details>
+        <div
+          id="projadmin-scanpanel"
+          role="tabpanel"
+          aria-labelledby={`projadmin-scantab-${scanMethod}`}
+        >
+          {scanMethod === 'ci' ? (
+            <>
+              <p className="projadmin__lead">
+                A one-shot workflow scans the repository where its own code already lives, then
+                sends the two files here itself — nothing to copy by hand. It only reads the code
+                (no terraform, no cloud credentials), and it can ship in the same pull request as
+                the recurring data-lane file from step 4.
+              </p>
 
-        {parsedReport && <ReportView report={parsedReport} />}
+              <div className="projadmin__tabs" role="tablist" aria-label="CI host">
+                {(['github', 'gitlab'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    role="tab"
+                    id={`projadmin-onboardhosttab-${tab}`}
+                    aria-selected={ciTab === tab}
+                    aria-controls="projadmin-onboardhostpanel"
+                    tabIndex={ciTab === tab ? 0 : -1}
+                    className={`projadmin__tab${ciTab === tab ? ' projadmin__tab--active' : ''}`}
+                    onClick={() => setCiTab(tab)}
+                  >
+                    {tab === 'github' ? 'GitHub' : 'GitLab'}
+                  </button>
+                ))}
+              </div>
+              <div
+                id="projadmin-onboardhostpanel"
+                role="tabpanel"
+                aria-labelledby={`projadmin-onboardhosttab-${ciTab}`}
+                className="projadmin__cipanel"
+              >
+                <ol className="projadmin__how">
+                  <li>
+                    Commit this file to the repository as <code>{onboardFileName}</code>
+                    {ciTab === 'gitlab'
+                      ? ' and include it from the repository’s .gitlab-ci.yml'
+                      : ''}
+                    .
+                  </li>
+                  <li>
+                    Mint an onboarding token below and save it in the repository&apos;s CI as the
+                    secret <code>{ONBOARD_KEY_SECRET}</code>.
+                  </li>
+                  <li>
+                    Next to it, set two CI variables: <code>{SERVER_URL_VAR}</code> — this control
+                    plane&apos;s address — and <code>{PROJECT_ID_VAR}</code> ={' '}
+                    <code>{selected?.id ?? '<project-id>'}</code>.
+                  </li>
+                  <li>
+                    {ciTab === 'github'
+                      ? 'Open the workflow and click "Run workflow".'
+                      : 'Open "Run pipeline" on the default branch, then click the play button on the ccp-onboard job.'}{' '}
+                    The two files land here on their own — check back, or use the button below.
+                  </li>
+                </ol>
+                <div className="projadmin__cifile">
+                  <div className="projadmin__cifile-head">
+                    <code className="projadmin__cifile-name">{onboardFileName}</code>
+                    <CopyButton
+                      text={onboardFileBody}
+                      label={`Copy the ${ciTab === 'github' ? 'GitHub' : 'GitLab'} onboarding workflow file`}
+                    />
+                  </div>
+                  <pre className="projadmin__cifile-body">
+                    <code>{onboardFileBody}</code>
+                  </pre>
+                </div>
+                {dispatchUrl && (
+                  <div className="projadmin__form-actions">
+                    <a
+                      className="ui-btn ui-btn--primary"
+                      href={dispatchUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {ciTab === 'github'
+                        ? 'Open “Run workflow” on GitHub ↗'
+                        : 'Open “Run pipeline” on GitLab ↗'}
+                    </a>
+                  </div>
+                )}
+                {!dispatchUrl && (
+                  <p className="projadmin__hint">
+                    Select a registered project above to get its dispatch link.
+                  </p>
+                )}
+              </div>
 
-        <GateFieldset disabled={!writable}>
-          <div className="projadmin__form-actions">
-            <Button
-              variant="primary"
-              onClick={onUpload}
-              disabled={!selected || !parsedTrustReq || !parsedReport}
-            >
-              Upload scan files
-            </Button>
-            {!selected && writable && (
-              <p className="projadmin__hint">Select a registered project above to upload for it.</p>
-            )}
-          </div>
-        </GateFieldset>
+              <div className="projadmin__trust-action">
+                <h3 className="projadmin__subtitle">Onboarding token</h3>
+                {mintedOnboard ? (
+                  <p className="projadmin__lead">
+                    Token <code>{mintedOnboard.tokenId}</code> was just minted — it is shown below
+                    exactly once.
+                  </p>
+                ) : (
+                  <p className="projadmin__lead">
+                    A token is shown exactly once, at mint — the server keeps no readable copy. It
+                    is narrow on purpose: it only works before this project is trusted, and it can
+                    only upload this one project&apos;s scan — nothing else.
+                  </p>
+                )}
+                <GateFieldset disabled={!writable}>
+                  <div className="projadmin__form-actions">
+                    <Button variant="primary" onClick={onMintOnboardToken} disabled={!selected}>
+                      Mint onboarding token
+                    </Button>
+                    {mintedOnboard && (
+                      <Button variant="danger" onClick={onRevokeOnboardToken}>
+                        Revoke this token
+                      </Button>
+                    )}
+                  </div>
+                </GateFieldset>
+                {!selected && writable && (
+                  <p className="projadmin__hint">
+                    Select a registered project above to mint a token for it.
+                  </p>
+                )}
+                {mintedOnboard && (
+                  <div className="projadmin__token" role="status">
+                    <p className="projadmin__token-note">
+                      This token is shown once — paste it into the repo&apos;s CI secret{' '}
+                      <code>{ONBOARD_KEY_SECRET}</code> now.
+                    </p>
+                    <CommandBlock
+                      command={mintedOnboard.token}
+                      copyLabel="Copy the onboarding token"
+                    />
+                    <p className="projadmin__hint">
+                      Valid until {formatProjectTime(mintedOnboard.expiresAt)}. If it leaks, revoke
+                      it here while this page is open and mint a new one.
+                    </p>
+                  </div>
+                )}
+                {selected && (
+                  <div className="projadmin__form-actions">
+                    <Button variant="ghost" onClick={onCheckForUpload}>
+                      Check for the uploaded scan
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <p className="projadmin__hint">
+                Control plane unreachable from that runner (air-gapped estate)? The workflow still
+                keeps the two files as a downloadable run artifact — switch to the{' '}
+                <strong>Run locally</strong> tab and pick them from there.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="projadmin__lead">
+                Run this where your repository checkout and the terraform binary live. The scan is
+                local on purpose: it refuses to run with cloud credentials in the environment. Kept
+                for air-gapped estates with no usable CI.
+              </p>
+              <CommandBlock
+                command={onboardCommand(selected?.id ?? '<project-id>')}
+                copyLabel="Copy the onboarding scan command"
+              />
+              <p className="projadmin__lead">
+                The run stops at the trust gate and writes two files into <code>out/</code>. Pick
+                each one here — the picker reads the file&apos;s exact bytes, which the server
+                checks against the fingerprint in the trust request.
+              </p>
+
+              <div className="projadmin__paste-grid">
+                <div className="projadmin__filefield">
+                  <label className="projadmin__paste-label" htmlFor="projadmin-file-tr">
+                    trust-request.json
+                  </label>
+                  <input
+                    id="projadmin-file-tr"
+                    className="projadmin__file"
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={onPickArtifact('trust')}
+                  />
+                  {artifactStatus(
+                    trustReqSource,
+                    parsedTrustReq !== null,
+                    'Pick the trust-request.json the scan wrote.',
+                  )}
+                  {trustReqText.trim().length > 0 && (
+                    <p
+                      className={`projadmin__msg${parsedTrustReq ? '' : ' projadmin__msg--error'}`}
+                      role={parsedTrustReq ? undefined : 'alert'}
+                    >
+                      {parsedTrustReq
+                        ? `Commit ${parsedTrustReq.commitSha.slice(0, 12)} of ${parsedTrustReq.repo}.`
+                        : 'Not a trust-request.json — expected the three fields repo, commitSha and prescanSha256.'}
+                    </p>
+                  )}
+                </div>
+                <div className="projadmin__filefield">
+                  <label className="projadmin__paste-label" htmlFor="projadmin-file-rep">
+                    prescan-report.json
+                  </label>
+                  <input
+                    id="projadmin-file-rep"
+                    className="projadmin__file"
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={onPickArtifact('report')}
+                  />
+                  {artifactStatus(
+                    reportSource,
+                    parsedReport !== null,
+                    'Pick the prescan-report.json the scan wrote.',
+                  )}
+                  {reportText.trim().length > 0 && !parsedReport && (
+                    <p className="projadmin__msg projadmin__msg--error" role="alert">
+                      Not a prescan-report.json — pick the whole file the scan wrote.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <details className="projadmin__fallback">
+                <summary>Paste the file contents instead</summary>
+                <p className="projadmin__hint">
+                  If you can&apos;t pick files from here, paste each file&apos;s full contents
+                  exactly as written — a shortened paste fails the fingerprint check.
+                </p>
+                <div className="projadmin__paste-grid">
+                  <div>
+                    <label className="projadmin__paste-label" htmlFor="projadmin-paste-tr">
+                      trust-request.json
+                    </label>
+                    <textarea
+                      id="projadmin-paste-tr"
+                      className="projadmin__paste"
+                      value={trustReqText}
+                      onChange={(e) => {
+                        setTrustReqText(e.target.value);
+                        setTrustReqSource({ kind: 'paste' });
+                      }}
+                      placeholder='{"repo": "...", "commitSha": "...", "prescanSha256": "..."}'
+                      rows={5}
+                      spellCheck={false}
+                    />
+                  </div>
+                  <div>
+                    <label className="projadmin__paste-label" htmlFor="projadmin-paste-rep">
+                      prescan-report.json
+                    </label>
+                    <textarea
+                      id="projadmin-paste-rep"
+                      className="projadmin__paste"
+                      value={reportText}
+                      onChange={(e) => {
+                        setReportText(e.target.value);
+                        setReportSource({ kind: 'paste' });
+                      }}
+                      placeholder='{"repo": "...", "verdict": "clean", "findings": [], ...}'
+                      rows={5}
+                      spellCheck={false}
+                    />
+                  </div>
+                </div>
+              </details>
+
+              {parsedReport && <ReportView report={parsedReport} />}
+
+              <GateFieldset disabled={!writable}>
+                <div className="projadmin__form-actions">
+                  <Button
+                    variant="primary"
+                    onClick={onUpload}
+                    disabled={!selected || !parsedTrustReq || !parsedReport}
+                  >
+                    Upload scan files
+                  </Button>
+                  {!selected && writable && (
+                    <p className="projadmin__hint">
+                      Select a registered project above to upload for it.
+                    </p>
+                  )}
+                </div>
+              </GateFieldset>
+            </>
+          )}
+        </div>
       </section>
 
       {/* ── Step 3 — review & trust ──────────────────────────────────────────── */}
@@ -1185,51 +1444,66 @@ export function ProjectsAdmin(): JSX.Element {
         serverReport &&
         selected.status === 'pending-trust' &&
         selected.trustRequest && (
-        <section className="projadmin__section" aria-labelledby="projadmin-review">
-          <div className="projadmin__section-head">
-            <h2 className="projadmin__section-title" id="projadmin-review">
-              <StepHeading n={3} title="Review & trust" />
-            </h2>
-          </div>
-          <p className="projadmin__lead">
-            Uploaded by {selected.trustRequest.uploadedBy}. Read the verdict and every finding —
-            this review is a human decision and stays one.
-          </p>
-          <ReportView report={serverReport} />
-
-          {trustControlRenders(serverReport) ? (
-            <div className="projadmin__trust-action">
-              <h3 className="projadmin__subtitle">Trust this commit</h3>
-              <dl className="projadmin__meta projadmin__meta--wide">
-                <div className="projadmin__meta-row">
-                  <dt>Commit</dt>
-                  <dd className="projadmin__mono">{selected.trustRequest.commitSha}</dd>
-                </div>
-                <div className="projadmin__meta-row">
-                  <dt>Report fingerprint</dt>
-                  <dd className="projadmin__mono">{selected.trustRequest.prescanSha256}</dd>
-                </div>
-              </dl>
-              <GateFieldset disabled={!writable}>
-                <Button variant="primary" onClick={onTrust}>
-                  Trust this commit
-                </Button>
-              </GateFieldset>
-              {!demo && (
-                <p className="projadmin__hint">
-                  Recording the decision needs a second admin&apos;s confirmation under Pending
-                  changes before anything applies.
-                </p>
-              )}
+          <section className="projadmin__section" aria-labelledby="projadmin-review">
+            <div className="projadmin__section-head">
+              <h2 className="projadmin__section-title" id="projadmin-review">
+                <StepHeading n={3} title="Review & trust" />
+              </h2>
             </div>
-          ) : (
-            <p className="projadmin__msg projadmin__msg--error" role="alert">
-              The scan rejected this repository, so there is nothing to trust — fix the findings,
-              commit, and run the scan again. This is a full stop by design.
+            <p className="projadmin__lead">
+              Uploaded by {uploadedByLabel(selected.trustRequest.uploadedBy)}
+              {selected.trustRequest.ci && (
+                <>
+                  {' '}
+                  —{' '}
+                  <a
+                    href={selected.trustRequest.ci.runUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {ciProvenanceLabel(selected.trustRequest.ci)} ↗
+                  </a>
+                </>
+              )}
+              . Read the verdict and every finding — this review is a human decision and stays one.
+              {selected.trustRequest.ci &&
+                ' Cross-check the run above against the repository’s own Actions or pipeline log before trusting it.'}
             </p>
-          )}
-        </section>
-      )}
+            <ReportView report={serverReport} />
+
+            {trustControlRenders(serverReport) ? (
+              <div className="projadmin__trust-action">
+                <h3 className="projadmin__subtitle">Trust this commit</h3>
+                <dl className="projadmin__meta projadmin__meta--wide">
+                  <div className="projadmin__meta-row">
+                    <dt>Commit</dt>
+                    <dd className="projadmin__mono">{selected.trustRequest.commitSha}</dd>
+                  </div>
+                  <div className="projadmin__meta-row">
+                    <dt>Report fingerprint</dt>
+                    <dd className="projadmin__mono">{selected.trustRequest.prescanSha256}</dd>
+                  </div>
+                </dl>
+                <GateFieldset disabled={!writable}>
+                  <Button variant="primary" onClick={onTrust}>
+                    Trust this commit
+                  </Button>
+                </GateFieldset>
+                {!demo && (
+                  <p className="projadmin__hint">
+                    Recording the decision needs a second admin&apos;s confirmation under Pending
+                    changes before anything applies.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="projadmin__msg projadmin__msg--error" role="alert">
+                The scan rejected this repository, so there is nothing to trust — fix the findings,
+                commit, and run the scan again. This is a full stop by design.
+              </p>
+            )}
+          </section>
+        )}
 
       {/* ── Step 4 — connect the repo's CI ───────────────────────────────────── */}
       {selected && !selected.archived && dataStepLive && (
@@ -1291,7 +1565,10 @@ export function ProjectsAdmin(): JSX.Element {
             <div className="projadmin__cifile">
               <div className="projadmin__cifile-head">
                 <code className="projadmin__cifile-name">{ciFileName}</code>
-                <CopyButton text={ciFileBody} label={`Copy the ${ciTab === 'github' ? 'GitHub' : 'GitLab'} CI file`} />
+                <CopyButton
+                  text={ciFileBody}
+                  label={`Copy the ${ciTab === 'github' ? 'GitHub' : 'GitLab'} CI file`}
+                />
               </div>
               <pre className="projadmin__cifile-body">
                 <code>{ciFileBody}</code>
@@ -1354,8 +1631,8 @@ export function ProjectsAdmin(): JSX.Element {
             </h2>
           </div>
           <p className="projadmin__lead">
-            Uploads from the repo&apos;s CI wait here as staged data — nothing goes live on its
-            own. Activating switches the project to that version
+            Uploads from the repo&apos;s CI wait here as staged data — nothing goes live on its own.
+            Activating switches the project to that version
             {demo ? '.' : ', after a second admin confirms.'} The server has already checked each
             upload&apos;s digests, so there is nothing to type.
             {selected.status !== 'ready' &&

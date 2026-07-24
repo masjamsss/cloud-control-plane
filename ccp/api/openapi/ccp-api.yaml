@@ -676,18 +676,55 @@ paths:
         trustRequest.prescanSha256 (else 422 PRESCAN_SHA_MISMATCH), then the bytes must strictly parse as a
         PrescanReport whose repo matches. A reject-verdict report uploads fine — findings must persist for
         human review — it just can never be trusted. Status → pending-trust; refused (409) once trusted/ready
-        (re-aiming a recorded trust decision requires deregister + fresh onboard). Audit: project-trust-request',
+        (re-aiming a recorded trust decision requires deregister + fresh onboard). ALSO accepts a PRE-TRUST
+        onboard-token Bearer lane (`Authorization: Bearer <tokenId>.<secret>`, minted by
+        POST /projects/{id}/onboard-tokens) for the one-shot CI scan — no session, no X-Ccp-Client, like
+        PUT /projects/{id}/data. Same downstream pipeline, but its OWN fail-closed gate runs FIRST (per-tokenId
+        rate limit → store lookup → project binding → not-revoked → expiry → argon2id verify → status); a
+        revoked/expired/mismatched token is refused 401 ONBOARD_TOKEN_INVALID. On that lane uploadedBy records
+        `onboard-token:<tokenId>` and the write audits to the TARGET project''s chain; an optional `ci` provenance
+        block is stored for the trust review. The two-admin trust on POST /projects/{id}/trust is UNCHANGED.
+        Audit: project-trust-request',
       parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
       requestBody: { required: true, content: { application/json: { schema: { type: object,
         required: [trustRequest, prescanReport], additionalProperties: false,
         properties: { trustRequest: { type: object, required: [repo, commitSha, prescanSha256], additionalProperties: false,
             properties: { repo: {type: string}, commitSha: {type: string, pattern: '^[0-9a-f]{7,64}$'},
               prescanSha256: {type: string, pattern: '^[a-f0-9]{64}$'} } },
-          prescanReport: {type: string, maxLength: 524288, description: 'raw prescan-report.json file text — hashed byte-for-byte'} } } } } },
+          prescanReport: {type: string, maxLength: 524288, description: 'raw prescan-report.json file text — hashed byte-for-byte'},
+          ci: { type: object, additionalProperties: false, required: [host, runUrl], description: 'OPTIONAL CI-run provenance (spec §3 A-iii) — rendered in the trust review so admins can cross-check the forge log; omitted → treated as absent, malformed → whole body refused',
+            properties: { host: {type: string, enum: [github, gitlab]}, runUrl: {type: string, format: uri, description: 'https-only, ≤500 chars'} } } } } } } },
       responses: { '200': { description: Artifacts recorded; pending-trust, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } },
         '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
         '404': { description: Not found }, '409': { $ref: '#/components/responses/E409' },
         '422': { description: 'VALIDATION_FAILED | PRESCAN_SHA_MISMATCH', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } } } }
+  /projects/{id}/onboard-tokens:
+    post: { summary: 'Mint a PRE-TRUST onboarding token (lead + isAdmin) — a SEPARATE, narrower credential from the
+        CI upload token, never cross-usable (own type + key namespace). Valid ONLY while the project is
+        draft/pending-trust — the EXACT INVERSE of the upload token''s trusted/ready gate, so the two credentials''
+        lifetimes never overlap — refused (409) once trusted/ready, and for an archived project. Authorizes
+        EXACTLY one verb: the Bearer lane of PUT /projects/{id}/trust-request. The clear token
+        (`<tokenId>.<secret>`) is returned exactly ONCE — the server stores only an argon2id hash. Expiring
+        (default 24h, max 7 days) and revocable. Audit: onboard-token-mint',
+      parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
+      requestBody: { required: false, content: { application/json: { schema: { type: object, additionalProperties: false,
+        properties: { ttlMinutes: {type: integer, minimum: 5, maximum: 10080} } } } } },
+      responses: { '201': { description: 'Token minted (shown once)', content: { application/json: { schema: { type: object,
+          required: [tokenId, token, expiresAt],
+          properties: { tokenId: {type: string}, token: {type: string}, expiresAt: {type: string} } } } } },
+        '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
+        '404': { description: Not found }, '409': { $ref: '#/components/responses/E409' },
+        '422': { $ref: '#/components/responses/E422' } } }
+  /projects/{id}/onboard-tokens/{tokenId}:
+    delete: { summary: 'Revoke a pre-trust onboarding token (lead + isAdmin) — immediate. UNLIKE the upload
+        token''s hard-delete, the row is TOMBSTONED (`revokedAt` stamped, kept for audit — mirrors the project''s
+        own `archived` block); the trust-request Bearer lane checks `revokedAt` as its own explicit fail-closed
+        step. Already-revoked or unknown → 404. Audit: onboard-token-revoke',
+      parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' },
+        { name: tokenId, in: path, required: true, schema: {type: string} }],
+      responses: { '200': { description: Revoked },
+        '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
+        '404': { description: Not found } } }
   /projects/{id}/trust:
     post: { summary: 'The trust decision (lead + isAdmin) — ALWAYS dual-controlled, never single-keystroke:
         this PROPOSES (202, kind project-trust); a SECOND distinct admin applies it via

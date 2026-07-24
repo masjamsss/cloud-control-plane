@@ -89,6 +89,64 @@ no-credentials guarantees. **External** repositories get no such exception: they
 must run inside the container (`tools/catalogctl/sandbox/Dockerfile`) with the
 egress-restricted network, read-only bind mount, and non-root user.
 
+## Where the first scan may run
+
+The pre-scan stage (step 2 above) can be started from three places. The invariants on this
+page apply identically wherever it runs — moving WHERE it starts never moves WHAT is allowed
+to happen:
+
+1. **A laptop**, in a credential-free shell — `catalogctl onboard`, unchanged, the original
+   path. Kept as the fallback for an air-gapped estate, or one with no usable CI
+   (`ccp/docs/onboarding-runbook.md` step 2, "Run locally").
+2. **The estate repository's own CI** — a dispatch-only workflow
+   (`.github/workflows/ccp-onboard.yml` / `.gitlab/ci/ccp-onboard.gitlab-ci.yml`), the
+   recommended path (`ccp/docs/onboarding-runbook.md` step 2, "Run in the repo's CI"). This
+   runs the SAME `catalogctl onboard` binary with NO `--trusted-commit`, so it stops at the
+   trust gate by construction (`onboard.go:140-157`) before the required-version gate or any
+   runner call (`onboard.go:163-194`, unreached). The workflow's own `permissions:
+   contents: read` and total absence of a terraform setup step or a cloud secret are the same
+   guarantee, restated at the CI-config level. The two artifacts travel to the control plane
+   over a narrow, pre-trust-only onboarding token — `PUT /projects/:id/trust-request` with
+   `Authorization: Bearer <tokenId>.<secret>`, minted by `POST /projects/:id/onboard-tokens`
+   (legal only while draft/pending-trust — the *inverse* of the CI upload token's
+   trusted/ready gate, so the two credentials' lifetimes never overlap; argon2id at rest,
+   shown once, revocable, rate-limited, audited — `ccp/api/src/routes/projects.ts`). This lane
+   authorizes EXACTLY that one verb: it cannot trust, cannot read, cannot upload data, cannot
+   touch any other project.
+3. **The control plane itself never runs it, either way.** The api process never checks out a
+   repository and never invokes terraform (`ccp/api/src/routes/projects.ts`) — it only
+   verifies uploaded bytes and records a human decision. Neither the laptop path nor the
+   estate-CI path changes this; both are producers the api receives artifacts from, nothing
+   more.
+
+**The two-admin trust ceremony is identical regardless of transport.** Whichever path produced
+`trust-request.json` + `prescan-report.json`, the SAME code path validates them (sha binding,
+strict parse, artifact-disagreement refusal, status gate) and the SAME dual-controlled
+`POST /projects/:id/trust` decides trust — a Lead proposes, a second distinct admin acks, and
+a `reject` verdict can never be trusted (`TRUST_VERDICT_NOT_CLEAN`). The upload schema also
+carries an optional, strictly validated `ci: {host, runUrl}` provenance block the two
+reviewing admins can cross-check against the repository's own Actions/pipeline log —
+provenance for the human review, never a substitute for it. It is stored and rendered wherever
+present; the `ccp-onboard.yml` / `ccp-onboard.gitlab-ci.yml` workflows do not populate it yet
+(`catalogctl onboard --server`'s upload body carries only the trust-request triple and the raw
+report — see `tools/catalogctl/internal/onboard/upload.go`), so today it is populated only by
+a caller that fills it in directly against the same endpoint; teaching the CLI or the workflow
+to fill it in automatically is a natural, still-open follow-up.
+
+**Hard rule: do not add a `--trusted-commit` step to the estate-CI workflow.** The post-trust
+schema step (`terraform init -backend=false` + `providers schema`, `onboard.go:180-194`) is
+EXECUTION against a now-trusted repository's code, and "The in-repo exception" above only ever
+licenses that execution in two places: host-side, for the self-trusted in-repo root
+(`importer/bootstrap` and this repository's own tooling); or inside the sandbox container
+(`tools/catalogctl/sandbox/Dockerfile` — egress restricted to the two registry hosts,
+read-only bind mount, non-root user), for every external repository. A GitHub-/GitLab-hosted
+estate runner is neither of those: it is not the sandbox container, and an estate repo is not
+the self-trusted in-repo root. Adding `--trusted-commit` to `ccp-onboard.yml` or
+`ccp-onboard.gitlab-ci.yml` would run the schema step, unsandboxed, against an external
+repository's code on that runner — a real execution-boundary violation, not a paperwork one.
+If a CI-run schema step is ever wanted, it must ship the sandbox container first; nothing in
+this design licenses it without that.
+
 ## Standing invariants for every onboarded project
 
 - Blocks for any project are generated only through the redacting extractor; the canonical `catalog/redaction-rules.json` always applies, an optional per-project extension may add rules, and the extension's absence never disables the canonical rules (fail-closed).

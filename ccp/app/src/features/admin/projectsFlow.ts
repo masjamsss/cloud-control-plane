@@ -1,6 +1,8 @@
 import type {
   AdminWriteOutcome,
+  CiProvenanceWire,
   HttpApiClient,
+  OnboardTokenMint,
   PrescanFinding,
   PrescanReportWire,
   ProjectDataVersion,
@@ -19,14 +21,17 @@ import {
   deregisterLocalProject,
   listLocalProjectDataVersions,
   listLocalProjects,
+  mintLocalOnboardToken,
   mintLocalUploadToken,
   proposeLocalProjectTrust,
   registerLocalProject,
+  revokeLocalOnboardToken,
   revokeLocalUploadToken,
   unarchiveLocalProject,
   uploadLocalTrustRequest,
 } from '@/lib/projectOnboarding';
 import { projectCalendarAgeDays } from '@/lib/datetime';
+import { GITHUB_ONBOARD_CI_PATH } from './ciTemplates';
 
 /**
  * Pure logic for the Admin → Projects onboarding wizard. React-free so
@@ -269,21 +274,78 @@ export async function readArtifactFile(
   file: ArtifactFile,
 ): Promise<{ ok: true; text: string } | { ok: false; reason: string }> {
   if (file.size > ARTIFACT_FILE_MAX_BYTES) {
-    return { ok: false, reason: `${file.name} is too big to be a scan artifact — pick the JSON file the scan wrote.` };
+    return {
+      ok: false,
+      reason: `${file.name} is too big to be a scan artifact — pick the JSON file the scan wrote.`,
+    };
   }
   try {
     const bytes = await file.arrayBuffer();
     const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
     return { ok: true, text };
   } catch {
-    return { ok: false, reason: `${file.name} is not a text file — pick the JSON file the scan wrote.` };
+    return {
+      ok: false,
+      reason: `${file.name} is not a text file — pick the JSON file the scan wrote.`,
+    };
   }
 }
 
-/** The copy-paste command for the local scan (step 2). The scan runs where the
- * checkout and terraform binary live — never on the api host. */
+/** The copy-paste command for the local scan (step 2, "Run locally" tab). The
+ * scan runs where the checkout and terraform binary live — never on the api
+ * host. Kept verbatim for air-gapped estates with no usable CI. */
 export function onboardCommand(projectId: string): string {
   return `catalogctl onboard <path-to-your-checkout> --project-id ${projectId} --out out/`;
+}
+
+/* ── step 2, "Run in the repo's CI" tab (design:
+ * docs/superpowers/specs/2026-07-24-easy-first-import.md, option A): a
+ * mint-onboarding-token button + a host-aware deep link to the workflow's
+ * dispatch page. Owner/repo are already known from step 1's RepoRef, so
+ * nothing here asks the operator to retype anything. ─────────────────────── */
+
+/** The GitHub Actions workflow's own "Run workflow" page — the button only
+ * appears there once the file is committed on the default branch. */
+function githubOnboardDispatchUrl(repo: RepoRef): string {
+  const file = GITHUB_ONBOARD_CI_PATH.split('/').pop();
+  return `https://github.com/${repo.owner}/${repo.name}/actions/workflows/${file}`;
+}
+
+/** GitLab has no per-pipeline-definition dispatch button — the operator
+ * starts a new pipeline on the default branch ("Run pipeline") and clicks the
+ * `when: manual` job's own play button once that pipeline is running (the
+ * spec's own documented GitLab caveat). Self-hosted GitLab uses the project's
+ * own server address; GitHub is always github.com (this schema models no
+ * self-hosted GitHub Enterprise base). */
+function gitlabOnboardDispatchUrl(repo: RepoRef): string {
+  const base = (repo.baseUrl ?? 'https://gitlab.com').replace(/\/+$/, '');
+  return `${base}/${repo.owner}/${repo.name}/-/pipelines/new`;
+}
+
+/** The host-aware "run the first scan" deep link for the CI tab, or `null`
+ * when no project is selected yet (step 1 not completed) — the caller falls
+ * back to plain instructions in that case. */
+export function onboardDispatchUrl(repo: RepoRef | undefined): string | null {
+  if (!repo) return null;
+  return repo.host === 'github' ? githubOnboardDispatchUrl(repo) : gitlabOnboardDispatchUrl(repo);
+}
+
+/** Plain words for a CI-run provenance host — used next to the link the
+ * step-3 review renders when the uploaded trust request carries one. */
+export function ciProvenanceLabel(ci: Pick<CiProvenanceWire, 'host'>): string {
+  return ci.host === 'github' ? 'GitHub Actions run' : 'GitLab pipeline run';
+}
+
+/** Human-friendly rendering of `trustRequest.uploadedBy` for step 3's review.
+ * A session upload names the actor's own account id (unchanged rendering);
+ * an onboarding-token upload's actor is the server's own bookkeeping string
+ * (`onboard-token:<id>`, routes/projects.ts `tokenActor`) — that reads as a
+ * cryptic code, not a person, so show the plain fact instead. Matches on the
+ * actor prefix rather than on {@link CiProvenanceWire} presence, so it also
+ * humanizes a plain `catalogctl onboard --server` upload (Phase 1's CLI
+ * lane), which carries no `ci` block at all. */
+export function uploadedByLabel(uploadedBy: string): string {
+  return uploadedBy.startsWith('onboard-token:') ? 'the repository’s CI' : uploadedBy;
 }
 
 /** The post-trust re-run — the CLI's own commit gate. The connected CI job
@@ -317,7 +379,8 @@ export function groupDataVersions(v: ProjectDataVersions): {
 } {
   const byNewest = [...v.versions].sort((a, b) => b.version - a.version);
   const active = byNewest.find(
-    (x) => x.status === 'active' || (v.activeVersion !== undefined && x.version === v.activeVersion),
+    (x) =>
+      x.status === 'active' || (v.activeVersion !== undefined && x.version === v.activeVersion),
   );
   const rest = byNewest.filter((x) => x !== active);
   return {
@@ -374,13 +437,16 @@ export function staleDataNotice(
  */
 export const REFUSAL_COPY: Readonly<Record<string, string>> = {
   DUPLICATE_PROJECT: 'A project with this id already exists — pick a different id.',
-  VALIDATION_FAILED: 'The server refused one of the fields — fix the highlighted value and try again.',
+  VALIDATION_FAILED:
+    'The server refused one of the fields — fix the highlighted value and try again.',
   PRESCAN_SHA_MISMATCH:
     'The report does not match the fingerprint in the trust request — a person on a terminal must re-run the scan and upload the fresh pair.',
   TRUST_VERDICT_NOT_CLEAN:
     'The scan rejected this repository, so there is nothing to trust — a person on a terminal must fix the findings, commit, and scan again.',
-  STATE_CONFLICT: 'This project has moved on since you loaded the page — reload to see where it is.',
-  NOT_FOUND: 'The server does not know this — it may have been removed or renamed; reload the list.',
+  STATE_CONFLICT:
+    'This project has moved on since you loaded the page — reload to see where it is.',
+  NOT_FOUND:
+    'The server does not know this — it may have been removed or renamed; reload the list.',
   FORBIDDEN: 'Your session may not do this — an admin has to.',
   DATA_DIGEST_MISMATCH:
     'The uploaded data does not match its own fingerprints — the repo’s CI must regenerate and upload it again.',
@@ -491,7 +557,12 @@ export async function uploadTrustRequestVia(
   }
   const summary = summarizePrescanReport(reportJson);
   if (!summary) throw new Error('Not a prescan-report.json — paste the whole file the scan wrote.');
-  return uploadLocalTrustRequest(id, input.trustRequest, input.prescanReport, wireFromSummary(summary));
+  return uploadLocalTrustRequest(
+    id,
+    input.trustRequest,
+    input.prescanReport,
+    wireFromSummary(summary),
+  );
 }
 
 export async function proposeTrustVia(
@@ -513,6 +584,29 @@ export async function deregisterProjectVia(
   if (authoritative && client) return client.deregisterProject(id);
   deregisterLocalProject(id);
   return { applied: true };
+}
+
+/* ── the pre-trust onboarding-token lane (mint/revoke; the token's own
+ * upload happens from the estate's CI, never from this app — design:
+ * docs/superpowers/specs/2026-07-24-easy-first-import.md, option A) ─────── */
+
+export async function mintOnboardTokenVia(
+  authoritative: boolean,
+  client: HttpApiClient | null,
+  id: string,
+): Promise<OnboardTokenMint> {
+  if (authoritative && client) return client.mintOnboardToken(id);
+  return mintLocalOnboardToken(id);
+}
+
+export async function revokeOnboardTokenVia(
+  authoritative: boolean,
+  client: HttpApiClient | null,
+  id: string,
+  tokenId: string,
+): Promise<void> {
+  if (authoritative && client) return client.revokeOnboardToken(id, tokenId);
+  revokeLocalOnboardToken(id, tokenId);
 }
 
 /* ── the CI data lane (mint key → CI uploads staged versions → activate) ───── */
