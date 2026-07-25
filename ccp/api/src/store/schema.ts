@@ -1051,6 +1051,45 @@ export const ProjectOnboardTokenItem = z.object({
 });
 export type ProjectOnboardTokenItem = z.infer<typeof ProjectOnboardTokenItem>;
 
+/**
+ * One server-side scan job (ADR-0033). The control plane records the INTENT to
+ * scan; a separate worker does the cloning and parsing and reports back.
+ *
+ * The row deliberately holds NO secret and no clone URL: the URL is rebuilt at
+ * claim time from the project's validated RepoRef (`domain/scanner.ts`
+ * buildCloneUrl) and the upload token is minted per claim with a short TTL. A
+ * leaked job row therefore grants nothing and reveals nothing about how the
+ * deployment reaches the forge.
+ *
+ * `status` moves only along the forward-only machine in `domain/scanner.ts`.
+ * `error` is ALREADY sanitized before it is written here — it originates in a
+ * worker that ran against an untrusted repository, so raw worker output must
+ * never reach this row.
+ */
+export const ProjectScanJobItem = z.object({
+  PK: z.string(),
+  SK: z.string(), // 'SCANJOB#<jobId>'
+  jobId: z.string(),
+  projectId: z.string(),
+  status: z.enum([
+    "queued",
+    "claimed",
+    "cloning",
+    "scanning",
+    "uploaded",
+    "failed",
+  ]),
+  createdBy: z.string(),
+  createdAt: z.string(),
+  /** Set when a worker claims it; absent while queued. */
+  startedAt: z.string().optional(),
+  /** Set on reaching a terminal status (uploaded | failed). */
+  finishedAt: z.string().optional(),
+  /** Sanitized worker-reported failure reason — never raw worker output. */
+  error: z.string().optional(),
+});
+export type ProjectScanJobItem = z.infer<typeof ProjectScanJobItem>;
+
 /* ── drift telemetry: published reports (versions on disk; metadata rows here) ── */
 
 /**
@@ -1225,6 +1264,12 @@ export function uploadTokenKey(id: string, tokenId: string): Key {
 export function onboardTokenKey(id: string, tokenId: string): Key {
   return { PK: `PROJECT#${id}`, SK: `ONBOARDTOKEN#${tokenId}` };
 }
+/** One server-side scan job for a project (ADR-0033). */
+export function scanJobKey(id: string, jobId: string): Key {
+  return { PK: `PROJECT#${id}`, SK: `SCANJOB#${jobId}` };
+}
+/** SK prefix for querying a project's scan jobs (ULID jobIds sort chronologically). */
+export const SCAN_JOB_SK_PREFIX = "SCANJOB#";
 /** One published drift report version's metadata row (content lives on disk). */
 export function driftVersionKey(id: string, version: number): Key {
   return {

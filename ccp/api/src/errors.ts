@@ -243,6 +243,25 @@ export const ERRORS = {
       "This project's cloud identity has not been confirmed yet — an admin must confirm it (PUT /projects/:id/identity) before CI uploads can begin.",
   },
 
+  // ADR-0033 — the server-side scanner lane is OFF unless the deployment armed
+  // it (CCP_SCANNER=1) with a usable worker key. 409 rather than 404 so an
+  // operator who expected the feature learns it is disabled rather than
+  // mistyped; it says nothing about whether a worker exists or how it is
+  // configured.
+  SCANNER_DISABLED: {
+    status: 409,
+    reason:
+      "The built-in repository scanner is not enabled on this deployment. Run the scan from the repository's CI or locally instead.",
+  },
+  // ADR-0033 — the project's repo cannot be turned into a clone URL: a
+  // self-hosted forge host outside the deployment allowlist, or a base URL that
+  // is not plain https. Deliberately does NOT echo the offending URL back.
+  SCAN_TARGET_REFUSED: {
+    status: 422,
+    reason:
+      "This project's repository host is not one this deployment is allowed to clone from.",
+  },
+
   // 413 — the upload body is over the explicit size cap
   UPLOAD_TOO_LARGE: {
     status: 413,

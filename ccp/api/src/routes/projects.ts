@@ -7,6 +7,7 @@ import type { AppEnv } from "../appEnv";
 import type {
   ProjectItem,
   ProjectOnboardTokenItem,
+  ProjectScanJobItem,
   ProjectTrustBlock,
   ProjectTrustRequestRecord,
 } from "../store/schema";
@@ -14,12 +15,20 @@ import {
   CiProvenance,
   PrescanReport,
   RepoRef,
+  SCAN_JOB_SK_PREFIX,
   githubMirrorOf,
   onboardTokenKey,
   projectCollectionGsi,
   projectKey,
   repoRefOf,
+  scanJobKey,
 } from "../store/schema";
+import {
+  buildCloneUrl,
+  isTerminalScanStatus,
+  scannerEnabled,
+  scannerWorkerKey,
+} from "../domain/scanner";
 import type { ApplySpec } from "../store/schema";
 import { apiError } from "../errors";
 import { requireSession } from "../middleware/session";
@@ -224,8 +233,7 @@ function refineIdentityShape(
   if (provider === "aws") {
     if (b.accountId === undefined)
       bad("accountId", "an aws project needs an accountId");
-    if (b.region === undefined)
-      bad("region", "an aws project needs a region");
+    if (b.region === undefined) bad("region", "an aws project needs a region");
     for (const k of ["subscriptionId", "tenantId", "location"] as const) {
       if (b[k] !== undefined) bad(k, `an aws project must not carry ${k}`);
     }
@@ -283,7 +291,10 @@ const RegisterBody = z
  * accepts `id`/`name`/`github`/`repo` (mass-assignment defence — identity
  * confirm can only ever touch identity fields).
  */
-const IdentityBody = z.object(IdentityFields).strict().superRefine(refineIdentityShape);
+const IdentityBody = z
+  .object(IdentityFields)
+  .strict()
+  .superRefine(refineIdentityShape);
 
 /** The provider-discriminated identity fields to WRITE onto a ProjectItem for
  * one validated {@link IdentityBody} parse (ADR-0033 Decision 5). UNLIKE the
@@ -694,6 +705,103 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     },
   );
 
+  /* ── POST /projects/:id/scan-jobs — ask the control plane to scan this
+   * project's repository itself (ADR-0033) ──────────────────────────────────
+   * lead + isAdmin. Records the INTENT only: a separate, isolated worker does
+   * the cloning and parsing. Refusals, in order, are all fail-closed:
+   *   - the scanner lane is not armed on this deployment (SCANNER_DISABLED) —
+   *     checked FIRST so a disabled deployment leaks nothing about the project;
+   *   - the project is past the pre-trust window, or archived (STATE_CONFLICT);
+   *   - a job is already in flight for this project (STATE_CONFLICT) — one at a
+   *     time, so a repeated click cannot fan out clones;
+   *   - the repo cannot be turned into an allowed clone target
+   *     (SCAN_TARGET_REFUSED). This is validated HERE, at creation, so an
+   *     operator learns immediately instead of the job failing opaquely later —
+   *     and the URL is rebuilt again at claim time, never stored on the row. */
+  p.post("/:id/scan-jobs", requireRole("lead"), requireAdmin, async (c) => {
+    const store = c.get("store");
+    const actor = c.get("account")!.id;
+    const id = c.req.param("id");
+
+    if (!scannerEnabled() || scannerWorkerKey() === null)
+      return apiError(c, "SCANNER_DISABLED");
+
+    const k = projectKey(id);
+    const project = (await store.get(k.PK, k.SK)) as ProjectItem | null;
+    if (!project)
+      return c.json({ code: "NOT_FOUND", reason: "No such project." }, 404);
+    if (!ONBOARDABLE.has(project.status) || project.archived)
+      return apiError(c, "STATE_CONFLICT");
+
+    const repo = repoRefOf(project);
+    if (!repo) return apiError(c, "SCAN_TARGET_REFUSED");
+    // Prove the target resolves before queueing anything. The result is
+    // deliberately DISCARDED — the worker gets a freshly-built URL at claim
+    // time, so nothing derived from a credentialed or host-specific string is
+    // ever persisted.
+    if (!buildCloneUrl(repo).ok) return apiError(c, "SCAN_TARGET_REFUSED");
+
+    const existing = (await store.query(
+      k.PK,
+      SCAN_JOB_SK_PREFIX,
+    )) as ProjectScanJobItem[];
+    if (existing.some((j) => !isTerminalScanStatus(j.status)))
+      return apiError(c, "STATE_CONFLICT");
+
+    const jobId = ulid();
+    const item: ProjectScanJobItem = {
+      ...scanJobKey(id, jobId),
+      jobId,
+      projectId: id,
+      status: "queued",
+      createdBy: actor,
+      createdAt: nowIso(),
+    };
+    await transactWithAudit(
+      store,
+      id,
+      [{ kind: "put", item: item as never, ifNotExists: true }],
+      {
+        action: "scan-job-create",
+        actor,
+        targetType: "project",
+        targetId: id,
+        after: { jobId, status: "queued" },
+      },
+    );
+    return c.json({ jobId, status: "queued" }, 201);
+  });
+
+  /* ── GET /projects/:id/scan-jobs/latest — the wizard's progress read ───────
+   * lead + isAdmin (rich tier). Returns the most recent job only. `error` is
+   * already sanitized at write time; nothing here carries a clone URL or a
+   * token, so the response cannot disclose how the deployment reaches the
+   * forge. ULID jobIds sort chronologically, so the last row is the newest. */
+  p.get(
+    "/:id/scan-jobs/latest",
+    requireRole("lead"),
+    requireAdmin,
+    async (c) => {
+      const store = c.get("store");
+      const id = c.req.param("id");
+      const rows = (await store.query(
+        projectKey(id).PK,
+        SCAN_JOB_SK_PREFIX,
+      )) as ProjectScanJobItem[];
+      const latest = rows[rows.length - 1];
+      if (!latest)
+        return c.json({ code: "NOT_FOUND", reason: "No scan job." }, 404);
+      return c.json({
+        jobId: latest.jobId,
+        status: latest.status,
+        createdAt: latest.createdAt,
+        ...(latest.startedAt ? { startedAt: latest.startedAt } : {}),
+        ...(latest.finishedAt ? { finishedAt: latest.finishedAt } : {}),
+        ...(latest.error ? { error: latest.error } : {}),
+      });
+    },
+  );
+
   /* ── PUT /projects/:id/trust-request — upload the run's artifacts, either a
    * session (the existing local-run lane) OR a pre-trust onboard-token Bearer
    * (the CI lane, easy-first-import spec §3 A-iii) ─────────────────────────── */
@@ -986,9 +1094,7 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     const store = c.get("store");
     const actor = c.get("account")!.id;
     const id = c.req.param("id");
-    const parsed = IdentityBody.safeParse(
-      await c.req.json().catch(() => null),
-    );
+    const parsed = IdentityBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return apiError(c, "VALIDATION_FAILED");
 
     const k = projectKey(id);
