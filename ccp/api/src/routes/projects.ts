@@ -173,10 +173,74 @@ export const AZURE_LOCATION_ALLOWLIST = [
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 /** Git object id: 7–64 lowercase hex (short sha through sha256-repo full sha). */
 const COMMIT_SHA = /^[0-9a-f]{7,64}$/;
+/** AWS account id — 12 digits. Shared by RegisterBody and IdentityBody below
+ * (ADR-0033 Decision 5: reuse, never duplicate this regex). */
+const AWS_ACCOUNT_ID = /^\d{12}$/;
 /** An Azure identifier GUID (subscription id / tenant id) — the canonical
  * 8-4-4-4-12 hex form, case-insensitive (the portal shows lowercase). */
 const AZURE_GUID =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+/** The provider-discriminated identity FIELDS shared by RegisterBody (identity
+ * typed at register time) and IdentityBody (ADR-0033 Decision 5, `PUT
+ * /:id/identity` — identity confirmed after the scan proposes it). Both embed
+ * this shape and apply {@link refineIdentityShape}, so the two can never drift
+ * apart on what counts as a valid aws/azure identity. */
+const IdentityFields = {
+  /** Absent = 'aws' (the wire convention — an aws body never carries it). */
+  provider: z.enum(["aws", "azure"]).optional(),
+  /** AWS identity (provider absent/'aws'). */
+  accountId: z.string().regex(AWS_ACCOUNT_ID).optional(),
+  region: z.enum(REGION_ALLOWLIST).optional(),
+  /** Azure identity (provider 'azure') — subscription + tenant GUIDs + location. */
+  subscriptionId: z.string().regex(AZURE_GUID).optional(),
+  tenantId: z.string().regex(AZURE_GUID).optional(),
+  location: z.enum(AZURE_LOCATION_ALLOWLIST).optional(),
+} as const;
+
+/**
+ * Exactly the identity shape the provider names — present, and not the other
+ * cloud's. An aws body needs accountId+region and no azure field; an azure
+ * body needs subscriptionId+tenantId+location and no aws field. Shared
+ * `superRefine` body for RegisterBody and IdentityBody (ADR-0033 Decision 5)
+ * — ONE rule, so the register-time and confirm-time identity shapes can never
+ * silently diverge.
+ */
+function refineIdentityShape(
+  b: {
+    provider?: "aws" | "azure";
+    accountId?: string;
+    region?: string;
+    subscriptionId?: string;
+    tenantId?: string;
+    location?: string;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  const provider = b.provider ?? "aws";
+  const bad = (path: string, message: string): void => {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+  };
+  if (provider === "aws") {
+    if (b.accountId === undefined)
+      bad("accountId", "an aws project needs an accountId");
+    if (b.region === undefined)
+      bad("region", "an aws project needs a region");
+    for (const k of ["subscriptionId", "tenantId", "location"] as const) {
+      if (b[k] !== undefined) bad(k, `an aws project must not carry ${k}`);
+    }
+  } else {
+    if (b.subscriptionId === undefined)
+      bad("subscriptionId", "an azure project needs a subscriptionId");
+    if (b.tenantId === undefined)
+      bad("tenantId", "an azure project needs a tenantId");
+    if (b.location === undefined)
+      bad("location", "an azure project needs a location");
+    for (const k of ["accountId", "region"] as const) {
+      if (b[k] !== undefined) bad(k, `an azure project must not carry ${k}`);
+    }
+  }
+}
 
 /**
  * The register body — PROVIDER-DISCRIMINATED identity (0039 S1). `provider` is
@@ -203,52 +267,54 @@ const RegisterBody = z
       .optional(),
     /** HOST-AGNOSTIC shape (github|gitlab, optional self-hosted baseUrl). */
     repo: RepoRef.optional(),
-    /** Absent = 'aws' (the wire convention — an aws row never carries it). */
-    provider: z.enum(["aws", "azure"]).optional(),
-    /** AWS identity (provider absent/'aws'). */
-    accountId: z
-      .string()
-      .regex(/^\d{12}$/)
-      .optional(),
-    region: z.enum(REGION_ALLOWLIST).optional(),
-    /** Azure identity (provider 'azure') — subscription + tenant GUIDs + location. */
-    subscriptionId: z.string().regex(AZURE_GUID).optional(),
-    tenantId: z.string().regex(AZURE_GUID).optional(),
-    location: z.enum(AZURE_LOCATION_ALLOWLIST).optional(),
+    ...IdentityFields,
   })
   .strict()
   // Exactly ONE repo shape per register — accepting both invites divergence.
   .refine((b) => (b.github !== undefined) !== (b.repo !== undefined), {
     message: "send exactly one of github or repo",
   })
-  // Exactly the identity shape the provider names — present, and not the other
-  // cloud's. An aws body needs accountId+region and no azure field; an azure
-  // body needs subscriptionId+tenantId+location and no aws field.
-  .superRefine((b, ctx) => {
-    const provider = b.provider ?? "aws";
-    const bad = (path: string, message: string): void => {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+  .superRefine(refineIdentityShape);
+
+/**
+ * `PUT /projects/:id/identity` body (ADR-0033 Decision 5) — the SAME
+ * provider-discriminated identity shape RegisterBody validates (same fields,
+ * same {@link refineIdentityShape} rule), on its own so this route never
+ * accepts `id`/`name`/`github`/`repo` (mass-assignment defence — identity
+ * confirm can only ever touch identity fields).
+ */
+const IdentityBody = z.object(IdentityFields).strict().superRefine(refineIdentityShape);
+
+/** The provider-discriminated identity fields to WRITE onto a ProjectItem for
+ * one validated {@link IdentityBody} parse (ADR-0033 Decision 5). UNLIKE the
+ * register path's own identity construction (which builds a brand-new item
+ * and so never needs to erase anything), this one EXPLICITLY clears the other
+ * cloud's fields — `PUT /:id/identity` updates an EXISTING row, and a switch
+ * of provider must not leave stale azure fields on an now-aws project (or vice
+ * versa); an explicit `undefined` clears a key the same way `unarchive`
+ * already relies on (routes/projectData.ts). */
+function identityFieldsFor(
+  body: z.infer<typeof IdentityBody>,
+): Partial<ProjectItem> {
+  if (body.provider === "azure") {
+    return {
+      provider: "azure",
+      subscriptionId: body.subscriptionId,
+      tenantId: body.tenantId,
+      location: body.location,
+      accountId: undefined,
+      region: undefined,
     };
-    if (provider === "aws") {
-      if (b.accountId === undefined)
-        bad("accountId", "an aws project needs an accountId");
-      if (b.region === undefined)
-        bad("region", "an aws project needs a region");
-      for (const k of ["subscriptionId", "tenantId", "location"] as const) {
-        if (b[k] !== undefined) bad(k, `an aws project must not carry ${k}`);
-      }
-    } else {
-      if (b.subscriptionId === undefined)
-        bad("subscriptionId", "an azure project needs a subscriptionId");
-      if (b.tenantId === undefined)
-        bad("tenantId", "an azure project needs a tenantId");
-      if (b.location === undefined)
-        bad("location", "an azure project needs a location");
-      for (const k of ["accountId", "region"] as const) {
-        if (b[k] !== undefined) bad(k, `an azure project must not carry ${k}`);
-      }
-    }
-  });
+  }
+  return {
+    provider: undefined,
+    accountId: body.accountId,
+    region: body.region,
+    subscriptionId: undefined,
+    tenantId: undefined,
+    location: undefined,
+  };
+}
 
 const TrustRequestBody = z
   .object({
@@ -332,6 +398,10 @@ export function publicProject(p: ProjectItem): Record<string, unknown> {
     createdAt: p.createdAt,
     ...(trustRequest ? { trustRequest } : {}),
     ...(p.trust ? { trust: p.trust } : {}),
+    // ADR-0033 Decision 5 — rich-tier only (same least-disclosure posture as
+    // uploadedBy/createdBy above: who confirmed the identity and when is
+    // review-internal, not a fact every bound session needs).
+    ...(p.identityConfirmed ? { identityConfirmed: p.identityConfirmed } : {}),
     ...(p.artifacts ? { artifacts: p.artifacts } : {}),
     ...(p.dataActive ? { dataActive: p.dataActive } : {}),
     ...(p.archived ? { archived: p.archived } : {}),
@@ -879,6 +949,78 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     /* istanbul ignore next — 'loosening' can never take the 200 branch */
     if (res.status === 200) return c.json({ ok: true });
     return c.json(publicPendingChange(res.pending), 202);
+  });
+
+  /* ── PUT /projects/:id/identity — record the admin-confirmed cloud identity
+   * (ADR-0033 Decision 5) ───────────────────────────────────────────────────
+   * Single-admin, IMMEDIATE write — mirrors register's own guard+apply shape
+   * (requireRole('lead')+requireAdmin, transactWithAudit), deliberately NOT
+   * the two-admin dual-control ceremony POST /:id/trust uses: the ADR scopes
+   * "two-admin ceremony... untouched" to trust and the first data activation
+   * only (Decision item 6) — this is a new route, not one of those two, so it
+   * follows the OTHER existing single-admin pattern this surface already has
+   * (register). Body is the SAME provider-discriminated shape RegisterBody
+   * validates (IdentityBody, same regex/allowlist validators, same
+   * refineIdentityShape rule) — reused, never duplicated. Callable repeatedly
+   * to correct a mistake WHILE STILL PRE-TRUST: each call OVERWRITES the stored
+   * identity fields (identityFieldsFor explicitly clears the other cloud's
+   * fields on a provider switch) and re-stamps identityConfirmed with the
+   * latest confirmer/time.
+   *
+   * GATED to draft/pending-trust (ONBOARDABLE), and refused for an archived
+   * project. This is NOT harmless metadata: the identity IS which cloud account
+   * every future request for this project targets. Leaving it open post-trust
+   * would let ONE admin silently re-point a trusted — or live, account-bound
+   * `ready` — project at a different account, while the recorded two-admin
+   * trust decision still stood as if it had vouched for that configuration.
+   * That is the identical failure the trust-request upload already refuses a
+   * few hundred lines above ("Re-aiming a TRUSTED or READY project's binding
+   * would silently invalidate a recorded human decision"), and the identity is
+   * part of that same binding — so it takes the same answer: the deliberate
+   * path is deregister (dual-controlled) + a fresh onboard.
+   * See isIdentityConfirmed (schema.ts) for how a
+   * project registered the OLD way (identity typed at register time — still
+   * how POST /projects works this phase) already counts as confirmed WITHOUT
+   * ever calling this route; Audit: project-identity-confirm. */
+  p.put("/:id/identity", requireRole("lead"), requireAdmin, async (c) => {
+    const store = c.get("store");
+    const actor = c.get("account")!.id;
+    const id = c.req.param("id");
+    const parsed = IdentityBody.safeParse(
+      await c.req.json().catch(() => null),
+    );
+    if (!parsed.success) return apiError(c, "VALIDATION_FAILED");
+
+    const k = projectKey(id);
+    const project = (await store.get(k.PK, k.SK)) as ProjectItem | null;
+    if (!project)
+      return c.json({ code: "NOT_FOUND", reason: "No such project." }, 404);
+    // Fail closed: identity is part of the binding two admins trust, so it is
+    // settable only BEFORE that decision exists (see the docblock above).
+    if (!ONBOARDABLE.has(project.status) || project.archived)
+      return apiError(c, "STATE_CONFLICT");
+
+    const identityConfirmed = { confirmedBy: actor, confirmedAt: nowIso() };
+    const updated: ProjectItem = {
+      ...project,
+      ...identityFieldsFor(parsed.data),
+      identityConfirmed,
+      version: project.version + 1,
+    };
+    await transactWithAudit(
+      store,
+      c.get("projectId"),
+      [{ kind: "put", item: updated as never }],
+      {
+        action: "project-identity-confirm",
+        actor,
+        targetType: "project",
+        targetId: id,
+        before: identityProjection(project),
+        after: { ...identityProjection(updated), ...identityConfirmed },
+      },
+    );
+    return c.json(publicProject(updated));
   });
 
   /* ── DELETE /projects/:id — deregister (always dual-controlled) ─────────── */

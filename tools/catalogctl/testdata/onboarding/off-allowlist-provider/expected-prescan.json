@@ -14,5 +14,14 @@
   "fmtDirtyFiles": 0,
   "providerPins": {
     "aws": "1.0.0"
+  },
+  "providerConfig": {
+    "providers": [
+      {
+        "value": "aws",
+        "file": "main.tf",
+        "line": 3
+      }
+    ]
   }
 }

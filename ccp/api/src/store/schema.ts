@@ -571,11 +571,71 @@ export const PrescanFinding = z
 export type PrescanFinding = z.infer<typeof PrescanFinding>;
 
 /**
+ * One static-literal value the census found, with file:line provenance so the
+ * UI can show exactly where it came from (ADR-0033 Decision 5, prescan.go
+ * `LiteralValue`). Never a derived/computed/interpolated value — see
+ * {@link ProviderConfig}'s own comment for the fail-closed rule this shape
+ * exists to carry evidence for.
+ */
+export const LiteralValue = z
+  .object({
+    value: z.string().min(1).max(200),
+    file: z.string().min(1).max(500),
+    line: z.number().int().nonnegative(),
+  })
+  .strict();
+export type LiteralValue = z.infer<typeof LiteralValue>;
+
+/**
+ * The census's static-literal cloud-identity PROPOSAL (ADR-0033 Decision 5,
+ * prescan.go `ProviderConfig`) — "the census gains a static-literal
+ * providerConfig so provider/region (and, when statically present,
+ * account/subscription ids) are proposed with file:line provenance and
+ * confirmed by a human — never silently inferred, never a product constant."
+ * A PROPOSAL for a human to confirm via `PUT /projects/:id/identity`
+ * (routes/projects.ts) — NEVER an authoritative fact and never itself read by
+ * any authorization/trust decision; nothing here is treated as ground truth
+ * until an admin confirms it. `.strict()` like {@link PrescanFinding} — a
+ * malformed block is REFUSED, not silently ignored, so a corrupted or
+ * hand-edited providerConfig can never sneak an unexpected key past review.
+ * Every field is independently optional: catalogctl's own fail-closed rule
+ * (prescan.go providerconfig.go) omits any value that is an expression,
+ * variable, local, or interpolation rather than a bare string literal — an
+ * absent field here is correct proposal output, not a parse error.
+ */
+export const ProviderConfig = z
+  .object({
+    /** Recognized cloud provider type(s) — aws / azurerm only (this census is
+     * about cloud identity, not a full provider inventory). */
+    providers: z.array(LiteralValue).max(10).optional(),
+    awsRegion: LiteralValue.optional(),
+    awsAllowedAccountIds: z.array(LiteralValue).max(50).optional(),
+    azureLocation: LiteralValue.optional(),
+    azureSubscriptionId: LiteralValue.optional(),
+    azureTenantId: LiteralValue.optional(),
+  })
+  .strict();
+export type ProviderConfig = z.infer<typeof ProviderConfig>;
+
+/**
  * The `prescan-report.json` shape (prescan.go `Report`, key set golden-pinned by
  * catalogctl's `TestPrescanReportShape_IsTheWizardContract`). Findings drive the
  * verdict; the census fields are report data. The refine enforces the producer's
  * own invariant — findings ⟺ verdict reject — so a hand-edited "clean" report
  * that still lists findings can never reach a trust button.
+ *
+ * ORDERING CONTRACT (ADR-0033 Decision 5 / Phase 0-1): `providerConfig` is
+ * OPTIONAL and MUST STAY optional for as long as an old catalogctl (one built
+ * before this field existed) may still upload — this schema is `.strict()`,
+ * so if the field were required, every upload from an old CLI would fail
+ * validation the instant this server shipped. The field was therefore added
+ * HERE, server-side, FIRST (this commit) — forward compatible, old CLI
+ * uploads keep working unchanged — and only in a LATER commit does
+ * catalogctl start emitting it (tools/catalogctl/internal/prescan). A NEW
+ * catalogctl emitting `providerConfig` against an OLD server (one that
+ * predates this field) fails closed instead: `.strict()` refuses the
+ * unrecognized key, exactly the intended, documented ordering — never the
+ * reverse.
  */
 export const PrescanReport = z
   .object({
@@ -587,6 +647,7 @@ export const PrescanReport = z
     tfJsonFiles: z.number().int().nonnegative(),
     fmtDirtyFiles: z.number().int().nonnegative(),
     providerPins: z.record(z.string().max(100)),
+    providerConfig: ProviderConfig.optional(),
   })
   .strict()
   .refine((r) => (r.verdict === "clean") === (r.findings.length === 0), {
@@ -707,6 +768,21 @@ export function githubMirrorOf(
 }
 
 /**
+ * The admin-confirmed cloud identity record (ADR-0033 Decision 5) — written
+ * ONLY by `PUT /projects/:id/identity` (routes/projects.ts), never accepted
+ * on the register body or any other write. Presence of this block is ONE of
+ * the two ways {@link isIdentityConfirmed} recognizes a confirmed identity —
+ * see that function's comment for the other (register-time) way.
+ */
+export const ProjectIdentityConfirmation = z.object({
+  confirmedBy: z.string(),
+  confirmedAt: z.string(),
+});
+export type ProjectIdentityConfirmation = z.infer<
+  typeof ProjectIdentityConfirmation
+>;
+
+/**
  * A registered project. GLOBAL key space like identity — the registry
  * DEFINES the project namespace, so it cannot itself be project-scoped. Status is
  * a strict forward ladder: draft → pending-trust (artifact upload) → trusted
@@ -750,6 +826,17 @@ export const ProjectItem = z.object({
   /** Azure default location (allowlisted at register — routes/projects.ts
    * AZURE_LOCATION_ALLOWLIST) — present iff `provider === 'azure'`. */
   location: z.string().optional(),
+  /**
+   * ADR-0033 Decision 5 — the admin-confirmed identity record, written ONLY
+   * by `PUT /projects/:id/identity`. ADDITIVE + OPTIONAL: absent on every
+   * project this phase's register flow creates (which still collects
+   * accountId/region or subscriptionId/tenantId/location AT register time —
+   * `isIdentityConfirmed` treats THAT as already-confirmed too, so nothing
+   * about today's register flow changes). This block only becomes load-bearing
+   * once a LATER phase's url-only register can produce a project with no
+   * identity fields at all — see {@link isIdentityConfirmed}.
+   */
+  identityConfirmed: ProjectIdentityConfirmation.optional(),
   status: ProjectStatus,
   createdBy: z.string(),
   createdAt: z.string(),
@@ -783,6 +870,45 @@ export const ProjectItem = z.object({
   GSI1SK: z.string().optional(),
 });
 export type ProjectItem = z.infer<typeof ProjectItem>;
+
+/**
+ * Whether a project's cloud identity is CONFIRMED — the fail-closed predicate
+ * `POST /projects/:id/upload-tokens` mint (routes/projectData.ts) checks
+ * before minting, refusing `IDENTITY_UNCONFIRMED` when this is false (ADR-0033
+ * Decision 5: "so a project can never reach the data lane on an unconfirmed,
+ * machine-proposed identity"). TRUE for either of two honest reasons:
+ *
+ *  1. An explicit confirmation exists ({@link ProjectIdentityConfirmation},
+ *     written only by `PUT /projects/:id/identity`).
+ *  2. The project carries a FULL identity at all (aws: accountId+region ·
+ *     azure: subscriptionId+tenantId+location) — because THIS PHASE's
+ *     register flow (`POST /projects`, RegisterBody) still REQUIRES the full
+ *     identity to be typed at register time (the url-only register form that
+ *     shrinks it to a repo URL is a later phase, ADR-0033 action item 4). A
+ *     human typed those values into the register form, so they are honestly
+ *     "confirmed by the operator who typed it" the moment the row exists —
+ *     backfilling an explicit confirmation block for every such project would
+ *     be a fiction (nobody clicked a confirm button), so arm 2 recognizes the
+ *     fact instead of manufacturing one.
+ *
+ * This keeps every project this phase's register flow can produce — old or
+ * new — minting uploads exactly as before (arm 2 is always true for them);
+ * the gate only ever has teeth once a FUTURE phase's url-only register can
+ * produce a project with NEITHER identity fields NOR a confirmation — exactly
+ * the state this phase's providerConfig proposal + identity-confirm route
+ * exist to prepare for.
+ */
+export function isIdentityConfirmed(p: ProjectItem): boolean {
+  if (p.identityConfirmed) return true;
+  if (p.provider === "azure") {
+    return (
+      p.subscriptionId !== undefined &&
+      p.tenantId !== undefined &&
+      p.location !== undefined
+    );
+  }
+  return p.accountId !== undefined && p.region !== undefined;
+}
 
 /**
  * The one-time boot SETTLEMENT marker (data-birth spec §9). Presence means the

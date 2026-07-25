@@ -66,6 +66,12 @@ type Report struct {
 	TfJsonFiles    int               `json:"tfJsonFiles"`
 	FmtDirtyFiles  int               `json:"fmtDirtyFiles"`
 	ProviderPins   map[string]string `json:"providerPins"`
+	// ProviderConfig is the static-literal cloud-identity PROPOSAL (ADR-0033
+	// Decision 5, providerconfig.go) — nil when the scan found nothing to
+	// propose (no provider/required_providers block naming aws/azurerm at
+	// all, or every candidate value was non-static). Report data, exactly
+	// like every other census field above: never a verdict input.
+	ProviderConfig *ProviderConfig `json:"providerConfig,omitempty"`
 }
 
 // rootSchema captures the top-level Terraform blocks prescan reasons about.
@@ -77,6 +83,7 @@ var rootSchema = &hcl.BodySchema{
 		{Type: "module", LabelNames: []string{"name"}},
 		{Type: "terraform"},
 		{Type: "provisioner", LabelNames: []string{"type"}}, // illegal at top level, still flagged
+		{Type: "provider", LabelNames: []string{"name"}},    // census only (providerconfig.go) — never a Finding
 	},
 }
 
@@ -106,6 +113,11 @@ func Scan(root string, providerAllowlist []string) (Report, error) {
 		Findings:     []Finding{},
 		ProviderPins: map[string]string{},
 	}
+	// candidates is a purely LOCAL accumulator for the providerConfig census
+	// (providerconfig.go) — never attached to Report, never serialized;
+	// candidates.resolve() below turns it into the public ProviderConfig once
+	// the whole walk (every file) has run.
+	var candidates identityCandidates
 
 	var files []string
 	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
@@ -160,7 +172,7 @@ func Scan(root string, providerAllowlist []string) (Report, error) {
 			// terraform init (a later, trust-gated step) surfaces it. Skip here.
 			continue
 		}
-		scanBody(file.Body, rel, providerAllowlist, &rep)
+		scanBody(file.Body, rel, providerAllowlist, &rep, &candidates)
 	}
 
 	sort.SliceStable(rep.Findings, func(i, j int) bool {
@@ -179,10 +191,11 @@ func Scan(root string, providerAllowlist []string) (Report, error) {
 	} else {
 		rep.Verdict = "clean"
 	}
+	rep.ProviderConfig = candidates.resolve()
 	return rep, nil
 }
 
-func scanBody(body hcl.Body, file string, allow []string, rep *Report) {
+func scanBody(body hcl.Body, file string, allow []string, rep *Report, candidates *identityCandidates) {
 	content, _, _ := body.PartialContent(rootSchema)
 	for _, b := range content.Blocks {
 		switch b.Type {
@@ -198,8 +211,11 @@ func scanBody(body hcl.Body, file string, allow []string, rep *Report) {
 			checkSource(b.Body, file, allow, true, rep)
 		case "terraform":
 			scanRequiredProviders(b.Body, file, allow, rep)
+			recordRequiredProvidersIdentity(candidates, b.Body, file)
 		case "provisioner":
 			addFinding(rep, CodeProvisioner, file, b.DefRange.Start.Line)
+		case "provider":
+			recordProviderBlock(b, file, candidates)
 		}
 	}
 }

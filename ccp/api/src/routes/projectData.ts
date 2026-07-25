@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { ulid } from 'ulid';
 import type { AppEnv } from '../appEnv';
 import type { ApplySpec, ProjectDataVersionItem, ProjectItem, ProjectUploadTokenItem } from '../store/schema';
-import { PROJECT_DATA_SK_PREFIX, projectDataVersionKey, projectKey, uploadTokenKey } from '../store/schema';
+import { PROJECT_DATA_SK_PREFIX, isIdentityConfirmed, projectDataVersionKey, projectKey, uploadTokenKey } from '../store/schema';
 import { ApiError, apiError } from '../errors';
 import { requireAdmin, requireRole } from '../middleware/authz';
 import { checkUploadRateLimit } from '../middleware/rateLimit';
@@ -127,6 +127,13 @@ export function projectDataRoutes(dataRoot: string): Hono<AppEnv> {
     // Fail closed: only a project whose repo has passed the human trust review
     // has a legitimate CI producer; an archived project mints nothing.
     if (!UPLOADABLE.has(project.status) || project.archived) return apiError(c, 'STATE_CONFLICT');
+    // ADR-0033 Decision 5 fail-closed backstop: a project can never reach the
+    // data lane on an unconfirmed, machine-proposed identity. Checked AFTER
+    // the state/archived gate (a not-yet-trusted or archived project is
+    // refused for that more fundamental reason first) but BEFORE minting —
+    // without a token, PUT /:id/data is categorically unreachable, so gating
+    // here alone is the complete backstop (schema.ts#isIdentityConfirmed).
+    if (!isIdentityConfirmed(project)) return apiError(c, 'IDENTITY_UNCONFIRMED');
 
     const tokenId = ulid();
     const secret = randomBytes(32).toString('base64url');

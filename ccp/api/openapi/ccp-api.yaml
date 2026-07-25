@@ -108,13 +108,28 @@ components:
     PrescanFinding: { type: object, required: [code, file, line],
       properties: { code: {type: string, description: 'DATA_EXTERNAL | PROVISIONER | PROVIDER_SOURCE | MODULE_SOURCE | NONSTATIC_SOURCE'},
         file: {type: string}, line: {type: integer} } }
+    LiteralValue:   # ADR-0033 Decision 5 — one static string literal the census found, with file:line provenance
+      type: object
+      required: [value, file, line]
+      properties: { value: {type: string}, file: {type: string}, line: {type: integer} }
+    ProviderConfig:   # ADR-0033 Decision 5 — the static-literal cloud-identity PROPOSAL (prescan.go ProviderConfig).
+      # A proposal for a human to confirm via PUT /projects/{id}/identity — NEVER an authoritative fact. Every field
+      # independently absent when not statically determinable (fail closed — see prescan.go providerconfig.go).
+      type: object
+      properties: { providers: {type: array, items: {$ref: '#/components/schemas/LiteralValue'}, description: 'recognized cloud provider type(s) — aws / azurerm only'},
+        awsRegion: {$ref: '#/components/schemas/LiteralValue'},
+        awsAllowedAccountIds: {type: array, items: {$ref: '#/components/schemas/LiteralValue'}},
+        azureLocation: {$ref: '#/components/schemas/LiteralValue'},
+        azureSubscriptionId: {$ref: '#/components/schemas/LiteralValue'},
+        azureTenantId: {$ref: '#/components/schemas/LiteralValue'} }
     PrescanReport:   # the prescan-report.json catalogctl onboard writes — key set golden-pinned Go-side
       type: object
       required: [repo, verdict, findings, resourceBlocks, moduleBlocks, tfJsonFiles, fmtDirtyFiles, providerPins]
       properties: { repo: {type: string}, verdict: {type: string, enum: [clean, reject]},
         findings: {type: array, items: {$ref: '#/components/schemas/PrescanFinding'}},
         resourceBlocks: {type: integer}, moduleBlocks: {type: integer}, tfJsonFiles: {type: integer},
-        fmtDirtyFiles: {type: integer}, providerPins: {type: object, additionalProperties: {type: string}} }
+        fmtDirtyFiles: {type: integer}, providerPins: {type: object, additionalProperties: {type: string}},
+        providerConfig: {$ref: '#/components/schemas/ProviderConfig', description: 'ADR-0033 Decision 5 — OPTIONAL; absent on a report from a catalogctl that predates this field (forward compat)'} }
     RepoRef:   # host-agnostic repo reference — the migration target for the GitHub-only `github` field
       type: object
       required: [host, owner, name]
@@ -261,6 +276,11 @@ components:
           description: 'R3 §6.4 trust block — written ONLY by the dual-controlled trust flow, never accepted from a body',
           properties: { trustedBy: {type: string}, trustedAt: {type: string},
             preScanReportSha256: {type: string}, commitSha: {type: string} } },
+        identityConfirmed: { type: object, required: [confirmedBy, confirmedAt],
+          description: 'ADR-0033 Decision 5 — written ONLY by PUT /projects/{id}/identity. ABSENT does not mean
+            unconfirmed for a project registered the old way (identity typed at register time) — see
+            isIdentityConfirmed, ccp/api/src/store/schema.ts',
+          properties: { confirmedBy: {type: string}, confirmedAt: {type: string} } },
         artifacts: { type: object, required: [inventorySha256, blocksSha256, recordedBy, recordedAt],
           description: 'the go-live digest record — written ONLY by the FIRST data activation''s ack (server-computed
             digests of the activated version). manifestsSha256 present iff the recorded version carried manifests',
@@ -743,6 +763,35 @@ paths:
         '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
         '404': { description: Not found }, '409': { $ref: '#/components/responses/E409' },
         '422': { description: 'VALIDATION_FAILED | PRESCAN_SHA_MISMATCH | TRUST_VERDICT_NOT_CLEAN', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } } } }
+  /projects/{id}/identity:
+    put: { summary: 'Record the admin-confirmed cloud identity (ADR-0033 Decision 5) — lead + isAdmin, SINGLE-ADMIN
+        immediate write (mirrors register''s own guard+apply shape, NOT the two-admin trust ceremony above — the
+        ADR scopes "two-admin ceremony" to trust and the first data activation only). Body is the SAME
+        provider-discriminated identity shape POST /projects validates (same regex/allowlist validators, same
+        shape rule, reused not duplicated): aws needs accountId+region, azure needs
+        subscriptionId+tenantId+location, never both. Overwrites the project''s stored identity fields — clearing
+        the OTHER cloud''s fields when the provider changes — and stamps identityConfirmed {confirmedBy,
+        confirmedAt}; callable repeatedly to correct a mistake WHILE STILL PRE-TRUST. GATED to draft/pending-trust,
+        and refused for an archived project (409 STATE_CONFLICT): the identity IS which cloud account every future
+        request for this project targets, so leaving it settable post-trust would let ONE admin silently re-point a
+        trusted — or live, account-bound ready — project at a different account while the recorded two-admin trust
+        decision still stood as if it had vouched for that configuration. The same refusal PUT /trust-request gives
+        for re-aiming a trusted/ready binding; the deliberate path is deregister (dual-controlled) + a fresh onboard.
+        A project registered the OLD way (identity typed
+        at register time, still how POST /projects works this phase) already counts as confirmed WITHOUT ever
+        calling this route — see isIdentityConfirmed, ccp/api/src/store/schema.ts. Audit: project-identity-confirm',
+      parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
+      requestBody: { required: true, content: { application/json: { schema: { type: object,
+        additionalProperties: false,
+        properties: { provider: {type: string, enum: [aws, azure], description: 'absent = aws (the wire convention)'},
+          accountId: {type: string, pattern: '^\d{12}$'}, region: {type: string},
+          subscriptionId: {type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'},
+          tenantId: {type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'},
+          location: {type: string, description: 'Azure location (explicit allowlist, routes/projects.ts AZURE_LOCATION_ALLOWLIST)'} } } } } },
+      responses: { '200': { description: Confirmed, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } },
+        '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
+        '404': { description: Not found }, '409': { $ref: '#/components/responses/E409' },
+        '422': { $ref: '#/components/responses/E422' } } }
   /projects/{id}:
     delete: { summary: 'Deregister (lead + isAdmin) — ALWAYS a two-admin envelope: proposes (202, kind
         project-deregister); a second distinct admin''s ack deletes the registry item and drops the project

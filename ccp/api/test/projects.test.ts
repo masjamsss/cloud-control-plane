@@ -514,6 +514,73 @@ describe('PUT /projects/:id/trust-request — the artifact upload + sha binding'
   });
 });
 
+/* ═══ providerConfig — the static-literal cloud-identity census (ADR-0033
+ * Decision 5). OPTIONAL on PrescanReport, `.strict()` sub-schema: absent (an
+ * old catalogctl) must keep working unchanged; present-and-valid must be
+ * accepted and served back; present-and-malformed must be REFUSED, never
+ * silently ignored (same no-mass-assignment posture as the rest of this
+ * upload surface). Exercised through the real upload endpoint (not just the
+ * zod schema in isolation) so this also proves the wire round-trip. ═══ */
+describe('PUT /projects/:id/trust-request — providerConfig (ADR-0033 Decision 5)', () => {
+  it('absent providerConfig still uploads fine — forward compat with a catalogctl that predates this field', async () => {
+    const { app, putra, lina } = await setup();
+    await register(app, putra);
+    const res = await upload(app, lina); // default reportText() carries no providerConfig key at all
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.trustRequest.report.providerConfig).toBeUndefined();
+  });
+
+  it('a present, valid providerConfig is accepted and served back verbatim', async () => {
+    const { app, putra, lina } = await setup();
+    await register(app, putra);
+    const providerConfig = {
+      providers: [{ value: 'aws', file: 'main.tf', line: 5 }],
+      awsRegion: { value: 'ap-southeast-1', file: 'main.tf', line: 12 },
+      awsAllowedAccountIds: [{ value: '123456789012', file: 'main.tf', line: 13 }],
+    };
+    const raw = reportText({ providerConfig });
+    const res = await upload(app, lina, { trustRequest: { repo: 'terraform-acme', commitSha: COMMIT, prescanSha256: sha256(raw) }, prescanReport: raw });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.trustRequest.report.providerConfig).toEqual(providerConfig);
+  });
+
+  it('a present, valid azure providerConfig is accepted too', async () => {
+    const { app, putra, lina } = await setup();
+    await register(app, putra);
+    const providerConfig = {
+      providers: [{ value: 'azurerm', file: 'main.tf', line: 1 }],
+      azureLocation: { value: 'southeastasia', file: 'main.tf', line: 3 },
+      azureSubscriptionId: { value: '11111111-2222-3333-4444-555555555555', file: 'main.tf', line: 4 },
+      azureTenantId: { value: '66666666-7777-8888-9999-000000000000', file: 'main.tf', line: 5 },
+    };
+    const raw = reportText({ providerConfig });
+    const res = await upload(app, lina, { trustRequest: { repo: 'terraform-acme', commitSha: COMMIT, prescanSha256: sha256(raw) }, prescanReport: raw });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.trustRequest.report.providerConfig).toEqual(providerConfig);
+  });
+
+  it('a malformed providerConfig REFUSES the whole upload (strict — never silently ignored)', async () => {
+    const { app, putra, lina } = await setup();
+    await register(app, putra);
+    const malformed = [
+      { providerConfig: { providers: [{ value: 'aws', file: 'main.tf', line: 5 }], extraKey: true } }, // unknown key
+      { providerConfig: { awsRegion: { value: 'ap-southeast-1', file: 'main.tf' } } }, // missing required `line`
+      { providerConfig: { awsRegion: { value: 'ap-southeast-1', file: 'main.tf', line: 'twelve' } } }, // wrong type
+      { providerConfig: { providers: 'aws' } }, // wrong shape entirely (not an array)
+      { providerConfig: 'aws' }, // providerConfig itself not an object
+    ];
+    for (const over of malformed) {
+      const raw = reportText(over);
+      const res = await upload(app, lina, { trustRequest: { repo: 'terraform-acme', commitSha: COMMIT, prescanSha256: sha256(raw) }, prescanReport: raw });
+      expect(res.status, JSON.stringify(over)).toBe(422);
+      expect((await res.json()).code, JSON.stringify(over)).toBe('VALIDATION_FAILED');
+    }
+  });
+});
+
 /* ═══ pre-trust onboarding tokens (easy-first-import spec §3 A-ii/A-iii) ══
  * A SEPARATE credential from the CI upload token (projectData.test.ts):
  * separate key namespace, EXACT INVERSE status gate (draft/pending-trust

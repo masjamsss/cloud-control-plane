@@ -232,6 +232,16 @@ export const ERRORS = {
     reason:
       "The uploaded data does not hash to the digests it claims. Nothing was stored.",
   },
+  // ADR-0033 Decision 5 — fail-closed backstop: an upload token can never be
+  // minted for a project whose cloud identity is not yet confirmed, so a
+  // project can never reach the data lane on an unconfirmed, machine-proposed
+  // identity. Same family as PRESCAN_SHA_MISMATCH/TRUST_VERDICT_NOT_CLEAN
+  // above (a business-rule precondition on stored state, not a body problem).
+  IDENTITY_UNCONFIRMED: {
+    status: 422,
+    reason:
+      "This project's cloud identity has not been confirmed yet — an admin must confirm it (PUT /projects/:id/identity) before CI uploads can begin.",
+  },
 
   // 413 — the upload body is over the explicit size cap
   UPLOAD_TOO_LARGE: {

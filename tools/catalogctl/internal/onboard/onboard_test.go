@@ -170,6 +170,16 @@ func TestCleanUntrusted_StopsAtTrustRequest(t *testing.T) {
 // The report artifact's key set is a UI/api contract (ccp-api's zod schema and
 // the wizard's findings/census render both parse these exact keys). Golden-pins the
 // shape so a Go-side field rename is caught here, not in a failed upload.
+//
+// ADR-0033 Decision 5 (Phase 0-1): `providerConfig` is added HERE deliberately —
+// clean-repo's main.tf declares `required_providers { aws = {...} }`, so the
+// static-literal census now proposes it, and this contract test's key set
+// (and the sub-shape assertion below) must cover the new field, never silently
+// pass around it. See ccp/api/src/store/schema.ts's `PrescanReport`/
+// `ProviderConfig` — added there FIRST (optional, `.strict()`-compatible) so
+// this same clean-repo report still validates against an old server that
+// predates the field; this test instead pins what a NEW server (this repo,
+// after the schema change) must be able to parse from a NEW catalogctl.
 func TestPrescanReportShape_IsTheWizardContract(t *testing.T) {
 	withStubs(t, "abc123def456", "1.15.7", nil)
 	var out bytes.Buffer
@@ -183,7 +193,7 @@ func TestPrescanReportShape_IsTheWizardContract(t *testing.T) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	want := []string{"findings", "fmtDirtyFiles", "moduleBlocks", "providerPins", "repo", "resourceBlocks", "tfJsonFiles", "verdict"}
+	want := []string{"findings", "fmtDirtyFiles", "moduleBlocks", "providerConfig", "providerPins", "repo", "resourceBlocks", "tfJsonFiles", "verdict"}
 	if strings.Join(keys, ",") != strings.Join(want, ",") {
 		t.Errorf("prescan-report.json keys = %v, want %v (frozen wizard/api contract)", keys, want)
 	}
@@ -192,6 +202,42 @@ func TestPrescanReportShape_IsTheWizardContract(t *testing.T) {
 	}
 	if findings, ok := rep["findings"].([]any); !ok || len(findings) != 0 {
 		t.Errorf("clean report must carry an EMPTY findings array (never null/absent); got %v", rep["findings"])
+	}
+
+	// providerConfig's OWN sub-shape — the exact keys the api's ProviderConfig
+	// zod schema (schema.ts) accepts, round-tripped through the real file on
+	// disk (not just Scan()'s in-memory Report, which prescan's own tests
+	// already cover — this proves onboard.go's marshal + file write agree too).
+	pc, ok := rep["providerConfig"].(map[string]any)
+	if !ok {
+		t.Fatalf("providerConfig = %v (%T), want an object", rep["providerConfig"], rep["providerConfig"])
+	}
+	pcKeys := make([]string, 0, len(pc))
+	for k := range pc {
+		pcKeys = append(pcKeys, k)
+	}
+	sort.Strings(pcKeys)
+	if strings.Join(pcKeys, ",") != "providers" {
+		t.Errorf("providerConfig keys = %v, want exactly [providers] (clean-repo has no provider{} block, only required_providers.aws)", pcKeys)
+	}
+	providers, ok := pc["providers"].([]any)
+	if !ok || len(providers) != 1 {
+		t.Fatalf("providerConfig.providers = %v, want exactly one entry", pc["providers"])
+	}
+	entry, ok := providers[0].(map[string]any)
+	if !ok {
+		t.Fatalf("providerConfig.providers[0] = %v, want an object", providers[0])
+	}
+	entryKeys := make([]string, 0, len(entry))
+	for k := range entry {
+		entryKeys = append(entryKeys, k)
+	}
+	sort.Strings(entryKeys)
+	if strings.Join(entryKeys, ",") != "file,line,value" {
+		t.Errorf("providerConfig.providers[0] keys = %v, want exactly [file, line, value] (LiteralValue shape)", entryKeys)
+	}
+	if entry["value"] != "aws" {
+		t.Errorf("providerConfig.providers[0].value = %v, want aws", entry["value"])
 	}
 }
 

@@ -78,6 +78,7 @@ describe('§8 error taxonomy', () => {
         'DRIFT_PROPOSAL_REQUIRED', // drift-portal spec §4.3/§8 — direct POST /requests closed for system-drift-*
         'LAST_FACTOR', // ADR-0024 clause 5 — removing the last TOTP device while needsTotp is true
         'DEVICE_LIMIT', // ADR-0024 clause 1 — self-service device add refused at the 5-device cap
+        'IDENTITY_UNCONFIRMED', // ADR-0033 Decision 5 — upload-token mint refuses an unconfirmed cloud identity
       ]),
     );
     expect(byStatus[413]).toEqual(new Set(['UPLOAD_TOO_LARGE'])); // data upload — explicit size cap
