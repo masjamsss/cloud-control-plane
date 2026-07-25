@@ -1,7 +1,11 @@
 # ADR-0032: One estate CI file per host + a one-block repo setup — fewer onboarding actions, same ceremonies, same two credentials
 
 **Status:** Proposed (design lane; build gated on owner sign-off — the design spec is held
-in the private planning space; this ADR is written to stand alone)
+in the private planning space; this ADR is written to stand alone).
+**2026-07-25 — superseded in part by [0033](0033-ccp-zero-touch-first-scan.md)** for
+deployments that opt in: the Context's "never holds repo credentials" framing gains a
+contained read-only exception there. Unweakened everywhere: decision 4's rejection of
+server-held repo-**write** credentials, and this ADR's design for the non-opt-in path.
 **Date:** 2026-07-25
 **Deciders:** Owner (Jamal) + maintainers
 
