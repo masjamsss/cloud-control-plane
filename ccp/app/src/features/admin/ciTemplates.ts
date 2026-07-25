@@ -259,8 +259,10 @@ export function githubOnboardWorkflow(): string {
 # background: ccp/docs/onboarding-runbook.md and ccp/docs/onboarding-security.md
 # in the control-plane repository. This is a SIBLING of the recurring data
 # lane (.github/workflows/ccp-data.yml), not a replacement for it: same
-# vars.CI_RUNNER skip-guard, same .ccp-tools/ checkout pattern, same "keep the
-# artifact regardless" fallback. Dispatch only — an operator clicks "Run
+# .ccp-tools/ checkout pattern, same "keep the artifact regardless" fallback.
+# It gates on vars.CCP_PROJECT_ID — a variable the runbook actually tells the
+# operator to set — so a correctly-followed setup never silently skips.
+# Dispatch only — an operator clicks "Run
 # workflow" after minting a short-lived onboarding token in Admin → Projects
 # (wizard step 2, "Run in the repo's CI" tab).
 #
@@ -305,7 +307,15 @@ permissions:
 jobs:
   scan-and-upload:
     name: prescan + upload trust request
-    if: \${{ vars.CI_RUNNER != '' }} # estate-side job: runs only where a deployment configures vars.CI_RUNNER — this public repo ships it as a TEMPLATE and the job stays skipped here (see the header comment)
+    # Gate on the variable the operator is ALREADY told to set (runbook step 3,
+    # CCP_PROJECT_ID) — never on an undocumented one. Guarding on vars.CI_RUNNER
+    # instead looks equivalent but is a trap: an operator who follows the runbook
+    # exactly clicks "Run workflow", the job silently SKIPS, and nothing explains
+    # why. This public repo sets no CCP_PROJECT_ID, so the template still stays
+    # inert here; and being dispatch-only, this job can never fire on a push.
+    if: \${{ vars.CCP_PROJECT_ID != '' }}
+    # A self-hosted deployment may still pin its runner with vars.CI_RUNNER;
+    # unset simply means the standard hosted runner.
     runs-on: \${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       # Shallow (default fetch-depth 1) is enough — the scan only ever needs

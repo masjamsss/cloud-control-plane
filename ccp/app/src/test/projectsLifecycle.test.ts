@@ -599,4 +599,19 @@ describe('onboarding CI templates — the one-shot first-scan lane behind step 2
       expect(body).not.toMatch(/GOOGLE_(APPLICATION_)?CREDENTIALS/);
     }
   });
+
+  it('the GitHub onboarding job gates on a DOCUMENTED variable, so a correct setup never silently skips', () => {
+    // The trap this pins shut: the job used to be gated on `vars.CI_RUNNER`,
+    // which neither runbook ever tells the operator to set. Following the
+    // runbook exactly and clicking "Run workflow" therefore SKIPPED the job
+    // silently — no scan, no error, nothing to explain it. The gate must key
+    // off a variable the operator is actually instructed to configure
+    // (PROJECT_ID_VAR, runbook step 3). `runs-on` may still consult CI_RUNNER
+    // to pin a self-hosted runner — that is a fallback, not a gate.
+    const body = githubOnboardWorkflow();
+    const gate = body.split('\n').find((l) => l.trimStart().startsWith('if:'));
+    expect(gate).toBeDefined();
+    expect(gate).toContain(PROJECT_ID_VAR);
+    expect(gate).not.toContain('CI_RUNNER');
+  });
 });
