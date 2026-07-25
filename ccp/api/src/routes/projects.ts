@@ -22,6 +22,7 @@ import {
   projectKey,
   repoRefOf,
   scanJobKey,
+  scanJobQueueGsi,
 } from "../store/schema";
 import {
   buildCloneUrl,
@@ -756,6 +757,9 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
       status: "queued",
       createdBy: actor,
       createdAt: nowIso(),
+      // Enters the queue partition; the claim's compare-and-swap moves it out.
+      GSI1PK: scanJobQueueGsi(),
+      GSI1SK: jobId,
     };
     await transactWithAudit(
       store,

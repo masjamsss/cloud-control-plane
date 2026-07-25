@@ -1087,6 +1087,9 @@ export const ProjectScanJobItem = z.object({
   finishedAt: z.string().optional(),
   /** Sanitized worker-reported failure reason — never raw worker output. */
   error: z.string().optional(),
+  /** Queue index: {@link scanJobQueueGsi} while waiting, {@link scanJobDoneGsi} once taken. */
+  GSI1PK: z.string().optional(),
+  GSI1SK: z.string().optional(),
 });
 export type ProjectScanJobItem = z.infer<typeof ProjectScanJobItem>;
 
@@ -1267,6 +1270,20 @@ export function onboardTokenKey(id: string, tokenId: string): Key {
 /** One server-side scan job for a project (ADR-0033). */
 export function scanJobKey(id: string, jobId: string): Key {
   return { PK: `PROJECT#${id}`, SK: `SCANJOB#${jobId}` };
+}
+/**
+ * GSI1 partition holding ONLY jobs still waiting to be picked up, so a worker
+ * finds work with one indexed read instead of walking every project. A job
+ * LEAVES this partition the moment it is claimed (the claim's compare-and-swap
+ * rewrites GSI1PK to {@link scanJobDoneGsi}), which is what keeps the queue
+ * small and makes "already taken" unrepresentable rather than merely unlikely.
+ */
+export function scanJobQueueGsi(): string {
+  return "SCANJOB#QUEUED";
+}
+/** Where a claimed/finished job's GSI1PK moves to — out of the queue partition. */
+export function scanJobDoneGsi(): string {
+  return "SCANJOB#TAKEN";
 }
 /** SK prefix for querying a project's scan jobs (ULID jobIds sort chronologically). */
 export const SCAN_JOB_SK_PREFIX = "SCANJOB#";
