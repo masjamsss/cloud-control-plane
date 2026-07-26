@@ -17,6 +17,27 @@ export const TOTP_PENDING_MS = 5 * 60 * 1000;
  * are already documented authority theater, SETTINGS-CATALOG §SPA-local). */
 export const REAUTH_MS = 10 * 60 * 1000;
 
+/**
+ * How stale `lastSeenAt` must be before a successful resolve WRITES the slid idle
+ * window back to the store.
+ *
+ * The idle window is 30 minutes; persisting the slide on literally every request
+ * bought no accuracy and cost a durable write per request — on the FileStore that
+ * is a full-snapshot fsync, so an unauthenticated-shaped read like `GET /healthz`
+ * was paying to rewrite the entire governance database because a session cookie
+ * happened to ride along. Coalescing to a one-minute granularity removes ~99% of
+ * those writes on any real traffic pattern.
+ *
+ * The direction is deliberately fail-CLOSED: within the coalescing window the
+ * stored `lastSeenAt` lags reality by at most `SLIDE_GRANULARITY_MS`, so a session
+ * can idle out up to a minute EARLY, never a moment late — the security property
+ * ("30 minutes of inactivity ends the session") is preserved and, at the margin,
+ * enforced slightly more strictly. The resolved session handed to the request
+ * always carries the true current `lastSeenAt`, so nothing downstream observes the
+ * lag within a request.
+ */
+export const SLIDE_GRANULARITY_MS = 60 * 1000;
+
 export function sha256hex(input: string): string {
   return createHash('sha256').update(input).digest('hex');
 }
@@ -79,9 +100,11 @@ export async function resolveSession(store: ConfigStore, token: string, now: num
   // A pre-session (TOTP not completed) is not a full session.
   if (session.pending) return { ok: false, reason: 'totp' };
 
-  // Slide the idle window forward on activity (session.ts parity).
+  // Slide the idle window forward on activity (session.ts parity). The slid value is
+  // always what this request sees; the WRITE is coalesced to SLIDE_GRANULARITY_MS so a
+  // burst of requests on one session costs one durable write, not one per request.
   const slid: SessionItem = { ...session, lastSeenAt: new Date(now).toISOString() };
-  await store.put(slid);
+  if (now - Date.parse(session.lastSeenAt) >= SLIDE_GRANULARITY_MS) await store.put(slid);
   return { ok: true, account, session: slid };
 }
 

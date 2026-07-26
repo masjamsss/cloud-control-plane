@@ -23,12 +23,12 @@ import { disabledOps, isFrozen, loadPolicy, loadTeams, resolveRisk } from '../do
 import { checkSubmitRateLimit } from '../middleware/rateLimit';
 import { recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
 import { bundleConfig, realSteps, runBundle } from '../domain/bundle';
-import { settleCooling } from '../domain/cooling';
+import { coolingElapsed, settleCooling } from '../domain/cooling';
 import { canSignStep } from '../domain/eligibility';
 import { totpDevicesOf } from '../auth/totp';
 import { computeFeasibility } from '../domain/feasibility';
 import { currentRequirement } from '../domain/requirement';
-import { applyGate, isWindowInfeasible, REWINDOW_STALE_MS, settleWindow, validateSchedule } from '../domain/schedule';
+import { applyGate, isWindowInfeasible, needsWindowSettlement, REWINDOW_STALE_MS, settleWindow, validateSchedule } from '../domain/schedule';
 import { nowIso, nowMs } from '../clock';
 
 // Schedule v2: shape-only zod, same as ever — `endAt` is now accepted
@@ -181,17 +181,31 @@ function ladderStateOf(
  * acting `projectId` is injected so a legacy row (stored before request-tagging) still
  * reports the project it lives under — the storage key `requestKey(projectId, id)` is the
  * source of truth, so the read scope IS the row's project. */
+const STORAGE_ONLY_FIELDS: ReadonlySet<string> = new Set([
+  'PK',
+  'SK',
+  'GSI1PK',
+  'GSI1SK',
+  'requestUlid',
+  'eventSeq',
+  'riskOverrideVersion',
+]);
+
 export function toChangeRequest(item: RequestItem, projectId: string): Record<string, unknown> {
-  const { PK, SK, GSI1PK, GSI1SK, requestUlid, eventSeq, riskOverrideVersion, ...rest } = item;
-  void PK;
-  void SK;
-  void GSI1PK;
-  void GSI1SK;
-  void requestUlid;
-  void eventSeq;
-  void riskOverrideVersion;
+  // Copied field-by-field rather than rest-destructured-then-spread. The obvious
+  // `const {PK, ..., ...rest} = item; return {...rest, extras}` builds TWO full
+  // copies of every request — and this runs once per row of every list response,
+  // where it was the single largest cost in the endpoint. One pass, one object,
+  // same key order (`projectId`, when stored, keeps its original position).
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(item)) {
+    if (!STORAGE_ONLY_FIELDS.has(k)) out[k] = (item as Record<string, unknown>)[k];
+  }
+  out.projectId = item.projectId ?? projectId;
   const { ladder, next } = ladderStateOf(item);
-  return { ...rest, projectId: item.projectId ?? projectId, approvalLadder: ladder, nextApprovalStep: next };
+  out.approvalLadder = ladder;
+  out.nextApprovalStep = next;
+  return out;
 }
 
 /**
@@ -522,8 +536,22 @@ export function requestRoutes(): Hono<AppEnv> {
     // not Promise.all — concurrent transacts against the SAME per-project chain head
     // would just self-contend. Cooling settles FIRST so a request that just left
     // APPROVED_COOLING can be re-evaluated for window expiry in this SAME touch.
+    //
+    // Screened by the settlers' OWN synchronous preconditions so a row that needs
+    // nothing costs nothing. Both settlers are already no-ops for such a row, but
+    // `await`-ing a no-op still allocates a promise and yields the microtask queue
+    // once per settler per row — 2N turns to do no work on a list of N. The
+    // screened rows still go through the FULL cooling→window chain, because
+    // settling cooling can hand a row straight into a window that has expired.
+    const settleNow = nowMs();
     const all: RequestItem[] = [];
-    for (const x of fetched) all.push(await settleWindow(store, projectId, await settleCooling(store, projectId, x)));
+    for (const x of fetched) {
+      if (coolingElapsed(x, settleNow) || needsWindowSettlement(x, settleNow)) {
+        all.push(await settleWindow(store, projectId, await settleCooling(store, projectId, x)));
+      } else {
+        all.push(x);
+      }
+    }
     const user = toUser(account, projectId);
     let items: RequestItem[];
     if (scope === 'mine') items = all.filter((x) => x.requester === account.id);
