@@ -70,8 +70,21 @@ func cloneArgs(cloneURL, dest string) []string {
 // cloneEnv is the complete environment git runs with — an allowlist, not a
 // filter. Nothing from the worker's own environment is inherited, so the
 // scanner key and the job's onboarding token are invisible to the clone.
-func cloneEnv(home string) []string {
-	return []string{
+//
+// A private repo's credential rides HERE, not in argv and not in the URL:
+//
+//   - Not in the URL, because git writes the remote URL into `.git/config` and
+//     echoes it in error messages, so a credential embedded there outlives the
+//     clone and leaks into the failure text the operator reads.
+//   - Not in argv (`-c http.extraHeader=...`), because argv is world-readable
+//     through `ps` for the lifetime of the process.
+//
+// `GIT_CONFIG_COUNT`/`_KEY_n`/`_VALUE_n` is git's own env-based config, so the
+// header reaches git without either exposure. The key is scoped to the exact
+// clone URL, so the header cannot be replayed to some other host if git ever
+// followed a redirect off it.
+func cloneEnv(home, cloneURL, authHeader string) []string {
+	env := []string{
 		// A minimal PATH: git needs to find its own helpers.
 		"PATH=" + defaultPath(),
 		"HOME=" + home,
@@ -84,6 +97,14 @@ func cloneEnv(home string) []string {
 		// reported back to the operator.
 		"LC_ALL=C",
 	}
+	if authHeader != "" {
+		env = append(env,
+			"GIT_CONFIG_COUNT=1",
+			"GIT_CONFIG_KEY_0=http."+cloneURL+".extraHeader",
+			"GIT_CONFIG_VALUE_0=Authorization: "+authHeader,
+		)
+	}
+	return env
 }
 
 func defaultPath() string {
@@ -93,8 +114,8 @@ func defaultPath() string {
 	return "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 }
 
-// Clone implements Cloner.
-func (g GitCloner) Clone(ctx context.Context, cloneURL, dest string) error {
+// Clone implements Cloner. `authHeader` is empty for a public repository.
+func (g GitCloner) Clone(ctx context.Context, cloneURL, dest, authHeader string) error {
 	bin := g.Git
 	if bin == "" {
 		bin = "git"
@@ -108,7 +129,7 @@ func (g GitCloner) Clone(ctx context.Context, cloneURL, dest string) error {
 	defer os.RemoveAll(home)
 
 	cmd := exec.CommandContext(ctx, bin, cloneArgs(cloneURL, dest)...)
-	cmd.Env = cloneEnv(home)
+	cmd.Env = cloneEnv(home, cloneURL, authHeader)
 	cmd.Dir = home
 	out, err := cmd.CombinedOutput()
 	if err != nil {

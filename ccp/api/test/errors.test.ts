@@ -82,6 +82,7 @@ describe("§8 error taxonomy", () => {
         "DEVICE_LIMIT", // ADR-0024 clause 1 — self-service device add refused at the 5-device cap
         "IDENTITY_UNCONFIRMED", // ADR-0033 Decision 5 — upload-token mint refuses an unconfirmed cloud identity
         "SCAN_TARGET_REFUSED", // ADR-0033 — the project's forge host is not one this deployment may clone from
+        "FORGE_CREDENTIAL_REFUSED", // ADR-0033 Decision 1 — no seal key, or the App is not installed on that repo
       ]),
     );
     expect(byStatus[413]).toEqual(new Set(["UPLOAD_TOO_LARGE"])); // data upload — explicit size cap

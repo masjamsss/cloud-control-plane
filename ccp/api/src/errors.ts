@@ -261,6 +261,16 @@ export const ERRORS = {
     reason:
       "The built-in repository scanner is not enabled on this deployment. Run the scan from the repository's CI or locally instead.",
   },
+  // ADR-0033 Decision 1 — the deployment cannot hold a forge credential
+  // (CCP_FORGE_SEAL_KEY unset/too short), or the configured GitHub App is not
+  // installed on the repository. 422 rather than 500: this is a deployment
+  // configuration the operator fixes, not a server fault.
+  FORGE_CREDENTIAL_REFUSED: {
+    status: 422,
+    reason:
+      "This deployment cannot use that forge credential — see the reason in the details.",
+  },
+
   // ADR-0033 — the project's repo cannot be turned into a clone URL: a
   // self-hosted forge host outside the deployment allowlist, or a base URL that
   // is not plain https. Deliberately does NOT echo the offending URL back.

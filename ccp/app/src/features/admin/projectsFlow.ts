@@ -772,6 +772,25 @@ export async function latestScanJobVia(
   return null;
 }
 
+export async function setForgeCredentialVia(
+  authoritative: boolean,
+  client: HttpApiClient | null,
+  id: string,
+  input: { username: string; token: string },
+): Promise<{ username: string }> {
+  if (authoritative && client) return client.setForgeCredential(id, input);
+  throw new ProjectOnboardingError(SCANNER_UNAVAILABLE_IN_DEMO);
+}
+
+export async function removeForgeCredentialVia(
+  authoritative: boolean,
+  client: HttpApiClient | null,
+  id: string,
+): Promise<void> {
+  if (authoritative && client) return client.removeForgeCredential(id);
+  throw new ProjectOnboardingError(SCANNER_UNAVAILABLE_IN_DEMO);
+}
+
 const SCANNER_UNAVAILABLE_IN_DEMO =
   'The built-in repository scanner needs a real deployment to run on — this preview has no server to clone from. Use one of the other two ways to run the first scan.';
 

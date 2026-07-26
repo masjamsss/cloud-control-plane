@@ -624,6 +624,29 @@
   border-radius: var(--radius-1);
 }
 
+/* ── the private-repo credential, folded away by default ──────────────────
+   Most repositories do not need one, and a token field permanently on screen
+   invites typing a token where none is wanted. */
+.projadmin__private {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+}
+.projadmin__private-summary {
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.projadmin__private-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-1);
+}
+.projadmin__private[open] .projadmin__private-summary {
+  margin-bottom: var(--space-3);
+}
+
 /* ── the server-side scan's live progress ───────────────────────────────────
    One status line with a state dot. The dot PULSES only while work is
    actually happening, so "still running" is readable at a glance without a

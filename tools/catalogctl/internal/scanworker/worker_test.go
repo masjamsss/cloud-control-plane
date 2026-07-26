@@ -74,10 +74,11 @@ type fakeCloner struct {
 	err     error
 	gotURL  string
 	gotDest string
+	gotAuth string
 }
 
-func (f *fakeCloner) Clone(_ context.Context, cloneURL, dest string) error {
-	f.gotURL, f.gotDest = cloneURL, dest
+func (f *fakeCloner) Clone(_ context.Context, cloneURL, dest, authHeader string) error {
+	f.gotURL, f.gotDest, f.gotAuth = cloneURL, dest, authHeader
 	if f.err != nil {
 		return f.err
 	}
@@ -379,13 +380,75 @@ func TestCloneArgvKeepsEveryHardeningFlag(t *testing.T) {
 	}
 }
 
+func TestPrivateRepoCredentialReachesTheCloner(t *testing.T) {
+	requireCleanEnv(t)
+	j := job("J1")
+	j.CloneAuthHeader = "Basic eC1hY2Nlc3MtdG9rZW46Z2hzX2V4YW1wbGU="
+	ctrl := &fakeControl{jobs: []*Job{j}}
+	cloner := &fakeCloner{}
+	runOnce(t, ctrl, cloner, &fakeScanner{uploaded: true})
+	if cloner.gotAuth != j.CloneAuthHeader {
+		t.Fatalf("cloner got auth %q", cloner.gotAuth)
+	}
+}
+
+func TestPublicRepoGetsNoCredentialAtAll(t *testing.T) {
+	requireCleanEnv(t)
+	// The empty case is the one that must stay empty: a public clone with a
+	// stray header would send a credential to a host that never needed one.
+	ctrl := &fakeControl{jobs: []*Job{job("J1")}}
+	cloner := &fakeCloner{}
+	runOnce(t, ctrl, cloner, &fakeScanner{uploaded: true})
+	if cloner.gotAuth != "" {
+		t.Fatalf("a public clone carried auth %q", cloner.gotAuth)
+	}
+}
+
+func TestCredentialRidesTheEnvironmentNeverArgvOrTheURL(t *testing.T) {
+	// The whole point of the env-config mechanism. A credential in argv is
+	// readable through `ps`; a credential in the URL is written into
+	// .git/config and echoed in git's error text.
+	const header = "Basic eC1hY2Nlc3MtdG9rZW46Z2hzX3NlY3JldA=="
+	url := "https://github.com/o/r.git"
+
+	argv := strings.Join(cloneArgs(url, "/w/repo"), " ")
+	if strings.Contains(argv, header) || strings.Contains(argv, "extraHeader") {
+		t.Fatalf("the credential (or its config key) reached argv: %s", argv)
+	}
+	if strings.Contains(argv, "@") {
+		t.Fatalf("argv carries userinfo — the credential must not be in the URL: %s", argv)
+	}
+
+	env := cloneEnv("/w/home", url, header)
+	if !contains(env, "GIT_CONFIG_COUNT=1") {
+		t.Error("git was not told to read config from the environment")
+	}
+	// Scoped to the exact clone URL, so a redirect elsewhere cannot replay it.
+	if !contains(env, "GIT_CONFIG_KEY_0=http."+url+".extraHeader") {
+		t.Errorf("the header key is not scoped to the clone URL: %v", env)
+	}
+	if !contains(env, "GIT_CONFIG_VALUE_0=Authorization: "+header) {
+		t.Errorf("the header value did not reach git: %v", env)
+	}
+}
+
+func TestNoCredentialMeansNoGitConfigAtAll(t *testing.T) {
+	// Not "an empty header" — no config entries whatsoever, so a public clone
+	// is byte-for-byte what it was before private repos were supported.
+	for _, kv := range cloneEnv("/w/home", "https://github.com/o/r.git", "") {
+		if strings.HasPrefix(kv, "GIT_CONFIG_") && kv != "GIT_CONFIG_NOSYSTEM=1" {
+			t.Fatalf("public clone set %q", kv)
+		}
+	}
+}
+
 func TestCloneEnvIsAnAllowlistNotAnInheritance(t *testing.T) {
 	// The worker's own scanner key must be invisible to git and to anything git
 	// might run. The env is REBUILT, so a leak here means someone switched to
 	// appending onto os.Environ().
 	t.Setenv(ScannerKeyEnv, "super-secret-scanner-key-value-0123456789")
 	t.Setenv("AWS_ACCESS_KEY_ID", "AKIAIOSFODNN7EXAMPLE")
-	env := cloneEnv("/w/home")
+	env := cloneEnv("/w/home", "https://github.com/o/r.git", "")
 	for _, kv := range env {
 		if strings.Contains(kv, "super-secret") || strings.HasPrefix(kv, "AWS_") {
 			t.Fatalf("clone env leaked %q", kv)

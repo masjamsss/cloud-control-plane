@@ -5,6 +5,7 @@ import { z } from "zod";
 import { monotonicFactory } from "ulid";
 import type { AppEnv } from "../appEnv";
 import type {
+  ProjectForgeCredentialItem,
   ProjectItem,
   ProjectOnboardTokenItem,
   ProjectScanJobItem,
@@ -16,6 +17,7 @@ import {
   PrescanReport,
   RepoRef,
   SCAN_JOB_SK_PREFIX,
+  forgeCredentialKey,
   githubMirrorOf,
   onboardTokenKey,
   projectCollectionGsi,
@@ -30,6 +32,11 @@ import {
   scannerEnabled,
   scannerWorkerKey,
 } from "../domain/scanner";
+import {
+  ForgeCredentialError,
+  forgeSealKey,
+  sealForgeToken,
+} from "../domain/forgeCredentials";
 import type { ApplySpec } from "../store/schema";
 import { apiError } from "../errors";
 import { requireSession } from "../middleware/session";
@@ -511,6 +518,21 @@ const OnboardMintBody = z
 
 const ONBOARD_DEFAULT_TTL_MINUTES = 24 * 60;
 
+/** `PUT /projects/:id/forge-credential` (ADR-0033 Decision 1). `.strict()` —
+ * this route can only ever set a credential, never touch anything else. The
+ * username is bounded and colon-free because the pair is joined on the first
+ * colon for the git Basic header (domain/forgeCredentials.ts). */
+const ForgeCredentialBody = z
+  .object({
+    username: z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(/^[^:\s]+$/, "no colon or whitespace"),
+    token: z.string().min(8).max(500),
+  })
+  .strict();
+
 export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
   const p = new Hono<AppEnv>();
   // Registry READS need any bound session; each write names its own stricter
@@ -826,6 +848,114 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
         ...(latest.finishedAt ? { finishedAt: latest.finishedAt } : {}),
         ...(latest.error ? { error: latest.error } : {}),
       });
+    },
+  );
+
+  /* ── PUT /projects/:id/forge-credential — the read-only token that lets the
+   * scanner clone a PRIVATE repo (lead + isAdmin, ADR-0033 Decision 1) ───────
+   * For GitLab, a self-hosted forge, or a github.com operator who cannot install
+   * the App. The pair is sealed AES-256-GCM under CCP_FORGE_SEAL_KEY the moment
+   * it arrives and stored on its OWN row — never on the project, which every
+   * registry read serializes. Nothing ever reads it back out over HTTP: the
+   * registry exposes only `forgeCredential: {username}`, and the sealed blob is
+   * opened once per scan job, in memory, at claim time.
+   *
+   * Deliberately NOT lifecycle-gated the way identity is. A private repo needs
+   * its credential to be replaceable at any point — a token expires or is
+   * rotated at the forge long after trust — and unlike identity this decides
+   * nothing about what the project IS, only whether the scanner can read it. */
+  p.put(
+    "/:id/forge-credential",
+    requireRole("lead"),
+    requireAdmin,
+    async (c) => {
+      const store = c.get("store");
+      const actor = c.get("account")!.id;
+      const id = c.req.param("id");
+      const parsed = ForgeCredentialBody.safeParse(
+        await c.req.json().catch(() => null),
+      );
+      if (!parsed.success) return apiError(c, "VALIDATION_FAILED");
+
+      const k = projectKey(id);
+      const project = (await store.get(k.PK, k.SK)) as ProjectItem | null;
+      if (!project)
+        return c.json({ code: "NOT_FOUND", reason: "No such project." }, 404);
+      if (project.archived) return apiError(c, "STATE_CONFLICT");
+
+      let sealed: string;
+      try {
+        sealed = sealForgeToken(parsed.data.username, parsed.data.token);
+      } catch (e) {
+        if (e instanceof ForgeCredentialError)
+          return apiError(c, "FORGE_CREDENTIAL_REFUSED", {
+            problem: e.message,
+          });
+        throw e;
+      }
+
+      const item: ProjectForgeCredentialItem = {
+        ...forgeCredentialKey(id),
+        projectId: id,
+        sealed,
+        username: parsed.data.username,
+        createdBy: actor,
+        createdAt: nowIso(),
+      };
+      // The audit records THAT a credential was stored and by whom — never the
+      // token, and not even its length.
+      await transactWithAudit(
+        store,
+        id,
+        [{ kind: "put", item: item as never }],
+        {
+          action: "forge-credential-set",
+          actor,
+          targetType: "project",
+          targetId: id,
+          after: { username: parsed.data.username },
+        },
+      );
+      return c.json({ username: parsed.data.username });
+    },
+  );
+
+  /* ── DELETE /projects/:id/forge-credential — remove it (lead + isAdmin) ──── */
+  p.delete(
+    "/:id/forge-credential",
+    requireRole("lead"),
+    requireAdmin,
+    async (c) => {
+      const store = c.get("store");
+      const actor = c.get("account")!.id;
+      const id = c.req.param("id");
+      const k = forgeCredentialKey(id);
+      const row = (await store.get(
+        k.PK,
+        k.SK,
+      )) as ProjectForgeCredentialItem | null;
+      if (!row)
+        return c.json(
+          { code: "NOT_FOUND", reason: "No forge credential." },
+          404,
+        );
+      // A HARD delete, unlike the onboarding token's tombstone: there is nothing
+      // about a removed forge secret worth keeping, and keeping the sealed blob
+      // around after the operator asked for its removal would be the opposite of
+      // what they asked for. The audit row is the record that it existed.
+      await transactWithAudit(
+        store,
+        id,
+        [{ kind: "delete", pk: k.PK, sk: k.SK }],
+        {
+          action: "forge-credential-remove",
+          actor,
+          targetType: "project",
+          targetId: id,
+          before: { username: row.username },
+        },
+      );
+      return c.json({ removed: true });
     },
   );
 

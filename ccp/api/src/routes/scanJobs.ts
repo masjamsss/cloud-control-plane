@@ -4,8 +4,14 @@ import { z } from "zod";
 import type { AppEnv } from "../appEnv";
 import type { ConfigStore } from "../store/configStore";
 import { ConditionError } from "../store/configStore";
-import type { ProjectItem, ProjectScanJobItem } from "../store/schema";
+import type {
+  ProjectForgeCredentialItem,
+  ProjectItem,
+  ProjectScanJobItem,
+  RepoRef,
+} from "../store/schema";
 import {
+  forgeCredentialKey,
   projectKey,
   repoRefOf,
   scanJobDoneGsi,
@@ -24,6 +30,15 @@ import {
   type ScanJobStatus,
 } from "../domain/scanner";
 import { isOnboardable, mintOnboardToken } from "../domain/onboardToken";
+import {
+  ForgeCredentialError,
+  githubAppAuthHeader,
+  githubAppCanServe,
+  githubAppConfig,
+  mintInstallationToken,
+  openForgeTokenHeader,
+  type FetchLike,
+} from "../domain/forgeCredentials";
 import { transactWithAudit } from "../domain/audit";
 import { ApiError, apiError } from "../errors";
 import { nowIso } from "../clock";
@@ -163,6 +178,58 @@ async function failClaimed(
   );
 }
 
+/**
+ * The network seam for the GitHub App broker, overridable in tests so the whole
+ * credential path is exercised without reaching github.com.
+ */
+const realAppFetch: FetchLike = async (url, init) => {
+  const res = await fetch(url, init as RequestInit);
+  return { status: res.status, json: () => res.json() as Promise<unknown> };
+};
+let appFetch: FetchLike = realAppFetch;
+/** Inject a fake, or pass null to restore the REAL one. Restoring matters:
+ * a fake left installed would silently follow the test file that set it into
+ * every other file sharing the worker process. */
+export function __setGithubAppFetchForTests(f: FetchLike | null): void {
+  appFetch = f ?? realAppFetch;
+}
+
+/**
+ * Resolve the credential the worker needs to clone THIS repository, or null for
+ * a public one. Order matters and is the operator's own precedence:
+ *
+ *  1. A per-project sealed token, if the operator stored one. Explicit beats
+ *     ambient — an operator who went to the trouble of supplying a token for
+ *     this project meant it to be used, even on github.com where an App exists.
+ *  2. Otherwise the GitHub App, if this deployment installed one and the repo is
+ *     on github.com. A per-job installation token: one repository, one hour,
+ *     `contents:read` only.
+ *  3. Otherwise nothing — a public repository, which is how the scanner worked
+ *     before any of this existed.
+ *
+ * Returns the ready-to-use `Authorization` header VALUE rather than the raw
+ * secret, so the worker never has to know which scheme it got and no call site
+ * can assemble the encoding wrongly.
+ */
+async function resolveCloneAuth(
+  store: ConfigStore,
+  projectId: string,
+  repo: RepoRef,
+): Promise<string | null> {
+  const k = forgeCredentialKey(projectId);
+  const stored = (await store.get(
+    k.PK,
+    k.SK,
+  )) as ProjectForgeCredentialItem | null;
+  if (stored) return openForgeTokenHeader(stored.sealed);
+
+  if (!githubAppCanServe(repo)) return null;
+  const cfg = githubAppConfig();
+  if (cfg === null) return null;
+  const minted = await mintInstallationToken(repo, cfg, appFetch);
+  return githubAppAuthHeader(minted.token);
+}
+
 export function scanJobRoutes(): Hono<AppEnv> {
   const s = new Hono<AppEnv>();
 
@@ -255,7 +322,7 @@ export function scanJobRoutes(): Hono<AppEnv> {
       }
       const repo = repoRefOf(project);
       const target = repo ? buildCloneUrl(repo) : { ok: false as const };
-      if (!target.ok) {
+      if (!repo || !target.ok) {
         await failClaimed(
           store,
           claimed,
@@ -264,8 +331,29 @@ export function scanJobRoutes(): Hono<AppEnv> {
         continue;
       }
 
-      // The credential is minted LAST — after every refusal has had its chance —
-      // so a job that was never going to run never produces a token at all.
+      // The forge credential for a PRIVATE repo, resolved fresh per job — a
+      // per-job GitHub App installation token, or the operator's sealed token
+      // opened in memory. Null for a public repo. A failure here fails THIS job
+      // with the reason (a misinstalled App is the operator's fix, and a job
+      // hanging in `claimed` would tell them nothing).
+      let cloneAuthHeader: string | null;
+      try {
+        cloneAuthHeader = await resolveCloneAuth(store, row.projectId, repo);
+      } catch (e) {
+        if (e instanceof ForgeCredentialError) {
+          await failClaimed(store, claimed, e.message);
+          continue;
+        }
+        await failClaimed(
+          store,
+          claimed,
+          "Could not obtain repository access.",
+        );
+        continue;
+      }
+
+      // The onboarding token is minted LAST — after every refusal has had its
+      // chance — so a job that was never going to run never produces one.
       const token = await mintOnboardToken(
         store,
         row.projectId,
@@ -278,6 +366,9 @@ export function scanJobRoutes(): Hono<AppEnv> {
         cloneUrl: target.url,
         onboardToken: token.token,
         tokenExpiresAt: token.expiresAt,
+        // Present ONLY for a private repo. The worker passes it to git through
+        // the environment, never argv — see internal/scanworker/clone.go.
+        ...(cloneAuthHeader ? { cloneAuthHeader } : {}),
       });
     }
 

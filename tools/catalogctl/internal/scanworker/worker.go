@@ -72,6 +72,15 @@ type Job struct {
 	CloneURL       string `json:"cloneUrl"`
 	OnboardToken   string `json:"onboardToken"`
 	TokenExpiresAt string `json:"tokenExpiresAt"`
+	// CloneAuthHeader is the ready-to-use `Authorization` header value for a
+	// PRIVATE repository — a per-job GitHub App installation token, or the
+	// operator's stored forge token, whichever the server resolved. EMPTY for a
+	// public repo, which is the case that needs no credential at all.
+	//
+	// The worker never learns which kind it holds and never parses it: the
+	// server assembled the scheme and the encoding, so there is exactly one
+	// place that can get them wrong.
+	CloneAuthHeader string `json:"cloneAuthHeader,omitempty"`
 }
 
 // Opts configures a worker process.
@@ -118,7 +127,7 @@ type Control interface {
 // Cloner is the checkout seam. The real one shells to git with a stripped
 // environment (clone.go); tests inject a fake that just materializes files.
 type Cloner interface {
-	Clone(ctx context.Context, cloneURL, dest string) error
+	Clone(ctx context.Context, cloneURL, dest, authHeader string) error
 }
 
 // Scanner is the prescan+upload seam — in production, the SAME onboard flow a
@@ -201,7 +210,7 @@ func runJob(ctx context.Context, opts Opts, ctrl Control, cloner Cloner, scanner
 		timeout = DefaultCloneTimeout
 	}
 	cctx, cancel := context.WithTimeout(ctx, timeout)
-	err = cloner.Clone(cctx, job.CloneURL, repoDir)
+	err = cloner.Clone(cctx, job.CloneURL, repoDir, job.CloneAuthHeader)
 	cancel()
 	if err != nil {
 		return fail(ctx, ctrl, job, "clone failed: "+err.Error())

@@ -960,6 +960,20 @@ export interface HttpApiClient extends ApiClient {
   latestScanJob(projectId: string): Promise<ScanJobState | null>;
 
   /**
+   * The READ-ONLY forge token that lets the built-in scanner clone a PRIVATE
+   * repository. Write-only by design: `setForgeCredential` returns the username
+   * it stored and nothing else, and there is deliberately NO getter — the token
+   * is sealed server-side the moment it arrives and no endpoint ever reads it
+   * back, so a client that could ask for it would be the leak. Not needed at
+   * all for a public repo, or when the deployment runs a GitHub App.
+   */
+  setForgeCredential(
+    projectId: string,
+    input: { username: string; token: string },
+  ): Promise<{ username: string }>;
+  removeForgeCredential(projectId: string): Promise<void>;
+
+  /**
    * The per-account DATA plane (the app-rebuild killer): mint/revoke the CI
    * upload token, list the staged+active versions, activate one (ALWAYS a
    * two-admin envelope → `{applied:false, pendingId}`), and archive/unarchive
@@ -1897,6 +1911,25 @@ export function createHttpApiClient(baseUrl: string, opts?: HttpApiOptions): Htt
       });
       if (!res.ok) await throwRefusal(res);
       return (await res.json()) as ScanJobCreated;
+    },
+
+    async setForgeCredential(
+      projectId: string,
+      input: { username: string; token: string },
+    ): Promise<{ username: string }> {
+      const res = await request(`/projects/${encodeURIComponent(projectId)}/forge-credential`, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) await throwRefusal(res);
+      return (await res.json()) as { username: string };
+    },
+
+    async removeForgeCredential(projectId: string): Promise<void> {
+      const res = await request(`/projects/${encodeURIComponent(projectId)}/forge-credential`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) await throwRefusal(res);
     },
 
     async latestScanJob(projectId: string): Promise<ScanJobState | null> {

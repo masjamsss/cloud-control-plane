@@ -1,16 +1,13 @@
 # ADR-0033: An opt-in scanner service lets the control plane run the first scan itself — read-only forge access, contained; both ceremonies untouched
 
-**Status:** Accepted — **built for public repositories** (2026-07-26). The owner gave the
-go-ahead ("let's fix all of them", "keep building") and the lane below is implemented,
-disarmed by default, and proved end to end: an admin queues a scan, an isolated worker
-clones and prescans, and the project reaches `pending-trust` with the two-admin trust
-ceremony still ahead of it. **Decision 1 (credential custody) is NOT built yet** — there
-is no GitHub App broker and no sealed forge token, so an armed deployment can currently
-scan **public repositories only**; a private repo's clone fails the job with git's own
-"not found", which is the correct fail-closed behaviour but not the intended experience.
-Decision 5's register-form shrink is likewise still pending; the wizard's new
-"Let this system scan it" tab delivers the zero-action scan, not yet the one-field form.
-Everything else below is in the code.
+**Status:** Accepted — **built** (2026-07-26). The owner gave the go-ahead ("let's fix all
+of them", "keep building") and every decision below is implemented, disarmed by default,
+and proved end to end: an admin pastes a repository address, an isolated worker clones and
+prescans it, and the project reaches `pending-trust` with the two-admin trust ceremony
+still ahead of it. Private repositories are reachable through either a GitHub App
+installation (per-job token: one repository, ≤1 hour, `contents:read`) or a per-project
+read-only token sealed under `CCP_FORGE_SEAL_KEY`; a deployment that configures neither
+still scans public repositories, which is a working deployment rather than a broken one.
 **Date:** 2026-07-25
 **Deciders:** Owner (Jamal) + maintainers
 
@@ -173,17 +170,18 @@ decisions above are unchanged; this is only where each one lives now.
 
 | Decision | Where it is | Note |
 |---|---|---|
+| 1 — credential custody | `ccp/api/src/domain/forgeCredentials.ts`, `PUT/DELETE /projects/:id/forge-credential`, the claim's `cloneAuthHeader` | GitHub App: the private key signs one thing (a ≤10-min JWT) and never enters the store; the minted token names ONE repository and TWO read permissions. Sealed token: AES-256-GCM under a key separate from the TOTP key, on its own row (never the project row every registry read serializes), write-only — no endpoint reads it back, including the setter's own response and the audit entry. The worker passes it to git through the ENVIRONMENT, never argv (`ps`-readable) and never the URL (written into `.git/config`, echoed in git's errors). No seal key ⇒ the API refuses to store rather than sealing under a default |
 | 2 — isolation | `ccp/scanner/Dockerfile`, `ccp/docker-compose.yml` (`profiles: ["scanner"]`), `tools/catalogctl/internal/scanworker` | No terraform in the image (build-time check), `Preflight()` refuses a terraform on PATH or any cloud credential, non-root, read-only rootfs, all caps dropped, tmpfs workspace, no ports/volumes/socket |
 | 3 — disarmed by default | `ccp/api/src/domain/scanner.ts` | `CCP_SCANNER=1` **and** a ≥32-char `CCP_SCANNER_KEY`; either missing ⇒ every endpoint answers `SCANNER_DISABLED` |
 | 4 — SSRF closed by construction | `buildCloneUrl()` + `POST /projects/:id/scan-jobs` | Scheme hard-coded https, host from a fixed table or an allowlisted `baseUrl`, credentials-in-URL and explicit ports refused, per-segment encoding; the worker never names a target and re-checks the URL it is given; one job in flight per project; lead+isAdmin and audited |
+| 5 — "just put the repo" | `parseRepoUrl` + the wizard's step 1; `RegisterBody`'s optional identity | ONE pasted address (browser bar, clone button, ssh, deep link, bare owner/name); the parse is echoed back before it is acted on; id and name are editable suggestions. Identity is deferred: a register body with no identity key stores a project that has none, which scans normally but cannot mint an upload token until an admin confirms what the scan proposed (`IDENTITY_UNCONFIRMED`) |
 | 6 — untouched ceremonies | — | `POST /projects/:id/trust` and the two-admin first-data activation have zero diff; the worker uploads over the same pre-trust Bearer lane with the same sha binding |
 | exactly-once claiming | `POST /scan-jobs/claim` | A compare-and-swap on `status === 'queued'` that simultaneously leaves the queue index; the lifecycle window is re-checked at claim time, so a project that left pre-trust while queued has its job failed rather than scanned |
 | worker honesty | `POST /scan-jobs/:jobId/status` | Forward-only transitions validated against the STORED status; terminal jobs never reopen; error text scrubbed of control characters, URLs and token-shaped strings |
 
-**Still to build:** decision 1's credential custody (which is what lifts the
-public-repos-only limit), decision 5's one-field register form, and the separate
-follow-on question of the control plane generating project *data* as well as the scan —
-which this ADR explicitly does not license and which needs its own decision record.
+**Still to build:** nothing in this ADR. The one follow-on it deliberately does NOT
+license — the control plane generating project *data* as well as the first scan — needs
+its own decision record before any of it is written.
 
 ## Action items
 

@@ -752,6 +752,36 @@ paths:
       responses: { '200': { description: Revoked },
         '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
         '404': { description: Not found } } }
+  /projects/{id}/forge-credential:
+    put: { summary: 'Store the READ-ONLY forge token that lets the built-in scanner clone a PRIVATE repository
+        (lead + isAdmin, 0033 decision 1). For GitLab, a self-hosted forge, or a github.com operator who cannot
+        install the App. The {username, token} pair is sealed AES-256-GCM under CCP_FORGE_SEAL_KEY the moment it
+        arrives — a key deliberately separate from the TOTP key — and stored on its OWN row, never on the project
+        row that every registry read serializes. NOTHING EVER READS IT BACK: this route''s own response returns
+        only the username, the registry exposes only that a credential exists, and the audit entry records the
+        username and the actor but never the token. The sealed blob is opened exactly once per scan job, in
+        memory, at claim time. Refused 422 FORGE_CREDENTIAL_REFUSED when the deployment has no seal key — a
+        secret sealed under a guessable default is worse than refusing to store one. Replacing simply overwrites,
+        so a rotated token needs no delete first. Audit: forge-credential-set',
+      parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
+      requestBody: { required: true, content: { application/json: { schema: { type: object,
+        required: [username, token], additionalProperties: false,
+        properties: { username: {type: string, minLength: 1, maxLength: 100, pattern: '^[^:\\s]+$',
+            description: 'no colon — the pair is joined on the first colon for the git Basic header'},
+          token: {type: string, minLength: 8, maxLength: 500, description: 'a READ-ONLY project/deploy token; never returned by any endpoint'} } } } } },
+      responses: { '200': { description: 'Stored (the username only — never the token)', content: { application/json: { schema: { type: object,
+          required: [username], properties: { username: {type: string} } } } } },
+        '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
+        '404': { description: Not found }, '409': { $ref: '#/components/responses/E409' },
+        '422': { description: 'VALIDATION_FAILED | FORGE_CREDENTIAL_REFUSED', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } } } }
+    delete: { summary: 'Remove the stored forge credential (lead + isAdmin). A HARD delete, unlike the onboarding
+        token''s tombstone: there is nothing about a removed forge secret worth keeping, and retaining the sealed
+        blob after the operator asked for its removal would be the opposite of what they asked for — the audit row
+        is the record that it existed. Audit: forge-credential-remove',
+      parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
+      responses: { '200': { description: Removed },
+        '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
+        '404': { description: Not found } } }
   /projects/{id}/scan-jobs:
     post: { summary: 'Ask the CONTROL PLANE to scan this project''s repository itself (lead + isAdmin, ADR-0033) —
         the zero-touch first import: no CI file in the estate repo, no local run. Records the INTENT only; an
@@ -800,7 +830,8 @@ paths:
           properties: { jobId: {type: string}, projectId: {type: string},
             cloneUrl: {type: string, description: 'server-built https URL — an allowlisted forge host, never worker input'},
             onboardToken: {type: string, description: '`<tokenId>.<secret>`, shown once'},
-            tokenExpiresAt: {type: string} } } } } },
+            tokenExpiresAt: {type: string},
+            cloneAuthHeader: {type: string, description: 'ONLY for a private repo (absent for a public one): the ready-to-use Authorization header value — a per-job GitHub App installation token (one repository, <=1h, contents:read) or the operator''s sealed forge token, opened here. The server assembles the scheme and encoding so the worker never parses a credential, and the worker passes it to git through the ENVIRONMENT, never argv (readable via ps) and never the URL (written into .git/config and echoed in git''s errors)'} } } } } },
         '204': { description: Nothing queued },
         '401': { description: SCANNER_KEY_INVALID, content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } },
         '403': { description: 'MISSING_CLIENT_HEADER — the CSRF exemption is Bearer-shaped-only; a call with no Bearer stays under the browser rules', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } },

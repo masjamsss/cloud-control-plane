@@ -1262,6 +1262,36 @@ export const PROJECT_DATA_SK_PREFIX = "DATA#v";
 export function uploadTokenKey(id: string, tokenId: string): Key {
   return { PK: `PROJECT#${id}`, SK: `UPLOADTOKEN#${tokenId}` };
 }
+/**
+ * A project's operator-supplied FORGE credential — the read-only token that
+ * lets the scanner clone a private repository (ADR-0033 Decision 1).
+ *
+ * Its own ROW, never a field on {@link ProjectItem}, for one reason: the
+ * project row is serialized by `GET /projects` on every page load, and a secret
+ * that lives on it is one careless projection away from the wire. Nothing
+ * serializes this row — the registry exposes only the boolean fact that one
+ * exists, and the sealed blob is opened exactly once per scan job, in memory,
+ * at claim time.
+ *
+ * `sealed` is AES-256-GCM over `username:token` under `CCP_FORGE_SEAL_KEY`
+ * (domain/forgeCredentials.ts) — a key deliberately separate from the TOTP key.
+ */
+export const ProjectForgeCredentialItem = z.object({
+  PK: z.string(),
+  SK: z.string(), // 'FORGECRED'
+  projectId: z.string(),
+  /** AES-256-GCM envelope. NEVER served, NEVER logged, NEVER echoed back. */
+  sealed: z.string(),
+  /** The username half, in clear, so the wizard can show WHICH identity is
+   * stored without ever revealing the token. Non-secret by construction. */
+  username: z.string(),
+  createdBy: z.string(),
+  createdAt: z.string(),
+});
+export type ProjectForgeCredentialItem = z.infer<
+  typeof ProjectForgeCredentialItem
+>;
+
 /** One pre-trust onboarding-token row (secret argon2id-hashed at rest) — a
  * SEPARATE key namespace from {@link uploadTokenKey}, never cross-usable. */
 export function onboardTokenKey(id: string, tokenId: string): Key {
@@ -1269,6 +1299,10 @@ export function onboardTokenKey(id: string, tokenId: string): Key {
 }
 /** SK prefix that lists a project's onboarding tokens. */
 export const ONBOARD_TOKEN_SK_PREFIX = "ONBOARDTOKEN#";
+/** The project's single forge credential row (at most one per project). */
+export function forgeCredentialKey(id: string): Key {
+  return { PK: `PROJECT#${id}`, SK: "FORGECRED" };
+}
 /** One server-side scan job for a project (ADR-0033). */
 export function scanJobKey(id: string, jobId: string): Key {
   return { PK: `PROJECT#${id}`, SK: `SCANJOB#${jobId}` };

@@ -62,7 +62,18 @@ services:
       CCP_SCANNER: ${CCP_SCANNER:-}
       CCP_SCANNER_KEY: ${CCP_SCANNER_KEY:-}
       CCP_FORGE_HOSTS: ${CCP_FORGE_HOSTS:-}
+      # PRIVATE repositories. Only the API holds these — the scanner container
+      # gets a resolved, per-job credential and never the App key or the seal.
+      # Empty ⇒ public repos only, which is a working deployment, not a broken one.
+      CCP_FORGE_SEAL_KEY: ${CCP_FORGE_SEAL_KEY:-}
+      CCP_GITHUB_APP_ID: ${CCP_GITHUB_APP_ID:-}
+      CCP_GITHUB_APP_KEY_FILE: ${CCP_GITHUB_APP_KEY_FILE:-}
     volumes:
+      # The GitHub App's private key, when one is configured — a read-only bind
+      # of a host file so it keeps its own permissions and never enters the
+      # image or the store. Points at ${CCP_GITHUB_APP_KEY_FILE} inside the
+      # container; leave the host path empty and this is an inert empty dir.
+      - ${CCP_GITHUB_APP_KEY_HOST_DIR:-/data/ccp/forge}:/run/secrets/forge:ro
       # DURABLE store: accounts, TOTP, audit chain. Bind (not a named volume) —
       # created + chowned by `scripts/setup.sh data`; an existing host on the old
       # named volume migrates via `scripts/migrate-data.sh`.

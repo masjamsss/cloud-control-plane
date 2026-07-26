@@ -24,6 +24,7 @@ import {
   archiveProjectVia,
   ciProvenanceLabel,
   createScanJobVia,
+  removeForgeCredentialVia,
   dataCountsLabel,
   deregisterProjectVia,
   groupDataVersions,
@@ -47,6 +48,7 @@ import {
   repoRefFromForm,
   revokeOnboardTokenVia,
   revokeUploadTokenVia,
+  setForgeCredentialVia,
   staleDataNotice,
   statusLabel,
   summarizeTrustRequest,
@@ -385,6 +387,12 @@ export function ProjectsAdmin(): JSX.Element {
   // Step 2 "Let this system scan it" tab — the latest scan job's live state
   // (null = this project has never had one, which is the ordinary start).
   const [scanJob, setScanJob] = useState<ScanJobState | null>(null);
+  // Step 2 "Let this system scan it" — the private-repo credential form. The
+  // token is never read back from the server, so this holds it only long enough
+  // to send it, and is cleared the instant it lands.
+  const [forgeUser, setForgeUser] = useState('');
+  const [forgeToken, setForgeToken] = useState('');
+  const [forgeStored, setForgeStored] = useState<string | null>(null);
   // Step 2 CI tab + step 4 — CI host tab (shared: one repo, one host) + the
   // one-time upload-key reveal
   const [ciTab, setCiTab] = useState<'github' | 'gitlab'>('github');
@@ -451,6 +459,9 @@ export function ProjectsAdmin(): JSX.Element {
     setMinted(null);
     setMintedOnboard(null);
     setScanJob(null);
+    setForgeUser('');
+    setForgeToken('');
+    setForgeStored(null);
     setCiTab(selected?.repo?.host === 'gitlab' ? 'gitlab' : 'github');
     // Only the identity matters — repo host is fixed at registration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -678,6 +689,38 @@ export function ProjectsAdmin(): JSX.Element {
     // restart the timer on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authoritative, authClient, selectedId, scanMethod, scanInFlight]);
+
+  function onSetForgeCredential(): void {
+    run(async () => {
+      if (!selected) throw new Error('Select a registered project first.');
+      const stored = await setForgeCredentialVia(authoritative, authClient, selected.id, {
+        username: forgeUser.trim(),
+        token: forgeToken,
+      });
+      // Drop the token from memory the moment it is stored — nothing reads it
+      // back, so holding it here would serve no purpose but the risk.
+      setForgeToken('');
+      setForgeStored(stored.username);
+      return {
+        kind: 'ok',
+        text: `Saved — the scanner will sign in as ${stored.username}. The token is not shown again.`,
+      };
+    });
+  }
+
+  function onRemoveForgeCredential(): void {
+    run(async () => {
+      if (!selected) throw new Error('Select a registered project first.');
+      await removeForgeCredentialVia(authoritative, authClient, selected.id);
+      setForgeStored(null);
+      setForgeUser('');
+      setForgeToken('');
+      return {
+        kind: 'ok',
+        text: 'Removed — the scanner can no longer sign in to that repository.',
+      };
+    });
+  }
 
   function onMintOnboardToken(): void {
     run(async () => {
@@ -1398,6 +1441,74 @@ export function ProjectsAdmin(): JSX.Element {
                 isn&apos;t on, the button below will say so and you can use one of the other two
                 tabs instead.
               </p>
+
+              <details className="projadmin__private">
+                <summary className="projadmin__private-summary">
+                  The repository is private
+                  {forgeStored ? ` — signing in as ${forgeStored}` : ''}
+                </summary>
+                <p className="projadmin__hint">
+                  Skip this for a public repository, and skip it if whoever runs this deployment set
+                  up a GitHub App — then access is already arranged and nothing is typed here.
+                  Otherwise create a <strong>read-only</strong> access token at your repository host
+                  and paste it once. It is encrypted immediately and no screen, export or log ever
+                  shows it again — so if you lose it, replace it rather than look it up.
+                </p>
+                <div className="projadmin__form-grid">
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-forgeuser">
+                      Username
+                    </label>
+                    <input
+                      id="proj-forgeuser"
+                      className="projadmin__input"
+                      value={forgeUser}
+                      onChange={(e) => setForgeUser(e.target.value)}
+                      placeholder="oauth2"
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                    <p className="projadmin__hint">
+                      Whatever your host pairs with the token — GitLab uses <code>oauth2</code>.
+                    </p>
+                  </div>
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-forgetoken">
+                      Read-only access token
+                    </label>
+                    <input
+                      id="proj-forgetoken"
+                      className="projadmin__input"
+                      type="password"
+                      value={forgeToken}
+                      onChange={(e) => setForgeToken(e.target.value)}
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                    <p className="projadmin__hint">
+                      Read access to this one repository is all it ever needs.
+                    </p>
+                  </div>
+                </div>
+                <div className="projadmin__form-actions">
+                  <Button
+                    variant="primary"
+                    onClick={onSetForgeCredential}
+                    disabled={!writable || !selected}
+                  >
+                    Save the token
+                  </Button>
+                  {forgeStored && (
+                    <Button
+                      variant="danger"
+                      onClick={onRemoveForgeCredential}
+                      disabled={!writable || !selected}
+                    >
+                      Remove it
+                    </Button>
+                  )}
+                </div>
+              </details>
 
               <div className="projadmin__form-actions">
                 <Button
