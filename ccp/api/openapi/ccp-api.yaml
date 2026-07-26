@@ -116,12 +116,15 @@ components:
       # A proposal for a human to confirm via PUT /projects/{id}/identity — NEVER an authoritative fact. Every field
       # independently absent when not statically determinable (fail closed — see prescan.go providerconfig.go).
       type: object
-      properties: { providers: {type: array, items: {$ref: '#/components/schemas/LiteralValue'}, description: 'recognized cloud provider type(s) — aws / azurerm only'},
+      properties: { providers: {type: array, items: {$ref: '#/components/schemas/LiteralValue'}, description: 'recognized cloud provider type(s) — aws / azurerm / google only'},
         awsRegion: {$ref: '#/components/schemas/LiteralValue'},
         awsAllowedAccountIds: {type: array, items: {$ref: '#/components/schemas/LiteralValue'}},
         azureLocation: {$ref: '#/components/schemas/LiteralValue'},
         azureSubscriptionId: {$ref: '#/components/schemas/LiteralValue'},
-        azureTenantId: {$ref: '#/components/schemas/LiteralValue'} }
+        azureTenantId: {$ref: '#/components/schemas/LiteralValue'},
+        gcpProjectId: {$ref: '#/components/schemas/LiteralValue', description: 'ADR-0034 G1 — the provider block''s project attribute; prefixed so it can never collide with the control plane''s own project ids'},
+        gcpRegion: {$ref: '#/components/schemas/LiteralValue'},
+        gcpZone: {$ref: '#/components/schemas/LiteralValue'} }
     PrescanReport:   # the prescan-report.json catalogctl onboard writes — key set golden-pinned Go-side
       type: object
       required: [repo, verdict, findings, resourceBlocks, moduleBlocks, tfJsonFiles, fmtDirtyFiles, providerPins]

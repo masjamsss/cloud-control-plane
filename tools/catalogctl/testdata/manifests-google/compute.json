@@ -1,0 +1,99 @@
+{
+  "service": "gcp-compute",
+  "scope": "estate",
+  "resourceTypes": ["google_compute_instance", "google_compute_disk"],
+  "summary": "Fixture manifest for the ADR-0034 lane G1 google set_attribute golden cases — mirrors the azurerm verify-lane fixture shapes (testdata/manifests-azure/compute.json): a scalar target.attr resize (google_compute_instance.machine_type) and a grow-only numeric bound (google_compute_disk.size, bounds.growOnly).",
+  "operations": [
+    {
+      "id": "gcp-compute-instance-set-machine-type",
+      "service": "gcp-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Change a compute instance's machine type",
+      "description": "Change the machine_type argument to an allowlisted value. Applied in place; GCP stops and restarts the instance to move it onto the new machine type.",
+      "target": {
+        "attr": "machine_type",
+        "resourceType": "google_compute_instance"
+      },
+      "params": [
+        {
+          "name": "instance",
+          "label": "Compute instance",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://google_compute_instance/address",
+          "help": "Select the instance to resize; the picker only lists instances already tracked in inventory."
+        },
+        {
+          "name": "machine_type",
+          "label": "New machine type",
+          "type": "string",
+          "source": "allowlist",
+          "required": true,
+          "bounds": {
+            "allowlist": [
+              "e2-small",
+              "e2-medium",
+              "e2-standard-2",
+              "e2-standard-4",
+              "n2-standard-2",
+              "n2-standard-4"
+            ]
+          },
+          "help": "The GCP machine type that fixes the host's vCPU and memory."
+        }
+      ],
+      "riskFloor": "HIGH",
+      "reversible": true,
+      "downtime": "stop and restart",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (machine_type)"
+    },
+    {
+      "id": "gcp-compute-disk-grow",
+      "service": "gcp-compute",
+      "macd": "Change",
+      "codemodOp": "set_attribute",
+      "title": "Grow a persistent disk",
+      "description": "Increase a persistent disk's size via the size argument. Grow-only — a GCP persistent disk cannot be shrunk, so this is irreversible.",
+      "target": {
+        "attr": "size",
+        "resourceType": "google_compute_disk"
+      },
+      "params": [
+        {
+          "name": "disk",
+          "label": "Persistent disk",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "enumSource": "inventory://google_compute_disk/address",
+          "help": "Select the persistent disk to enlarge; the size field separately enforces grow-only."
+        },
+        {
+          "name": "size",
+          "label": "New size (GiB)",
+          "type": "number",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "min": 1,
+            "max": 65536,
+            "growOnly": true
+          },
+          "help": "Must exceed the current size in GiB; a persistent disk cannot be shrunk."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": false,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "~ update (size)"
+    }
+  ]
+}

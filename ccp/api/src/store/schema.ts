@@ -605,14 +605,22 @@ export type LiteralValue = z.infer<typeof LiteralValue>;
  */
 export const ProviderConfig = z
   .object({
-    /** Recognized cloud provider type(s) — aws / azurerm only (this census is
-     * about cloud identity, not a full provider inventory). */
+    /** Recognized cloud provider type(s) — aws / azurerm / google only (this
+     * census is about cloud identity, not a full provider inventory). */
     providers: z.array(LiteralValue).max(10).optional(),
     awsRegion: LiteralValue.optional(),
     awsAllowedAccountIds: z.array(LiteralValue).max(50).optional(),
     azureLocation: LiteralValue.optional(),
     azureSubscriptionId: LiteralValue.optional(),
     azureTenantId: LiteralValue.optional(),
+    /** GCP identity (ADR-0034 G1) — the provider block's `project` attribute
+     * is proposed as gcpProjectId ("project" alone would collide with the
+     * control plane's own project ids). Shipped in the SAME commit as the
+     * catalogctl emitter, honoring the ordering contract below: a strict
+     * server must know these keys no later than the CLI that sends them. */
+    gcpProjectId: LiteralValue.optional(),
+    gcpRegion: LiteralValue.optional(),
+    gcpZone: LiteralValue.optional(),
   })
   .strict();
 export type ProviderConfig = z.infer<typeof ProviderConfig>;
