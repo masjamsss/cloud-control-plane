@@ -517,8 +517,8 @@ describe('evaluateOpsByProvider — per-provider ForceNew dispatch (0039 F2c)', 
   it('an azurerm op does NOT pass when the azure map is absent (empty table) — fail-closed, not a silent guess', () => {
     const r = evaluateOpsByProvider(
       [azureTagsOp],
-      { aws: {}, azure: {} }, // azure file absent on disk -> main() loads {}
-      { aws: {}, azure: {} },
+      { aws: {}, azure: {}, gcp: {} }, // azure file absent on disk -> main() loads {}
+      { aws: {}, azure: {}, gcp: {} },
     );
     expect(r.passes).toBe(0);
     expect(r.fails).toHaveLength(0);
@@ -538,8 +538,9 @@ describe('evaluateOpsByProvider — per-provider ForceNew dispatch (0039 F2c)', 
             tag: 'v4.81.0',
           },
         },
+        gcp: {},
       },
-      { aws: {}, azure: {} },
+      { aws: {}, azure: {}, gcp: {} },
     );
     expect(r.passes).toBe(1);
     expect(r.fails).toHaveLength(0);
@@ -558,8 +559,9 @@ describe('evaluateOpsByProvider — per-provider ForceNew dispatch (0039 F2c)', 
             tag: 'v4.81.0',
           },
         },
+        gcp: {},
       },
-      { aws: {}, azure: {} },
+      { aws: {}, azure: {}, gcp: {} },
     );
     expect(r.fails).toHaveLength(1);
     expect(r.fails[0]).toContain('azurerm_storage_account.name');
@@ -576,8 +578,9 @@ describe('evaluateOpsByProvider — per-provider ForceNew dispatch (0039 F2c)', 
           'azurerm_storage_account.tags': { verdict: 'in_place', file: 'wrong-table', tag: 'x' },
         },
         azure: {},
+        gcp: {},
       },
-      { aws: {}, azure: {} },
+      { aws: {}, azure: {}, gcp: {} },
     );
     expect(r.passes).toBe(0);
     expect(r.warns).toHaveLength(1);
@@ -593,8 +596,8 @@ describe('evaluateOpsByProvider — per-provider ForceNew dispatch (0039 F2c)', 
     };
     const byProvider = evaluateOpsByProvider(
       [baseOp],
-      { aws: awsMap, azure: {} },
-      { aws: {}, azure: {} },
+      { aws: awsMap, azure: {}, gcp: {} },
+      { aws: {}, azure: {}, gcp: {} },
     );
     const direct = evaluateOps([baseOp], awsMap, {});
     expect(byProvider).toEqual(direct);
@@ -628,6 +631,7 @@ describe('evaluateMapPresence — absent-file hard-fail (Lane K)', () => {
     const fails = evaluateMapPresence([azureTagsOp], {
       aws: { fileExisted: true, path: 'src/data/forcenew-map.json' },
       azure: { fileExisted: false, path: 'src/data/forcenew-map-azure.json' },
+      gcp: { fileExisted: true, path: 'src/data/forcenew-map-gcp.json' },
     });
     expect(fails).toHaveLength(1);
     expect(fails[0]).toContain('azure');
@@ -639,13 +643,14 @@ describe('evaluateMapPresence — absent-file hard-fail (Lane K)', () => {
     const fails = evaluateMapPresence([azureTagsOp], {
       aws: { fileExisted: true, path: 'src/data/forcenew-map.json' },
       azure: { fileExisted: true, path: 'src/data/forcenew-map-azure.json' },
+      gcp: { fileExisted: true, path: 'src/data/forcenew-map-gcp.json' },
     });
     expect(fails).toHaveLength(0);
     // and the pre-existing WARN behavior for a present-but-empty map is
     // unaffected — evaluateOpsByProvider still warns per unresolved key
     // exactly as the "does NOT pass when the azure map is absent" test above
     // already proves for the {} table itself.
-    const r = evaluateOpsByProvider([azureTagsOp], { aws: {}, azure: {} }, { aws: {}, azure: {} });
+    const r = evaluateOpsByProvider([azureTagsOp], { aws: {}, azure: {}, gcp: {} }, { aws: {}, azure: {}, gcp: {} });
     expect(r.warns).toHaveLength(1);
     expect(r.fails).toHaveLength(0);
   });
@@ -654,6 +659,7 @@ describe('evaluateMapPresence — absent-file hard-fail (Lane K)', () => {
     const fails = evaluateMapPresence([], {
       aws: { fileExisted: true, path: 'src/data/forcenew-map.json' },
       azure: { fileExisted: false, path: 'src/data/forcenew-map-azure.json' },
+      gcp: { fileExisted: true, path: 'src/data/forcenew-map-gcp.json' },
     });
     expect(fails).toHaveLength(0);
   });
@@ -675,6 +681,7 @@ describe('evaluateMapPresence — absent-file hard-fail (Lane K)', () => {
     const fails = evaluateMapPresence([createOp, engineerOp, outOfScopeReplace], {
       aws: { fileExisted: true, path: 'src/data/forcenew-map.json' },
       azure: { fileExisted: false, path: 'src/data/forcenew-map-azure.json' },
+      gcp: { fileExisted: true, path: 'src/data/forcenew-map-gcp.json' },
     });
     expect(fails).toHaveLength(0);
   });
@@ -692,6 +699,7 @@ describe('evaluateMapPresence — absent-file hard-fail (Lane K)', () => {
     const fails = evaluateMapPresence([awsOp], {
       aws: { fileExisted: true, path: 'src/data/forcenew-map.json' },
       azure: { fileExisted: true, path: 'src/data/forcenew-map-azure.json' },
+      gcp: { fileExisted: true, path: 'src/data/forcenew-map-gcp.json' },
     });
     expect(fails).toHaveLength(0);
   });
@@ -709,6 +717,7 @@ describe('evaluateMapPresence — absent-file hard-fail (Lane K)', () => {
     const fails = evaluateMapPresence([awsOp, azureTagsOp], {
       aws: { fileExisted: true, path: 'src/data/forcenew-map.json' },
       azure: { fileExisted: false, path: 'src/data/forcenew-map-azure.json' },
+      gcp: { fileExisted: true, path: 'src/data/forcenew-map-gcp.json' },
     });
     expect(fails).toHaveLength(1);
     expect(fails[0]).toContain('azure');

@@ -341,10 +341,18 @@ export function repoLabel(p: Pick<ServerProject, 'repo' | 'github'>): string {
   return projectRepoLabel(p);
 }
 
-/** Plain cloud label for a project — "AWS" or "Azure". Reads `p.provider ??
- * 'aws'` so a legacy aws row (no provider key) reads "AWS" exactly as before. */
-export function projectCloudLabel(p: { provider?: 'aws' | 'azure' }): string {
-  return (p.provider ?? 'aws') === 'azure' ? 'Azure' : 'AWS';
+/** Plain cloud label for a project — "AWS", "Azure", or "GCP". Reads
+ * `p.provider ?? 'aws'` so a legacy aws row (no provider key) reads "AWS"
+ * exactly as before. */
+export function projectCloudLabel(p: { provider?: 'aws' | 'azure' | 'gcp' }): string {
+  switch (p.provider ?? 'aws') {
+    case 'azure':
+      return 'Azure';
+    case 'gcp':
+      return 'GCP';
+    default:
+      return 'AWS';
+  }
 }
 
 /** The provider-discriminated identity rows a registry card shows: an aws
@@ -364,6 +372,12 @@ export function projectIdentityRows(
       { label: 'Subscription', value: p.subscriptionId, mono: true },
       { label: 'Tenant', value: p.tenantId, mono: true },
       { label: 'Location', value: p.location },
+    ];
+  }
+  if (p.provider === 'gcp') {
+    return [
+      { label: 'Project', value: p.gcpProjectId, mono: true },
+      { label: 'Region', value: p.gcpRegion },
     ];
   }
   if (p.accountId === undefined || p.region === undefined) {

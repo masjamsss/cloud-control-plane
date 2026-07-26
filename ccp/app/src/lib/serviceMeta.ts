@@ -296,10 +296,15 @@ function awsMeta(slug: string): ServiceMeta | undefined {
 export function getServiceMeta(slug: string, provider?: CloudProvider): ServiceMeta {
   const entry = REGISTRY[slug];
   if (entry) return { slug, ...entry };
-  const first = provider === 'aws' ? awsMeta(slug) : azureMeta(slug);
-  if (first) return first;
-  const second = provider === 'aws' ? azureMeta(slug) : awsMeta(slug);
-  if (second) return second;
+  // gcp has no tile map yet (0034 lane G4): a gcp-hinted lookup falls
+  // straight to the neutral fallback — never another cloud's tile. The
+  // aws/azure/no-hint orderings are byte-identical to before the gcp seam.
+  const lookups =
+    provider === 'aws' ? [awsMeta, azureMeta] : provider === 'gcp' ? [] : [azureMeta, awsMeta];
+  for (const lookup of lookups) {
+    const found = lookup(slug);
+    if (found) return found;
+  }
   return {
     slug,
     displayName: titleCase(slug),
@@ -320,6 +325,7 @@ export function hasServiceMeta(slug: string): boolean {
  * three slugs both clouds name resolve to the active project's own cloud type.
  */
 export function primaryTypeFor(slug: string, provider?: CloudProvider): string | undefined {
+  if (provider === 'gcp') return undefined; // no gcp tile map yet (0034 lane G4)
   const first = provider === 'aws' ? AWS_SERVICES[slug] : AZURE_SERVICES[slug];
   if (first) return first.primaryType;
   const second = provider === 'aws' ? AZURE_SERVICES[slug] : AWS_SERVICES[slug];

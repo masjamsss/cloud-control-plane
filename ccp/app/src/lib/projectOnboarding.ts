@@ -139,6 +139,14 @@ const AZURE_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * check refuses malformed strings without duplicating that list into the app —
  * the same structural-vs-allowlist split {@link REGION_CODE} makes for aws. */
 const AZURE_LOCATION = /^[a-z]{3,40}[0-9]{0,2}$/;
+/** A GCP project id: 6–30 chars, lowercase letter first, no trailing hyphen
+ * (Google's own rule — the server pins the same regex, GCP_PROJECT_ID). */
+const GCP_PROJECT = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
+/** Structural gcp-region check (`us-central1`, `europe-west4` — never a zone
+ * like `us-central1-a`). The server pins the explicit GCP_REGION_ALLOWLIST;
+ * this demo check refuses malformed strings without duplicating that list —
+ * the same structural-vs-allowlist split {@link REGION_CODE} makes for aws. */
+const GCP_REGION = /^[a-z]+-[a-z]+[0-9]$/;
 
 export class ProjectOnboardingError extends Error {}
 
@@ -271,6 +279,14 @@ export function registerLocalProject(input: RegisterProjectInput): ServerProject
     if (!AZURE_GUID.test(tenantId)) fail('Azure tenant id must be a GUID (8-4-4-4-12 hex).');
     if (!AZURE_LOCATION.test(location)) fail('That does not look like an Azure location.');
     project = { ...common, provider: 'azure', subscriptionId, tenantId, location };
+  } else if (input.provider === 'gcp') {
+    const gcpProjectId = (input.gcpProjectId ?? '').trim();
+    const gcpRegion = (input.gcpRegion ?? '').trim();
+    if (!GCP_PROJECT.test(gcpProjectId)) {
+      fail('GCP project id must be 6–30 lowercase letters, digits, or hyphens, starting with a letter.');
+    }
+    if (!GCP_REGION.test(gcpRegion)) fail('That does not look like a GCP region code.');
+    project = { ...common, provider: 'gcp', gcpProjectId, gcpRegion };
   } else {
     const accountId = (input.accountId ?? '').trim();
     const region = (input.region ?? '').trim();

@@ -243,14 +243,15 @@ components:
         importPayload: {$ref: '#/components/schemas/DriftImportProposalPayload', description: 'import only, additive — absent for adopt/revert'} }
     ProjectSummary:   # 0033 §3.2 line 409 — the documented "any session" registry shape (security review: no report/findings/uploadedBy/createdBy/artifacts)
       type: object
-      required: [id, name, repo, status]  # identity is provider-discriminated (0039 S1): aws → accountId+region · azure → provider+subscriptionId+tenantId+location
+      required: [id, name, repo, status]  # identity is provider-discriminated (0039 S1 / ADR-0034 G1): aws → accountId+region · azure → provider+subscriptionId+tenantId+location · gcp → provider+gcpProjectId+gcpRegion
       properties: { id: {type: string, pattern: '^[a-z][a-z0-9-]{1,31}$'}, name: {type: string},
         github: {type: object, required: [owner, repo], description: 'legacy mirror — present only when repo.host is github',
           properties: { owner: {type: string}, repo: {type: string} }},
         repo: {$ref: '#/components/schemas/RepoRef'},
-        provider: {type: string, enum: [aws, azure], description: 'absent = aws (an aws row omits it)'},
+        provider: {type: string, enum: [aws, azure, gcp], description: 'absent = aws (an aws row omits it)'},
         accountId: {type: string, pattern: '^\d{12}$'}, region: {type: string},
         subscriptionId: {type: string}, tenantId: {type: string}, location: {type: string},
+        gcpProjectId: {type: string}, gcpRegion: {type: string},
         status: {type: string, enum: [draft, pending-trust, trusted, ready]},
         trust: { type: object, required: [trustedBy, trustedAt, preScanReportSha256, commitSha],
           properties: { trustedBy: {type: string}, trustedAt: {type: string},
@@ -259,16 +260,18 @@ components:
           properties: { archivedBy: {type: string}, archivedAt: {type: string} } } }
     Project:   # 0033 §3.2 — RICH projection (lead+isAdmin only); rawReport (the uploaded bytes) NEVER serializes
       type: object
-      required: [id, name, repo, status, createdBy, createdAt]  # identity is provider-discriminated (0039 S1): aws → accountId+region · azure → provider+subscriptionId+tenantId+location
+      required: [id, name, repo, status, createdBy, createdAt]  # identity is provider-discriminated (0039 S1 / ADR-0034 G1): aws → accountId+region · azure → provider+subscriptionId+tenantId+location · gcp → provider+gcpProjectId+gcpRegion
       properties: { id: {type: string, pattern: '^[a-z][a-z0-9-]{1,31}$'}, name: {type: string},
         github: {type: object, required: [owner, repo], description: 'legacy mirror — present only when repo.host is github',
           properties: { owner: {type: string}, repo: {type: string} }},
         repo: {$ref: '#/components/schemas/RepoRef'},
-        provider: {type: string, enum: [aws, azure], description: 'which cloud (0039 S1); absent = aws (an aws row omits it entirely)'},
+        provider: {type: string, enum: [aws, azure, gcp], description: 'which cloud (0039 S1); absent = aws (an aws row omits it entirely)'},
         accountId: {type: string, pattern: '^\d{12}$'}, region: {type: string, description: 'AWS commercial region (explicit allowlist, routes/projects.ts REGION_ALLOWLIST)'},
         subscriptionId: {type: string, description: 'Azure subscription id (GUID) — present iff provider is azure'},
         tenantId: {type: string, description: 'Azure tenant/directory id (GUID) — present iff provider is azure'},
         location: {type: string, description: 'Azure location (explicit allowlist, routes/projects.ts AZURE_LOCATION_ALLOWLIST) — present iff provider is azure'},
+        gcpProjectId: {type: string, description: 'GCP project id (ADR-0034 G1; routes/projects.ts GCP_PROJECT_ID) — present iff provider is gcp'},
+        gcpRegion: {type: string, description: 'GCP region (explicit allowlist, routes/projects.ts GCP_REGION_ALLOWLIST) — present iff provider is gcp'},
         status: {type: string, enum: [draft, pending-trust, trusted, ready],
           description: "strict forward ladder: draft → pending-trust (artifact upload) → trusted (dual-controlled trust-ack) → ready (the first data activation's 2-admin ack — the ONLY transition to ready). Only 'ready' projects are routable via x-ccp-project or valid as account bindings (fail closed)"},
         createdBy: {type: string}, createdAt: {type: string},
@@ -690,11 +693,13 @@ paths:
           github: {type: object, required: [owner, repo], additionalProperties: false,
             properties: { owner: {type: string}, repo: {type: string} }},
           repo: {$ref: '#/components/schemas/RepoRef'},
-          provider: {type: string, enum: [aws, azure], description: 'absent = aws (the wire convention — an aws body omits it)'},
+          provider: {type: string, enum: [aws, azure, gcp], description: 'absent = aws (the wire convention — an aws body omits it)'},
           accountId: {type: string, pattern: '^\d{12}$'}, region: {type: string},
           subscriptionId: {type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'},
           tenantId: {type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'},
-          location: {type: string, description: 'Azure location (explicit allowlist, routes/projects.ts AZURE_LOCATION_ALLOWLIST)'} } } } } },
+          location: {type: string, description: 'Azure location (explicit allowlist, routes/projects.ts AZURE_LOCATION_ALLOWLIST)'},
+          gcpProjectId: {type: string, pattern: '^[a-z][a-z0-9-]{4,28}[a-z0-9]$', description: 'GCP project id (ADR-0034 G1) — required iff provider is gcp'},
+          gcpRegion: {type: string, description: 'GCP region (explicit allowlist, routes/projects.ts GCP_REGION_ALLOWLIST) — required iff provider is gcp'} } } } } },
       responses: { '201': { description: Draft registered, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } },
         '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
         '409': { description: DUPLICATE_PROJECT, content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } },
@@ -896,11 +901,13 @@ paths:
       parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
       requestBody: { required: true, content: { application/json: { schema: { type: object,
         additionalProperties: false,
-        properties: { provider: {type: string, enum: [aws, azure], description: 'absent = aws (the wire convention)'},
+        properties: { provider: {type: string, enum: [aws, azure, gcp], description: 'absent = aws (the wire convention)'},
           accountId: {type: string, pattern: '^\d{12}$'}, region: {type: string},
           subscriptionId: {type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'},
           tenantId: {type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'},
-          location: {type: string, description: 'Azure location (explicit allowlist, routes/projects.ts AZURE_LOCATION_ALLOWLIST)'} } } } } },
+          location: {type: string, description: 'Azure location (explicit allowlist, routes/projects.ts AZURE_LOCATION_ALLOWLIST)'},
+          gcpProjectId: {type: string, pattern: '^[a-z][a-z0-9-]{4,28}[a-z0-9]$', description: 'GCP project id (ADR-0034 G1) — required iff provider is gcp'},
+          gcpRegion: {type: string, description: 'GCP region (explicit allowlist, routes/projects.ts GCP_REGION_ALLOWLIST) — required iff provider is gcp'} } } } } },
       responses: { '200': { description: Confirmed, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } },
         '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
         '404': { description: Not found }, '409': { $ref: '#/components/responses/E409' },

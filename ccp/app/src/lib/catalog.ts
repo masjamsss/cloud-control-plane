@@ -73,9 +73,18 @@ export function catalogServiceKey(resourceType: string, manifestService: string)
 }
 
 /** The generated named-service tile map for a provider — the full provisionable
- * service set the catalog browses (both with-ops and op-less services). */
+ * service set the catalog browses (both with-ops and op-less services). GCP has
+ * no tile map yet (0034 lane G4): an explicit empty map, never another
+ * provider's — a gcp project browses zero services until its catalog lands. */
 function serviceMapFor(provider: CloudProvider): Record<string, { primaryType?: string }> {
-  return provider === 'aws' ? AWS_SERVICES : AZURE_SERVICES;
+  switch (provider) {
+    case 'aws':
+      return AWS_SERVICES;
+    case 'azure':
+      return AZURE_SERVICES;
+    case 'gcp':
+      return {};
+  }
 }
 
 interface ServiceAccumulator {
@@ -189,7 +198,12 @@ function countByServiceKey(
 ): Map<string, number> {
   const counts = new Map<string, number>();
   for (const r of inventory?.resources ?? []) {
-    const key = provider === 'aws' ? awsServiceOf(r.resourceType) : azureServiceOf(r.resourceType);
+    const key =
+      provider === 'aws'
+        ? awsServiceOf(r.resourceType)
+        : provider === 'azure'
+          ? azureServiceOf(r.resourceType)
+          : undefined; // gcp: no reverse type→service table yet (0034 lane G4)
     if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return counts;

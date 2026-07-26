@@ -147,7 +147,11 @@ describe('azure catalog spot-checks', () => {
 
 describe('hybrid guarantee — manifests ↔ catalog (per provider)', () => {
   it('every resource type the manifests know exists in its provider catalog', () => {
-    const catalogTypes: Record<CloudProvider, Set<string>> = { aws: new Set(), azure: new Set() };
+    const catalogTypes: Record<CloudProvider, Set<string>> = {
+      aws: new Set(),
+      azure: new Set(),
+      gcp: new Set(), // no gcp catalog tree yet (0034 lane G3/G4) — stays empty
+    };
     for (const tree of TREES) {
       const index = loadIndex(tree);
       for (const service of index.services)
