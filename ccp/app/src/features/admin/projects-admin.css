@@ -599,9 +599,9 @@
 .projadmin__scanjob {
   margin: var(--space-3) 0 0;
   padding: var(--space-3);
-  border: 1px solid var(--border-subtle, var(--border));
-  border-radius: var(--radius-md, 8px);
-  background: var(--surface-2, transparent);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+  background: var(--surface-2);
 }
 .projadmin__scanjob-status {
   display: flex;

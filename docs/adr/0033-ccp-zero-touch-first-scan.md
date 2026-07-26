@@ -1,8 +1,16 @@
 # ADR-0033: An opt-in scanner service lets the control plane run the first scan itself — read-only forge access, contained; both ceremonies untouched
 
-**Status:** Proposed (owner-directed — the owner has twice asked for exactly this;
-build gated on his sign-off of the containment design; design spec held in the private
-planning space)
+**Status:** Accepted — **built for public repositories** (2026-07-26). The owner gave the
+go-ahead ("let's fix all of them", "keep building") and the lane below is implemented,
+disarmed by default, and proved end to end: an admin queues a scan, an isolated worker
+clones and prescans, and the project reaches `pending-trust` with the two-admin trust
+ceremony still ahead of it. **Decision 1 (credential custody) is NOT built yet** — there
+is no GitHub App broker and no sealed forge token, so an armed deployment can currently
+scan **public repositories only**; a private repo's clone fails the job with git's own
+"not found", which is the correct fail-closed behaviour but not the intended experience.
+Decision 5's register-form shrink is likewise still pending; the wizard's new
+"Let this system scan it" tab delivers the zero-action scan, not yet the one-field form.
+Everything else below is in the code.
 **Date:** 2026-07-25
 **Deciders:** Owner (Jamal) + maintainers
 
@@ -157,6 +165,25 @@ custody than installation tokens. **Kept only as the self-hosted/GitLab fallback
 - Revisit: extending the same worker to the post-trust data lane (killing the estate
   CI file entirely) is a natural follow-up with its own ADR — it executes product
   extractors over repo data and needs its own analysis; not licensed here.
+
+## What shipped, and what it looks like in the code (2026-07-26)
+
+Recorded here rather than in a new file, per this repo's extend-don't-spread rule. The
+decisions above are unchanged; this is only where each one lives now.
+
+| Decision | Where it is | Note |
+|---|---|---|
+| 2 — isolation | `ccp/scanner/Dockerfile`, `ccp/docker-compose.yml` (`profiles: ["scanner"]`), `tools/catalogctl/internal/scanworker` | No terraform in the image (build-time check), `Preflight()` refuses a terraform on PATH or any cloud credential, non-root, read-only rootfs, all caps dropped, tmpfs workspace, no ports/volumes/socket |
+| 3 — disarmed by default | `ccp/api/src/domain/scanner.ts` | `CCP_SCANNER=1` **and** a ≥32-char `CCP_SCANNER_KEY`; either missing ⇒ every endpoint answers `SCANNER_DISABLED` |
+| 4 — SSRF closed by construction | `buildCloneUrl()` + `POST /projects/:id/scan-jobs` | Scheme hard-coded https, host from a fixed table or an allowlisted `baseUrl`, credentials-in-URL and explicit ports refused, per-segment encoding; the worker never names a target and re-checks the URL it is given; one job in flight per project; lead+isAdmin and audited |
+| 6 — untouched ceremonies | — | `POST /projects/:id/trust` and the two-admin first-data activation have zero diff; the worker uploads over the same pre-trust Bearer lane with the same sha binding |
+| exactly-once claiming | `POST /scan-jobs/claim` | A compare-and-swap on `status === 'queued'` that simultaneously leaves the queue index; the lifecycle window is re-checked at claim time, so a project that left pre-trust while queued has its job failed rather than scanned |
+| worker honesty | `POST /scan-jobs/:jobId/status` | Forward-only transitions validated against the STORED status; terminal jobs never reopen; error text scrubbed of control characters, URLs and token-shaped strings |
+
+**Still to build:** decision 1's credential custody (which is what lifts the
+public-repos-only limit), decision 5's one-field register form, and the separate
+follow-on question of the control plane generating project *data* as well as the scan —
+which this ADR explicitly does not license and which needs its own decision record.
 
 ## Action items
 
