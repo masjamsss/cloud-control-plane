@@ -15,7 +15,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "4.14.0" # exact pin — bind to the azurerm schemadump/ForceNew truth at this tag
+      version = "4.81.0" # exact pin — MUST match the committed schemadump/ForceNew truth (tools/schemadump/azurerm-v4.81.0-schema.json); 4.14.0 predated that dump and left a kit-born root with no version-matched safety data (ADR-0034 census)
     }
     azapi = {
       source  = "Azure/azapi"

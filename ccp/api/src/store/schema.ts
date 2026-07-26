@@ -605,14 +605,22 @@ export type LiteralValue = z.infer<typeof LiteralValue>;
  */
 export const ProviderConfig = z
   .object({
-    /** Recognized cloud provider type(s) — aws / azurerm only (this census is
-     * about cloud identity, not a full provider inventory). */
+    /** Recognized cloud provider type(s) — aws / azurerm / google only (this
+     * census is about cloud identity, not a full provider inventory). */
     providers: z.array(LiteralValue).max(10).optional(),
     awsRegion: LiteralValue.optional(),
     awsAllowedAccountIds: z.array(LiteralValue).max(50).optional(),
     azureLocation: LiteralValue.optional(),
     azureSubscriptionId: LiteralValue.optional(),
     azureTenantId: LiteralValue.optional(),
+    /** GCP identity (ADR-0034 G1) — the provider block's `project` attribute
+     * is proposed as gcpProjectId ("project" alone would collide with the
+     * control plane's own project ids). Shipped in the SAME commit as the
+     * catalogctl emitter, honoring the ordering contract below: a strict
+     * server must know these keys no later than the CLI that sends them. */
+    gcpProjectId: LiteralValue.optional(),
+    gcpRegion: LiteralValue.optional(),
+    gcpZone: LiteralValue.optional(),
   })
   .strict();
 export type ProviderConfig = z.infer<typeof ProviderConfig>;
@@ -812,7 +820,7 @@ export const ProjectItem = z.object({
    * An azure row carries the {@link subscriptionId}/{@link tenantId}/{@link location}
    * identity triple below IN PLACE OF {@link accountId}/{@link region}.
    */
-  provider: z.enum(["aws", "azure"]).optional(),
+  provider: z.enum(["aws", "azure", "gcp"]).optional(),
   /** AWS account id, `^\d{12}$`. Present for an aws project (provider absent or
    * 'aws'); an azure project carries `subscriptionId`/`tenantId`/`location`
    * instead, so this is now OPTIONAL. */
@@ -826,6 +834,13 @@ export const ProjectItem = z.object({
   /** Azure default location (allowlisted at register — routes/projects.ts
    * AZURE_LOCATION_ALLOWLIST) — present iff `provider === 'azure'`. */
   location: z.string().optional(),
+  /** GCP project id (ADR-0034 G1; routes/projects.ts GCP_PROJECT_ID) —
+   * present iff `provider === 'gcp'`. Prefixed so it can never collide with
+   * the control plane's own project ids. */
+  gcpProjectId: z.string().optional(),
+  /** GCP default region (allowlisted at register — routes/projects.ts
+   * GCP_REGION_ALLOWLIST) — present iff `provider === 'gcp'`. */
+  gcpRegion: z.string().optional(),
   /**
    * ADR-0033 Decision 5 — the admin-confirmed identity record, written ONLY
    * by `PUT /projects/:id/identity`. ADDITIVE + OPTIONAL: absent on every
@@ -900,14 +915,24 @@ export type ProjectItem = z.infer<typeof ProjectItem>;
  */
 export function isIdentityConfirmed(p: ProjectItem): boolean {
   if (p.identityConfirmed) return true;
-  if (p.provider === "azure") {
-    return (
-      p.subscriptionId !== undefined &&
-      p.tenantId !== undefined &&
-      p.location !== undefined
-    );
+  // Exhaustive per-provider arms with a FAIL-CLOSED default (ADR-0034 rule 8):
+  // a provider value with no arm of its own must read "unconfirmed" — before
+  // this switch, anything non-azure fell into the AWS arm and could be judged
+  // confirmed on fields that are not its identity at all.
+  switch (p.provider ?? "aws") {
+    case "aws":
+      return p.accountId !== undefined && p.region !== undefined;
+    case "azure":
+      return (
+        p.subscriptionId !== undefined &&
+        p.tenantId !== undefined &&
+        p.location !== undefined
+      );
+    case "gcp":
+      return p.gcpProjectId !== undefined && p.gcpRegion !== undefined;
+    default:
+      return false;
   }
-  return p.accountId !== undefined && p.region !== undefined;
 }
 
 /**

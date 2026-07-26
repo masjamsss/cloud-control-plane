@@ -1,0 +1,135 @@
+/* Admin → Deployment: every setting this system reads, on one screen.
+   Deliberately a plain vertical list rather than a dense table — most rows
+   carry two sentences of explanation, and the non-editable ones carry three.
+   Cramming that into columns is how a screen stops being read. */
+
+.deploy__head {
+  margin-bottom: var(--space-5);
+}
+.deploy__title {
+  margin: 0 0 var(--space-2);
+  font-size: 20px;
+  color: var(--text-primary);
+}
+.deploy__lead {
+  margin: 0 0 var(--space-2);
+  max-width: 78ch;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.deploy__lead--muted {
+  color: var(--text-muted);
+}
+
+.deploy__notice {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3);
+  border-radius: var(--radius-2);
+  border: 1px solid var(--border-hairline);
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+/* A two-admin proposal is NOT an error and must not read as one — it is the
+   system working. Warn tone, never the failure tone. */
+.deploy__notice--warn {
+  color: var(--risk-medium, var(--text-secondary));
+}
+.deploy__notice--error {
+  color: var(--risk-high, var(--text-secondary));
+}
+
+.deploy__group {
+  margin-bottom: var(--space-6);
+}
+.deploy__group-title {
+  margin: 0 0 var(--space-3);
+  font-size: 15px;
+  color: var(--text-primary);
+}
+.deploy__rows {
+  display: grid;
+  gap: var(--space-3);
+}
+.deploy__row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.deploy__row-label {
+  margin: 0 0 var(--space-1);
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.deploy__row-help {
+  margin: 0;
+  max-width: 70ch;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.deploy__row-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+/* Where the value came from. Quiet, but always present — "why is it like this"
+   should never need a support conversation. */
+.deploy__row-source {
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.deploy__row-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.deploy__input {
+  flex: 1 1 22ch;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-1);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+}
+.deploy__input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* The rows the portal cannot change. Styled as information, not as a disabled
+   control — there is nothing here to click, and dimming it would only suggest
+   the reader is missing a permission. */
+.deploy__row-locked {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+}
+.deploy__row-reason,
+.deploy__row-instead,
+.deploy__row-env {
+  margin: 0 0 var(--space-1);
+  max-width: 74ch;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.deploy__row-instead {
+  color: var(--text-primary);
+}
+.deploy__row-env {
+  margin-bottom: 0;
+  color: var(--text-faint);
+}
+.deploy__row-env code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}

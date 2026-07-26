@@ -43,6 +43,10 @@ const PROVISIONABLE: Record<CloudProvider, Set<string>> = {
   azure: new Set(
     (azureCatalogIndex as unknown as CatalogIndex).services.flatMap((s) => s.types.map((t) => t.t)),
   ),
+  // No gcp provider-catalog tree exists yet (0034 lane G3/G4): the empty
+  // set keeps the Record exhaustive and means zero gcp types are provisionable
+  // — the fail-closed reading, same as loadProviderIndex's empty gcp index.
+  gcp: new Set<string>(),
 };
 
 function summariesFor(provider: CloudProvider): ServiceSummary[] {

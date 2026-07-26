@@ -1,0 +1,11 @@
+--- a/environments/prod/disk.tf
++++ b/environments/prod/disk.tf
+@@ -2,7 +2,7 @@
+   name = "data01"
+   type = "pd-ssd"
+   zone = "us-central1-a"
+-  size = 128
++  size = 256
+ 
+   labels = {
+     owner = "platform"

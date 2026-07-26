@@ -259,6 +259,11 @@ const AZURE_BODY = {
   tenantId: "66666666-7777-8888-9999-000000000000",
   location: "southeastasia",
 };
+const GCP_BODY = {
+  provider: "gcp",
+  gcpProjectId: "example-prod-app",
+  gcpRegion: "us-central1",
+};
 
 beforeEach(() => {
   __resetKnownProjectsForTests();
@@ -313,6 +318,30 @@ describe("isIdentityConfirmed (pure predicate)", () => {
         provider: "azure",
         subscriptionId: "s",
         location: "eastus",
+      }),
+    ).toBe(false);
+  });
+  it("true for a gcp project with gcpProjectId+gcpRegion (ADR-0034 G1)", () => {
+    expect(
+      isIdentityConfirmed({
+        ...base,
+        provider: "gcp",
+        gcpProjectId: "example-prod-app",
+        gcpRegion: "us-central1",
+      }),
+    ).toBe(true);
+  });
+  it("false for a gcp project missing gcpRegion — and its aws fields never count", () => {
+    expect(
+      isIdentityConfirmed({
+        ...base,
+        provider: "gcp",
+        gcpProjectId: "example-prod-app",
+        // the exact fail-open the census flagged: before the exhaustive
+        // switch, this row fell into the AWS arm and stray accountId/region
+        // could have judged a gcp project "confirmed"
+        accountId: "123456789012",
+        region: "us-east-1",
       }),
     ).toBe(false);
   });
@@ -398,6 +427,10 @@ describe("PUT /projects/:id/identity — validation (reuses the register validat
       { ...AZURE_BODY, subscriptionId: "not-a-guid" },
       { ...AZURE_BODY, location: "nowhereland" }, // not in AZURE_LOCATION_ALLOWLIST
       { ...AWS_BODY, extraField: "nope" }, // .strict() — mass assignment refused
+      { ...GCP_BODY, gcpProjectId: "Bad-Case" }, // uppercase refused (ADR-0034 G1)
+      { ...GCP_BODY, gcpRegion: "us-east-1" }, // an AWS region is not in GCP_REGION_ALLOWLIST
+      { ...GCP_BODY, accountId: "123456789012" }, // gcp + aws field mixed
+      { provider: "gcp", gcpProjectId: "example-prod-app" }, // missing gcpRegion
     ];
     for (const body of bad) {
       const res = await putIdentity(s, s.putra, body);
@@ -473,6 +506,27 @@ describe("PUT /projects/:id/identity — happy path (single-admin, immediate, re
     expect(row.accountId).toBeUndefined();
     expect(row.region).toBeUndefined();
     expect(row.subscriptionId).toBe(AZURE_BODY.subscriptionId);
+  });
+
+  it("confirms a gcp identity and a switch to gcp clears every other cloud's fields (ADR-0034 G1)", async () => {
+    const s = await setup();
+    await registerOnly(s); // registered aws (draft): accountId/region already set
+    const res = await putIdentity(s, s.putra, GCP_BODY);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.provider).toBe("gcp");
+    expect(body.gcpProjectId).toBe(GCP_BODY.gcpProjectId);
+    expect(body.gcpRegion).toBe(GCP_BODY.gcpRegion);
+    expect(body.accountId).toBeUndefined();
+    expect(body.region).toBeUndefined();
+    expect(body.subscriptionId).toBeUndefined();
+
+    const k = projectKey("acme");
+    const row = (await s.store.get(k.PK, k.SK)) as ProjectItem;
+    expect(row.accountId).toBeUndefined();
+    expect(row.region).toBeUndefined();
+    expect(row.gcpProjectId).toBe(GCP_BODY.gcpProjectId);
+    expect(isIdentityConfirmed(row)).toBe(true);
   });
 
   it("least disclosure: identityConfirmed is RICH-TIER only, absent from the thin ProjectSummary", async () => {
@@ -673,6 +727,8 @@ describe("register with a DEFERRED identity (the url-only form)", () => {
       "subscriptionId",
       "tenantId",
       "location",
+      "gcpProjectId",
+      "gcpRegion",
     ])
       expect(row).not.toHaveProperty(key);
     expect(row.identityConfirmed).toBeUndefined();
@@ -734,6 +790,9 @@ describe("register with a DEFERRED identity (the url-only form)", () => {
         region: "ap-southeast-1",
         location: "southeastasia",
       }, // mixed
+      { provider: "gcp" }, // named a cloud, gave nothing (ADR-0034 G1)
+      { provider: "gcp", gcpRegion: "us-central1" }, // no gcpProjectId
+      { gcpProjectId: "example-prod-app", region: "ap-southeast-1" }, // mixed gcp + aws
     ]) {
       const res = await registerUrlOnly(s, { ...URL_ONLY, ...partial });
       expect(res.status, JSON.stringify(partial)).toBe(422);

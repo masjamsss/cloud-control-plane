@@ -22,6 +22,14 @@ describe('providerOfType', () => {
   it('classifies providers', () => {
     expect(providerOfType('azurerm_virtual_network')).toBe('azure');
     expect(providerOfType('aws_vpc')).toBe('aws');
+    expect(providerOfType('google_storage_bucket')).toBe('gcp');
+  });
+
+  it("keeps the historical 'aws' reading for an unrecognized prefix (the documented residual default)", () => {
+    // Pinned deliberately: providerOfType's doc comment names this test as the
+    // pin for the pre-seam fallback. Callers needing fail-closed semantics
+    // filter by RESOURCE_TYPE_PATTERNS first.
+    expect(providerOfType('random_pet')).toBe('aws');
   });
 });
 
