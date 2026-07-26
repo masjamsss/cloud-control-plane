@@ -32,14 +32,19 @@ export async function checkSubmitRateLimit(
 ): Promise<{ ok: true } | { ok: false }> {
   const limits = await rateLimits(store, projectId);
   const all = (await store.queryGSI1(requestCollectionGsi(projectId))) as RequestItem[];
-  const mine = all.filter((r) => r.requester === requester);
 
+  // One pass, two counters, and an early exit the moment either limit is reached.
+  // This runs on every submit against the project's WHOLE request history, so the
+  // three chained `.filter()`s it replaces were three full traversals plus two
+  // intermediate arrays to answer a question that is just "have we hit a cap yet".
   const hourAgo = nowMs() - 60 * 60 * 1000;
-  const inHour = mine.filter((r) => Date.parse(r.createdAt) >= hourAgo).length;
-  if (inHour >= limits.submissionsPerHour) return { ok: false };
-
-  const open = mine.filter((r) => OPEN_STATUSES.has(r.status)).length;
-  if (open >= limits.maxOpen) return { ok: false };
+  let inHour = 0;
+  let open = 0;
+  for (const r of all) {
+    if (r.requester !== requester) continue;
+    if (Date.parse(r.createdAt) >= hourAgo && ++inHour >= limits.submissionsPerHour) return { ok: false };
+    if (OPEN_STATUSES.has(r.status) && ++open >= limits.maxOpen) return { ok: false };
+  }
 
   return { ok: true };
 }
