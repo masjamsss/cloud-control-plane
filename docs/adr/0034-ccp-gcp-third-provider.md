@@ -212,9 +212,16 @@ non-goal, mirroring 0015-D.
 ## Action items
 
 1. [x] Census (three-way, 2026-07-26) — findings recorded above with file:line.
-2. [ ] G1 mechanical seam on this branch, including the census-surfaced defect fixes;
-       exit gate: both incumbent providers' fixtures byte-identical, gcp registrable,
-       zero gcp operations offered.
+2. [x] G1 mechanical seam — **built on this branch** (2026-07-26): the fail-closed
+       dispatch tables land on both sides of the seam (Go `providerSchemaPrefixes`;
+       app `providerOfType`/`isIdentityConfirmed`/`refineIdentityShape` as exhaustive
+       switches), gcp registers/confirms/walks the ladder with its own
+       `gcpProjectId`+`gcpRegion` identity, every catalog surface derives empty for
+       gcp, R7-google guards `google_compute_firewall`, five `*-google` golden groups
+       + r7-google plan fixtures prove the codemod, and the census defects (deferral
+       predicate, stale dump comment, prevent-destroy re-mirror, kit-azure 4.14.0 pin,
+       publish-gate PG-4b) are fixed. Exit gate met: zero pre-existing aws/azurerm
+       fixture edits; Go, api (1137), and app (2677) suites green.
 3. [ ] Owner reads the G2 risk paragraph and greenlights the reflection-walk attempt
        (or stops the ladder at a registrable-but-catalogless GCP, which is a working
        deployment, not a broken one).

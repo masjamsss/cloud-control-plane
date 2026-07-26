@@ -574,6 +574,25 @@ check_pg4() {
   done < <(grep_scan 'ASIA[0-9A-Z]{16}')
   record "PG-4" "$([[ $total -gt 0 ]] && echo FAIL || echo PASS)" "$total" \
     "AWS key IDs not in the public AKIA example set, or any ASIA temp-key shape" "$example"
+
+  # PG-4b — private-key material and GCP service-account key JSON (the gcp twin
+  # of the AKIA/ASIA shapes above, ADR-0034 lane G6): an inline PEM private-key
+  # header, or the service-account JSON discriminator, anywhere -> FAIL always,
+  # no allowlist — no legitimate copy of either shape belongs in this tree.
+  # (Both patterns are spelled so they cannot match their own source line here.)
+  local total4b=0 example4b="" f4 ln4 m4
+  while IFS=$'\t' read -r f4 ln4 m4; do
+    [[ -z "$f4" ]] && continue
+    total4b=$((total4b + 1))
+    [[ -z "$example4b" ]] && example4b="$f4:$ln4 (PEM private-key header)"
+  done < <(grep_scan '[-]{5}BEGIN [A-Z ]*PRIVATE KEY[-]{5}')
+  while IFS=$'\t' read -r f4 ln4 m4; do
+    [[ -z "$f4" ]] && continue
+    total4b=$((total4b + 1))
+    [[ -z "$example4b" ]] && example4b="$f4:$ln4 (service-account key JSON shape)"
+  done < <(grep_scan '"type"[[:space:]]*:[[:space:]]*"service_account"')
+  record "PG-4b" "$([[ $total4b -gt 0 ]] && echo FAIL || echo PASS)" "$total4b" \
+    "Inline PEM private-key material, or a GCP service-account key JSON discriminator" "$example4b"
 }
 
 # ═════════════════════════════════════════════════════════════════════════════════════
