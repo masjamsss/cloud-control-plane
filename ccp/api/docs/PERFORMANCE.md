@@ -17,6 +17,11 @@ pre-written `SETTLEMENT` marker so the one-time boot settlement never pollutes a
 sample. Two runs at the same scale are directly comparable, so an A/B against a
 code change measures the code and not the fixture.
 
+Absolute numbers below are from one machine and move with how loaded it is —
+a run on a busy host came out ~1.5x slower across the board. The *ratios* are
+what to read, and they are stable. Always take a before and after in the same
+session rather than comparing against the table here.
+
 ## Where it started
 
 Measured on the **FileStore** — the store production actually runs — with 8,000
