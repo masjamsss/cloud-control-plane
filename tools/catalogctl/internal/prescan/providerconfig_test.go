@@ -101,6 +101,51 @@ func TestProviderConfig_StaticLiteralsExtractedWithFileLine(t *testing.T) {
 			},
 		},
 		{
+			name: "google provider block: project + region + zone (ADR-0034 G1)",
+			files: map[string]string{
+				"main.tf": `provider "google" {
+  project = "example-prod-app"
+  region  = "us-central1"
+  zone    = "us-central1-a"
+}
+`,
+			},
+			check: func(t *testing.T, rep Report) {
+				pc := requireProviderConfig(t, rep)
+				wantProviders(t, pc, LiteralValue{Value: "google", File: "main.tf", Line: 1})
+				if pc.GCPProjectID == nil || *pc.GCPProjectID != (LiteralValue{Value: "example-prod-app", File: "main.tf", Line: 2}) {
+					t.Errorf("GCPProjectID = %+v, want {example-prod-app main.tf 2}", pc.GCPProjectID)
+				}
+				if pc.GCPRegion == nil || pc.GCPRegion.Value != "us-central1" {
+					t.Errorf("GCPRegion = %+v", pc.GCPRegion)
+				}
+				if pc.GCPZone == nil || pc.GCPZone.Value != "us-central1-a" {
+					t.Errorf("GCPZone = %+v", pc.GCPZone)
+				}
+			},
+		},
+		{
+			name: "required_providers with hashicorp/google source: provider type recognized (ADR-0034 G1)",
+			files: map[string]string{
+				"main.tf": `terraform {
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 6.0"
+    }
+  }
+}
+`,
+			},
+			check: func(t *testing.T, rep Report) {
+				pc := requireProviderConfig(t, rep)
+				wantProviders(t, pc, LiteralValue{Value: "google", File: "main.tf", Line: 3})
+				if pc.GCPProjectID != nil {
+					t.Errorf("GCPProjectID = %+v, want nil (no provider block, only required_providers)", pc.GCPProjectID)
+				}
+			},
+		},
+		{
 			name: "required_providers object form (source + version): provider type derived from source's last segment",
 			files: map[string]string{
 				"main.tf": `terraform {

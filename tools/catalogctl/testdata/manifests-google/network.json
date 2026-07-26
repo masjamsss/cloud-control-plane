@@ -1,0 +1,100 @@
+{
+  "service": "gcp-network",
+  "scope": "estate",
+  "resourceTypes": ["google_compute_network", "google_compute_subnetwork", "google_compute_firewall"],
+  "summary": "Fixture manifest for the ADR-0034 lane G1 google network cases: a create_resource whose reference param must render a google_* address as an HCL expression (the u4-reference mirror), and a firewall-rule create the R7-google plan-check fixtures exercise (the sg-add-internal-ingress-rule mirror, with the same edit-time cidrPolicy belt the plan gate backs up).",
+  "operations": [
+    {
+      "id": "gcp-create-subnetwork-with-network-ref",
+      "service": "network",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a subnetwork inside an existing network",
+      "description": "Creates a new google_compute_subnetwork whose network argument references an existing google_compute_network.",
+      "target": {
+        "resourceType": "google_compute_subnetwork"
+      },
+      "riskFloor": "MEDIUM",
+      "exposure": "l1_with_guardrails",
+      "terraformCapability": "+ create",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "subnetwork_name",
+          "label": "Subnetwork name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name"
+        },
+        {
+          "name": "region",
+          "label": "Region",
+          "type": "string",
+          "source": "user_input",
+          "required": true
+        },
+        {
+          "name": "network",
+          "label": "Network",
+          "type": "string",
+          "source": "inventory",
+          "required": true,
+          "role": "reference",
+          "attr": "network",
+          "refAttr": "id",
+          "enumSource": "inventory://google_compute_network/address"
+        }
+      ]
+    },
+    {
+      "id": "gcp-fw-create-internal-allow-rule",
+      "service": "network",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create an internal ingress firewall rule",
+      "description": "Creates one google_compute_firewall allow rule from an internal (RFC1918) source range.",
+      "target": {
+        "resourceType": "google_compute_firewall"
+      },
+      "params": [
+        {
+          "name": "firewall_name",
+          "label": "Firewall rule name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name"
+        },
+        {
+          "name": "network",
+          "label": "Network",
+          "type": "string",
+          "source": "user_input",
+          "required": true
+        },
+        {
+          "name": "source_range",
+          "label": "Source range",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "bounds": {
+            "cidrPolicy": "internal-only",
+            "semantic": "internal cidr only — RFC1918, no public range, no 0.0.0.0/0"
+          },
+          "help": "e.g. 10.0.0.0/16 — internal only."
+        }
+      ],
+      "riskFloor": "MEDIUM",
+      "reversible": true,
+      "downtime": "none",
+      "exposure": "l1_with_guardrails",
+      "forcesReplace": false,
+      "autoEligible": false,
+      "terraformCapability": "+ create (firewall rule)"
+    }
+  ]
+}

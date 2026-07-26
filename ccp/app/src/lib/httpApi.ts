@@ -491,6 +491,15 @@ export interface ServerProjectAzure extends ServerProjectBase {
   location: string;
 }
 
+/** A GCP registered project (0034 G1) — identity is `gcpProjectId` +
+ * `gcpRegion` (prefixed: a bare `projectId` would collide with the registry's
+ * own project ids). `provider: 'gcp'` is the discriminant. */
+export interface ServerProjectGcp extends ServerProjectBase {
+  provider: 'gcp';
+  gcpProjectId: string;
+  gcpRegion: string;
+}
+
 /**
  * The registry projection `GET /projects` serves — PROVIDER-DISCRIMINATED (0039
  * S1): an aws project carries `accountId`/`region` (no `provider` key), an azure
@@ -514,9 +523,12 @@ export interface ServerProjectUnidentified extends ServerProjectBase {
   subscriptionId?: undefined;
   tenantId?: undefined;
   location?: undefined;
+  gcpProjectId?: undefined;
+  gcpRegion?: undefined;
 }
 
-export type ServerProject = ServerProjectAws | ServerProjectAzure | ServerProjectUnidentified;
+export type ServerProject =
+  ServerProjectAws | ServerProjectAzure | ServerProjectGcp | ServerProjectUnidentified;
 
 /** The `owner/name` label for a project row, whichever repo shape it carries. */
 export function projectRepoLabel(p: Pick<ServerProjectBase, 'github' | 'repo'>): string {
@@ -551,6 +563,14 @@ export interface RegisterProjectAzureInput extends RegisterProjectBase {
   location: string;
 }
 
+/** GCP register input — gcpProjectId + gcpRegion in place of accountId/region
+ * (0034 G1). */
+export interface RegisterProjectGcpInput extends RegisterProjectBase {
+  provider: 'gcp';
+  gcpProjectId: string;
+  gcpRegion: string;
+}
+
 /**
  * DEFERRED-identity register input — the url-only register. Carries the repo
  * and nothing about the cloud, which is what tells the server to wait: the scan
@@ -571,15 +591,21 @@ export interface RegisterProjectDeferredInput extends RegisterProjectBase {
   subscriptionId?: undefined;
   tenantId?: undefined;
   location?: undefined;
+  gcpProjectId?: undefined;
+  gcpRegion?: undefined;
 }
 
-/** PROVIDER-DISCRIMINATED register input (0039 S1): an aws body carries
- * accountId/region (and no `provider` key); an azure body carries `provider:
- * 'azure'` + subscriptionId/tenantId/location. The aws shape is byte-identical
- * to every pre-azure caller. A body with NEITHER defers the identity — see
+/** PROVIDER-DISCRIMINATED register input (0039 S1 / 0034 G1): an aws body
+ * carries accountId/region (and no `provider` key); an azure body carries
+ * `provider:'azure'` + subscriptionId/tenantId/location; a gcp body carries
+ * `provider:'gcp'` + gcpProjectId/gcpRegion. The aws shape is byte-identical
+ * to every pre-azure caller. A body with NONE defers the identity — see
  * {@link RegisterProjectDeferredInput}. */
 export type RegisterProjectInput =
-  RegisterProjectAwsInput | RegisterProjectAzureInput | RegisterProjectDeferredInput;
+  | RegisterProjectAwsInput
+  | RegisterProjectAzureInput
+  | RegisterProjectGcpInput
+  | RegisterProjectDeferredInput;
 
 /* ── the per-account data plane (upload tokens → CI upload → activate → serve) ── */
 

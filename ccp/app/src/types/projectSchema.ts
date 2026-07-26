@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CLOUD_PROVIDERS } from '@/lib/providerDisplay';
 import type { ProjectConfig } from './project';
 
 /**
@@ -33,7 +34,7 @@ export const projectSchema = z.object({
   // wire rule, routes/projects.ts). A different axis from providerTag/
   // providerAllowlist below (those pin the hashicorp/aws TERRAFORM provider;
   // this says which CLOUD provider) — see types/project.ts's doc comment.
-  provider: z.enum(['aws', 'azure']).optional(),
+  provider: z.enum(CLOUD_PROVIDERS).optional(),
   // Both optional: existing project.json files predating these fields stay valid.
   providerTag: z.string().min(1).optional(),
   providerAllowlist: z.array(z.string().min(1)).optional(),

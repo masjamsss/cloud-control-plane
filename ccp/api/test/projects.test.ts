@@ -437,6 +437,99 @@ describe('POST /projects — register an AZURE subscription (0039 S1, provider-d
   });
 });
 
+describe('POST /projects — register a GCP project (ADR-0034 G1, provider-discriminated)', () => {
+  const GCP_REGISTER = {
+    id: 'exampleco',
+    name: 'Example GCP estate',
+    provider: 'gcp',
+    github: { owner: 'exampleco', repo: 'terraform-exampleco' },
+    gcpProjectId: 'example-prod-app',
+    gcpRegion: 'us-central1',
+  };
+
+  async function registerGcp(app: App, cookie: string, over: Record<string, unknown> = {}): Promise<Response> {
+    return app.request('/projects', { method: 'POST', headers: hdrs(cookie, { json: true }), body: JSON.stringify({ ...GCP_REGISTER, ...over }) });
+  }
+
+  it('happy path: 201 draft carrying provider:gcp + gcpProjectId/gcpRegion, and NO aws or azure identity', async () => {
+    const { app, store, putra } = await setup();
+    const res = await registerGcp(app, putra);
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      id: 'exampleco',
+      status: 'draft',
+      provider: 'gcp',
+      gcpProjectId: 'example-prod-app',
+      gcpRegion: 'us-central1',
+    });
+    expect(body.accountId).toBeUndefined();
+    expect(body.region).toBeUndefined();
+    expect(body.subscriptionId).toBeUndefined();
+    expect(body.location).toBeUndefined();
+    expect(await auditActions(store)).toContain('project-register');
+    expect(isKnownProject('exampleco')).toBe(false);
+  });
+
+  it('gcp validation is strict: bad project id shapes and off-allowlist regions all 422', async () => {
+    const { app, putra } = await setup();
+    for (const over of [
+      { gcpProjectId: 'Bad-Case' }, // uppercase refused
+      { gcpProjectId: 'ab' }, // too short (min 6)
+      { gcpProjectId: 'ends-with-hyphen-' },
+      { gcpProjectId: '1starts-with-digit' },
+      { gcpRegion: 'mars-base1' },
+      { gcpRegion: 'us-east-1' }, // an AWS region is not a GCP region
+      { gcpRegion: 'us-central1-a' }, // a zone is not a region
+    ]) {
+      const res = await registerGcp(app, putra, over);
+      expect(res.status, JSON.stringify(over)).toBe(422);
+      expect((await res.json()).code).toBe('VALIDATION_FAILED');
+    }
+  });
+
+  it('NO PROVIDER MIXING: a gcp body carrying aws or azure identity, or a half identity, is refused 422', async () => {
+    const { app, putra } = await setup();
+    expect((await registerGcp(app, putra, { accountId: '123456789012' })).status).toBe(422);
+    expect((await registerGcp(app, putra, { subscriptionId: '11111111-2222-3333-4444-555555555555' })).status).toBe(422);
+    // an aws body (provider absent) must not carry gcp identity
+    const awsMixed = await register(app, putra, { gcpProjectId: 'example-prod-app' } as never);
+    expect(awsMixed.status).toBe(422);
+    // a gcp body MISSING part of its pair is refused
+    const gcpShort = await app.request('/projects', {
+      method: 'POST',
+      headers: hdrs(putra, { json: true }),
+      body: JSON.stringify({ id: 'exampleco', name: 'Example', provider: 'gcp', github: { owner: 'exampleco', repo: 'terraform-exampleco' }, gcpProjectId: 'example-prod-app' }),
+    });
+    expect(gcpShort.status).toBe(422);
+  });
+
+  it('a gcp project walks the SAME ladder to trusted (provider persists through the trust ack)', async () => {
+    const { app, putra, lina, root } = await setup();
+    expect((await registerGcp(app, putra)).status).toBe(201);
+    const gcpReport = reportText({ repo: 'terraform-exampleco', providerPins: { google: '~> 6.0' } });
+    const up = await app.request('/projects/exampleco/trust-request', {
+      method: 'PUT',
+      headers: hdrs(lina, { json: true }),
+      body: JSON.stringify({ trustRequest: { repo: 'terraform-exampleco', commitSha: COMMIT, prescanSha256: sha256(gcpReport) }, prescanReport: gcpReport }),
+    });
+    expect(up.status).toBe(200);
+    const propose = await app.request('/projects/exampleco/trust', {
+      method: 'POST',
+      headers: hdrs(putra, { json: true }),
+      body: JSON.stringify({ commitSha: COMMIT, prescanSha256: sha256(gcpReport) }),
+    });
+    expect(propose.status).toBe(202);
+    const pending = await propose.json();
+    const ack = await app.request(`/admin/config-changes/${pending.id}/ack`, { method: 'POST', headers: hdrs(root) });
+    expect(ack.status).toBe(200);
+    const after = (await (await app.request('/projects', { headers: hdrs(putra) })).json()).find((p: { id: string }) => p.id === 'exampleco');
+    expect(after.status).toBe('trusted');
+    expect(after.provider).toBe('gcp');
+    expect(after.gcpRegion).toBe('us-central1');
+  });
+});
+
 describe('PUT /projects/:id/trust-request — the artifact upload + sha binding', () => {
   it('happy path: both artifacts land, status pending-trust, report served back (never rawReport)', async () => {
     const { app, store, putra, lina } = await setup();

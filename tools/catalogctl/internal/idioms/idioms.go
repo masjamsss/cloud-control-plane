@@ -29,8 +29,12 @@ var (
 	nonNameRe         = regexp.MustCompile(`[^a-z0-9_]+`)
 	multiUnderscoreRe = regexp.MustCompile(`_{2,}`)
 	// AddressShapeRe is exported so internal/edit (idiomrender.go) shares the
-	// SAME value-form definition instead of a drift-prone duplicate.
-	AddressShapeRe = regexp.MustCompile(`^(?:aws|azurerm)_[a-z0-9_]+\.[A-Za-z_][A-Za-z0-9_-]*$`)
+	// SAME value-form definition instead of a drift-prone duplicate. Its
+	// provider alternation must cover exactly the prefixes edit's
+	// providerSchemaPrefixes recognizes (aws/azurerm/google, ADR-0034 G1) —
+	// a recognized provider's address that this regex missed would be emitted
+	// as a quoted string literal instead of an HCL reference, silently.
+	AddressShapeRe = regexp.MustCompile(`^(?:aws|azurerm|google)_[a-z0-9_]+\.[A-Za-z_][A-Za-z0-9_-]*$`)
 	leadingDigitRe = regexp.MustCompile(`^[0-9]`)
 )
 

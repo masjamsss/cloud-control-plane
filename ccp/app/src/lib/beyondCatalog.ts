@@ -156,7 +156,14 @@ export function validateBeyondCatalogInput(
 
   const resourceType = input.resourceType?.trim();
   if (resourceType && !RESOURCE_TYPE_PATTERNS[provider].test(resourceType)) {
-    errors.resourceType = `Resource type must be an ${provider === 'azure' ? 'azurerm_*' : 'aws_*'} resource type, e.g. ${provider === 'azure' ? 'azurerm_storage_account' : 'aws_redshift_cluster'}.`;
+    const example =
+      provider === 'azure'
+        ? 'azurerm_storage_account'
+        : provider === 'gcp'
+          ? 'google_storage_bucket'
+          : 'aws_redshift_cluster';
+    const prefix = provider === 'azure' ? 'azurerm_*' : provider === 'gcp' ? 'google_*' : 'aws_*';
+    errors.resourceType = `Resource type must be an ${prefix} resource type, e.g. ${example}.`;
   }
 
   const workload = input.workload?.trim() ?? '';

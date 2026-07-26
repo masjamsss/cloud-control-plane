@@ -220,7 +220,9 @@ export function buildPaletteSections({
       ? [AZURE_SERVICES]
       : provider === 'aws'
         ? [AWS_SERVICES]
-        : [AZURE_SERVICES, AWS_SERVICES];
+        : provider === 'gcp'
+          ? [] // no gcp tile map yet (0034 lane G4) — never another cloud's tiles
+          : [AZURE_SERVICES, AWS_SERVICES];
   for (const map of opLessMaps) {
     for (const key of Object.keys(map)) {
       if (seenServiceKeys.has(key)) continue;

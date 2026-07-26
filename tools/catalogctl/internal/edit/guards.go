@@ -35,8 +35,8 @@ func guardBlockTarget(block string) (string, string) {
 			block,
 		)
 	}
-	// A block named like a RESOURCE TYPE (aws_*/azurerm_*) is a manifest authoring
-	// error — no provider nested block is ever named aws_*/azurerm_*. Left
+	// A block named like a RESOURCE TYPE (aws_*/azurerm_*/google_*) is a manifest authoring
+	// error — no provider nested block is ever named after a resource type. Left
 	// unguarded this emits a schema-invalid nested resource at exit 0 (found live on
 	// sns-add-subscription): a new resource must be created as
 	// a top-level block (a different capability), never nested inside another.
@@ -50,16 +50,17 @@ func guardBlockTarget(block string) (string, string) {
 }
 
 // createResourceTypeShape is the top-level create label a create emits: an
-// aws_*/azurerm_* provider resource type. It is the INVERSION of
-// guardBlockTarget's provider-prefix refusal — a nested block named aws_*/azurerm_*
-// is a manifest error, but a create's TOP-LEVEL block MUST be an aws_*/azurerm_*
-// resource type — that is the whole capability.
-var createResourceTypeShape = regexp.MustCompile(`^(?:aws|azurerm)_[a-z0-9_]+$`)
+// aws_*/azurerm_*/google_* provider resource type. It is the INVERSION of
+// guardBlockTarget's provider-prefix refusal — a nested block named after a
+// provider resource type is a manifest error, but a create's TOP-LEVEL block
+// MUST be a provider resource type — that is the whole capability. Must accept
+// exactly the prefixes providerSchemaPrefixes recognizes (providershape.go).
+var createResourceTypeShape = regexp.MustCompile(`^(?:aws|azurerm|google)_[a-z0-9_]+$`)
 
 // guardCreateLabels validates the labels of every block a create emits (
 // the invert-sense of RESOURCE_TYPE_AS_BLOCK). For a create the two
-// labels of `resource "<type>" "<name>"` must be: <type> a well-formed aws_*/azurerm_*
-// resource type (aws_*/azurerm_* is REQUIRED here, not refused), and <name> a valid
+// labels of `resource "<type>" "<name>"` must be: <type> a well-formed provider
+// resource type (aws_*/azurerm_*/google_* is REQUIRED here, not refused), and <name> a valid
 // HCL identifier. The local name always arrives from idioms.TfLocalName (which
 // guarantees the ident shape) and the type from the closed idiom table, so this is
 // defense-in-depth: it converts any future malformed emission into an explicit
@@ -70,7 +71,7 @@ func guardCreateLabels(blocks []hclBlock) (string, string) {
 	for _, b := range blocks {
 		if !createResourceTypeShape.MatchString(b.blockType) {
 			return "MALFORMED_CREATE_LABEL", fmt.Sprintf(
-				"create would emit resource type %q, not a well-formed provider resource type (aws_*/azurerm_*) — refusing rather than author invalid HCL; routed to an engineer",
+				"create would emit resource type %q, not a well-formed provider resource type (aws_*/azurerm_*/google_*) — refusing rather than author invalid HCL; routed to an engineer",
 				b.blockType,
 			)
 		}

@@ -1,0 +1,41 @@
+{
+  "service": "google-fixtures",
+  "scope": "estate",
+  "resourceTypes": ["google_storage_bucket"],
+  "summary": "Fixture manifest for the ADR-0034 lane G1 google create_resource golden cases — proves the provider-shape tables let create_resource emit google_* resources (the exact mirror of the Lane B azurerm fixtures, testdata/manifests-azure/storage.json).",
+  "operations": [
+    {
+      "id": "gcp-create-storage-bucket",
+      "service": "storage",
+      "macd": "Add",
+      "codemodOp": "create_resource",
+      "title": "Create a storage bucket",
+      "description": "Creates a new google_storage_bucket top-level resource block.",
+      "target": {
+        "resourceType": "google_storage_bucket"
+      },
+      "riskFloor": "MEDIUM",
+      "exposure": "l1_with_guardrails",
+      "terraformCapability": "+ create",
+      "forcesReplace": false,
+      "params": [
+        {
+          "name": "bucket_name",
+          "label": "Bucket name",
+          "type": "string",
+          "source": "user_input",
+          "required": true,
+          "role": "key",
+          "attr": "name"
+        },
+        {
+          "name": "location",
+          "label": "Location",
+          "type": "string",
+          "source": "user_input",
+          "required": true
+        }
+      ]
+    }
+  ]
+}
