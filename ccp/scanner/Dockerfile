@@ -28,10 +28,17 @@
 # BUILD CONTEXT = repo root (docker-compose.yml: `context: ..`,
 # `dockerfile: ccp/scanner/Dockerfile`) so this stage can COPY tools/catalogctl.
 
-FROM golang:1.25-bookworm AS build
+# CROSS-COMPILED, not emulated. This image is published multi-arch
+# (.github/workflows/release-images.yml), and running the Go compiler under QEMU
+# for the non-native arch is minutes-vs-seconds slower for no benefit — the
+# binary is static (CGO off), so the toolchain can simply target the other
+# platform from the builder's own.
+FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS build
+ARG TARGETOS TARGETARCH
 WORKDIR /src
 COPY tools/catalogctl /src
-RUN CGO_ENABLED=0 go build -trimpath -o /out/catalogctl ./cmd/catalogctl
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+    go build -trimpath -o /out/catalogctl ./cmd/catalogctl
 
 FROM debian:bookworm-slim
 

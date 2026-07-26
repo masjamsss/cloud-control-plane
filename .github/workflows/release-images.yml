@@ -14,6 +14,23 @@ name: release-images
 #                                                          generic prebuilt app image can only
 #                                                          ever be the demo. docker-compose.yml
 #                                                          builds the real one from source.
+#   ghcr.io/masjamsss/cloud-control-plane/ccp-scanner   — the isolated repository scanner
+#                                                          (opt-in, compose profile `scanner`).
+#                                                          Fully generic like ccp-api: nothing
+#                                                          is baked in, the control-plane URL
+#                                                          and the shared key are runtime env.
+#                                                          Published rather than left
+#                                                          build-from-source because it is the
+#                                                          one container that handles UNTRUSTED
+#                                                          repositories, and what makes it safe
+#                                                          is largely what it does NOT contain —
+#                                                          a prebuilt, reproducible image is a
+#                                                          claim an operator can verify instead
+#                                                          of a local build they have to trust.
+#
+# NOT published, deliberately: ccp-toolbox and ccp-runner. Both are host-shaped conveniences
+# (toolbox ships terraform for the armed lanes; runner registers against one repo), built from
+# source by their compose profiles — see ccp/docker-compose.yml.
 #
 # Auth: the workflow's own GITHUB_TOKEN — no extra secrets. First publish creates the
 # packages as private; make them public once in each package's settings.
@@ -68,6 +85,42 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.licenses=Apache-2.0
+            ${{ steps.meta.outputs.labels }}
+
+  scanner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_BASE }}/ccp-scanner
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=${{ inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=latest
+      - name: Build and push ccp-scanner
+        uses: docker/build-push-action@v6
+        with:
+          # Repo ROOT, not ccp/ — the image builds catalogctl from tools/catalogctl
+          # (same context docker-compose.yml gives it).
+          context: .
+          file: ccp/scanner/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.description=Isolated Terraform repository scanner — static HCL parsing only, ships no terraform and no cloud credentials
             ${{ steps.meta.outputs.labels }}
 
   app-demo:
