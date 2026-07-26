@@ -35,6 +35,7 @@ const TeamsAdmin = lazy(() => import('@/features/admin/TeamsAdmin'));
 const ApprovalPolicyAdmin = lazy(() => import('@/features/admin/ApprovalPolicyAdmin'));
 const RiskAdmin = lazy(() => import('@/features/admin/RiskAdmin'));
 const SettingsAdmin = lazy(() => import('@/features/admin/SettingsAdmin'));
+const DeploymentAdmin = lazy(() => import('@/features/admin/DeploymentAdmin'));
 const AuditHistory = lazy(() => import('@/features/admin/AuditHistory'));
 const ProjectsAdmin = lazy(() => import('@/features/admin/ProjectsAdmin'));
 const PendingChanges = lazy(() => import('@/features/admin/PendingChanges'));
@@ -226,6 +227,11 @@ export const router = createBrowserRouter([
           },
           { path: 'risk', element: <RiskAdmin />, handle: { title: 'Admin · Activity risk' } },
           { path: 'settings', element: <SettingsAdmin />, handle: { title: 'Admin · Settings' } },
+          {
+            path: 'deployment',
+            element: <DeploymentAdmin />,
+            handle: { title: 'Admin · Deployment' },
+          },
           { path: 'history', element: <AuditHistory />, handle: { title: 'Admin · History' } },
           { path: 'projects', element: <ProjectsAdmin />, handle: { title: 'Admin · Projects' } },
           {

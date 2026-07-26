@@ -18,6 +18,7 @@ import {
   scanJobKey,
   scanJobQueueGsi,
 } from "../store/schema";
+import { knobEnabled, resolveKnob } from "../domain/deploymentSettings";
 import {
   buildCloneUrl,
   canTransitionScanStatus,
@@ -25,7 +26,6 @@ import {
   SCAN_ERROR_MAX,
   SCAN_JOB_STATUSES,
   sanitizeScanError,
-  scannerEnabled,
   scannerWorkerKey,
   type ScanJobStatus,
 } from "../domain/scanner";
@@ -239,9 +239,17 @@ export function scanJobRoutes(): Hono<AppEnv> {
    * caller, authorized or not), then the timing-safe key compare, then — and
    * only then — any store access.
    */
-  function authorize(auth: string | undefined): "disabled" | "denied" | "ok" {
+  async function authorize(
+    store: ConfigStore,
+    auth: string | undefined,
+  ): Promise<"disabled" | "denied" | "ok"> {
     const expected = scannerWorkerKey();
-    if (!scannerEnabled() || expected === null) return "disabled";
+    // Armed by the PORTAL toggle or the deployment's environment — the same
+    // single precedence every other reader uses. The store read here is the
+    // settings row, not anything about a project, so a disabled deployment
+    // still discloses nothing about what exists.
+    if (!(await knobEnabled(store, "scanner.enabled")) || expected === null)
+      return "disabled";
     const presented = bearerOf(auth);
     if (presented === null || !keyMatches(presented, expected)) return "denied";
     return "ok";
@@ -252,7 +260,7 @@ export function scanJobRoutes(): Hono<AppEnv> {
    * it never receives a push, so an unreachable worker costs nothing but a
    * queued job that stays queued and visible to the operator. */
   s.post("/claim", async (c) => {
-    const gate = authorize(c.req.header("authorization"));
+    const gate = await authorize(c.get("store"), c.req.header("authorization"));
     if (gate === "disabled") return apiError(c, "SCANNER_DISABLED");
     if (gate === "denied") return apiError(c, "SCANNER_KEY_INVALID");
 
@@ -321,7 +329,11 @@ export function scanJobRoutes(): Hono<AppEnv> {
         continue;
       }
       const repo = repoRefOf(project);
-      const target = repo ? buildCloneUrl(repo) : { ok: false as const };
+      const extraHosts = ((await resolveKnob(store, "scanner.forgeHosts"))
+        .value ?? []) as string[];
+      const target = repo
+        ? buildCloneUrl(repo, process.env, extraHosts)
+        : { ok: false as const };
       if (!repo || !target.ok) {
         await failClaimed(
           store,
@@ -382,7 +394,7 @@ export function scanJobRoutes(): Hono<AppEnv> {
    * the claim handed back. Every transition is validated against the STORED
    * status, never the one the worker claims to be leaving. */
   s.post("/:jobId/status", async (c) => {
-    const gate = authorize(c.req.header("authorization"));
+    const gate = await authorize(c.get("store"), c.req.header("authorization"));
     if (gate === "disabled") return apiError(c, "SCANNER_DISABLED");
     if (gate === "denied") return apiError(c, "SCANNER_KEY_INVALID");
 

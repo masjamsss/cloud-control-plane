@@ -29,9 +29,9 @@ import {
 import {
   buildCloneUrl,
   isTerminalScanStatus,
-  scannerEnabled,
   scannerWorkerKey,
 } from "../domain/scanner";
+import { knobEnabled, resolveKnob } from "../domain/deploymentSettings";
 import {
   ForgeCredentialError,
   forgeSealKey,
@@ -770,7 +770,12 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     const actor = c.get("account")!.id;
     const id = c.req.param("id");
 
-    if (!scannerEnabled() || scannerWorkerKey() === null)
+    // Armed by the PORTAL toggle or, failing that, the deployment's own
+    // environment — one precedence, resolved in domain/deploymentSettings.ts.
+    if (
+      !(await knobEnabled(store, "scanner.enabled")) ||
+      scannerWorkerKey() === null
+    )
       return apiError(c, "SCANNER_DISABLED");
 
     const k = projectKey(id);
@@ -785,7 +790,10 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     // deliberately DISCARDED — the worker gets a freshly-built URL at claim
     // time, so nothing derived from a credentialed or host-specific string is
     // ever persisted.
-    if (!buildCloneUrl(repo).ok) return apiError(c, "SCAN_TARGET_REFUSED");
+    const extraHosts = ((await resolveKnob(store, "scanner.forgeHosts"))
+      .value ?? []) as string[];
+    if (!buildCloneUrl(repo, process.env, extraHosts).ok)
+      return apiError(c, "SCAN_TARGET_REFUSED");
 
     const existing = (await store.query(
       k.PK,
