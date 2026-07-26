@@ -50,6 +50,8 @@ import {
 import {
   DEPLOYMENT_SCOPE,
   deploymentView,
+  isPortalEditable,
+  isRegistryOwnedKey,
   knobById,
   knobSettingKey,
 } from "../domain/deploymentSettings";
@@ -302,6 +304,22 @@ export function adminRoutes(
     const projectId = c.get("projectId");
     const actor = c.get("account")!.id;
     const key = c.req.param("key");
+    // A REGISTRY OWNS ITS OWN KEYS. This route takes `key` straight from the
+    // URL and would otherwise write the very row the deployment registry reads
+    // — skipping that registry's editable gate AND its dual control, because an
+    // unrecognised key falls through the classification chain below to
+    // 'tightening' and so applies at once. Reproduced before this guard
+    // existed: one '*'-bound admin, sending no project header (so the scope
+    // defaults to @control, where deployment settings live), armed the scanner
+    // with a single 200 while the proper route was correctly answering 202.
+    // Registry keys are writable only through the route that knows their rules.
+    if (isRegistryOwnedKey(key)) {
+      return apiError(c, "OP_DISABLED", {
+        problem: "This setting belongs to the deployment or estate registry.",
+        instead:
+          "Change it in Admin → Deployment, which enforces its own rules.",
+      });
+    }
     const body = (await c.req.json().catch(() => null)) as {
       value?: unknown;
     } | null;
@@ -380,10 +398,14 @@ export function adminRoutes(
     // THE GATE. A knob is writable here only if the registry says so — the
     // command-running knobs and the store's own keys are refused by the same
     // check that documents why, so the refusal can never drift from the reason.
-    if (knob.editable !== true) {
+    // One definition of "may the portal write this", shared with the
+    // registry-key guard on the generic settings route above — a second
+    // hand-rolled copy is how the two drift apart.
+    if (!isPortalEditable(id)) {
+      const why = knob.editable as Exclude<typeof knob.editable, true>;
       return apiError(c, "OP_DISABLED", {
-        problem: knob.editable.reason,
-        instead: knob.editable.instead,
+        problem: why.reason,
+        instead: why.instead,
       });
     }
     const body = (await c.req.json().catch(() => null)) as {

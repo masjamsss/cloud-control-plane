@@ -500,8 +500,40 @@ export function isPortalEditable(id: string): boolean {
 /** Deployment settings are GLOBAL, so they live on the reserved control scope
  * rather than any estate's. One home, whichever project you happen to be in. */
 export const DEPLOYMENT_SCOPE = CONTROL_SCOPE;
+/**
+ * Key prefixes owned by a SETTINGS REGISTRY rather than by the generic
+ * `PUT /admin/settings/:key` route.
+ *
+ * This exists because of a real bypass, found by review and reproduced before
+ * it was fixed. The generic settings route takes its key straight from the URL
+ * and writes `settingKey(callerScope, key)`. A registry-backed knob is stored
+ * at `settingKey(@control, 'deployment.<id>')` — the SAME row. So an admin
+ * bound to `*`, sending no `x-ccp-project` header (which defaults to
+ * `@control`), could `PUT /admin/settings/deployment.scanner.enabled` and:
+ *
+ *   - skip the registry's editable gate entirely, and
+ *   - skip the DUAL CONTROL, because an unrecognised key falls through that
+ *     route's classification chain to "tightening" and applies at once.
+ *
+ * Verified: the proper route returned 202 and left the scanner disarmed, while
+ * the generic route returned 200 and armed it — one admin, no second approver.
+ *
+ * The fix is this list plus {@link isRegistryOwnedKey}: a registry's keys are
+ * writable ONLY through the route that knows their rules. `estate.` is reserved
+ * ahead of the per-estate registry landing, so the same hole cannot reopen for
+ * it the day it ships.
+ */
+export const REGISTRY_KEY_PREFIXES = ["deployment.", "estate."] as const;
+
+/** True for a settings key that belongs to a registry, whichever scope it is
+ * being written in — the generic settings route must refuse these. */
+export function isRegistryOwnedKey(key: string): boolean {
+  return REGISTRY_KEY_PREFIXES.some((p) => key.startsWith(p));
+}
+
 /** The settings-store key for a knob. Namespaced so it can never collide with
- * the per-project settings (freeze, allowlist, rate limits) in the same store. */
+ * the per-project settings (freeze, allowlist, rate limits) in the same store,
+ * and so {@link isRegistryOwnedKey} can recognise it. */
 export function knobSettingKey(id: string): string {
   return `deployment.${id}`;
 }
