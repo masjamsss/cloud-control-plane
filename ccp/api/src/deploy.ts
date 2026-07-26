@@ -115,6 +115,10 @@ export function corsOrigins(env: Env = process.env): string[] {
     .split(',')
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+  // Frozen: callers used to get a fresh array each time and could mutate it
+  // harmlessly. They now share one, and this is the allow-list for credentialed
+  // CORS — a stray push into it would widen who may authenticate, process-wide.
+  Object.freeze(origins);
   corsMemo = { raw, origins };
   return origins;
 }

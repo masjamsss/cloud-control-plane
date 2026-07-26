@@ -66,4 +66,20 @@ describe('audit chain month-partition walk (calendar correctness)', () => {
       expect(doc.entries).toHaveLength(5);
     }
   });
+
+  it('still sees entries stamped ahead of the reader (backward clock adjustment)', async () => {
+    // An entry is stamped with the clock at WRITE time. A backward correction
+    // (NTP, VM resume) taken just after a month boundary leaves entries in a
+    // partition the reader would now call "the future" — invisible to a walk that
+    // starts at the current month, which reads as a short chain and so a BROKEN one.
+    const store = new MemoryStore();
+    await appendAt(store, 'p', '2026-06-20T00:00:00.000Z', 2);
+    await appendAt(store, 'p', '2026-07-01T00:00:05.000Z', 3); // written just after the boundary
+
+    __setNow(() => Date.parse('2026-06-30T23:59:55.000Z')); // ...then the clock steps back
+    const doc = await exportAuditChain(store, 'p');
+    expect(doc.count).toBe(5);
+    expect(doc.entries).toHaveLength(5);
+    expect(doc.verified).toBe(true);
+  });
 });

@@ -21,7 +21,18 @@ const MAX_MONTHS_WALKED = 120;
  */
 function* monthsBackward(projectId: string, from: Date): Generator<string> {
   let year = from.getUTCFullYear();
-  let month = from.getUTCMonth(); // 0-11
+  // Start ONE MONTH AHEAD of `from`. An entry is stamped with the clock at write
+  // time, so a backward adjustment (NTP correction, VM resume) taken just after a
+  // month boundary leaves entries in a partition that is now "the future" —
+  // invisible to a walk that starts at the current month, which reads as a short
+  // chain and therefore as a BROKEN one. That is the same severity as the overflow
+  // bug below (503 + "evidence unverified") for the same category of reason, and
+  // costs exactly one read of a normally-empty partition to rule out.
+  let month = from.getUTCMonth() + 1; // 0-11, may be 12 -> normalized below
+  if (month > 11) {
+    month = 0;
+    year += 1;
+  }
   for (let i = 0; i < MAX_MONTHS_WALKED; i++) {
     yield auditKey(projectId, `${year}${String(month + 1).padStart(2, '0')}`, '').PK;
     if (month === 0) {

@@ -77,12 +77,12 @@ export class MemoryStore implements ConfigStore {
   private primary = new Map<string, Partition<string>>();
   /** GSI1PK -> (composite primary key -> item). */
   private gsi1 = new Map<string, Partition<string>>();
-  /** Cached live item references in key-sorted order — the snapshot layout.
-   *  Invalidated when the KEY SET changes (insert/delete) or when a row is
-   *  replaced, since the cache holds references to the old object. A stable file
-   *  needs a stable order, and rebuilding it per snapshot was ~20% of the durable
-   *  write on a large store. */
-  private exportCache: Item[] | null = null;
+  /** Cached composite keys in snapshot order. Invalidated on insert/delete ONLY:
+   *  the order is a function of (PK, SK), so replacing a row's VALUE — the common
+   *  write by far, every session slide and status update — cannot reorder it. The
+   *  sort is the expensive half of building a snapshot, so keeping it across value
+   *  writes is what makes the durable path pay for the write and not the store. */
+  private exportOrder: string[] | null = null;
   private count = 0;
 
   /* ── index maintenance ─────────────────────────────────────────────────── */
@@ -94,7 +94,6 @@ export class MemoryStore implements ConfigStore {
   /** Insert or replace one row, keeping both indexes and the export order consistent. */
   private setItem(item: Item): void {
     const prev = this.lookup(item.PK, item.SK);
-    this.exportCache = null; // holds references; a replaced row makes it stale
     if (prev) {
       // A replacement can move the row to a DIFFERENT GSI1 partition (or out of the
       // index entirely) — drop the old placement before adding the new one.
@@ -102,6 +101,7 @@ export class MemoryStore implements ConfigStore {
       if (typeof prevGsi === 'string') partitionRemove(this.gsi1, prevGsi, keyOf(prev.PK, prev.SK));
     } else {
       this.count++;
+      this.exportOrder = null; // a NEW key changes the snapshot order
     }
     partitionInsert(this.primary, item.PK, item.SK, item);
     const gsi = item.GSI1PK;
@@ -122,27 +122,27 @@ export class MemoryStore implements ConfigStore {
     const gsi = prev.GSI1PK;
     if (typeof gsi === 'string') partitionRemove(this.gsi1, gsi, keyOf(pk, sk));
     this.count--;
-    this.exportCache = null;
+    this.exportOrder = null;
     return true;
   }
 
   /** Live item references in stable key order — the snapshot layout, WITHOUT cloning. */
   protected itemsInKeyOrder(): Item[] {
-    if (this.exportCache !== null) return this.exportCache;
-    const keys: string[] = new Array(this.count);
-    let i = 0;
-    for (const [pk, part] of this.primary) for (const sk of part.rows.keys()) keys[i++] = keyOf(pk, sk);
-    keys.length = i;
-    keys.sort(cmp);
-    const out: Item[] = new Array(keys.length);
+    if (this.exportOrder === null) {
+      const keys: string[] = new Array(this.count);
+      let i = 0;
+      for (const [pk, part] of this.primary) for (const sk of part.rows.keys()) keys[i++] = keyOf(pk, sk);
+      keys.length = i;
+      this.exportOrder = keys.sort(cmp);
+    }
+    const out: Item[] = new Array(this.exportOrder.length);
     let n = 0;
-    for (const k of keys) {
+    for (const k of this.exportOrder) {
       const idx = k.indexOf(SEP);
       const it = this.lookup(k.slice(0, idx), k.slice(idx + 1));
       if (it) out[n++] = it;
     }
     out.length = n;
-    this.exportCache = out;
     return out;
   }
 
@@ -167,7 +167,7 @@ export class MemoryStore implements ConfigStore {
   importItems(items: Item[]): void {
     this.primary = new Map();
     this.gsi1 = new Map();
-    this.exportCache = null;
+    this.exportOrder = null;
     this.count = 0;
     for (const it of items) this.setItem(cloneValue(it));
   }
