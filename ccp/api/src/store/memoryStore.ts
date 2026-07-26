@@ -1,4 +1,4 @@
-import type { ConfigStore, Item, TransactWrite } from './configStore';
+import type { ConfigStore, Item, QueryOptions, TransactWrite } from './configStore';
 import { ConditionError } from './configStore';
 import { cloneValue } from './clone';
 
@@ -176,15 +176,23 @@ export class MemoryStore implements ConfigStore {
     return it ? cloneValue(it) : null;
   }
 
-  async query(pk: string, skPrefix?: string): Promise<Item[]> {
+  async query(pk: string, skPrefix?: string, opts?: QueryOptions): Promise<Item[]> {
     const part = this.primary.get(pk);
     if (!part) return [];
     const keys = partitionKeys(part, cmp);
+    const limit = opts?.limit;
+    if (limit !== undefined && limit <= 0) return [];
+    const descending = opts?.forward === false;
     const out: Item[] = [];
-    for (const sk of keys) {
+    // Walk the sorted keys from whichever end the caller asked for and stop at the
+    // limit, so a descending page read costs the page and not the partition.
+    for (let i = 0; i < keys.length; i++) {
+      const sk = keys[descending ? keys.length - 1 - i : i]!;
       if (skPrefix !== undefined && !sk.startsWith(skPrefix)) continue;
       const it = part.rows.get(sk);
-      if (it) out.push(cloneValue(it));
+      if (!it) continue;
+      out.push(cloneValue(it));
+      if (limit !== undefined && out.length >= limit) break;
     }
     return out;
   }
