@@ -1267,6 +1267,8 @@ export function uploadTokenKey(id: string, tokenId: string): Key {
 export function onboardTokenKey(id: string, tokenId: string): Key {
   return { PK: `PROJECT#${id}`, SK: `ONBOARDTOKEN#${tokenId}` };
 }
+/** SK prefix that lists a project's onboarding tokens. */
+export const ONBOARD_TOKEN_SK_PREFIX = "ONBOARDTOKEN#";
 /** One server-side scan job for a project (ADR-0033). */
 export function scanJobKey(id: string, jobId: string): Key {
   return { PK: `PROJECT#${id}`, SK: `SCANJOB#${jobId}` };

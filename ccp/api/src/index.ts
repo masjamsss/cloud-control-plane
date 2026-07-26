@@ -10,6 +10,7 @@ import { requestRoutes } from './routes/requests';
 import { adminRoutes } from './routes/admin';
 import { migrateRoutes } from './routes/migrate';
 import { projectRoutes } from './routes/projects';
+import { scanJobRoutes } from './routes/scanJobs';
 import { instanceAdminRoutes, instancePublicRoutes } from './routes/instance';
 import { corsOrigins } from './deploy';
 import { readiness } from './domain/readiness';
@@ -94,6 +95,12 @@ export function createApp(store: ConfigStore, opts: CreateAppOptions = {}): Hono
   app.route('/admin', adminRoutes({ projectDataRoot: opts.projectDataRoot }));
   // Registry + onboarding trust surface + the per-account data plane
   app.route('/projects', projectRoutes({ dataRoot: opts.projectDataRoot }));
+  // The scanner worker's machine lane (ADR-0033) — mounted at the TOP level,
+  // deliberately NOT under /projects, so it inherits none of that group's
+  // session + membership middleware. Its own timing-safe CCP_SCANNER_KEY gate is
+  // the whole authorization, and every route in it answers SCANNER_DISABLED
+  // unless the deployment explicitly armed the scanner.
+  app.route('/scan-jobs', scanJobRoutes());
 
   return app;
 }

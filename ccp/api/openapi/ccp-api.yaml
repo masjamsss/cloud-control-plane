@@ -745,6 +745,78 @@ paths:
       responses: { '200': { description: Revoked },
         '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
         '404': { description: Not found } } }
+  /projects/{id}/scan-jobs:
+    post: { summary: 'Ask the CONTROL PLANE to scan this project''s repository itself (lead + isAdmin, ADR-0033) —
+        the zero-touch first import: no CI file in the estate repo, no local run. Records the INTENT only; an
+        isolated worker container does the cloning and parsing and uploads the SAME artifact pair over the SAME
+        pre-trust onboard-token lane, so the two-admin trust ceremony is untouched. OFF BY DEFAULT: refused 409
+        SCANNER_DISABLED unless the deployment set CCP_SCANNER=1 with a ≥32-char CCP_SCANNER_KEY — checked FIRST,
+        so a disabled deployment discloses nothing about the project. Then, in order: past the pre-trust window or
+        archived → 409; the repo host is not one this deployment may clone → 422 SCAN_TARGET_REFUSED (validated at
+        creation so the operator learns immediately, and rebuilt again at claim time — the URL is never stored);
+        a job already in flight for this project → 409 (one at a time, so a repeated click cannot fan out clones).
+        Audit: scan-job-create',
+      parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
+      responses: { '201': { description: Queued, content: { application/json: { schema: { type: object,
+          required: [jobId, status], properties: { jobId: {type: string}, status: {type: string, enum: [queued]} } } } } },
+        '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
+        '404': { description: Not found },
+        '409': { description: 'SCANNER_DISABLED | STATE_CONFLICT', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } },
+        '422': { description: 'SCAN_TARGET_REFUSED', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } } } }
+  /projects/{id}/scan-jobs/latest:
+    get: { summary: 'The wizard''s progress read (lead + isAdmin) — the most recent scan job only. `error` is
+        already sanitized at write time, and the projection deliberately carries NO clone URL and NO token, so it
+        cannot disclose how the deployment reaches the forge.',
+      parameters: [{ $ref: '#/components/parameters/id' }],
+      responses: { '200': { description: Latest job, content: { application/json: { schema: { type: object,
+          required: [jobId, status, createdAt],
+          properties: { jobId: {type: string}, status: { type: string, enum: [queued, claimed, cloning, scanning, uploaded, failed] },
+            createdAt: {type: string}, startedAt: {type: string}, finishedAt: {type: string},
+            error: {type: string, maxLength: 500} } } } } },
+        '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
+        '404': { description: No scan job } } }
+  /scan-jobs/claim:
+    post: { summary: 'THE SCANNER WORKER LANE (ADR-0033) — "give me the next repository to scan". A MACHINE lane:
+        no cookie, no session, no X-Ccp-Client; the worker presents the deployment''s shared CCP_SCANNER_KEY as
+        `Authorization: Bearer <key>` (timing-safe compare, BEFORE any store read). Mounted OUTSIDE /projects so
+        it inherits no session/membership middleware. THE WORKER NEVER CHOOSES ITS TARGET: it cannot name a
+        project, a job, or a URL — the server picks the oldest queued job and rebuilds the clone URL server-side
+        from the stored repo ref through the forge-host allowlist (that is the SSRF answer). The claim is a
+        compare-and-swap on status=queued that simultaneously moves the row out of the queue index, so two workers
+        can never both win. The lifecycle window is RE-CHECKED here: a project that left pre-trust (or was
+        archived) since queueing has its job failed instead of scanned. The response carries a freshly minted,
+        60-minute PRE-TRUST onboarding token authorizing exactly one verb — PUT /projects/{id}/trust-request —
+        minted LAST, so a job that was never going to run produces no credential at all. 204 when idle.
+        Audit: scan-job-claim',
+      responses: { '200': { description: Work packet, content: { application/json: { schema: { type: object,
+          required: [jobId, projectId, cloneUrl, onboardToken, tokenExpiresAt],
+          properties: { jobId: {type: string}, projectId: {type: string},
+            cloneUrl: {type: string, description: 'server-built https URL — an allowlisted forge host, never worker input'},
+            onboardToken: {type: string, description: '`<tokenId>.<secret>`, shown once'},
+            tokenExpiresAt: {type: string} } } } } },
+        '204': { description: Nothing queued },
+        '401': { description: SCANNER_KEY_INVALID, content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } },
+        '403': { description: 'MISSING_CLIENT_HEADER — the CSRF exemption is Bearer-shaped-only; a call with no Bearer stays under the browser rules', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } },
+        '409': { description: SCANNER_DISABLED, content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } } } }
+  /scan-jobs/{jobId}/status:
+    post: { summary: 'The scanner worker reports progress (same CCP_SCANNER_KEY Bearer lane). NOTHING THE WORKER
+        SAYS IS TRUSTED: the transition is validated against the STORED status, never the one the worker claims to
+        be leaving, and it is strictly forward-only (queued→claimed→cloning→scanning→uploaded, any state→failed) —
+        a terminal job can never be reopened (409 STATE_CONFLICT). The job row is keyed by (projectId, jobId), so
+        naming the wrong project simply 404s. `error` is untrusted output from a process that just ran against a
+        hostile repository: control characters, URLs and token-shaped strings are redacted and it is truncated to
+        500 chars before storage. Audit: scan-job-status',
+      parameters: [{ name: jobId, in: path, required: true, schema: {type: string} }],
+      requestBody: { required: true, content: { application/json: { schema: { type: object,
+        required: [projectId, status], additionalProperties: false,
+        properties: { projectId: {type: string}, status: { type: string, enum: [queued, claimed, cloning, scanning, uploaded, failed] },
+          error: {type: string, maxLength: 4000, description: 'only meaningful with status=failed; sanitized before storage'} } } } } },
+      responses: { '200': { description: Recorded, content: { application/json: { schema: { type: object,
+          required: [jobId, status], properties: { jobId: {type: string}, status: {type: string} } } } } },
+        '401': { description: SCANNER_KEY_INVALID, content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } },
+        '404': { description: Not found },
+        '409': { description: 'SCANNER_DISABLED | STATE_CONFLICT', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } },
+        '422': { $ref: '#/components/responses/E422' } } }
   /projects/{id}/trust:
     post: { summary: 'The trust decision (lead + isAdmin) — ALWAYS dual-controlled, never single-keystroke:
         this PROPOSES (202, kind project-trust); a SECOND distinct admin applies it via

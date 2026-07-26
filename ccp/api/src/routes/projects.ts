@@ -1,8 +1,8 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { z } from "zod";
-import { ulid } from "ulid";
+import { monotonicFactory } from "ulid";
 import type { AppEnv } from "../appEnv";
 import type {
   ProjectItem,
@@ -39,9 +39,10 @@ import {
   requireRole,
 } from "../middleware/authz";
 import { checkUploadRateLimit } from "../middleware/rateLimit";
-import { hashPassword, verifyPassword } from "../auth/credentials";
+import { verifyPassword } from "../auth/credentials";
 import { isKnownProject, PROJECT_ID_RE, roleFor } from "../projects";
 import { commitOrPropose, publicPendingChange } from "../domain/dualControl";
+import { isOnboardable, mintOnboardToken } from "../domain/onboardToken";
 import { transactWithAudit } from "../domain/audit";
 import { nowIso, nowMs } from "../clock";
 import { projectDataRoutes } from "./projectData";
@@ -454,6 +455,16 @@ const sha256Hex = (text: string): string =>
  * shapes, own key namespace (schema.ts#onboardTokenKey), own status gate —
  * fail-closed, the two must never be cross-usable (I10). */
 
+/**
+ * MONOTONIC ulid for scan-job ids — same reason domain/audit.ts uses one: the
+ * jobId IS the sort key, in the project's SK range (`latest` reads the last row)
+ * AND in the worker queue's GSI (which is claimed oldest-first). Plain `ulid()`
+ * randomizes the low bits within a millisecond, so two jobs minted in the same
+ * tick could sort backwards — making "latest" and "FIFO" true only most of the
+ * time. Monotonic makes the documented order actually hold.
+ */
+const jobUlid = monotonicFactory();
+
 const ONBOARD_TOKEN_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/; // ulid
 const ONBOARD_TOKEN_SECRET = /^[A-Za-z0-9_-]{20,100}$/; // 32 random bytes, base64url
 
@@ -466,11 +477,6 @@ const OnboardMintBody = z
 
 const ONBOARD_DEFAULT_TTL_MINUTES = 24 * 60;
 
-/** Statuses whose onboarding is still legitimate: the repo has NOT yet passed
- * human trust review. The EXACT INVERSE of projectData.ts's `UPLOADABLE` — an
- * onboarding token and an upload token can never be the right credential for
- * the same project at the same time; their lifetimes never overlap. */
-const ONBOARDABLE = new Set<ProjectItem["status"]>(["draft", "pending-trust"]);
 
 export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
   const p = new Hono<AppEnv>();
@@ -622,39 +628,20 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
         return c.json({ code: "NOT_FOUND", reason: "No such project." }, 404);
       // Fail closed: only a project that has NOT yet passed trust review has a
       // legitimate pre-trust CI producer; an archived project mints nothing.
-      if (!ONBOARDABLE.has(project.status) || project.archived)
+      if (!isOnboardable(project))
         return apiError(c, "STATE_CONFLICT");
 
-      const tokenId = ulid();
-      const secret = randomBytes(32).toString("base64url");
-      const secretHash = await hashPassword(secret); // argon2id, same posture as passwords/upload tokens
-      const ttlMinutes = parsed.data.ttlMinutes ?? ONBOARD_DEFAULT_TTL_MINUTES;
-      const expiresAt = new Date(nowMs() + ttlMinutes * 60_000).toISOString();
-      const item: ProjectOnboardTokenItem = {
-        ...onboardTokenKey(id, tokenId),
-        tokenId,
-        projectId: id,
-        secretHash,
-        createdBy: actor,
-        createdAt: nowIso(),
-        expiresAt,
-      };
-      // AUDIT TO THE TARGET (mirrors upload-token-mint, projectData.ts): a
-      // credential minted against `id` lands on `id`'s own chain.
-      await transactWithAudit(
+      // The mint itself is shared with the scanner worker's claim lane
+      // (domain/onboardToken.ts) so both produce an identically-hardened
+      // credential; the status gate above stays HERE, where it is enforced.
+      // The clear token is shown exactly ONCE — only its argon2id hash is stored.
+      const minted = await mintOnboardToken(
         store,
         id,
-        [{ kind: "put", item: item as never, ifNotExists: true }],
-        {
-          action: "onboard-token-mint",
-          actor,
-          targetType: "project",
-          targetId: id,
-          after: { tokenId, expiresAt },
-        },
+        actor,
+        parsed.data.ttlMinutes ?? ONBOARD_DEFAULT_TTL_MINUTES,
       );
-      // The clear token is shown exactly ONCE — only its argon2id hash is stored.
-      return c.json({ tokenId, token: `${tokenId}.${secret}`, expiresAt }, 201);
+      return c.json(minted, 201);
     },
   );
 
@@ -731,7 +718,7 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     const project = (await store.get(k.PK, k.SK)) as ProjectItem | null;
     if (!project)
       return c.json({ code: "NOT_FOUND", reason: "No such project." }, 404);
-    if (!ONBOARDABLE.has(project.status) || project.archived)
+    if (!isOnboardable(project))
       return apiError(c, "STATE_CONFLICT");
 
     const repo = repoRefOf(project);
@@ -749,7 +736,7 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     if (existing.some((j) => !isTerminalScanStatus(j.status)))
       return apiError(c, "STATE_CONFLICT");
 
-    const jobId = ulid();
+    const jobId = jobUlid();
     const item: ProjectScanJobItem = {
       ...scanJobKey(id, jobId),
       jobId,
@@ -1079,7 +1066,7 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
    * fields on a provider switch) and re-stamps identityConfirmed with the
    * latest confirmer/time.
    *
-   * GATED to draft/pending-trust (ONBOARDABLE), and refused for an archived
+   * GATED to draft/pending-trust (isOnboardable), and refused for an archived
    * project. This is NOT harmless metadata: the identity IS which cloud account
    * every future request for this project targets. Leaving it open post-trust
    * would let ONE admin silently re-point a trusted — or live, account-bound
@@ -1107,7 +1094,7 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
       return c.json({ code: "NOT_FOUND", reason: "No such project." }, 404);
     // Fail closed: identity is part of the binding two admins trust, so it is
     // settable only BEFORE that decision exists (see the docblock above).
-    if (!ONBOARDABLE.has(project.status) || project.archived)
+    if (!isOnboardable(project))
       return apiError(c, "STATE_CONFLICT");
 
     const identityConfirmed = { confirmedBy: actor, confirmedAt: nowIso() };

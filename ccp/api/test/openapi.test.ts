@@ -145,4 +145,25 @@ describe('OpenAPI contract (spec §3, extracted verbatim)', () => {
     const instanceBlock = yaml.slice(yaml.indexOf('\n  /instance:'), yaml.indexOf('\n  /admin/instance:'));
     expect(instanceBlock).toContain('security: []');
   });
+
+  it('ADR-0033: both halves of the server-side scan lane are declared — operator and worker', () => {
+    for (const p of [
+      '/projects/{id}/scan-jobs:',
+      '/projects/{id}/scan-jobs/latest:',
+      '/scan-jobs/claim:', // the worker's machine lane — deliberately NOT under /projects
+      '/scan-jobs/{jobId}/status:',
+    ]) {
+      expect(yaml, p).toContain(p);
+    }
+    // The refusals a reader must be able to find without reading the code.
+    for (const code of ['SCANNER_DISABLED', 'SCAN_TARGET_REFUSED', 'SCANNER_KEY_INVALID']) {
+      expect(yaml, code).toContain(code);
+    }
+    // The properties that make the worker lane safe are DOCUMENTED, not merely
+    // implemented — an operator auditing the contract can see them here.
+    const claimBlock = yaml.slice(yaml.indexOf('\n  /scan-jobs/claim:'), yaml.indexOf('\n  /scan-jobs/{jobId}/status:'));
+    expect(claimBlock).toContain('THE WORKER NEVER CHOOSES ITS TARGET');
+    expect(claimBlock).toContain('compare-and-swap');
+    expect(claimBlock).toContain("'204': { description: Nothing queued }");
+  });
 });

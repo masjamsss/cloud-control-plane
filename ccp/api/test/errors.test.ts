@@ -25,6 +25,7 @@ describe("§8 error taxonomy", () => {
         "TOTP_REQUIRED",
         "UPLOAD_TOKEN_INVALID", // CI data-upload lane — one generic refusal, no enumeration
         "ONBOARD_TOKEN_INVALID", // pre-trust onboard-token lane — separate credential, same no-enumeration posture
+        "SCANNER_KEY_INVALID", // ADR-0033 scanner-worker lane — shared deployment key, same no-enumeration posture
       ]),
     );
     expect(byStatus[403]).toEqual(

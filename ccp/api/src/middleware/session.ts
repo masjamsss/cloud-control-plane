@@ -116,11 +116,41 @@ export function isOnboardTokenLane(
 }
 
 /**
+ * The SCANNER WORKER lane (ADR-0033): `POST /scan-jobs/claim` and
+ * `POST /scan-jobs/:jobId/status` carrying the deployment's shared
+ * `CCP_SCANNER_KEY` as a Bearer token. A third separate predicate, for the same
+ * reason the two above are separate: this credential is neither an upload token
+ * nor an onboard token, and it authorizes only these two paths — an exact
+ * enumeration, not a prefix, so a future `/scan-jobs/*` route does not silently
+ * inherit the exemption.
+ *
+ * Not a browser flow (no cookie, no session), so the CSRF client header — which
+ * defends AMBIENT cookie credentials — does not apply: a cross-site attacker
+ * cannot attach an Authorization header without a CORS preflight this server
+ * refuses. The handlers enforce their own fail-closed, timing-safe key gate
+ * (routes/scanJobs.ts) before touching the store, and the whole lane answers
+ * SCANNER_DISABLED unless the deployment explicitly armed it.
+ */
+export function isScanWorkerLane(
+  method: string,
+  path: string,
+  authorization: string | undefined,
+): boolean {
+  return (
+    method === "POST" &&
+    (path === "/scan-jobs/claim" ||
+      /^\/scan-jobs\/[^/]+\/status$/.test(path)) &&
+    (authorization?.startsWith("Bearer ") ?? false)
+  );
+}
+
+/**
  * CSRF: non-GET requests must carry `x-ccp-client: ccp-spa`.
  * /auth/* is exempt — the OpenAPI marks the `client` parameter only on the
  * business/admin mutations (/requests, /admin/*), not the auth entry routes.
  * The token-authed CI upload lane is exempt too (see {@link isUploadTokenLane}),
- * and so is the pre-trust onboarding-token lane (see {@link isOnboardTokenLane}).
+ * and so are the pre-trust onboarding-token lane (see {@link isOnboardTokenLane})
+ * and the scanner-worker lane (see {@link isScanWorkerLane}).
  */
 export const withClientHeader: MiddlewareHandler<AppEnv> = async (c, next) => {
   const method = c.req.method;
@@ -132,7 +162,8 @@ export const withClientHeader: MiddlewareHandler<AppEnv> = async (c, next) => {
     path === "/auth" ||
     path.startsWith("/auth/") ||
     isUploadTokenLane(method, path, auth) ||
-    isOnboardTokenLane(method, path, auth);
+    isOnboardTokenLane(method, path, auth) ||
+    isScanWorkerLane(method, path, auth);
   if (!exempt && c.req.header(CLIENT_HEADER) !== CLIENT_VALUE) {
     return apiError(c, "MISSING_CLIENT_HEADER");
   }

@@ -35,6 +35,14 @@ export const ERRORS = {
     status: 401,
     reason: "The onboarding token is missing, wrong, expired, or revoked.",
   },
+  // Scanner-worker lane (ADR-0033) — the worker presents the deployment's
+  // shared CCP_SCANNER_KEY, never a session. Same no-enumeration posture as the
+  // two token lanes above: ONE generic code whether the header was missing,
+  // malformed, or simply wrong, so a prober learns nothing about the key.
+  SCANNER_KEY_INVALID: {
+    status: 401,
+    reason: "The scanner worker key is missing or wrong.",
+  },
 
   // 403 — authenticated but not permitted (api.ts:249-262 reasons)
   FORBIDDEN_ROLE: {
