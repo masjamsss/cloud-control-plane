@@ -7,6 +7,8 @@ import type {
   OnboardTokenMint,
   ProjectDataVersion,
   ProjectDataVersions,
+  ScanJobState,
+  ScanJobStatus,
   ServerProject,
   UploadTokenMint,
 } from '@/lib/httpApi';
@@ -21,10 +23,12 @@ import {
   activateProjectDataVia,
   archiveProjectVia,
   ciProvenanceLabel,
+  createScanJobVia,
   dataCountsLabel,
   deregisterProjectVia,
   groupDataVersions,
   listProjectDataVersionsVia,
+  latestScanJobVia,
   loadServerProjectsVia,
   mintOnboardTokenVia,
   mintUploadTokenVia,
@@ -121,6 +125,22 @@ interface Notice {
 
 /** Which source filled an artifact slot — the status line names the file. */
 type ArtifactSource = { kind: 'file'; name: string } | { kind: 'paste' } | null;
+
+/** How often the wizard re-reads a running server-side scan. Slow enough that
+ * an open wizard is not a load source, fast enough that a short scan does not
+ * look frozen. */
+const SCAN_POLL_MS = 3000;
+
+/** Plain-language status line for a server-side scan. The wire statuses are the
+ * worker's vocabulary; an admin should never have to learn it. */
+const SCAN_STATUS_COPY: Record<ScanJobStatus, string> = {
+  queued: 'Waiting for the scanner to pick it up…',
+  claimed: 'The scanner picked it up…',
+  cloning: 'Fetching a copy of the repository…',
+  scanning: 'Reading the Terraform…',
+  uploaded: 'Done — the scan result is in.',
+  failed: 'The scan did not finish.',
+};
 
 function CopyButton({ text, label }: { text: string; label: string }): JSX.Element {
   const [copied, setCopied] = useState(false);
@@ -345,12 +365,15 @@ export function ProjectsAdmin(): JSX.Element {
   // Step 2 — which method tab is showing, the two scan artifacts (filled by
   // the file picker, or pasted, for the "Run locally" tab), and the one-time
   // onboarding-token reveal (the "Run in the repo's CI" tab)
-  const [scanMethod, setScanMethod] = useState<'ci' | 'local'>('ci');
+  const [scanMethod, setScanMethod] = useState<'here' | 'ci' | 'local'>('here');
   const [trustReqText, setTrustReqText] = useState('');
   const [reportText, setReportText] = useState('');
   const [trustReqSource, setTrustReqSource] = useState<ArtifactSource>(null);
   const [reportSource, setReportSource] = useState<ArtifactSource>(null);
   const [mintedOnboard, setMintedOnboard] = useState<OnboardTokenMint | null>(null);
+  // Step 2 "Let this system scan it" tab — the latest scan job's live state
+  // (null = this project has never had one, which is the ordinary start).
+  const [scanJob, setScanJob] = useState<ScanJobState | null>(null);
   // Step 2 CI tab + step 4 — CI host tab (shared: one repo, one host) + the
   // one-time upload-key reveal
   const [ciTab, setCiTab] = useState<'github' | 'gitlab'>('github');
@@ -416,6 +439,7 @@ export function ProjectsAdmin(): JSX.Element {
   useEffect(() => {
     setMinted(null);
     setMintedOnboard(null);
+    setScanJob(null);
     setCiTab(selected?.repo?.host === 'gitlab' ? 'gitlab' : 'github');
     // Only the identity matters — repo host is fixed at registration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -549,6 +573,64 @@ export function ProjectsAdmin(): JSX.Element {
       };
     });
   }
+
+  /** Ask the control plane to scan this repo itself. One click is the whole
+   * zero-touch path: no file added to the estate repo, nothing run locally. On a deployment that has not armed the scanner the server refuses
+   * with SCANNER_DISABLED, and that refusal's own sentence — which names the
+   * two alternatives — is what the admin sees. */
+  function onScanHere(): void {
+    run(async () => {
+      if (!selected) throw new Error('Select a registered project first.');
+      const created = await createScanJobVia(authoritative, authClient, selected.id);
+      setScanJob({
+        jobId: created.jobId,
+        status: created.status,
+        createdAt: new Date().toISOString(),
+      });
+      return {
+        kind: 'ok',
+        text: 'Queued — this server will clone and scan the repository. Progress appears below.',
+      };
+    });
+  }
+
+  // Poll the scan job while one is in flight. Only while THIS tab is showing
+  // and only until the job reaches a terminal state, so an idle wizard costs
+  // nothing. The registry is refreshed on completion because a successful scan
+  // is what moves the project to pending-trust and fills step 3's review.
+  const scanInFlight =
+    scanJob !== null && scanJob.status !== 'uploaded' && scanJob.status !== 'failed';
+  useEffect(() => {
+    if (!authoritative || !selectedId || scanMethod !== 'here') return;
+    let alive = true;
+    // One read on entering the tab, so a job started in another session (or
+    // before a reload) is visible rather than looking like nothing happened.
+    const tick = async (): Promise<void> => {
+      const latest = await latestScanJobVia(authoritative, authClient, selectedId).catch(
+        () => null,
+      );
+      if (!alive) return;
+      if (latest) setScanJob(latest);
+      if (latest && (latest.status === 'uploaded' || latest.status === 'failed')) {
+        await refresh(selectedId).catch(() => {
+          /* the review panel renders whatever the registry last gave it */
+        });
+      }
+    };
+    void tick();
+    if (!scanInFlight)
+      return () => {
+        alive = false;
+      };
+    const timer = setInterval(() => void tick(), SCAN_POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+    // `refresh` is stable for a given project; re-running on its identity would
+    // restart the timer on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authoritative, authClient, selectedId, scanMethod, scanInFlight]);
 
   function onMintOnboardToken(): void {
     run(async () => {
@@ -1129,7 +1211,7 @@ export function ProjectsAdmin(): JSX.Element {
         </p>
 
         <div className="projadmin__tabs" role="tablist" aria-label="How to run the first scan">
-          {(['ci', 'local'] as const).map((tab) => (
+          {(['here', 'ci', 'local'] as const).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -1141,7 +1223,11 @@ export function ProjectsAdmin(): JSX.Element {
               className={`projadmin__tab${scanMethod === tab ? ' projadmin__tab--active' : ''}`}
               onClick={() => setScanMethod(tab)}
             >
-              {tab === 'ci' ? "Run in the repo's CI (recommended)" : 'Run locally'}
+              {tab === 'here'
+                ? 'Let this system scan it'
+                : tab === 'ci'
+                  ? "Run in the repo's CI"
+                  : 'Run locally'}
             </button>
           ))}
         </div>
@@ -1151,7 +1237,55 @@ export function ProjectsAdmin(): JSX.Element {
           role="tabpanel"
           aria-labelledby={`projadmin-scantab-${scanMethod}`}
         >
-          {scanMethod === 'ci' ? (
+          {scanMethod === 'here' ? (
+            <>
+              <p className="projadmin__lead">
+                Nothing to add to the repository and nothing to run yourself: this server clones the
+                repo on its own isolated scanner, reads the Terraform, and files the result here.
+                The scanner has no cloud credentials and no terraform in it — it only ever reads
+                code, exactly like the other two ways below.
+              </p>
+              <p className="projadmin__hint">
+                This has to be switched on by whoever runs this deployment (it is off by default,
+                because it is what gives this server read access to your repositories). If it
+                isn&apos;t on, the button below will say so and you can use one of the other two
+                tabs instead.
+              </p>
+
+              <div className="projadmin__form-actions">
+                <Button
+                  variant="primary"
+                  onClick={onScanHere}
+                  disabled={!writable || !selected || scanInFlight}
+                >
+                  {scanInFlight ? 'Scanning…' : 'Scan this repo now'}
+                </Button>
+              </div>
+
+              {scanJob && (
+                <div className="projadmin__scanjob" aria-live="polite">
+                  <p className="projadmin__scanjob-status">
+                    <span
+                      className={`projadmin__scanjob-dot projadmin__scanjob-dot--${scanJob.status}`}
+                      aria-hidden="true"
+                    />
+                    {SCAN_STATUS_COPY[scanJob.status]}
+                  </p>
+                  {scanJob.status === 'failed' && scanJob.error && (
+                    // Server-sanitized already (no URLs, no tokens, no control
+                    // characters) — rendered as plain text, never as markup.
+                    <p className="projadmin__scanjob-error">{scanJob.error}</p>
+                  )}
+                  {scanJob.status === 'uploaded' && (
+                    <p className="projadmin__hint">
+                      The scan is in — review the verdict and findings in step 3 below. A repo the
+                      scan rejected still shows its findings there; it just can never be trusted.
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
+          ) : scanMethod === 'ci' ? (
             <>
               <p className="projadmin__lead">
                 A one-shot workflow scans the repository where its own code already lives, then

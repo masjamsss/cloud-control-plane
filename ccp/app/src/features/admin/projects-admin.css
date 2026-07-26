@@ -592,6 +592,63 @@
   color: var(--text-secondary);
 }
 
+/* ── the server-side scan's live progress ───────────────────────────────────
+   One status line with a state dot. The dot PULSES only while work is
+   actually happening, so "still running" is readable at a glance without a
+   spinner that keeps moving after the job has finished. */
+.projadmin__scanjob {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-2, transparent);
+}
+.projadmin__scanjob-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.projadmin__scanjob-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.projadmin__scanjob-dot--queued,
+.projadmin__scanjob-dot--claimed,
+.projadmin__scanjob-dot--cloning,
+.projadmin__scanjob-dot--scanning {
+  background: var(--accent);
+  animation: projadmin-scanpulse var(--dur-shimmer) var(--ease-standard) infinite;
+}
+.projadmin__scanjob-dot--uploaded {
+  background: var(--risk-low, var(--accent));
+}
+.projadmin__scanjob-dot--failed {
+  background: var(--risk-high, var(--text-primary));
+}
+.projadmin__scanjob-error {
+  margin: var(--space-2) 0 0;
+  font-size: 13px;
+  color: var(--risk-high, var(--text-secondary));
+  /* Sanitized server-side, but it is still text from a failed clone: wrap it
+     rather than letting one long token stretch the card. */
+  overflow-wrap: anywhere;
+}
+@keyframes projadmin-scanpulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .projadmin__paste,
   .projadmin__input,
@@ -599,5 +656,9 @@
   .projadmin__tab,
   .projadmin__file::file-selector-button {
     transition: none;
+  }
+  /* The dot still carries its colour; only the motion goes. */
+  .projadmin__scanjob-dot {
+    animation: none;
   }
 }

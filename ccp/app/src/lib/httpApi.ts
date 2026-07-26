@@ -566,6 +566,39 @@ export interface OnboardTokenMint {
   expiresAt: string;
 }
 
+/**
+ * `POST /projects/:id/scan-jobs` / `GET /projects/:id/scan-jobs/latest` —
+ * the ZERO-TOUCH first scan: the control plane clones and prescans the
+ * repository itself, on its own isolated worker, so the admin adds nothing to
+ * the estate repo and runs nothing locally.
+ *
+ * The projection is deliberately thin: NO clone URL and NO token, so this
+ * response can never disclose how the deployment reaches the forge. `error` is
+ * already sanitized server-side (control characters, URLs and token-shaped
+ * strings redacted) before it ever reaches a screen.
+ *
+ * The lane is OFF unless the deployment armed it, and asking on a deployment
+ * that did not throws `SCANNER_DISABLED` — the same armed/disarmed posture as
+ * the approval-to-apply bundle (`BUNDLE_DISARMED`), with the server's own
+ * reason as the explanation shown to the admin.
+ */
+export type ScanJobStatus = 'queued' | 'claimed' | 'cloning' | 'scanning' | 'uploaded' | 'failed';
+
+export interface ScanJobState {
+  jobId: string;
+  status: ScanJobStatus;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  /** Server-sanitized failure reason; present only on `failed`. */
+  error?: string;
+}
+
+export interface ScanJobCreated {
+  jobId: string;
+  status: 'queued';
+}
+
 /** sha256 over the CANONICAL JSON (recursive key-sorted, no whitespace) of each
  * bundle part. `manifestsSha256` present iff the version carried manifests. */
 export interface ProjectDataDigestsWire {
@@ -874,6 +907,18 @@ export interface HttpApiClient extends ApiClient {
    */
   mintOnboardToken(projectId: string, opts?: { ttlMinutes?: number }): Promise<OnboardTokenMint>;
   revokeOnboardToken(projectId: string, tokenId: string): Promise<void>;
+
+  /**
+   * The ZERO-TOUCH first scan: ask the control plane to scan the project's
+   * repository ITSELF instead of the admin wiring up CI or running catalogctl
+   * locally. `createScanJob` records the intent (one job in flight
+   * per project); `latestScanJob` is the progress read, and resolves to null
+   * when this project has never had one. Both throw `SCANNER_DISABLED` on a
+   * deployment that did not arm the scanner — that refusal IS the UI's
+   * explanation, so there is no separate capability flag to drift out of sync.
+   */
+  createScanJob(projectId: string): Promise<ScanJobCreated>;
+  latestScanJob(projectId: string): Promise<ScanJobState | null>;
 
   /**
    * The per-account DATA plane (the app-rebuild killer): mint/revoke the CI
@@ -1803,6 +1848,25 @@ export function createHttpApiClient(baseUrl: string, opts?: HttpApiOptions): Htt
         { method: 'DELETE' },
       );
       if (!res.ok) await throwRefusal(res);
+    },
+
+    /* ── the zero-touch first scan: the control plane scans the repo itself ── */
+
+    async createScanJob(projectId: string): Promise<ScanJobCreated> {
+      const res = await request(`/projects/${encodeURIComponent(projectId)}/scan-jobs`, {
+        method: 'POST',
+      });
+      if (!res.ok) await throwRefusal(res);
+      return (await res.json()) as ScanJobCreated;
+    },
+
+    async latestScanJob(projectId: string): Promise<ScanJobState | null> {
+      const res = await request(`/projects/${encodeURIComponent(projectId)}/scan-jobs/latest`);
+      // A project that has never been scanned is not an error — it is the
+      // ordinary starting state, and the caller renders "not started".
+      if (res.status === 404) return null;
+      if (!res.ok) await throwRefusal(res);
+      return (await res.json()) as ScanJobState;
     },
 
     /* ── the per-account data plane (upload tokens / versions / activate) ──────

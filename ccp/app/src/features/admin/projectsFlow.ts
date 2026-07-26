@@ -9,6 +9,8 @@ import type {
   ProjectDataVersions,
   RegisterProjectInput,
   RepoRef,
+  ScanJobCreated,
+  ScanJobState,
   ServerProject,
   ServerProjectStatus,
   TrustRequestUpload,
@@ -23,6 +25,7 @@ import {
   listLocalProjects,
   mintLocalOnboardToken,
   mintLocalUploadToken,
+  ProjectOnboardingError,
   proposeLocalProjectTrust,
   registerLocalProject,
   revokeLocalOnboardToken,
@@ -608,6 +611,34 @@ export async function revokeOnboardTokenVia(
   if (authoritative && client) return client.revokeOnboardToken(id, tokenId);
   revokeLocalOnboardToken(id, tokenId);
 }
+
+/* ── the zero-touch first scan ─────────────────────────────────────────────
+ * The control plane scans the repo ITSELF, on its own isolated worker. There
+ * is deliberately no preview stand-in: the whole feature IS a real deployment
+ * cloning a real repository, so a mock would be theatre. Without an
+ * authoritative server both calls refuse, which is also the honest answer
+ * there. */
+
+export async function createScanJobVia(
+  authoritative: boolean,
+  client: HttpApiClient | null,
+  id: string,
+): Promise<ScanJobCreated> {
+  if (authoritative && client) return client.createScanJob(id);
+  throw new ProjectOnboardingError(SCANNER_UNAVAILABLE_IN_DEMO);
+}
+
+export async function latestScanJobVia(
+  authoritative: boolean,
+  client: HttpApiClient | null,
+  id: string,
+): Promise<ScanJobState | null> {
+  if (authoritative && client) return client.latestScanJob(id);
+  return null;
+}
+
+const SCANNER_UNAVAILABLE_IN_DEMO =
+  'The built-in repository scanner needs a real deployment to run on — this preview has no server to clone from. Use one of the other two ways to run the first scan.';
 
 /* ── the CI data lane (mint key → CI uploads staged versions → activate) ───── */
 
