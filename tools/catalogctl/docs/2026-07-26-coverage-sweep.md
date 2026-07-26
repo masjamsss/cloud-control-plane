@@ -180,22 +180,49 @@ Measured: an op with `noncurrent_days` + `storage_class` writes only
 
 New `multi-value-provider` lint rule names it at load time. The executor's
 output is deliberately unchanged, per the `surface-don't-fix` policy documented
-in `manifest_lint_test.go`, because the right correction differs per op. The
-five real-catalog offenders (of 1 267 `set_attribute` ops) are grandfathered in
-`arityBaseline`:
+in `manifest_lint_test.go`. The five real-catalog offenders (of 1 267
+`set_attribute` ops) are grandfathered in `arityBaseline`.
 
-| Op | Shape | Wants |
+**These are worse than "a dropped param."** Each op's write target was resolved
+and checked against the reflected provider schema
+(`tools/schemadump/aws-v6.53.0-schema.json.gz`, aws provider 6.53.0). **All five
+write an attribute that does not exist on the resource**, so the emitted
+Terraform fails `terraform validate` with *Unsupported argument*:
+
+| Op | Resolves to → writes | Provider actually has |
 |---|---|---|
-| `dynamodb-set-warm-throughput` | two genuine values (read + write units) | `set_attributes` |
-| `sns-set-delivery-retry-policy` | two genuine values (retries + max delay) | `set_attributes` |
-| `routing-change-route-target` | selector + value | `role:"selector"` on the picker |
-| `vpn-rotate-tunnel-psk` | selector + value | `role:"selector"` on `tunnel_number` |
-| `vpn-set-tunnel-inside-cidr` | selector + value | `role:"selector"` on `tunnel_number` |
+| `dynamodb-set-warm-throughput` | `read_units_per_second` | only `warm_throughput` (the units are nested inside it) |
+| `sns-set-delivery-retry-policy` | `delivery_policy_num_retries` | only `delivery_policy` — a **JSON document string** |
+| `routing-change-route-target` | `target_type` | `gateway_id`, `nat_gateway_id`, `transit_gateway_id`, … |
+| `vpn-rotate-tunnel-psk` | `tunnel_number` | `tunnel1_preshared_key`, `tunnel2_preshared_key` |
+| `vpn-set-tunnel-inside-cidr` | `tunnel_number` | `tunnel1_inside_cidr`, `tunnel2_inside_cidr` |
 
-> The `vpn-*` pair is the sharpest: the written attribute derives from
-> `tunnel_number`, so the PSK / inside-CIDR the operator supplied never lands.
-> **Fixing these five manifests is a follow-up for their owners** — it is a
-> manifest change, not a catalogctl change.
+Reproduce with `manifests.ProseAttrToken` / `manifests.AttrFor` over the real
+catalog, then look the attribute up in the schema dump.
+
+None of these is a mechanical verb swap, which is why none was fixed here:
+
+- **dynamodb** needs `set_attributes` **plus** `target.path: ["warm_throughput"]`
+  (`set_attributes` does support a nested path).
+- **sns** cannot be expressed as attribute writes at all — `delivery_policy` is a
+  JSON document, and catalogctl has no verb that edits inside one.
+- **routing** could work as a dynamic target, `target.attr: "{param:new_target_type}"`
+  with the param retagged `role:"discriminator"`, but only if its allowlist values
+  become real attribute names (`gateway_id`, …) — a UI-visible change.
+- **vpn ×2** cannot use the dynamic target: `ResolveTarget` requires a token to be
+  a **whole** path segment and explicitly refuses infix templates, so
+  `tunnel{param:tunnel_number}_inside_cidr` is rejected by design. These need
+  either per-tunnel ops with explicit `target.attr`, or a deliberate extension of
+  the token grammar.
+
+> **Fixing these five is a follow-up for the catalog's owners** — it is a
+> manifest/product change, not a catalogctl change, and three of the five have
+> UI or grammar consequences that should not be decided by a mechanical repair.
+>
+> Worth considering separately: a lint that checks every op's resolved write
+> target against the reflected provider schema would have caught all five at
+> load time. The schema dump and the `forcenew` gate already establish the
+> pattern.
 
 ---
 
