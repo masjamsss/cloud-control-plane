@@ -758,3 +758,50 @@ func TestCovhclopsUnifiedDiffSeesATrailingNewlineOnlyChange(t *testing.T) {
 		}
 	})
 }
+
+// A same-line block opener (`secret_string = jsonencode({`) is closed by `})`,
+// which the close-brace matcher could not see — so the secret-bearing scope was
+// pushed and never popped and every later line stayed masked. Over-masking is
+// the safe direction, but it blinds a reviewer to unrelated attributes further
+// down the file, which the package's "no over-blinding" property forbids.
+func TestCovhclopsRedactPopsASameLineBlockScope(t *testing.T) {
+	src := `resource "aws_secretsmanager_secret_version" "v" {
+  secret_string = jsonencode({
+    password = "hunter2"
+  })
+  description = "a benign description"
+  tags = {
+    Env = "prod"
+  }
+}
+`
+	got := string(Redact([]byte(src)))
+
+	if strings.Contains(got, "hunter2") {
+		t.Fatalf("the secret leaked through redaction:\n%s", got)
+	}
+	// Everything AFTER the closed jsonencode block is outside the secret scope
+	// and must stay readable.
+	for _, want := range []string{"a benign description", "prod"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("over-masked %q after the `})` closer — the scope was never popped:\n%s", want, got)
+		}
+	}
+}
+
+// The broadened closer must not pop a scope that was never opened: a line that
+// is only `)` or `,` is not a block close.
+func TestCovhclopsRedactCloserIsAnchoredOnABrace(t *testing.T) {
+	src := `resource "aws_db_instance" "d" {
+  password = "s3cret"
+  description = "still inside the block"
+}
+`
+	got := string(Redact([]byte(src)))
+	if strings.Contains(got, "s3cret") {
+		t.Fatalf("the password leaked:\n%s", got)
+	}
+	if !strings.Contains(got, "still inside the block") {
+		t.Errorf("a non-secret sibling was masked:\n%s", got)
+	}
+}

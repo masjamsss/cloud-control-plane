@@ -1407,3 +1407,45 @@ func TestCovadoptGenerateImportLaneUngenerableRows(t *testing.T) {
 		})
 	}
 }
+
+// The merge promises to preserve every byte except the one changed entry's
+// value (the one-line-diff guarantee). A comment sitting INSIDE an untouched
+// entry's value used to be hoisted out and re-emitted after the value, so
+// `Inline = /* mid */ "keep-me"` became `Inline = "keep-me" /* mid */` — a
+// second added/removed line pair for a key the merge never touched.
+func TestCovadoptMergeKeepsAnInteriorCommentInPlace(t *testing.T) {
+	const src = `resource "aws_instance" "web" {
+  tags = {
+    CostCenter = "old"
+    Inline     = /* mid */ "keep-me"
+    Trailing   = "v" # trailing note
+  }
+}
+`
+	block := covadoptBlock(t, src)
+	code, reason := mergeSingleKey(block, "tags", "CostCenter", cty.StringVal("new"))
+	if code != "" {
+		t.Fatalf("mergeSingleKey refused: %s %s", code, reason)
+	}
+	got := string(hclwrite.Format(block.BuildTokens(nil).Bytes()))
+
+	if !strings.Contains(got, `CostCenter = "new"`) {
+		t.Fatalf("the edited key was not written:\n%s", got)
+	}
+	// The untouched entry must come back byte-identical in ORDER: comment
+	// before the value, not after it.
+	if !strings.Contains(got, `/* mid */ "keep-me"`) {
+		t.Errorf("interior comment was relocated — untouched entry rewritten:\n%s", got)
+	}
+	if strings.Contains(got, `"keep-me" /* mid */`) {
+		t.Errorf("interior comment moved after the value:\n%s", got)
+	}
+	// A genuine TRAILING comment still rides after its value, as before.
+	if !strings.Contains(got, `"v" # trailing note`) {
+		t.Errorf("trailing comment was not preserved:\n%s", got)
+	}
+	// And the old value is gone.
+	if strings.Contains(got, `"old"`) {
+		t.Errorf("the replaced value survived:\n%s", got)
+	}
+}

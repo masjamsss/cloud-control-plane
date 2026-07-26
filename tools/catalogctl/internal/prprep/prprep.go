@@ -107,8 +107,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	defer os.RemoveAll(work)
 	before, err := copyTreeSnapshot(*envDir, work)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		// Reading the caller-supplied --env tree is RESOLUTION, so a missing or
+		// unreadable directory is exit 3 like the --request read above — not
+		// exit 1, which the exit-code contract reserves for catalogctl itself
+		// malfunctioning. `pr-prepare --env /typo` was being reported as an
+		// internal fault, so a script dispatching on exit code alone
+		// misclassified an operator typo.
+		fmt.Fprintf(stderr, "pr-prepare: cannot read --env tree %s: %v\n", *envDir, err)
+		return 3
 	}
 
 	var diff bytes.Buffer

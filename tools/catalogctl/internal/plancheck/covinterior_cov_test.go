@@ -654,7 +654,7 @@ func TestCovinteriorCheckInteriorViolationReasons(t *testing.T) {
 				map[string]any{"lifecycle_config_arns": []any{"arn:old"}},
 				map[string]any{"lifecycle_config_arns": []any{"arn:other"}}, nil),
 			wantRules:   []string{"value-mismatch"},
-			wantReasons: []string{`lifecycle_config_arns planned "[arn:other]" but the request asked for "arn:new"`},
+			wantReasons: []string{`lifecycle_config_arns planned "[arn:other]", which does not contain the requested member "arn:new"`},
 		},
 		{
 			name:   `wrap:"list" planned as a bare scalar is a mismatch`,
@@ -1347,22 +1347,22 @@ func TestCovinteriorParamHelpers(t *testing.T) {
 		}
 	})
 
-	t.Run("writesListValue covers wrap:list and list-typed request values", func(t *testing.T) {
+	t.Run("writesCollectionValue covers wrap:list, list- and map-typed request values", func(t *testing.T) {
 		req := covinteriorReq(map[string]any{"subnets": []any{"subnet-1"}, "name": "x"})
-		if writesListValue(nil, req) {
-			t.Fatal("writesListValue(nil) = true, want false")
+		if writesCollectionValue(nil, req) {
+			t.Fatal("writesCollectionValue(nil) = true, want false")
 		}
-		if !writesListValue(&manifests.Param{Name: "arn", Wrap: "list"}, req) {
-			t.Fatal(`writesListValue(wrap:"list") = false, want true`)
+		if !writesCollectionValue(&manifests.Param{Name: "arn", Wrap: "list"}, req) {
+			t.Fatal(`writesCollectionValue(wrap:"list") = false, want true`)
 		}
-		if !writesListValue(&manifests.Param{Name: "subnets"}, req) {
-			t.Fatal("writesListValue(list-valued request param) = false, want true")
+		if !writesCollectionValue(&manifests.Param{Name: "subnets"}, req) {
+			t.Fatal("writesCollectionValue(list-valued request param) = false, want true")
 		}
-		if writesListValue(&manifests.Param{Name: "name"}, req) {
-			t.Fatal("writesListValue(scalar request param) = true, want false")
+		if writesCollectionValue(&manifests.Param{Name: "name"}, req) {
+			t.Fatal("writesCollectionValue(scalar request param) = true, want false")
 		}
-		if writesListValue(&manifests.Param{Name: "absent"}, req) {
-			t.Fatal("writesListValue(absent request param) = true, want false")
+		if writesCollectionValue(&manifests.Param{Name: "absent"}, req) {
+			t.Fatal("writesCollectionValue(absent request param) = true, want false")
 		}
 	})
 }
@@ -1485,4 +1485,91 @@ func TestCovinteriorCoverPrimitives(t *testing.T) {
 			t.Fatalf("withSeg mutated base: %v", base)
 		}
 	})
+}
+
+// A map-typed value param used to produce a SPURIOUS interior-escape. Only
+// wrap:"list" and []any request values earned a subtree cover, but
+// edit.anyToCty legitimately writes a map[string]any as an HCL object literal;
+// the plan then diffs per key, and `tags.Env` sits one level below the
+// exact-leaf cover {tags}. A completely correct edit was reported as a
+// violation — the same failure mode the doc comment already described for
+// lists, never fixed for maps.
+func TestCovinteriorMapValuedAttrIsNotAnInteriorEscape(t *testing.T) {
+	op := covinteriorOp("cov-map", "set_attribute")
+	op.Target.Attr = "tags"
+	op.Params = []manifests.Param{
+		{Name: "target", Source: "inventory"},
+		{Name: "tags", Source: "user_input"},
+	}
+	req := covinteriorReq(map[string]any{
+		"target": "aws_instance.web",
+		"tags":   map[string]any{"Env": "prod"},
+	})
+	c := covinteriorChange("aws_instance.web",
+		map[string]any{"tags": map[string]any{"Env": "dev"}},
+		map[string]any{"tags": map[string]any{"Env": "prod"}},
+		nil)
+
+	vs, info := checkInterior(op, req, c)
+	if len(vs) != 0 {
+		t.Fatalf("a correct map-valued edit produced %d violation(s):\n%s\ninfo: %v",
+			len(vs), covinteriorReasons(vs), info)
+	}
+
+	t.Run("a key the op did not author is still an escape", func(t *testing.T) {
+		bad := covinteriorChange("aws_instance.web",
+			map[string]any{"tags": map[string]any{"Env": "dev"}, "instance_type": "t3.micro"},
+			map[string]any{"tags": map[string]any{"Env": "prod"}, "instance_type": "t3.large"},
+			nil)
+		vs, _ := checkInterior(op, req, bad)
+		if len(vs) == 0 {
+			t.Fatal("a change to instance_type outside the declared interior was not caught")
+		}
+		if !strings.Contains(covinteriorReasons(vs), "instance_type") {
+			t.Fatalf("want the escape to name instance_type, got:\n%s", covinteriorReasons(vs))
+		}
+	})
+
+	t.Run("subtree cover is declared for a map value", func(t *testing.T) {
+		if !writesCollectionValue(&manifests.Param{Name: "tags"}, req) {
+			t.Fatal("a map-typed request value did not earn a subtree cover")
+		}
+		if writesCollectionValue(&manifests.Param{Name: "target"}, req) {
+			t.Fatal("a scalar string request value wrongly earned a subtree cover")
+		}
+	})
+}
+
+// A wrap:"list" attribute planned as a bare scalar equal to the requested
+// member is a genuine mismatch, but the reason used to render the whole
+// planned value against the requested member and so denied itself:
+// `arns planned "arn:new" but the request asked for "arn:new"`. The verdict is
+// unchanged; the sentence now says what is actually wrong.
+func TestCovinteriorListMismatchReasonIsNotSelfContradictory(t *testing.T) {
+	op := covinteriorOp("cov-listmsg", "set_attribute")
+	op.Target.Attr = "lifecycle_config_arns"
+	op.Params = []manifests.Param{
+		{Name: "target", Source: "inventory"},
+		{Name: "arn", Source: "user_input", Wrap: "list"},
+	}
+	req := covinteriorReq(map[string]any{"target": "aws_instance.web", "arn": "arn:new"})
+	// The plan holds a bare scalar where a list is declared.
+	c := covinteriorChange("aws_instance.web",
+		map[string]any{"lifecycle_config_arns": "arn:old"},
+		map[string]any{"lifecycle_config_arns": "arn:new"},
+		nil)
+
+	vs, _ := checkInterior(op, req, c)
+	if len(vs) == 0 {
+		t.Fatal("a wrap:\"list\" attr planned as a scalar should still be a mismatch")
+	}
+	reason := covinteriorReasons(vs)
+	if strings.Contains(reason, `planned "arn:new" but the request asked for "arn:new"`) {
+		t.Fatalf("reason contradicts itself:\n%s", reason)
+	}
+	for _, want := range []string{`wrap:"list"`, "non-list"} {
+		if !strings.Contains(reason, want) {
+			t.Errorf("reason should explain the shape problem (%q), got:\n%s", want, reason)
+		}
+	}
 }
