@@ -142,11 +142,12 @@ const AZURE_LOCATION = /^[a-z]{3,40}[0-9]{0,2}$/;
 /** A GCP project id: 6–30 chars, lowercase letter first, no trailing hyphen
  * (Google's own rule — the server pins the same regex, GCP_PROJECT_ID). */
 const GCP_PROJECT = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
-/** Structural gcp-region check (`us-central1`, `europe-west4` — never a zone
- * like `us-central1-a`). The server pins the explicit GCP_REGION_ALLOWLIST;
- * this demo check refuses malformed strings without duplicating that list —
- * the same structural-vs-allowlist split {@link REGION_CODE} makes for aws. */
-const GCP_REGION = /^[a-z]+-[a-z]+[0-9]$/;
+/** Structural gcp-region check (`us-central1`, `europe-west12` — one or two
+ * trailing digits, never a zone like `us-central1-a`). The server pins the
+ * explicit GCP_REGION_ALLOWLIST; this demo check refuses malformed strings
+ * without duplicating that list — the same structural-vs-allowlist split
+ * {@link REGION_CODE} makes for aws. */
+const GCP_REGION = /^[a-z]+-[a-z]+[0-9]{1,2}$/;
 
 export class ProjectOnboardingError extends Error {}
 

@@ -139,6 +139,17 @@ describe('register — the gcp identity shape rules, locally enforced', () => {
     ).toThrow('GCP region');
   });
 
+  it('accepts every real region shape the server allowlists — including double-digit europe-west10/12', () => {
+    for (const [id, region] of [
+      ['g4', 'europe-west10'],
+      ['g5', 'europe-west12'],
+      ['g6', 'us-central1'],
+    ] as const) {
+      const created = registerLocalProject({ ...GCP_REGISTER, id, gcpRegion: region });
+      expect(created.provider).toBe('gcp');
+    }
+  });
+
   it('persists provider:gcp and the identity pair, and never writes aws or azure fields', () => {
     const created = registerLocalProject(GCP_REGISTER);
     expect(created.provider).toBe('gcp');

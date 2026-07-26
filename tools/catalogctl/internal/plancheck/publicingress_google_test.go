@@ -39,6 +39,14 @@ func fwRule(direction string, allow bool, sources ...string) map[string]any {
 	return m
 }
 
+// withSources sets an identity-scoped source attribute (source_tags /
+// source_service_accounts) on a fwRule state map — the shapes that suppress
+// GCP's default-open source when source_ranges is absent.
+func withSources(m map[string]any, key string, values ...string) map[string]any {
+	m[key] = cidrList(values...)
+	return m
+}
+
 // TestCheckPublicIngressGoogle is the R7-google matrix: a non-engineer op that
 // INTRODUCES a public source range on an ingress-allow google_compute_firewall
 // is a VIOLATION; deny-only rules, EGRESS rules, private sources, pre-existing
@@ -133,6 +141,52 @@ func TestCheckPublicIngressGoogle(t *testing.T) {
 			op:   fwOp("l1_with_guardrails"),
 			plan: planOf(sgChange("google_compute_firewall.open", []string{"no-op"},
 				nil, fwRule("INGRESS", true, "0.0.0.0/0"))),
+			wantVuln: 0,
+		},
+		// ── the provider-default source (no source specified = 0.0.0.0/0) ──
+		{
+			name: "ingress allow with NO source at all is GCP's default-open 0.0.0.0/0 ⇒ violation",
+			op:   fwOp("l1_with_guardrails"),
+			plan: planOf(sgChange("google_compute_firewall.defaultopen", []string{"create"},
+				nil, fwRule("INGRESS", true))),
+			wantVuln: 1,
+		},
+		{
+			name: "no ranges but source_tags present suppresses the default ⇒ clean",
+			op:   fwOp("l1_with_guardrails"),
+			plan: planOf(sgChange("google_compute_firewall.tagged", []string{"create"},
+				nil, withSources(fwRule("INGRESS", true), "source_tags", "web-tier"))),
+			wantVuln: 0,
+		},
+		{
+			name: "no ranges but source_service_accounts present suppresses the default ⇒ clean",
+			op:   fwOp("l1_with_guardrails"),
+			plan: planOf(sgChange("google_compute_firewall.sa", []string{"create"},
+				nil, withSources(fwRule("INGRESS", true), "source_service_accounts", "svc@p.iam.gserviceaccount.com"))),
+			wantVuln: 0,
+		},
+		{
+			name: "removing every source from a private rule introduces the default-open ⇒ violation",
+			op:   fwOp("l1_with_guardrails"),
+			plan: planOf(sgChange("google_compute_firewall.stripped", []string{"update"},
+				fwRule("INGRESS", true, "10.0.0.0/8"),
+				fwRule("INGRESS", true))),
+			wantVuln: 1,
+		},
+		{
+			name: "already default-open before and after (unrelated edit) ⇒ clean (not introduced)",
+			op:   fwOp("l1_with_guardrails"),
+			plan: planOf(sgChange("google_compute_firewall.stayopen", []string{"update"},
+				fwRule("INGRESS", true),
+				fwRule("INGRESS", true))),
+			wantVuln: 0,
+		},
+		{
+			name: "explicit 0.0.0.0/0 before, implicit default after ⇒ clean (same effective source)",
+			op:   fwOp("l1_with_guardrails"),
+			plan: planOf(sgChange("google_compute_firewall.sameopen", []string{"update"},
+				fwRule("INGRESS", true, "0.0.0.0/0"),
+				fwRule("INGRESS", true))),
 			wantVuln: 0,
 		},
 	}

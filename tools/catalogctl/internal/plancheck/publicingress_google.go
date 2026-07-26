@@ -92,6 +92,20 @@ func checkPublicIngressGoogle(op manifests.Op, plan Plan) []Violation {
 // an EGRESS rule contribute nothing (an egress rule's source_ranges is not a
 // meaningful exposure surface; its reach is destination_ranges, out of scope
 // here for the same reason egress is out of scope in both incumbent twins).
+//
+// THE PROVIDER-DEFAULT SOURCE: an ingress rule that specifies NO source at all
+// — no source_ranges, no source_tags, no source_service_accounts — is
+// world-open by GCP's own documented default (0.0.0.0/0). That state is
+// reported AS the literal 0.0.0.0/0 it effectively is, on before and after
+// alike, so the introduced-not-preexisting diff still works (a rule that was
+// already default-open is not re-flagged by an unrelated edit, and switching
+// between explicit and implicit world-open introduces nothing new). This is
+// the same rule the absent-direction handling applies: an author who omits
+// the field gets the reading GCP itself will apply. Either identity-scoped
+// source attribute being present suppresses the default (as it does in GCP),
+// and those attributes stay out of scope otherwise — identities are private
+// by construction. The azure twin has no analogous arm because azurerm
+// requires an explicit source on every NSG rule.
 func ingressAllowSourceRanges(state map[string]any) []string {
 	if state == nil {
 		return nil
@@ -102,5 +116,11 @@ func ingressAllowSourceRanges(state map[string]any) []string {
 	if len(asSlice(state["allow"])) == 0 {
 		return nil
 	}
-	return asStringSlice(state["source_ranges"])
+	ranges := asStringSlice(state["source_ranges"])
+	if len(ranges) == 0 &&
+		len(asStringSlice(state["source_tags"])) == 0 &&
+		len(asStringSlice(state["source_service_accounts"])) == 0 {
+		return []string{"0.0.0.0/0"} // GCP's default for an ingress rule with no source specification
+	}
+	return ranges
 }
