@@ -635,7 +635,10 @@ paths:
         properties: { enabled: {type: boolean} } } } } },
       responses: { '200': { description: Applied }, '202': { description: Pending } } }
   /admin/config-changes:
-    get: { summary: Pending/dispositioned dual-control items, parameters: [{ $ref: '#/components/parameters/cursor' }],
+    get: { summary: 'Dual-control items AWAITING a second admin. Unpaged, and bounded by construction rather
+        than by a page size: ack, reject and expiry each clear the row GSI1PK, so this partition only ever holds
+        proposals that are still open. (It previously also declared a cursor parameter, which nothing implemented
+        and which the bare-array response has nowhere to return.)',
       responses: { '200': { description: OK, content: { application/json: { schema: { type: array,
         items: { $ref: '#/components/schemas/PendingConfigChange' } } } } } } }
   /admin/config-changes/{id}/ack:
