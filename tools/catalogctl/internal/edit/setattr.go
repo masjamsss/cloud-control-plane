@@ -51,7 +51,7 @@ func setAttribute(op manifests.Op, req *request.Request, loc *hclops.Located) ([
 		if strings.Contains(op.Target.Block, ".") {
 			return nil, "UNSUPPORTED_PATH", fmt.Sprintf("nested path %q is not yet supported — routed to an engineer", op.Target.Block), nil
 		}
-		reqMap, ok := toStringMap(req.Params[vp.Name])
+		reqMap, ok := toStringMap(paramValue(*vp, req.Params))
 		if !ok {
 			return nil, "", "", fmt.Errorf("param %q is not a map", vp.Name)
 		}
@@ -73,7 +73,7 @@ func setAttribute(op manifests.Op, req *request.Request, loc *hclops.Located) ([
 	if strings.Contains(name, ".") {
 		return nil, "UNSUPPORTED_PATH", fmt.Sprintf("nested attribute path %q is not yet supported — routed to an engineer", name), nil
 	}
-	raw := req.Params[vp.Name]
+	raw := paramValue(*vp, req.Params)
 
 	// Direction guard (spec): grow-only reads the CURRENT value from the file
 	// bytes; a strict shrink refuses. new == current is a no-op (idempotence).
@@ -119,7 +119,7 @@ func setAttributeNested(op manifests.Op, req *request.Request, envDir string, f 
 		if strings.Contains(op.Target.Block, ".") {
 			return nil, "UNSUPPORTED_PATH", fmt.Sprintf("nested path %q is not yet supported — routed to an engineer", op.Target.Block), nil
 		}
-		reqMap, ok := toStringMap(req.Params[vp.Name])
+		reqMap, ok := toStringMap(paramValue(*vp, req.Params))
 		if !ok {
 			return nil, "", "", fmt.Errorf("param %q is not a map", vp.Name)
 		}
@@ -138,7 +138,7 @@ func setAttributeNested(op manifests.Op, req *request.Request, envDir string, f 
 	if strings.Contains(name, ".") {
 		return nil, "UNSUPPORTED_PATH", fmt.Sprintf("nested attribute path %q is not yet supported — routed to an engineer", name), nil
 	}
-	raw := req.Params[vp.Name]
+	raw := paramValue(*vp, req.Params)
 
 	// Direction guard (spec) — grow-only reads the CURRENT value from the
 	// nested block's bytes; a strict shrink refuses.

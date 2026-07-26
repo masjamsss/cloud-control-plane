@@ -1,6 +1,7 @@
 package edit
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -1316,4 +1317,53 @@ func TestCovsetattrValueTokensReferenceListSucceeds(t *testing.T) {
 	if got := tokensString(toks); got != "[aws_subnet.a.id]" {
 		t.Fatalf("wrapped tokens = %q, want [aws_subnet.a.id]", got)
 	}
+}
+
+// A required:false param carrying a manifest `default` used to blow up:
+// manifests.Validate deliberately skips an absent non-required param, so the
+// request passed validation and then reached anyToCty(nil), failing with
+// "unsupported value type <nil>" — exit 1 for a request the catalogue calls
+// valid. This is the ebs-gp2-to-gp3 shape (target_type, required:false,
+// default "gp3"), which no golden case covered.
+func TestCovsetattrOmittedParamFallsBackToTheManifestDefault(t *testing.T) {
+	vp := manifests.Param{
+		Name: "target_type", Source: "allowlist", Required: false,
+		Default: json.RawMessage(`"gp3"`),
+	}
+	op := covsetattrOp("set_attribute", "aws_ebs_volume", covsetattrTarget, vp)
+	op.Target.Attr = "type"
+	src := "resource \"aws_ebs_volume\" \"v\" {\n  type = \"gp2\"\n}\n"
+
+	t.Run("absent param uses the declared default", func(t *testing.T) {
+		req := covsetattrReq(map[string]any{"target": "aws_ebs_volume.v"})
+		out, code, reason, err := setAttribute(op, req, covsetattrLoc(t, src))
+		if err != nil || code != "" {
+			t.Fatalf("setAttribute = code %q reason %q err %v, want a clean write", code, reason, err)
+		}
+		if !strings.Contains(string(out), `type = "gp3"`) {
+			t.Fatalf("want type = \"gp3\" from the manifest default, got:\n%s", out)
+		}
+	})
+	t.Run("an explicit request value still wins over the default", func(t *testing.T) {
+		req := covsetattrReq(map[string]any{"target": "aws_ebs_volume.v", "target_type": "io2"})
+		out, code, _, err := setAttribute(op, req, covsetattrLoc(t, src))
+		if err != nil || code != "" {
+			t.Fatalf("setAttribute: code %q err %v", code, err)
+		}
+		if !strings.Contains(string(out), `type = "io2"`) {
+			t.Fatalf("the request value must win over the default, got:\n%s", out)
+		}
+	})
+	t.Run("no default and no request value is still an error, not a bogus write", func(t *testing.T) {
+		bare := covsetattrOp("set_attribute", "aws_ebs_volume", covsetattrTarget,
+			manifests.Param{Name: "target_type", Source: "allowlist"})
+		bare.Target.Attr = "type"
+		out, _, _, err := setAttribute(bare, covsetattrReq(map[string]any{"target": "aws_ebs_volume.v"}), covsetattrLoc(t, src))
+		if err == nil {
+			t.Fatalf("want an error with neither a request value nor a default, wrote:\n%s", out)
+		}
+		if out != nil {
+			t.Fatalf("want nil bytes on error, got %q", out)
+		}
+	})
 }

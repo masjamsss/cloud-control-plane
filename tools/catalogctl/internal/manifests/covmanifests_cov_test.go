@@ -1017,3 +1017,55 @@ func TestCovmanifestsMaxLengthIsPerElement(t *testing.T) {
 		}
 	})
 }
+
+// set_attribute writes exactly ONE attribute (edit.valueParam takes the first
+// provider), so a second value provider is silently dropped at exit 0 with a
+// diff that looks complete. The lint names that shape at load time.
+func TestCovmanifestsMultiValueProviderRule(t *testing.T) {
+	mk := func(codemod string, params ...Param) Op {
+		op := Op{ID: "o", Service: "s", Macd: "change", CodemodOp: codemod, Params: params}
+		op.Target.ResourceType = "aws_thing"
+		op.Target.Attr = "a"
+		return op
+	}
+	locator := Param{Name: "target", Source: "inventory"}
+	v1 := Param{Name: "noncurrent_days", Source: "user_input"}
+	v2 := Param{Name: "storage_class", Source: "user_input"}
+
+	find := func(op Op) *Finding {
+		for _, f := range Lint(map[string]Op{op.ID: op}) {
+			if f.Rule == RuleMultiValueProvider {
+				return &f
+			}
+		}
+		return nil
+	}
+
+	t.Run("two value providers is a finding naming both and the survivor", func(t *testing.T) {
+		f := find(mk("set_attribute", locator, v1, v2))
+		if f == nil {
+			t.Fatal("no multi-value-provider finding for a 2-provider set_attribute")
+		}
+		for _, want := range []string{"noncurrent_days", "storage_class", "set_attributes"} {
+			if !strings.Contains(f.Detail, want) {
+				t.Errorf("detail should mention %q, got %q", want, f.Detail)
+			}
+		}
+	})
+	t.Run("one value provider is clean", func(t *testing.T) {
+		if f := find(mk("set_attribute", locator, v1)); f != nil {
+			t.Fatalf("a single-provider set_attribute was flagged: %s", f.Detail)
+		}
+	})
+	t.Run("set_attributes is the verb for that shape and is not flagged", func(t *testing.T) {
+		if f := find(mk("set_attributes", locator, v1, v2)); f != nil {
+			t.Fatalf("set_attributes was flagged: %s", f.Detail)
+		}
+	})
+	t.Run("tagging the picker as a selector clears it", func(t *testing.T) {
+		picker := Param{Name: "tunnel_number", Source: "user_input", Role: "selector"}
+		if f := find(mk("set_attribute", locator, picker, v1)); f != nil {
+			t.Fatalf("a role:selector picker still counted as a value provider: %s", f.Detail)
+		}
+	})
+}
