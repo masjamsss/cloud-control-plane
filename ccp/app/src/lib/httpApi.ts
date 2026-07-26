@@ -638,6 +638,29 @@ export interface ScanJobCreated {
   status: 'queued';
 }
 
+/** One row of the deployment-settings screen. `value` is absent for a secret;
+ * `configured` says only whether one is set. `notEditable` is present exactly
+ * when `editable` is false, and always carries both halves — why, and what to
+ * do instead. */
+export interface DeploymentSetting {
+  id: string;
+  label: string;
+  help: string;
+  group: string;
+  kind: 'toggle' | 'text' | 'list' | 'number';
+  /** The environment variable this corresponds to, so a reader can connect the
+   * screen to their deployment config. */
+  env: string;
+  editable: boolean;
+  notEditable?: { reason: string; instead: string };
+  /** Where the current value came from: an admin set it, the deployment's
+   * environment supplied it, or it is the built-in default. */
+  source: 'portal' | 'environment' | 'default';
+  secret?: true;
+  value?: unknown;
+  configured?: boolean;
+}
+
 /** sha256 over the CANONICAL JSON (recursive key-sorted, no whitespace) of each
  * bundle part. `manifestsSha256` present iff the version carried manifests. */
 export interface ProjectDataDigestsWire {
@@ -972,6 +995,25 @@ export interface HttpApiClient extends ApiClient {
     input: { username: string; token: string },
   ): Promise<{ username: string }>;
   removeForgeCredential(projectId: string): Promise<void>;
+
+  /**
+   * DEPLOYMENT SETTINGS — everything this system is configured with, in one
+   * place, so an operator never has to open a config file to see how it is set
+   * up and rarely has to open one to change it.
+   *
+   * The read returns EVERY knob, including the ones the portal cannot edit;
+   * those carry a plain reason and what to do instead, rather than being hidden
+   * (a screen with silent gaps is what sends people back to the files). A
+   * secret's VALUE is never returned — only whether one is configured — so this
+   * response is safe in a screenshot.
+   *
+   * The write refuses anything the server's own registry marks non-editable,
+   * and a change that WIDENS what the deployment may do — arming the scanner,
+   * adding a repository host, lifting the apply freeze — comes back as a
+   * two-admin proposal (`applied: false`) rather than taking effect.
+   */
+  loadDeploymentSettings(): Promise<DeploymentSetting[]>;
+  setDeploymentSetting(id: string, value: unknown): Promise<AdminWriteOutcome>;
 
   /**
    * The per-account DATA plane (the app-rebuild killer): mint/revoke the CI
@@ -1911,6 +1953,22 @@ export function createHttpApiClient(baseUrl: string, opts?: HttpApiOptions): Htt
       });
       if (!res.ok) await throwRefusal(res);
       return (await res.json()) as ScanJobCreated;
+    },
+
+    async loadDeploymentSettings(): Promise<DeploymentSetting[]> {
+      const res = await request('/admin/deployment');
+      if (!res.ok) await throwRefusal(res);
+      return ((await res.json()) as { settings: DeploymentSetting[] }).settings;
+    },
+
+    async setDeploymentSetting(id: string, value: unknown): Promise<AdminWriteOutcome> {
+      const res = await request(`/admin/deployment/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ value }),
+      });
+      if (!res.ok) await throwRefusal(res);
+      // 202 => a loosening change, now waiting on a second admin.
+      return writeOutcome(res);
     },
 
     async setForgeCredential(
