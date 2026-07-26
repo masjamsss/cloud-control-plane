@@ -2,7 +2,14 @@
 
 > Audience: whoever operates an onboarded account/estate repo. Covers the recurring CI job
 > that keeps that account's inventory and block sources fresh in the portal. Companion:
-> [`ccp/docs/onboarding-runbook.md`](../../ccp/docs/onboarding-runbook.md) (first onboarding).
+> [`ccp/docs/onboarding-runbook.md`](../../ccp/docs/onboarding-runbook.md) (first onboarding) —
+> that runbook's step 2 now has a ONE-SHOT sibling of this recurring job,
+> `.github/workflows/ccp-onboard.yml` / `.gitlab/ci/ccp-onboard.gitlab-ci.yml`, which runs the
+> FIRST scan in the estate repo's own CI instead of on a laptop. Both workflow files can ship
+> in the same pull request — see that runbook's step 2 for the one-shot lane, and
+> [`ccp/docs/onboarding-security.md`](../../ccp/docs/onboarding-security.md)'s "Where the
+> first scan may run" for the trust-boundary contract it holds to (prescan only — no
+> terraform, no `--trusted-commit`, no cloud secret).
 
 ## What this job does
 
@@ -22,6 +29,14 @@ The moving parts:
 What the control plane receives is **staged, not live**: an admin still reviews
 and activates it in the portal (Admin → Projects). Uploading grants nothing by
 itself.
+
+> **The one-shot sibling.** `.github/workflows/ccp-onboard.yml` /
+> `.gitlab/ci/ccp-onboard.gitlab-ci.yml` are a DIFFERENT job, dispatch-only, that runs once
+> per project: the FIRST scan (`catalogctl onboard`, prescan only — no terraform anywhere in
+> that workflow), uploaded over a separate, pre-trust-only onboarding token
+> (`CCP_ONBOARD_TOKEN`, never `CCP_UPLOAD_TOKEN` above — the two never overlap in time). Set
+> up alongside this recurring lane in the same pull request if convenient; full setup steps
+> are in [`ccp/docs/onboarding-runbook.md`](../../ccp/docs/onboarding-runbook.md) step 2.
 
 > **Contract note.** The upload endpoint — `PUT <control-plane>/projects/<id>/data`
 > with an `Authorization: Bearer <upload key>` header, body = the bundle
@@ -64,7 +79,17 @@ and `upload-status.json` (what the upload attempt concluded).
    - **Variable `CCP_PROJECT_ID`** — the project id from Admin → Projects.
    - **Variable `CCP_SCAN_ROOT`** — only if the Terraform root is not
      `environments/prod`.
-3. Merge something (or run the workflow manually) and watch the job.
+   - **Variable `CI_RUNNER`** — **required, and easy to miss.** The job is gated on
+     it (`if: vars.CI_RUNNER != ''`), so while it is unset the job **skips silently
+     on every push**: no data is ever uploaded, no error explains why, and the
+     project never reaches `ready`. Set it to the runner label you want
+     (`ubuntu-latest` is fine if you have no self-hosted runner). The gate exists so
+     this file stays inert in the control-plane repo, which ships it as a template.
+     *(The one-shot onboarding lane deliberately gates on `CCP_PROJECT_ID` instead,
+     for exactly this reason — see `ccp/docs/onboarding-runbook.md` step 2.)*
+3. Merge something (or run the workflow manually) and watch the job. If the run
+   appears but the job is grey/skipped, `CI_RUNNER` is unset — that is this lane's
+   single most common setup failure.
 
 ## Setting it up on a GitLab repo
 

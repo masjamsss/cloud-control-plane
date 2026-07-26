@@ -23,7 +23,14 @@ jobs:
       - name: Install gitleaks (PG-9)
         run: |
           set -euo pipefail
-          curl -sSfL -o /tmp/gitleaks.tar.gz \
+          # Retry the download. This step runs under `set -e`, so a single
+          # transient blip fetching the release (a 5xx, a rate-limited 403, a
+          # dropped connection) fails the WHOLE publish gate with no findings and
+          # no useful log — observed exactly once, then passing unchanged on
+          # re-run. A red gate should mean "the gate found something", never
+          # "GitHub's CDN hiccuped", so the fetch retries before giving up.
+          curl -sSfL --retry 5 --retry-delay 3 --retry-all-errors \
+            --connect-timeout 15 --max-time 180 -o /tmp/gitleaks.tar.gz \
             https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
           sudo install /tmp/gitleaks /usr/local/bin/gitleaks

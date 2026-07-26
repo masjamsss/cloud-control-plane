@@ -22,3 +22,5 @@
 
 ccp/app/src/data/provider-catalog-azure/index.json	azurerm_workloads_sap	Azure provider vendor resource type labels (azurerm_workloads_sap_*, azurerm_netapp_volume_group_sap_hana) humanize to bare vendor words — public HashiCorp azurerm API surface, not estate vocabulary
 ccp/api/src/routes/projects.ts	ap-southeast-3	complete AWS commercial-region enumeration — AWS vocabulary, not estate config; removing it breaks fail-closed project registration for real operators in that region
+ccp/app/src/features/admin/projectsFlow.ts	@github.com	GitHub's own SSH clone URL form (`git@` + host + `:owner/repo.git`), quoted in the url parser's doc comment as one of the shapes a person pastes — public vendor API surface, not a person's address. Substring is the host half only, so this file holds no address of its own.
+ccp/app/src/test/parseRepoUrl.test.ts	@github.com	same SSH clone URL as the parser fixture proving scp-style addresses resolve to host 'github' — changing the host would change what the test proves

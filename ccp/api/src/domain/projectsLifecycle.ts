@@ -1,9 +1,9 @@
-import type { ConfigStore } from '../store/configStore';
-import type { PendingConfigChangeItem } from '../store/schema';
-import { PROJECT_DATA_SK_PREFIX } from '../store/schema';
-import { record } from './audit';
-import { refreshKnownProjects } from '../projects';
-import { removeProjectData, resolveProjectDataRoot } from './projectData';
+import type { ConfigStore } from "../store/configStore";
+import type { PendingConfigChangeItem } from "../store/schema";
+import { PROJECT_DATA_SK_PREFIX } from "../store/schema";
+import { record } from "./audit";
+import { refreshKnownProjects } from "../projects";
+import { removeProjectData, resolveProjectDataRoot } from "./projectData";
 
 /**
  * Post-ack lifecycle for project-kind dual-control changes. The
@@ -35,25 +35,25 @@ export async function afterProjectConfigApply(
   ackerId: string,
   opts: { dataRoot?: string } = {},
 ): Promise<void> {
-  if (applied.status !== 'APPLIED') return;
-  const targetId = applied.targetKey.replace(/^PROJECT#/, '');
-  if (applied.kind === 'project-trust') {
+  if (applied.status !== "APPLIED") return;
+  const targetId = applied.targetKey.replace(/^PROJECT#/, "");
+  if (applied.kind === "project-trust") {
     await record(store, projectId, {
-      action: 'Trusted repo for onboarding',
+      action: "Trusted repo for onboarding",
       actor: ackerId,
-      targetType: 'project',
+      targetType: "project",
       targetId,
       after: applied.after,
     });
   }
-  if (applied.kind === 'project-data-activate') {
+  if (applied.kind === "project-data-activate") {
     // Data-plane action → the TARGET project's chain (the same chain its
     // config-propose/config-apply pair landed on), so the tenant's own trail
     // shows what was switched into service for them.
     await record(store, applied.auditProjectId ?? projectId, {
-      action: 'Activated project data for serving',
+      action: "Activated project data for serving",
       actor: ackerId,
-      targetType: 'project',
+      targetType: "project",
       targetId,
       after: applied.after,
     });
@@ -62,19 +62,23 @@ export async function afterProjectConfigApply(
     // re-activation this is a harmless idempotent re-read.)
     await refreshKnownProjects(store);
   }
-  if (applied.kind === 'project-deregister') {
-    // Satellite cleanup, fail closed: no upload token survives its project, no
-    // stale metadata rows, no servable files. (The META row itself was the
-    // dual-controlled delete the ack just applied.)
+  if (applied.kind === "project-deregister") {
+    // Satellite cleanup, fail closed: no upload token AND no onboarding token
+    // survives its project, no stale metadata rows, no servable files. (The
+    // META row itself was the dual-controlled delete the ack just applied.)
     const pk = `PROJECT#${targetId}`;
-    for (const prefix of ['UPLOADTOKEN#', PROJECT_DATA_SK_PREFIX]) {
+    for (const prefix of [
+      "UPLOADTOKEN#",
+      "ONBOARDTOKEN#",
+      PROJECT_DATA_SK_PREFIX,
+    ]) {
       const rows = await store.query(pk, prefix);
       for (const row of rows) await store.delete(row.PK, row.SK);
     }
     removeProjectData(opts.dataRoot ?? resolveProjectDataRoot(), targetId);
     await refreshKnownProjects(store);
   }
-  if (applied.kind === 'project-unarchive') {
+  if (applied.kind === "project-unarchive") {
     await refreshKnownProjects(store);
   }
 }

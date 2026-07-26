@@ -3,7 +3,15 @@ import type { ChangeEvent, FormEvent, JSX } from 'react';
 import type { ProjectConfig } from '@/types/project';
 import { listProjects } from '@/lib/projectRegistry';
 import { authClient } from '@/lib/api';
-import type { ProjectDataVersion, ProjectDataVersions, ServerProject, UploadTokenMint } from '@/lib/httpApi';
+import type {
+  OnboardTokenMint,
+  ProjectDataVersion,
+  ProjectDataVersions,
+  ScanJobState,
+  ScanJobStatus,
+  ServerProject,
+  UploadTokenMint,
+} from '@/lib/httpApi';
 import { formatProjectTime } from '@/lib/datetime';
 import { getInstanceIdentity } from '@/lib/instanceIdentity';
 import { Card } from '@/components/ui/Card';
@@ -14,15 +22,22 @@ import {
   activatedAgeLabel,
   activateProjectDataVia,
   archiveProjectVia,
+  ciProvenanceLabel,
+  createScanJobVia,
+  removeForgeCredentialVia,
   dataCountsLabel,
   deregisterProjectVia,
   groupDataVersions,
   listProjectDataVersionsVia,
+  latestScanJobVia,
   loadServerProjectsVia,
+  mintOnboardTokenVia,
   mintUploadTokenVia,
   onboardCommand,
+  onboardDispatchUrl,
   projectCloudLabel,
   projectIdentityRows,
+  parseRepoUrl,
   proposeTrustVia,
   readArtifactFile,
   refusalCopy,
@@ -31,7 +46,9 @@ import {
   repoHostLabel,
   repoLabel,
   repoRefFromForm,
+  revokeOnboardTokenVia,
   revokeUploadTokenVia,
+  setForgeCredentialVia,
   staleDataNotice,
   statusLabel,
   summarizeTrustRequest,
@@ -39,15 +56,21 @@ import {
   summaryFromWire,
   trustControlRenders,
   unarchiveProjectVia,
+  uploadedByLabel,
   uploadTrustRequestVia,
   type PrescanReportSummary,
   type RepoHostChoice,
 } from './projectsFlow';
 import {
   GITHUB_CI_PATH,
+  GITHUB_ONBOARD_CI_PATH,
   GITLAB_CI_PATH,
+  GITLAB_ONBOARD_CI_PATH,
   githubDataWorkflow,
+  githubOnboardWorkflow,
   gitlabDataPipeline,
+  gitlabOnboardPipeline,
+  ONBOARD_KEY_SECRET,
   PROJECT_ID_VAR,
   UPLOAD_KEY_SECRET,
   SERVER_URL_VAR,
@@ -105,6 +128,22 @@ interface Notice {
 
 /** Which source filled an artifact slot — the status line names the file. */
 type ArtifactSource = { kind: 'file'; name: string } | { kind: 'paste' } | null;
+
+/** How often the wizard re-reads a running server-side scan. Slow enough that
+ * an open wizard is not a load source, fast enough that a short scan does not
+ * look frozen. */
+const SCAN_POLL_MS = 3000;
+
+/** Plain-language status line for a server-side scan. The wire statuses are the
+ * worker's vocabulary; an admin should never have to learn it. */
+const SCAN_STATUS_COPY: Record<ScanJobStatus, string> = {
+  queued: 'Waiting for the scanner to pick it up…',
+  claimed: 'The scanner picked it up…',
+  cloning: 'Fetching a copy of the repository…',
+  scanning: 'Reading the Terraform…',
+  uploaded: 'Done — the scan result is in.',
+  failed: 'The scan did not finish.',
+};
 
 function CopyButton({ text, label }: { text: string; label: string }): JSX.Element {
   const [copied, setCopied] = useState(false);
@@ -308,8 +347,18 @@ export function ProjectsAdmin(): JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
 
-  // Step 1 — add form (host-aware repo field + provider-discriminated identity)
+  // Step 1 — add form. DEFAULT is the one-field paste: `repoUrl` alone becomes
+  // the repo reference plus a suggested id/name, and the cloud identity is
+  // deferred to the review step (the scan proposes it, an admin confirms it).
+  // `detailed` switches to the original field-by-field form, which is unchanged
+  // and still the way to type an identity up front.
   const [form, setForm] = useState({
+    repoUrl: '',
+    detailed: false,
+    // Whether the operator has hand-edited the suggestion, so a later edit to
+    // the URL stops overwriting what they chose.
+    idTouched: false,
+    nameTouched: false,
     id: '',
     name: '',
     host: 'github' as RepoHostChoice,
@@ -326,12 +375,26 @@ export function ProjectsAdmin(): JSX.Element {
     tenantId: '',
     location: '',
   });
-  // Step 2 — the two scan artifacts (filled by the file picker, or pasted)
+  // Step 2 — which method tab is showing, the two scan artifacts (filled by
+  // the file picker, or pasted, for the "Run locally" tab), and the one-time
+  // onboarding-token reveal (the "Run in the repo's CI" tab)
+  const [scanMethod, setScanMethod] = useState<'here' | 'ci' | 'local'>('here');
   const [trustReqText, setTrustReqText] = useState('');
   const [reportText, setReportText] = useState('');
   const [trustReqSource, setTrustReqSource] = useState<ArtifactSource>(null);
   const [reportSource, setReportSource] = useState<ArtifactSource>(null);
-  // Step 4 — CI tab + the one-time key reveal
+  const [mintedOnboard, setMintedOnboard] = useState<OnboardTokenMint | null>(null);
+  // Step 2 "Let this system scan it" tab — the latest scan job's live state
+  // (null = this project has never had one, which is the ordinary start).
+  const [scanJob, setScanJob] = useState<ScanJobState | null>(null);
+  // Step 2 "Let this system scan it" — the private-repo credential form. The
+  // token is never read back from the server, so this holds it only long enough
+  // to send it, and is cleared the instant it lands.
+  const [forgeUser, setForgeUser] = useState('');
+  const [forgeToken, setForgeToken] = useState('');
+  const [forgeStored, setForgeStored] = useState<string | null>(null);
+  // Step 2 CI tab + step 4 — CI host tab (shared: one repo, one host) + the
+  // one-time upload-key reveal
   const [ciTab, setCiTab] = useState<'github' | 'gitlab'>('github');
   const [minted, setMinted] = useState<UploadTokenMint | null>(null);
   // Step 5 + lifecycle — the selected project's uploaded data versions
@@ -390,13 +453,43 @@ export function ProjectsAdmin(): JSX.Element {
   }, [dataStepLive, selectedId, authoritative, writable]);
 
   // A newly selected project starts on its own repo's tab, with any previous
-  // one-time key reveal gone (it belongs to the project it was minted for).
+  // one-time key/token reveal gone (each belongs to the project it was
+  // minted for).
   useEffect(() => {
     setMinted(null);
+    setMintedOnboard(null);
+    setScanJob(null);
+    setForgeUser('');
+    setForgeToken('');
+    setForgeStored(null);
     setCiTab(selected?.repo?.host === 'gitlab' ? 'gitlab' : 'github');
     // Only the identity matters — repo host is fixed at registration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
+
+  // What the pasted address resolves to, recomputed as it is typed. Rendered
+  // back to the operator so they SEE the interpretation before registering —
+  // a parser that guesses silently is a parser you cannot trust.
+  const parsedRepoUrl = useMemo(
+    () => (form.repoUrl.trim().length === 0 ? null : parseRepoUrl(form.repoUrl)),
+    [form.repoUrl],
+  );
+
+  /** Typing in the URL field re-suggests the id and name — until the operator
+   * edits one, after which theirs is kept. */
+  function onRepoUrlChange(repoUrl: string): void {
+    const parsed = repoUrl.trim().length === 0 ? null : parseRepoUrl(repoUrl);
+    setForm((f) => ({
+      ...f,
+      repoUrl,
+      ...(parsed?.ok
+        ? {
+            ...(f.idTouched ? {} : { id: parsed.suggestedId }),
+            ...(f.nameTouched ? {} : { name: parsed.suggestedName }),
+          }
+        : {}),
+    }));
+  }
 
   const parsedTrustReq = useMemo(() => {
     if (trustReqText.trim().length === 0) return null;
@@ -436,34 +529,46 @@ export function ProjectsAdmin(): JSX.Element {
   function onRegister(e: FormEvent): void {
     e.preventDefault();
     run(async () => {
-      const repo = repoRefFromForm({
-        host: form.host,
-        baseUrl: form.baseUrl,
-        owner: form.owner,
-        name: form.repoName,
-      });
+      const repo = form.detailed
+        ? repoRefFromForm({
+            host: form.host,
+            baseUrl: form.baseUrl,
+            owner: form.owner,
+            name: form.repoName,
+          })
+        : parseRepoUrl(form.repoUrl);
       if (!repo.ok) throw new Error(repo.reason);
       // EXACTLY ONE repo shape — the server refuses a body carrying both the
       // host-agnostic record and the legacy github pair (it derives the
-      // mirror itself when the host is github). The IDENTITY half is
-      // provider-discriminated: an azure subscription sends its subscription/
-      // tenant/location triple, an aws account sends accountId/region.
+      // mirror itself when the host is github).
       const base = { id: form.id.trim(), name: form.name.trim(), repo: repo.repo };
+      // THE PASTE PATH SENDS NO IDENTITY. Not empty strings — no identity key
+      // at all, which is what tells the server this project is deferring: the
+      // scan will propose provider/region with file:line provenance and an
+      // admin confirms it in step 3. Until they do, the project cannot mint an
+      // upload token (IDENTITY_UNCONFIRMED), so nothing is decided by a machine.
+      // The detailed form is unchanged and still types an identity up front.
       const created = await registerProjectVia(
         authoritative,
         authClient,
-        form.provider === 'azure'
-          ? {
-              ...base,
-              provider: 'azure',
-              subscriptionId: form.subscriptionId.trim(),
-              tenantId: form.tenantId.trim(),
-              location: form.location.trim(),
-            }
-          : { ...base, accountId: form.accountId.trim(), region: form.region.trim() },
+        !form.detailed
+          ? base
+          : form.provider === 'azure'
+            ? {
+                ...base,
+                provider: 'azure',
+                subscriptionId: form.subscriptionId.trim(),
+                tenantId: form.tenantId.trim(),
+                location: form.location.trim(),
+              }
+            : { ...base, accountId: form.accountId.trim(), region: form.region.trim() },
       );
       await refresh(created.id);
       setForm({
+        repoUrl: '',
+        detailed: false,
+        idTouched: false,
+        nameTouched: false,
         id: '',
         name: '',
         host: 'github',
@@ -523,6 +628,137 @@ export function ProjectsAdmin(): JSX.Element {
       return {
         kind: 'ok',
         text: 'Scan files uploaded and verified — review the verdict below (step 3).',
+      };
+    });
+  }
+
+  /** Ask the control plane to scan this repo itself. One click is the whole
+   * zero-touch path: no file added to the estate repo, nothing run locally. On a deployment that has not armed the scanner the server refuses
+   * with SCANNER_DISABLED, and that refusal's own sentence — which names the
+   * two alternatives — is what the admin sees. */
+  function onScanHere(): void {
+    run(async () => {
+      if (!selected) throw new Error('Select a registered project first.');
+      const created = await createScanJobVia(authoritative, authClient, selected.id);
+      setScanJob({
+        jobId: created.jobId,
+        status: created.status,
+        createdAt: new Date().toISOString(),
+      });
+      return {
+        kind: 'ok',
+        text: 'Queued — this server will clone and scan the repository. Progress appears below.',
+      };
+    });
+  }
+
+  // Poll the scan job while one is in flight. Only while THIS tab is showing
+  // and only until the job reaches a terminal state, so an idle wizard costs
+  // nothing. The registry is refreshed on completion because a successful scan
+  // is what moves the project to pending-trust and fills step 3's review.
+  const scanInFlight =
+    scanJob !== null && scanJob.status !== 'uploaded' && scanJob.status !== 'failed';
+  useEffect(() => {
+    if (!authoritative || !selectedId || scanMethod !== 'here') return;
+    let alive = true;
+    // One read on entering the tab, so a job started in another session (or
+    // before a reload) is visible rather than looking like nothing happened.
+    const tick = async (): Promise<void> => {
+      const latest = await latestScanJobVia(authoritative, authClient, selectedId).catch(
+        () => null,
+      );
+      if (!alive) return;
+      if (latest) setScanJob(latest);
+      if (latest && (latest.status === 'uploaded' || latest.status === 'failed')) {
+        await refresh(selectedId).catch(() => {
+          /* the review panel renders whatever the registry last gave it */
+        });
+      }
+    };
+    void tick();
+    if (!scanInFlight)
+      return () => {
+        alive = false;
+      };
+    const timer = setInterval(() => void tick(), SCAN_POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+    // `refresh` is stable for a given project; re-running on its identity would
+    // restart the timer on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authoritative, authClient, selectedId, scanMethod, scanInFlight]);
+
+  function onSetForgeCredential(): void {
+    run(async () => {
+      if (!selected) throw new Error('Select a registered project first.');
+      const stored = await setForgeCredentialVia(authoritative, authClient, selected.id, {
+        username: forgeUser.trim(),
+        token: forgeToken,
+      });
+      // Drop the token from memory the moment it is stored — nothing reads it
+      // back, so holding it here would serve no purpose but the risk.
+      setForgeToken('');
+      setForgeStored(stored.username);
+      return {
+        kind: 'ok',
+        text: `Saved — the scanner will sign in as ${stored.username}. The token is not shown again.`,
+      };
+    });
+  }
+
+  function onRemoveForgeCredential(): void {
+    run(async () => {
+      if (!selected) throw new Error('Select a registered project first.');
+      await removeForgeCredentialVia(authoritative, authClient, selected.id);
+      setForgeStored(null);
+      setForgeUser('');
+      setForgeToken('');
+      return {
+        kind: 'ok',
+        text: 'Removed — the scanner can no longer sign in to that repository.',
+      };
+    });
+  }
+
+  function onMintOnboardToken(): void {
+    run(async () => {
+      if (!selected) throw new Error('Select a registered project first.');
+      const mint = await mintOnboardTokenVia(authoritative, authClient, selected.id);
+      setMintedOnboard(mint);
+      await refresh(selected.id);
+      return {
+        kind: 'ok',
+        text: `Onboarding token minted — paste it into the repo’s CI secret ${ONBOARD_KEY_SECRET} now; it is not shown again.`,
+      };
+    });
+  }
+
+  function onRevokeOnboardToken(): void {
+    run(async () => {
+      // The server never lists tokens back (only their argon2id hashes exist
+      // server-side), so revoke targets the token THIS session just minted.
+      if (!selected || !mintedOnboard) throw new Error('Mint a token first — revoke targets it.');
+      await revokeOnboardTokenVia(authoritative, authClient, selected.id, mintedOnboard.tokenId);
+      setMintedOnboard(null);
+      return {
+        kind: 'ok',
+        text: 'Onboarding token revoked — the repo’s CI can no longer upload with it.',
+      };
+    });
+  }
+
+  /** A plain, read-only recheck of the registry — the CI tab's upload
+   * happens outside this browser tab entirely, so there is nothing else here
+   * to poll it automatically. */
+  function onCheckForUpload(): void {
+    run(async () => {
+      if (!selected) throw new Error('Select a registered project first.');
+      await refresh(selected.id);
+      return {
+        kind: 'ok',
+        text: 'Refreshed — once the workflow finishes, the uploaded scan appears for review below (step 3).',
       };
     });
   }
@@ -650,6 +886,13 @@ export function ProjectsAdmin(): JSX.Element {
   const ciFileName = ciTab === 'github' ? GITHUB_CI_PATH : GITLAB_CI_PATH;
   const ciFileBody = ciTab === 'github' ? githubDataWorkflow() : gitlabDataPipeline();
 
+  // Step 2's "Run in the repo's CI" tab — the one-shot onboarding workflow
+  // (same host tab as step 4, since a repo has exactly one host) and the
+  // deep link to its dispatch page, known once step 1's repo is on record.
+  const onboardFileName = ciTab === 'github' ? GITHUB_ONBOARD_CI_PATH : GITLAB_ONBOARD_CI_PATH;
+  const onboardFileBody = ciTab === 'github' ? githubOnboardWorkflow() : gitlabOnboardPipeline();
+  const dispatchUrl = onboardDispatchUrl(selected?.repo);
+
   const artifactStatus = (
     source: ArtifactSource,
     parsedOk: boolean,
@@ -677,16 +920,17 @@ export function ProjectsAdmin(): JSX.Element {
         </div>
         <ol className="projadmin__how">
           <li>
-            Add the project — name, where the code lives, and the cloud identity: an AWS account
-            and region, or an Azure subscription, tenant and location.
+            Add the project — name, where the code lives, and the cloud identity: an AWS account and
+            region, or an Azure subscription, tenant and location.
           </li>
           <li>
-            Scan the repository locally with <code>catalogctl onboard</code>, then pick the two
-            files it writes.
+            Scan the repository — the repo&apos;s own CI can run the one-shot first scan and send it
+            here itself (recommended, no laptop), or run <code>catalogctl onboard</code> locally and
+            pick the two files it writes.
           </li>
           <li>
-            Review the scan verdict and findings, then trust the commit — a person reads them, and
-            a second admin confirms the decision.
+            Review the scan verdict and findings, then trust the commit — a person reads them, and a
+            second admin confirms the decision.
           </li>
           <li>
             Connect the repository&apos;s CI: commit the ready-made CI file and give it an upload
@@ -808,229 +1052,329 @@ export function ProjectsAdmin(): JSX.Element {
           </h2>
         </div>
         <p className="projadmin__lead">
-          Registers a draft. A draft grants nothing — no requests can target it until the whole path
-          below is walked.
+          Paste the repository&apos;s address — that is the whole form. Registers a draft, and a
+          draft grants nothing: no requests can target it until the whole path below is walked.
         </p>
         <GateFieldset disabled={!writable}>
           <form className="projadmin__form" onSubmit={onRegister} noValidate>
-            {/* A labelled radiogroup, not a nested <fieldset> — a fieldset in
-                this tree is the advisory gate's disabled fingerprint (see
-                test/advisoryGate.test.ts) and means something else here. */}
-            <div className="projadmin__hostset">
-              <p className="projadmin__label" id="projadmin-host-label">
-                Where does the code live?
-              </p>
-              <div
-                className="projadmin__hosttoggle"
-                role="radiogroup"
-                aria-labelledby="projadmin-host-label"
-              >
-                {REPO_HOST_CHOICES.map((choice) => (
-                  <label
-                    key={choice.value}
-                    className={`projadmin__hostopt${form.host === choice.value ? ' projadmin__hostopt--on' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name="proj-host"
-                      value={choice.value}
-                      checked={form.host === choice.value}
-                      onChange={() => setForm({ ...form, host: choice.value })}
-                    />
-                    <span>{choice.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            {/* Which cloud — switches the identity fields below (AWS account +
-                region · Azure subscription + tenant + location). */}
-            <div className="projadmin__hostset">
-              <p className="projadmin__label" id="projadmin-cloud-label">
-                Which cloud is this estate on?
-              </p>
-              <div
-                className="projadmin__hosttoggle"
-                role="radiogroup"
-                aria-labelledby="projadmin-cloud-label"
-              >
-                {(['aws', 'azure'] as const).map((cloud) => (
-                  <label
-                    key={cloud}
-                    className={`projadmin__hostopt${form.provider === cloud ? ' projadmin__hostopt--on' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name="proj-provider"
-                      value={cloud}
-                      checked={form.provider === cloud}
-                      onChange={() => setForm({ ...form, provider: cloud })}
-                    />
-                    <span>{cloud === 'aws' ? 'AWS' : 'Azure'}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className="projadmin__form-grid">
-              {form.host === 'gitlab-self-hosted' && (
+            {!form.detailed && (
+              <>
                 <div className="projadmin__field">
-                  <label className="projadmin__label" htmlFor="proj-baseurl">
-                    GitLab server address
+                  <label className="projadmin__label" htmlFor="proj-url">
+                    Repository address
                   </label>
                   <input
-                    id="proj-baseurl"
+                    id="proj-url"
                     className="projadmin__input"
-                    value={form.baseUrl}
-                    onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
-                    placeholder="https://gitlab.example.com"
+                    value={form.repoUrl}
+                    onChange={(e) => onRepoUrlChange(e.target.value)}
+                    placeholder="https://github.com/acme-co/terraform-acme"
                     inputMode="url"
                     spellCheck={false}
+                    autoComplete="off"
                   />
                   <p className="projadmin__hint">
-                    The address you open in a browser — it must start with https.
+                    Whatever your browser or the repository&apos;s clone button gives you — a link
+                    into a folder is fine too.
                   </p>
+                  {/* Show the interpretation rather than applying it silently. */}
+                  {parsedRepoUrl &&
+                    (parsedRepoUrl.ok ? (
+                      <p className="projadmin__urlecho">
+                        Reads as{' '}
+                        <strong>
+                          {parsedRepoUrl.repo.owner}/{parsedRepoUrl.repo.name}
+                        </strong>{' '}
+                        on {repoHostLabel({ repo: parsedRepoUrl.repo })}.
+                      </p>
+                    ) : (
+                      <p className="projadmin__urlecho projadmin__urlecho--bad">
+                        {parsedRepoUrl.reason}
+                      </p>
+                    ))}
                 </div>
-              )}
-              <div className="projadmin__field">
-                <label className="projadmin__label" htmlFor="proj-owner">
-                  Repository owner or group
-                </label>
-                <input
-                  id="proj-owner"
-                  className="projadmin__input"
-                  value={form.owner}
-                  onChange={(e) => setForm({ ...form, owner: e.target.value })}
-                  placeholder={form.host === 'github' ? 'acme-co' : 'platform/infrastructure'}
-                  spellCheck={false}
-                />
-                {form.host !== 'github' && (
-                  <p className="projadmin__hint">Subgroups join with a slash.</p>
-                )}
-              </div>
-              <div className="projadmin__field">
-                <label className="projadmin__label" htmlFor="proj-repo">
-                  Repository
-                </label>
-                <input
-                  id="proj-repo"
-                  className="projadmin__input"
-                  value={form.repoName}
-                  onChange={(e) => setForm({ ...form, repoName: e.target.value })}
-                  placeholder="terraform-acme"
-                  spellCheck={false}
-                />
-              </div>
-              <div className="projadmin__field">
-                <label className="projadmin__label" htmlFor="proj-id">
-                  Project id
-                </label>
-                <input
-                  id="proj-id"
-                  className="projadmin__input"
-                  value={form.id}
-                  onChange={(e) => setForm({ ...form, id: e.target.value })}
-                  placeholder="acme"
-                  spellCheck={false}
-                />
+
+                <div className="projadmin__form-grid">
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-id">
+                      Project id
+                    </label>
+                    <input
+                      id="proj-id"
+                      className="projadmin__input"
+                      value={form.id}
+                      onChange={(e) => setForm({ ...form, id: e.target.value, idTouched: true })}
+                      placeholder="acme"
+                      spellCheck={false}
+                    />
+                    <p className="projadmin__hint">
+                      Suggested from the repository name — change it if you like. It becomes the
+                      switcher entry.
+                    </p>
+                  </div>
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-name">
+                      Display name
+                    </label>
+                    <input
+                      id="proj-name"
+                      className="projadmin__input"
+                      value={form.name}
+                      onChange={(e) =>
+                        setForm({ ...form, name: e.target.value, nameTouched: true })
+                      }
+                      placeholder="Acme estate"
+                    />
+                  </div>
+                </div>
+
                 <p className="projadmin__hint">
-                  Short lowercase slug — it becomes the switcher entry.
+                  Which cloud account this estate manages is <strong>not</strong> asked here: the
+                  scan reads it out of the Terraform and shows you where it found it, and an admin
+                  confirms it at the review step. Nothing reaches the live data until someone has.
                 </p>
-              </div>
-              <div className="projadmin__field">
-                <label className="projadmin__label" htmlFor="proj-name">
-                  Display name
-                </label>
-                <input
-                  id="proj-name"
-                  className="projadmin__input"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="Acme estate"
-                />
-              </div>
-              {form.provider === 'aws' ? (
-                <>
-                  <div className="projadmin__field">
-                    <label className="projadmin__label" htmlFor="proj-account">
-                      AWS account id
-                    </label>
-                    <input
-                      id="proj-account"
-                      className="projadmin__input"
-                      value={form.accountId}
-                      onChange={(e) => setForm({ ...form, accountId: e.target.value })}
-                      placeholder="123456789012"
-                      inputMode="numeric"
-                      spellCheck={false}
-                    />
-                    <p className="projadmin__hint">Twelve digits.</p>
-                  </div>
-                  <div className="projadmin__field">
-                    <label className="projadmin__label" htmlFor="proj-region">
-                      AWS region
-                    </label>
-                    <input
-                      id="proj-region"
-                      className="projadmin__input"
-                      value={form.region}
-                      onChange={(e) => setForm({ ...form, region: e.target.value })}
-                      placeholder="ap-southeast-1"
-                      spellCheck={false}
-                    />
-                    <p className="projadmin__hint">
-                      A standard region code — anything else is refused.
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="projadmin__field">
-                    <label className="projadmin__label" htmlFor="proj-subscription">
-                      Azure subscription id
-                    </label>
-                    <input
-                      id="proj-subscription"
-                      className="projadmin__input"
-                      value={form.subscriptionId}
-                      onChange={(e) => setForm({ ...form, subscriptionId: e.target.value })}
-                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                      spellCheck={false}
-                    />
-                    <p className="projadmin__hint">The subscription GUID (8-4-4-4-12).</p>
-                  </div>
-                  <div className="projadmin__field">
-                    <label className="projadmin__label" htmlFor="proj-tenant">
-                      Azure tenant id
-                    </label>
-                    <input
-                      id="proj-tenant"
-                      className="projadmin__input"
-                      value={form.tenantId}
-                      onChange={(e) => setForm({ ...form, tenantId: e.target.value })}
-                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                      spellCheck={false}
-                    />
-                    <p className="projadmin__hint">The directory (tenant) GUID.</p>
-                  </div>
-                  <div className="projadmin__field">
-                    <label className="projadmin__label" htmlFor="proj-location">
-                      Azure default location
-                    </label>
-                    <input
-                      id="proj-location"
-                      className="projadmin__input"
-                      value={form.location}
-                      onChange={(e) => setForm({ ...form, location: e.target.value })}
-                      placeholder="southeastasia"
-                      spellCheck={false}
-                    />
-                    <p className="projadmin__hint">
-                      A standard Azure location — anything else is refused.
-                    </p>
-                  </div>
-                </>
-              )}
-            </div>
+              </>
+            )}
+
             <div className="projadmin__form-actions">
+              <button
+                type="button"
+                className="projadmin__linkbtn"
+                onClick={() => setForm({ ...form, detailed: !form.detailed })}
+              >
+                {form.detailed
+                  ? 'Go back to pasting one address'
+                  : 'Or type the details separately'}
+              </button>
+            </div>
+
+            {form.detailed && (
+              <>
+                {/* A labelled radiogroup, not a nested <fieldset> — a fieldset in
+                this tree is the advisory gate's disabled fingerprint (see
+                test/advisoryGate.test.ts) and means something else here. */}
+                <div className="projadmin__hostset">
+                  <p className="projadmin__label" id="projadmin-host-label">
+                    Where does the code live?
+                  </p>
+                  <div
+                    className="projadmin__hosttoggle"
+                    role="radiogroup"
+                    aria-labelledby="projadmin-host-label"
+                  >
+                    {REPO_HOST_CHOICES.map((choice) => (
+                      <label
+                        key={choice.value}
+                        className={`projadmin__hostopt${form.host === choice.value ? ' projadmin__hostopt--on' : ''}`}
+                      >
+                        <input
+                          type="radio"
+                          name="proj-host"
+                          value={choice.value}
+                          checked={form.host === choice.value}
+                          onChange={() => setForm({ ...form, host: choice.value })}
+                        />
+                        <span>{choice.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {/* Which cloud — switches the identity fields below (AWS account +
+                region · Azure subscription + tenant + location). */}
+                <div className="projadmin__hostset">
+                  <p className="projadmin__label" id="projadmin-cloud-label">
+                    Which cloud is this estate on?
+                  </p>
+                  <div
+                    className="projadmin__hosttoggle"
+                    role="radiogroup"
+                    aria-labelledby="projadmin-cloud-label"
+                  >
+                    {(['aws', 'azure'] as const).map((cloud) => (
+                      <label
+                        key={cloud}
+                        className={`projadmin__hostopt${form.provider === cloud ? ' projadmin__hostopt--on' : ''}`}
+                      >
+                        <input
+                          type="radio"
+                          name="proj-provider"
+                          value={cloud}
+                          checked={form.provider === cloud}
+                          onChange={() => setForm({ ...form, provider: cloud })}
+                        />
+                        <span>{cloud === 'aws' ? 'AWS' : 'Azure'}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="projadmin__form-grid">
+                  {form.host === 'gitlab-self-hosted' && (
+                    <div className="projadmin__field">
+                      <label className="projadmin__label" htmlFor="proj-baseurl">
+                        GitLab server address
+                      </label>
+                      <input
+                        id="proj-baseurl"
+                        className="projadmin__input"
+                        value={form.baseUrl}
+                        onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
+                        placeholder="https://gitlab.example.com"
+                        inputMode="url"
+                        spellCheck={false}
+                      />
+                      <p className="projadmin__hint">
+                        The address you open in a browser — it must start with https.
+                      </p>
+                    </div>
+                  )}
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-owner">
+                      Repository owner or group
+                    </label>
+                    <input
+                      id="proj-owner"
+                      className="projadmin__input"
+                      value={form.owner}
+                      onChange={(e) => setForm({ ...form, owner: e.target.value })}
+                      placeholder={form.host === 'github' ? 'acme-co' : 'platform/infrastructure'}
+                      spellCheck={false}
+                    />
+                    {form.host !== 'github' && (
+                      <p className="projadmin__hint">Subgroups join with a slash.</p>
+                    )}
+                  </div>
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-repo">
+                      Repository
+                    </label>
+                    <input
+                      id="proj-repo"
+                      className="projadmin__input"
+                      value={form.repoName}
+                      onChange={(e) => setForm({ ...form, repoName: e.target.value })}
+                      placeholder="terraform-acme"
+                      spellCheck={false}
+                    />
+                  </div>
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-id">
+                      Project id
+                    </label>
+                    <input
+                      id="proj-id"
+                      className="projadmin__input"
+                      value={form.id}
+                      onChange={(e) => setForm({ ...form, id: e.target.value })}
+                      placeholder="acme"
+                      spellCheck={false}
+                    />
+                    <p className="projadmin__hint">
+                      Short lowercase slug — it becomes the switcher entry.
+                    </p>
+                  </div>
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-name">
+                      Display name
+                    </label>
+                    <input
+                      id="proj-name"
+                      className="projadmin__input"
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      placeholder="Acme estate"
+                    />
+                  </div>
+                  {form.provider === 'aws' ? (
+                    <>
+                      <div className="projadmin__field">
+                        <label className="projadmin__label" htmlFor="proj-account">
+                          AWS account id
+                        </label>
+                        <input
+                          id="proj-account"
+                          className="projadmin__input"
+                          value={form.accountId}
+                          onChange={(e) => setForm({ ...form, accountId: e.target.value })}
+                          placeholder="123456789012"
+                          inputMode="numeric"
+                          spellCheck={false}
+                        />
+                        <p className="projadmin__hint">Twelve digits.</p>
+                      </div>
+                      <div className="projadmin__field">
+                        <label className="projadmin__label" htmlFor="proj-region">
+                          AWS region
+                        </label>
+                        <input
+                          id="proj-region"
+                          className="projadmin__input"
+                          value={form.region}
+                          onChange={(e) => setForm({ ...form, region: e.target.value })}
+                          placeholder="ap-southeast-1"
+                          spellCheck={false}
+                        />
+                        <p className="projadmin__hint">
+                          A standard region code — anything else is refused.
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="projadmin__field">
+                        <label className="projadmin__label" htmlFor="proj-subscription">
+                          Azure subscription id
+                        </label>
+                        <input
+                          id="proj-subscription"
+                          className="projadmin__input"
+                          value={form.subscriptionId}
+                          onChange={(e) => setForm({ ...form, subscriptionId: e.target.value })}
+                          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                          spellCheck={false}
+                        />
+                        <p className="projadmin__hint">The subscription GUID (8-4-4-4-12).</p>
+                      </div>
+                      <div className="projadmin__field">
+                        <label className="projadmin__label" htmlFor="proj-tenant">
+                          Azure tenant id
+                        </label>
+                        <input
+                          id="proj-tenant"
+                          className="projadmin__input"
+                          value={form.tenantId}
+                          onChange={(e) => setForm({ ...form, tenantId: e.target.value })}
+                          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                          spellCheck={false}
+                        />
+                        <p className="projadmin__hint">The directory (tenant) GUID.</p>
+                      </div>
+                      <div className="projadmin__field">
+                        <label className="projadmin__label" htmlFor="proj-location">
+                          Azure default location
+                        </label>
+                        <input
+                          id="proj-location"
+                          className="projadmin__input"
+                          value={form.location}
+                          onChange={(e) => setForm({ ...form, location: e.target.value })}
+                          placeholder="southeastasia"
+                          spellCheck={false}
+                        />
+                        <p className="projadmin__hint">
+                          A standard Azure location — anything else is refused.
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+            <div className="projadmin__form-actions">
+              {/* Deliberately NOT disabled on an unparsed address. A dead
+                  control with no explanation is the exact complaint the UX
+                  audit raised; submitting an address that does not parse
+                  surfaces the parser's own plain reason as a notice, and the
+                  live echo under the field says so before you even press it. */}
               <Button variant="primary" type="submit">
                 Register draft project
               </Button>
@@ -1039,7 +1383,7 @@ export function ProjectsAdmin(): JSX.Element {
         </GateFieldset>
       </section>
 
-      {/* ── Step 2 — scan + pick the two files ───────────────────────────────── */}
+      {/* ── Step 2 — get the first scan into the wizard ──────────────────────── */}
       <section className="projadmin__section" aria-labelledby="projadmin-scan">
         <div className="projadmin__section-head">
           <h2 className="projadmin__section-title" id="projadmin-scan">
@@ -1051,132 +1395,439 @@ export function ProjectsAdmin(): JSX.Element {
           </h2>
         </div>
         <p className="projadmin__lead">
-          Run this where your repository checkout and the terraform binary live. The scan is local
-          on purpose: it refuses to run with cloud credentials in the environment, and this server
-          never checks out repositories or runs terraform.
-        </p>
-        <CommandBlock
-          command={onboardCommand(selected?.id ?? '<project-id>')}
-          copyLabel="Copy the onboarding scan command"
-        />
-        <p className="projadmin__lead">
-          The run stops at the trust gate and writes two files into <code>out/</code>. Pick each
-          one here — the picker reads the file&apos;s exact bytes, which the server checks against
-          the fingerprint in the trust request.
+          The scan only reads the repository&apos;s Terraform — nothing executes, and this server
+          never checks out repositories or runs terraform itself. Run it in the repo&apos;s own CI
+          (no laptop, recommended) or on your own machine.
         </p>
 
-        <div className="projadmin__paste-grid">
-          <div className="projadmin__filefield">
-            <label className="projadmin__paste-label" htmlFor="projadmin-file-tr">
-              trust-request.json
-            </label>
-            <input
-              id="projadmin-file-tr"
-              className="projadmin__file"
-              type="file"
-              accept=".json,application/json"
-              onChange={onPickArtifact('trust')}
-            />
-            {artifactStatus(
-              trustReqSource,
-              parsedTrustReq !== null,
-              'Pick the trust-request.json the scan wrote.',
-            )}
-            {trustReqText.trim().length > 0 && (
-              <p
-                className={`projadmin__msg${parsedTrustReq ? '' : ' projadmin__msg--error'}`}
-                role={parsedTrustReq ? undefined : 'alert'}
-              >
-                {parsedTrustReq
-                  ? `Commit ${parsedTrustReq.commitSha.slice(0, 12)} of ${parsedTrustReq.repo}.`
-                  : 'Not a trust-request.json — expected the three fields repo, commitSha and prescanSha256.'}
-              </p>
-            )}
-          </div>
-          <div className="projadmin__filefield">
-            <label className="projadmin__paste-label" htmlFor="projadmin-file-rep">
-              prescan-report.json
-            </label>
-            <input
-              id="projadmin-file-rep"
-              className="projadmin__file"
-              type="file"
-              accept=".json,application/json"
-              onChange={onPickArtifact('report')}
-            />
-            {artifactStatus(
-              reportSource,
-              parsedReport !== null,
-              'Pick the prescan-report.json the scan wrote.',
-            )}
-            {reportText.trim().length > 0 && !parsedReport && (
-              <p className="projadmin__msg projadmin__msg--error" role="alert">
-                Not a prescan-report.json — pick the whole file the scan wrote.
-              </p>
-            )}
-          </div>
+        <div className="projadmin__tabs" role="tablist" aria-label="How to run the first scan">
+          {(['here', 'ci', 'local'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              role="tab"
+              id={`projadmin-scantab-${tab}`}
+              aria-selected={scanMethod === tab}
+              aria-controls="projadmin-scanpanel"
+              tabIndex={scanMethod === tab ? 0 : -1}
+              className={`projadmin__tab${scanMethod === tab ? ' projadmin__tab--active' : ''}`}
+              onClick={() => setScanMethod(tab)}
+            >
+              {tab === 'here'
+                ? 'Let this system scan it'
+                : tab === 'ci'
+                  ? "Run in the repo's CI"
+                  : 'Run locally'}
+            </button>
+          ))}
         </div>
 
-        <details className="projadmin__fallback">
-          <summary>Paste the file contents instead</summary>
-          <p className="projadmin__hint">
-            If you can&apos;t pick files from here, paste each file&apos;s full contents exactly as
-            written — a shortened paste fails the fingerprint check.
-          </p>
-          <div className="projadmin__paste-grid">
-            <div>
-              <label className="projadmin__paste-label" htmlFor="projadmin-paste-tr">
-                trust-request.json
-              </label>
-              <textarea
-                id="projadmin-paste-tr"
-                className="projadmin__paste"
-                value={trustReqText}
-                onChange={(e) => {
-                  setTrustReqText(e.target.value);
-                  setTrustReqSource({ kind: 'paste' });
-                }}
-                placeholder='{"repo": "...", "commitSha": "...", "prescanSha256": "..."}'
-                rows={5}
-                spellCheck={false}
-              />
-            </div>
-            <div>
-              <label className="projadmin__paste-label" htmlFor="projadmin-paste-rep">
-                prescan-report.json
-              </label>
-              <textarea
-                id="projadmin-paste-rep"
-                className="projadmin__paste"
-                value={reportText}
-                onChange={(e) => {
-                  setReportText(e.target.value);
-                  setReportSource({ kind: 'paste' });
-                }}
-                placeholder='{"repo": "...", "verdict": "clean", "findings": [], ...}'
-                rows={5}
-                spellCheck={false}
-              />
-            </div>
-          </div>
-        </details>
+        <div
+          id="projadmin-scanpanel"
+          role="tabpanel"
+          aria-labelledby={`projadmin-scantab-${scanMethod}`}
+        >
+          {scanMethod === 'here' ? (
+            <>
+              <p className="projadmin__lead">
+                Nothing to add to the repository and nothing to run yourself: this server clones the
+                repo on its own isolated scanner, reads the Terraform, and files the result here.
+                The scanner has no cloud credentials and no terraform in it — it only ever reads
+                code, exactly like the other two ways below.
+              </p>
+              <p className="projadmin__hint">
+                This has to be switched on by whoever runs this deployment (it is off by default,
+                because it is what gives this server read access to your repositories). If it
+                isn&apos;t on, the button below will say so and you can use one of the other two
+                tabs instead.
+              </p>
 
-        {parsedReport && <ReportView report={parsedReport} />}
+              <details className="projadmin__private">
+                <summary className="projadmin__private-summary">
+                  The repository is private
+                  {forgeStored ? ` — signing in as ${forgeStored}` : ''}
+                </summary>
+                <p className="projadmin__hint">
+                  Skip this for a public repository, and skip it if whoever runs this deployment set
+                  up a GitHub App — then access is already arranged and nothing is typed here.
+                  Otherwise create a <strong>read-only</strong> access token at your repository host
+                  and paste it once. It is encrypted immediately and no screen, export or log ever
+                  shows it again — so if you lose it, replace it rather than look it up.
+                </p>
+                <div className="projadmin__form-grid">
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-forgeuser">
+                      Username
+                    </label>
+                    <input
+                      id="proj-forgeuser"
+                      className="projadmin__input"
+                      value={forgeUser}
+                      onChange={(e) => setForgeUser(e.target.value)}
+                      placeholder="oauth2"
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                    <p className="projadmin__hint">
+                      Whatever your host pairs with the token — GitLab uses <code>oauth2</code>.
+                    </p>
+                  </div>
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-forgetoken">
+                      Read-only access token
+                    </label>
+                    <input
+                      id="proj-forgetoken"
+                      className="projadmin__input"
+                      type="password"
+                      value={forgeToken}
+                      onChange={(e) => setForgeToken(e.target.value)}
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                    <p className="projadmin__hint">
+                      Read access to this one repository is all it ever needs.
+                    </p>
+                  </div>
+                </div>
+                <div className="projadmin__form-actions">
+                  <Button
+                    variant="primary"
+                    onClick={onSetForgeCredential}
+                    disabled={!writable || !selected}
+                  >
+                    Save the token
+                  </Button>
+                  {forgeStored && (
+                    <Button
+                      variant="danger"
+                      onClick={onRemoveForgeCredential}
+                      disabled={!writable || !selected}
+                    >
+                      Remove it
+                    </Button>
+                  )}
+                </div>
+              </details>
 
-        <GateFieldset disabled={!writable}>
-          <div className="projadmin__form-actions">
-            <Button
-              variant="primary"
-              onClick={onUpload}
-              disabled={!selected || !parsedTrustReq || !parsedReport}
-            >
-              Upload scan files
-            </Button>
-            {!selected && writable && (
-              <p className="projadmin__hint">Select a registered project above to upload for it.</p>
-            )}
-          </div>
-        </GateFieldset>
+              <div className="projadmin__form-actions">
+                <Button
+                  variant="primary"
+                  onClick={onScanHere}
+                  disabled={!writable || !selected || scanInFlight}
+                >
+                  {scanInFlight ? 'Scanning…' : 'Scan this repo now'}
+                </Button>
+              </div>
+
+              {scanJob && (
+                <div className="projadmin__scanjob" aria-live="polite">
+                  <p className="projadmin__scanjob-status">
+                    <span
+                      className={`projadmin__scanjob-dot projadmin__scanjob-dot--${scanJob.status}`}
+                      aria-hidden="true"
+                    />
+                    {SCAN_STATUS_COPY[scanJob.status]}
+                  </p>
+                  {scanJob.status === 'failed' && scanJob.error && (
+                    // Server-sanitized already (no URLs, no tokens, no control
+                    // characters) — rendered as plain text, never as markup.
+                    <p className="projadmin__scanjob-error">{scanJob.error}</p>
+                  )}
+                  {scanJob.status === 'uploaded' && (
+                    <p className="projadmin__hint">
+                      The scan is in — review the verdict and findings in step 3 below. A repo the
+                      scan rejected still shows its findings there; it just can never be trusted.
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
+          ) : scanMethod === 'ci' ? (
+            <>
+              <p className="projadmin__lead">
+                A one-shot workflow scans the repository where its own code already lives, then
+                sends the two files here itself — nothing to copy by hand. It only reads the code
+                (no terraform, no cloud credentials), and it can ship in the same pull request as
+                the recurring data-lane file from step 4.
+              </p>
+
+              <div className="projadmin__tabs" role="tablist" aria-label="CI host">
+                {(['github', 'gitlab'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    role="tab"
+                    id={`projadmin-onboardhosttab-${tab}`}
+                    aria-selected={ciTab === tab}
+                    aria-controls="projadmin-onboardhostpanel"
+                    tabIndex={ciTab === tab ? 0 : -1}
+                    className={`projadmin__tab${ciTab === tab ? ' projadmin__tab--active' : ''}`}
+                    onClick={() => setCiTab(tab)}
+                  >
+                    {tab === 'github' ? 'GitHub' : 'GitLab'}
+                  </button>
+                ))}
+              </div>
+              <div
+                id="projadmin-onboardhostpanel"
+                role="tabpanel"
+                aria-labelledby={`projadmin-onboardhosttab-${ciTab}`}
+                className="projadmin__cipanel"
+              >
+                <ol className="projadmin__how">
+                  <li>
+                    Commit this file to the repository as <code>{onboardFileName}</code>
+                    {ciTab === 'gitlab'
+                      ? ' and include it from the repository’s .gitlab-ci.yml'
+                      : ''}
+                    .
+                  </li>
+                  <li>
+                    Mint an onboarding token below and save it in the repository&apos;s CI as the
+                    secret <code>{ONBOARD_KEY_SECRET}</code>.
+                  </li>
+                  <li>
+                    Next to it, set two CI variables: <code>{SERVER_URL_VAR}</code> — this control
+                    plane&apos;s address — and <code>{PROJECT_ID_VAR}</code> ={' '}
+                    <code>{selected?.id ?? '<project-id>'}</code>.
+                  </li>
+                  <li>
+                    {ciTab === 'github'
+                      ? 'Open the workflow and click "Run workflow".'
+                      : 'Open "Run pipeline" on the default branch, then click the play button on the ccp-onboard job.'}{' '}
+                    The two files land here on their own — check back, or use the button below.
+                  </li>
+                </ol>
+                <div className="projadmin__cifile">
+                  <div className="projadmin__cifile-head">
+                    <code className="projadmin__cifile-name">{onboardFileName}</code>
+                    <CopyButton
+                      text={onboardFileBody}
+                      label={`Copy the ${ciTab === 'github' ? 'GitHub' : 'GitLab'} onboarding workflow file`}
+                    />
+                  </div>
+                  <pre className="projadmin__cifile-body">
+                    <code>{onboardFileBody}</code>
+                  </pre>
+                </div>
+                {dispatchUrl && (
+                  <div className="projadmin__form-actions">
+                    <a
+                      className="ui-btn ui-btn--primary"
+                      href={dispatchUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {ciTab === 'github'
+                        ? 'Open “Run workflow” on GitHub ↗'
+                        : 'Open “Run pipeline” on GitLab ↗'}
+                    </a>
+                  </div>
+                )}
+                {!dispatchUrl && (
+                  <p className="projadmin__hint">
+                    Select a registered project above to get its dispatch link.
+                  </p>
+                )}
+              </div>
+
+              <div className="projadmin__trust-action">
+                <h3 className="projadmin__subtitle">Onboarding token</h3>
+                {mintedOnboard ? (
+                  <p className="projadmin__lead">
+                    Token <code>{mintedOnboard.tokenId}</code> was just minted — it is shown below
+                    exactly once.
+                  </p>
+                ) : (
+                  <p className="projadmin__lead">
+                    A token is shown exactly once, at mint — the server keeps no readable copy. It
+                    is narrow on purpose: it only works before this project is trusted, and it can
+                    only upload this one project&apos;s scan — nothing else.
+                  </p>
+                )}
+                <GateFieldset disabled={!writable}>
+                  <div className="projadmin__form-actions">
+                    <Button variant="primary" onClick={onMintOnboardToken} disabled={!selected}>
+                      Mint onboarding token
+                    </Button>
+                    {mintedOnboard && (
+                      <Button variant="danger" onClick={onRevokeOnboardToken}>
+                        Revoke this token
+                      </Button>
+                    )}
+                  </div>
+                </GateFieldset>
+                {!selected && writable && (
+                  <p className="projadmin__hint">
+                    Select a registered project above to mint a token for it.
+                  </p>
+                )}
+                {mintedOnboard && (
+                  <div className="projadmin__token" role="status">
+                    <p className="projadmin__token-note">
+                      This token is shown once — paste it into the repo&apos;s CI secret{' '}
+                      <code>{ONBOARD_KEY_SECRET}</code> now.
+                    </p>
+                    <CommandBlock
+                      command={mintedOnboard.token}
+                      copyLabel="Copy the onboarding token"
+                    />
+                    <p className="projadmin__hint">
+                      Valid until {formatProjectTime(mintedOnboard.expiresAt)}. If it leaks, revoke
+                      it here while this page is open and mint a new one.
+                    </p>
+                  </div>
+                )}
+                {selected && (
+                  <div className="projadmin__form-actions">
+                    <Button variant="ghost" onClick={onCheckForUpload}>
+                      Check for the uploaded scan
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <p className="projadmin__hint">
+                Control plane unreachable from that runner (air-gapped estate)? The workflow still
+                keeps the two files as a downloadable run artifact — switch to the{' '}
+                <strong>Run locally</strong> tab and pick them from there.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="projadmin__lead">
+                Run this where your repository checkout and the terraform binary live. The scan is
+                local on purpose: it refuses to run with cloud credentials in the environment. Kept
+                for air-gapped estates with no usable CI.
+              </p>
+              <CommandBlock
+                command={onboardCommand(selected?.id ?? '<project-id>')}
+                copyLabel="Copy the onboarding scan command"
+              />
+              <p className="projadmin__lead">
+                The run stops at the trust gate and writes two files into <code>out/</code>. Pick
+                each one here — the picker reads the file&apos;s exact bytes, which the server
+                checks against the fingerprint in the trust request.
+              </p>
+
+              <div className="projadmin__paste-grid">
+                <div className="projadmin__filefield">
+                  <label className="projadmin__paste-label" htmlFor="projadmin-file-tr">
+                    trust-request.json
+                  </label>
+                  <input
+                    id="projadmin-file-tr"
+                    className="projadmin__file"
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={onPickArtifact('trust')}
+                  />
+                  {artifactStatus(
+                    trustReqSource,
+                    parsedTrustReq !== null,
+                    'Pick the trust-request.json the scan wrote.',
+                  )}
+                  {trustReqText.trim().length > 0 && (
+                    <p
+                      className={`projadmin__msg${parsedTrustReq ? '' : ' projadmin__msg--error'}`}
+                      role={parsedTrustReq ? undefined : 'alert'}
+                    >
+                      {parsedTrustReq
+                        ? `Commit ${parsedTrustReq.commitSha.slice(0, 12)} of ${parsedTrustReq.repo}.`
+                        : 'Not a trust-request.json — expected the three fields repo, commitSha and prescanSha256.'}
+                    </p>
+                  )}
+                </div>
+                <div className="projadmin__filefield">
+                  <label className="projadmin__paste-label" htmlFor="projadmin-file-rep">
+                    prescan-report.json
+                  </label>
+                  <input
+                    id="projadmin-file-rep"
+                    className="projadmin__file"
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={onPickArtifact('report')}
+                  />
+                  {artifactStatus(
+                    reportSource,
+                    parsedReport !== null,
+                    'Pick the prescan-report.json the scan wrote.',
+                  )}
+                  {reportText.trim().length > 0 && !parsedReport && (
+                    <p className="projadmin__msg projadmin__msg--error" role="alert">
+                      Not a prescan-report.json — pick the whole file the scan wrote.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <details className="projadmin__fallback">
+                <summary>Paste the file contents instead</summary>
+                <p className="projadmin__hint">
+                  If you can&apos;t pick files from here, paste each file&apos;s full contents
+                  exactly as written — a shortened paste fails the fingerprint check.
+                </p>
+                <div className="projadmin__paste-grid">
+                  <div>
+                    <label className="projadmin__paste-label" htmlFor="projadmin-paste-tr">
+                      trust-request.json
+                    </label>
+                    <textarea
+                      id="projadmin-paste-tr"
+                      className="projadmin__paste"
+                      value={trustReqText}
+                      onChange={(e) => {
+                        setTrustReqText(e.target.value);
+                        setTrustReqSource({ kind: 'paste' });
+                      }}
+                      placeholder='{"repo": "...", "commitSha": "...", "prescanSha256": "..."}'
+                      rows={5}
+                      spellCheck={false}
+                    />
+                  </div>
+                  <div>
+                    <label className="projadmin__paste-label" htmlFor="projadmin-paste-rep">
+                      prescan-report.json
+                    </label>
+                    <textarea
+                      id="projadmin-paste-rep"
+                      className="projadmin__paste"
+                      value={reportText}
+                      onChange={(e) => {
+                        setReportText(e.target.value);
+                        setReportSource({ kind: 'paste' });
+                      }}
+                      placeholder='{"repo": "...", "verdict": "clean", "findings": [], ...}'
+                      rows={5}
+                      spellCheck={false}
+                    />
+                  </div>
+                </div>
+              </details>
+
+              {parsedReport && <ReportView report={parsedReport} />}
+
+              <GateFieldset disabled={!writable}>
+                <div className="projadmin__form-actions">
+                  <Button
+                    variant="primary"
+                    onClick={onUpload}
+                    disabled={!selected || !parsedTrustReq || !parsedReport}
+                  >
+                    Upload scan files
+                  </Button>
+                  {!selected && writable && (
+                    <p className="projadmin__hint">
+                      Select a registered project above to upload for it.
+                    </p>
+                  )}
+                </div>
+              </GateFieldset>
+            </>
+          )}
+        </div>
       </section>
 
       {/* ── Step 3 — review & trust ──────────────────────────────────────────── */}
@@ -1185,51 +1836,66 @@ export function ProjectsAdmin(): JSX.Element {
         serverReport &&
         selected.status === 'pending-trust' &&
         selected.trustRequest && (
-        <section className="projadmin__section" aria-labelledby="projadmin-review">
-          <div className="projadmin__section-head">
-            <h2 className="projadmin__section-title" id="projadmin-review">
-              <StepHeading n={3} title="Review & trust" />
-            </h2>
-          </div>
-          <p className="projadmin__lead">
-            Uploaded by {selected.trustRequest.uploadedBy}. Read the verdict and every finding —
-            this review is a human decision and stays one.
-          </p>
-          <ReportView report={serverReport} />
-
-          {trustControlRenders(serverReport) ? (
-            <div className="projadmin__trust-action">
-              <h3 className="projadmin__subtitle">Trust this commit</h3>
-              <dl className="projadmin__meta projadmin__meta--wide">
-                <div className="projadmin__meta-row">
-                  <dt>Commit</dt>
-                  <dd className="projadmin__mono">{selected.trustRequest.commitSha}</dd>
-                </div>
-                <div className="projadmin__meta-row">
-                  <dt>Report fingerprint</dt>
-                  <dd className="projadmin__mono">{selected.trustRequest.prescanSha256}</dd>
-                </div>
-              </dl>
-              <GateFieldset disabled={!writable}>
-                <Button variant="primary" onClick={onTrust}>
-                  Trust this commit
-                </Button>
-              </GateFieldset>
-              {!demo && (
-                <p className="projadmin__hint">
-                  Recording the decision needs a second admin&apos;s confirmation under Pending
-                  changes before anything applies.
-                </p>
-              )}
+          <section className="projadmin__section" aria-labelledby="projadmin-review">
+            <div className="projadmin__section-head">
+              <h2 className="projadmin__section-title" id="projadmin-review">
+                <StepHeading n={3} title="Review & trust" />
+              </h2>
             </div>
-          ) : (
-            <p className="projadmin__msg projadmin__msg--error" role="alert">
-              The scan rejected this repository, so there is nothing to trust — fix the findings,
-              commit, and run the scan again. This is a full stop by design.
+            <p className="projadmin__lead">
+              Uploaded by {uploadedByLabel(selected.trustRequest.uploadedBy)}
+              {selected.trustRequest.ci && (
+                <>
+                  {' '}
+                  —{' '}
+                  <a
+                    href={selected.trustRequest.ci.runUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {ciProvenanceLabel(selected.trustRequest.ci)} ↗
+                  </a>
+                </>
+              )}
+              . Read the verdict and every finding — this review is a human decision and stays one.
+              {selected.trustRequest.ci &&
+                ' Cross-check the run above against the repository’s own Actions or pipeline log before trusting it.'}
             </p>
-          )}
-        </section>
-      )}
+            <ReportView report={serverReport} />
+
+            {trustControlRenders(serverReport) ? (
+              <div className="projadmin__trust-action">
+                <h3 className="projadmin__subtitle">Trust this commit</h3>
+                <dl className="projadmin__meta projadmin__meta--wide">
+                  <div className="projadmin__meta-row">
+                    <dt>Commit</dt>
+                    <dd className="projadmin__mono">{selected.trustRequest.commitSha}</dd>
+                  </div>
+                  <div className="projadmin__meta-row">
+                    <dt>Report fingerprint</dt>
+                    <dd className="projadmin__mono">{selected.trustRequest.prescanSha256}</dd>
+                  </div>
+                </dl>
+                <GateFieldset disabled={!writable}>
+                  <Button variant="primary" onClick={onTrust}>
+                    Trust this commit
+                  </Button>
+                </GateFieldset>
+                {!demo && (
+                  <p className="projadmin__hint">
+                    Recording the decision needs a second admin&apos;s confirmation under Pending
+                    changes before anything applies.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="projadmin__msg projadmin__msg--error" role="alert">
+                The scan rejected this repository, so there is nothing to trust — fix the findings,
+                commit, and run the scan again. This is a full stop by design.
+              </p>
+            )}
+          </section>
+        )}
 
       {/* ── Step 4 — connect the repo's CI ───────────────────────────────────── */}
       {selected && !selected.archived && dataStepLive && (
@@ -1291,7 +1957,10 @@ export function ProjectsAdmin(): JSX.Element {
             <div className="projadmin__cifile">
               <div className="projadmin__cifile-head">
                 <code className="projadmin__cifile-name">{ciFileName}</code>
-                <CopyButton text={ciFileBody} label={`Copy the ${ciTab === 'github' ? 'GitHub' : 'GitLab'} CI file`} />
+                <CopyButton
+                  text={ciFileBody}
+                  label={`Copy the ${ciTab === 'github' ? 'GitHub' : 'GitLab'} CI file`}
+                />
               </div>
               <pre className="projadmin__cifile-body">
                 <code>{ciFileBody}</code>
@@ -1354,8 +2023,8 @@ export function ProjectsAdmin(): JSX.Element {
             </h2>
           </div>
           <p className="projadmin__lead">
-            Uploads from the repo&apos;s CI wait here as staged data — nothing goes live on its
-            own. Activating switches the project to that version
+            Uploads from the repo&apos;s CI wait here as staged data — nothing goes live on its own.
+            Activating switches the project to that version
             {demo ? '.' : ', after a second admin confirms.'} The server has already checked each
             upload&apos;s digests, so there is nothing to type.
             {selected.status !== 'ready' &&

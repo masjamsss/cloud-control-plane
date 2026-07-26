@@ -102,6 +102,19 @@ describe('OpenAPI contract (spec §3, extracted verbatim)', () => {
     expect(yaml).toContain('TWO-TIER');
   });
 
+  it('easy-first-import spec §3 A-ii/A-iii (Phase 1): the onboard-token mint/revoke paths and the trust-request Bearer alternative are declared', () => {
+    for (const p of ['/projects/{id}/onboard-tokens:', '/projects/{id}/onboard-tokens/{tokenId}:']) {
+      expect(yaml, p).toContain(p);
+    }
+    expect(yaml).toContain('onboard-token-mint');
+    expect(yaml).toContain('onboard-token-revoke');
+    expect(yaml).toContain('ONBOARD_TOKEN_INVALID');
+    // the Bearer lane is documented on the SAME existing trust-request path — no new route for it
+    const trustRequestBlock = yaml.slice(yaml.indexOf('\n  /projects/{id}/trust-request:'), yaml.indexOf('\n  /projects/{id}/trust:'));
+    expect(trustRequestBlock).toContain('Bearer');
+    expect(trustRequestBlock).toContain('onboard-token:<tokenId>');
+  });
+
   it('OOB provisioning-import spec §6/WI-S6: the import flavor is declared on the existing submit route — no new route', () => {
     // No new path — the whole feature rides the EXISTING submit route (spec §6/§11: "no new routes").
     expect(yaml, '/projects/{id}/drift/proposals/{digest}/submit:').toContain('/projects/{id}/drift/proposals/{digest}/submit:');
@@ -131,5 +144,26 @@ describe('OpenAPI contract (spec §3, extracted verbatim)', () => {
     // from the merely-per-route `security: []` on /auth/login and /auth/totp*.
     const instanceBlock = yaml.slice(yaml.indexOf('\n  /instance:'), yaml.indexOf('\n  /admin/instance:'));
     expect(instanceBlock).toContain('security: []');
+  });
+
+  it('ADR-0033: both halves of the server-side scan lane are declared — operator and worker', () => {
+    for (const p of [
+      '/projects/{id}/scan-jobs:',
+      '/projects/{id}/scan-jobs/latest:',
+      '/scan-jobs/claim:', // the worker's machine lane — deliberately NOT under /projects
+      '/scan-jobs/{jobId}/status:',
+    ]) {
+      expect(yaml, p).toContain(p);
+    }
+    // The refusals a reader must be able to find without reading the code.
+    for (const code of ['SCANNER_DISABLED', 'SCAN_TARGET_REFUSED', 'SCANNER_KEY_INVALID']) {
+      expect(yaml, code).toContain(code);
+    }
+    // The properties that make the worker lane safe are DOCUMENTED, not merely
+    // implemented — an operator auditing the contract can see them here.
+    const claimBlock = yaml.slice(yaml.indexOf('\n  /scan-jobs/claim:'), yaml.indexOf('\n  /scan-jobs/{jobId}/status:'));
+    expect(claimBlock).toContain('THE WORKER NEVER CHOOSES ITS TARGET');
+    expect(claimBlock).toContain('compare-and-swap');
+    expect(claimBlock).toContain("'204': { description: Nothing queued }");
   });
 });

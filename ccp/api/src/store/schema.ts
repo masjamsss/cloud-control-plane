@@ -1,5 +1,5 @@
-import { z } from 'zod';
-import { PlanSummarySchema } from './planSummarySchema';
+import { z } from "zod";
+import { PlanSummarySchema } from "./planSummarySchema";
 
 /**
  * The executable version — one zod schema per item shape, plus the
@@ -14,13 +14,13 @@ import { PlanSummarySchema } from './planSummarySchema';
 
 /* ── shared sub-shapes ──────────────────────────────────────────────────────── */
 
-export const Role = z.enum(['requester', 'approver', 'lead']);
+export const Role = z.enum(["requester", "approver", "lead"]);
 /** The non-optional role scalar (`z.infer<typeof Role>`). Use this where a role is
  * always present (a resolved per-project role, a ladder-step check), as opposed to
  * `AccountItem['role']` which is now the OPTIONAL legacy mirror field. */
 export type RoleName = z.infer<typeof Role>;
-export const RiskFloor = z.enum(['LOW', 'MEDIUM', 'HIGH']);
-export const Macd = z.enum(['Add', 'Move', 'Change', 'Delete']);
+export const RiskFloor = z.enum(["LOW", "MEDIUM", "HIGH"]);
+export const Macd = z.enum(["Add", "Move", "Change", "Delete"]);
 
 /**
  * One PER-PROJECT authorization binding: the account's `role` on that project and,
@@ -28,11 +28,14 @@ export const Macd = z.enum(['Add', 'Move', 'Change', 'Delete']);
  * `AccountItem.roles` map (keyed by projectId or `'*'`). Team is now per project —
  * the legacy top-level `teamId` migrates into each entry via `projects.ts#rolesOf`.
  */
-export const RoleBinding = z.object({ role: Role, teamId: z.string().optional() });
+export const RoleBinding = z.object({
+  role: Role,
+  teamId: z.string().optional(),
+});
 export type RoleBinding = z.infer<typeof RoleBinding>;
 
 const Credential = z.object({
-  algo: z.enum(['argon2id', 'pbkdf2']),
+  algo: z.enum(["argon2id", "pbkdf2"]),
   hash: z.string(),
   salt: z.string().optional(),
   iterations: z.number().optional(),
@@ -57,10 +60,16 @@ export type TotpDevice = z.infer<typeof TotpDevice>;
 
 /** One recovery code, hashed at rest (ADR-0025). `usedAt` present ⇒ burned
  * (never deleted — burned codes stay for the honest remaining-count). */
-const RecoveryCode = z.object({ hash: z.string(), usedAt: z.string().optional() });
+const RecoveryCode = z.object({
+  hash: z.string(),
+  usedAt: z.string().optional(),
+});
 
 /** The account's whole recovery-code set — replaced wholesale on regenerate. */
-const RecoveryCodes = z.object({ codes: z.array(RecoveryCode), generatedAt: z.string() });
+const RecoveryCodes = z.object({
+  codes: z.array(RecoveryCode),
+  generatedAt: z.string(),
+});
 
 const Approval = z.object({ user: z.string(), at: z.string() });
 
@@ -76,9 +85,13 @@ const RequestEvent = z.object({
 // `at + DEFAULT_WINDOW_MS` on read so every gate stays total). Always WRITTEN by
 // `validateSchedule` (V5) for new submissions/rewindows — the store, the SPA, and
 // the (future) bundle exporter all speak `[start, end)` from here on.
-const Schedule = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('now') }),
-  z.object({ kind: z.literal('window'), at: z.string(), endAt: z.string().optional() }),
+const Schedule = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("now") }),
+  z.object({
+    kind: z.literal("window"),
+    at: z.string(),
+    endAt: z.string().optional(),
+  }),
 ]);
 
 /**
@@ -106,7 +119,7 @@ export const RequestSetItem = z.object({
   targetAddress: z.string(),
   params: z.record(z.unknown()),
   exposure: z.string(),
-  reviewTier: z.enum(['self_service', 'guardrails', 'engineer']).optional(),
+  reviewTier: z.enum(["self_service", "guardrails", "engineer"]).optional(),
   replaceConfirmation: z.string().optional(),
 });
 export type RequestSetItem = z.infer<typeof RequestSetItem>;
@@ -139,7 +152,7 @@ export const AccountItem = z.object({
   role: Role.optional(),
   /** LEGACY global team. Now OPTIONAL; migrates into each `roles` entry via `rolesOf`. */
   teamId: z.string().optional(),
-  status: z.enum(['active', 'disabled']),
+  status: z.enum(["active", "disabled"]),
   createdAt: z.string(),
   createdBy: z.string(),
   mustChangePassword: z.boolean(),
@@ -216,7 +229,9 @@ export const AccountItem = z.object({
 export type AccountItem = z.infer<typeof AccountItem>;
 
 /** The next `accountVersion` for a mutation of `acc` — a legacy row (no counter yet) starts at 1. */
-export function nextAccountVersion(acc: Pick<AccountItem, 'accountVersion'>): number {
+export function nextAccountVersion(
+  acc: Pick<AccountItem, "accountVersion">,
+): number {
   return (acc.accountVersion ?? 0) + 1;
 }
 
@@ -230,7 +245,7 @@ export const SessionItem = z.object({
   sessionVersion: z.number(),
   ttl: z.number(),
   /** Pre-session (TOTP not yet completed) — Task 5. `totp` = enrolled, verify; `enroll` = first-login enrollment. */
-  pending: z.enum(['totp', 'enroll']).optional(),
+  pending: z.enum(["totp", "enroll"]).optional(),
   /**
    * Encrypted TOTP secret held pending confirmation. Two lives: (1) the
    * pre-session first-login enrollment hold (Task 5, paired with
@@ -338,7 +353,7 @@ export const RequestItem = z.object({
    * submit. ADDITIVE: absent on pre-enforcement rows — `tierOf()` derives it from
    * `exposure`, fail-closed, so legacy open requests are enforced identically.
    */
-  reviewTier: z.enum(['self_service', 'guardrails', 'engineer']).optional(),
+  reviewTier: z.enum(["self_service", "guardrails", "engineer"]).optional(),
   risk: RiskFloor,
   /**
    * Free-text by design (no caller validates against a fixed union — every value
@@ -444,7 +459,7 @@ export const RequestItem = z.object({
    */
   bundle: z
     .object({
-      state: z.enum(['running', 'triggered', 'failed']),
+      state: z.enum(["running", "triggered", "failed"]),
       sha: z.string().optional(),
       at: z.string().optional(),
     })
@@ -474,7 +489,7 @@ export type RequestEventItem = z.infer<typeof RequestEventItem>;
 
 /** How a pending change re-applies on ack (a single conditional TransactWrite). */
 export const ApplySpec = z.object({
-  op: z.enum(['put', 'update', 'delete']),
+  op: z.enum(["put", "update", "delete"]),
   pk: z.string(),
   sk: z.string(),
   item: z.record(z.unknown()).optional(), // op:put
@@ -501,7 +516,7 @@ export const PendingConfigChangeItem = z.object({
   auditProjectId: z.string().optional(),
   proposedBy: z.string(),
   proposedAt: z.string(),
-  status: z.enum(['PENDING', 'APPLIED', 'REJECTED', 'EXPIRED', 'SUPERSEDED']),
+  status: z.enum(["PENDING", "APPLIED", "REJECTED", "EXPIRED", "SUPERSEDED"]),
   expiresAt: z.string(),
   ackBy: z.string().optional(),
   ackAt: z.string().optional(),
@@ -556,34 +571,109 @@ export const PrescanFinding = z
 export type PrescanFinding = z.infer<typeof PrescanFinding>;
 
 /**
+ * One static-literal value the census found, with file:line provenance so the
+ * UI can show exactly where it came from (ADR-0033 Decision 5, prescan.go
+ * `LiteralValue`). Never a derived/computed/interpolated value — see
+ * {@link ProviderConfig}'s own comment for the fail-closed rule this shape
+ * exists to carry evidence for.
+ */
+export const LiteralValue = z
+  .object({
+    value: z.string().min(1).max(200),
+    file: z.string().min(1).max(500),
+    line: z.number().int().nonnegative(),
+  })
+  .strict();
+export type LiteralValue = z.infer<typeof LiteralValue>;
+
+/**
+ * The census's static-literal cloud-identity PROPOSAL (ADR-0033 Decision 5,
+ * prescan.go `ProviderConfig`) — "the census gains a static-literal
+ * providerConfig so provider/region (and, when statically present,
+ * account/subscription ids) are proposed with file:line provenance and
+ * confirmed by a human — never silently inferred, never a product constant."
+ * A PROPOSAL for a human to confirm via `PUT /projects/:id/identity`
+ * (routes/projects.ts) — NEVER an authoritative fact and never itself read by
+ * any authorization/trust decision; nothing here is treated as ground truth
+ * until an admin confirms it. `.strict()` like {@link PrescanFinding} — a
+ * malformed block is REFUSED, not silently ignored, so a corrupted or
+ * hand-edited providerConfig can never sneak an unexpected key past review.
+ * Every field is independently optional: catalogctl's own fail-closed rule
+ * (prescan.go providerconfig.go) omits any value that is an expression,
+ * variable, local, or interpolation rather than a bare string literal — an
+ * absent field here is correct proposal output, not a parse error.
+ */
+export const ProviderConfig = z
+  .object({
+    /** Recognized cloud provider type(s) — aws / azurerm only (this census is
+     * about cloud identity, not a full provider inventory). */
+    providers: z.array(LiteralValue).max(10).optional(),
+    awsRegion: LiteralValue.optional(),
+    awsAllowedAccountIds: z.array(LiteralValue).max(50).optional(),
+    azureLocation: LiteralValue.optional(),
+    azureSubscriptionId: LiteralValue.optional(),
+    azureTenantId: LiteralValue.optional(),
+  })
+  .strict();
+export type ProviderConfig = z.infer<typeof ProviderConfig>;
+
+/**
  * The `prescan-report.json` shape (prescan.go `Report`, key set golden-pinned by
  * catalogctl's `TestPrescanReportShape_IsTheWizardContract`). Findings drive the
  * verdict; the census fields are report data. The refine enforces the producer's
  * own invariant — findings ⟺ verdict reject — so a hand-edited "clean" report
  * that still lists findings can never reach a trust button.
+ *
+ * ORDERING CONTRACT (ADR-0033 Decision 5 / Phase 0-1): `providerConfig` is
+ * OPTIONAL and MUST STAY optional for as long as an old catalogctl (one built
+ * before this field existed) may still upload — this schema is `.strict()`,
+ * so if the field were required, every upload from an old CLI would fail
+ * validation the instant this server shipped. The field was therefore added
+ * HERE, server-side, FIRST (this commit) — forward compatible, old CLI
+ * uploads keep working unchanged — and only in a LATER commit does
+ * catalogctl start emitting it (tools/catalogctl/internal/prescan). A NEW
+ * catalogctl emitting `providerConfig` against an OLD server (one that
+ * predates this field) fails closed instead: `.strict()` refuses the
+ * unrecognized key, exactly the intended, documented ordering — never the
+ * reverse.
  */
 export const PrescanReport = z
   .object({
     repo: z.string().min(1).max(300),
-    verdict: z.enum(['clean', 'reject']),
+    verdict: z.enum(["clean", "reject"]),
     findings: z.array(PrescanFinding).max(10000),
     resourceBlocks: z.number().int().nonnegative(),
     moduleBlocks: z.number().int().nonnegative(),
     tfJsonFiles: z.number().int().nonnegative(),
     fmtDirtyFiles: z.number().int().nonnegative(),
     providerPins: z.record(z.string().max(100)),
+    providerConfig: ProviderConfig.optional(),
   })
   .strict()
-  .refine((r) => (r.verdict === 'clean') === (r.findings.length === 0), {
-    message: 'verdict must be reject iff findings exist',
+  .refine((r) => (r.verdict === "clean") === (r.findings.length === 0), {
+    message: "verdict must be reject iff findings exist",
   });
 export type PrescanReport = z.infer<typeof PrescanReport>;
+
+/** OPTIONAL CI-run provenance (easy-first-import spec §3 A-iii): present only
+ * when a Bearer onboard-token CI lane uploaded the trust-request artifacts,
+ * so the wizard can render a link the admins cross-check against the
+ * Actions/pipeline log during review. `.strict()` — same no-mass-assignment
+ * posture as every other uploaded shape on this surface. Absent on every
+ * session-uploaded row and on every row written before this field existed. */
+export const CiProvenance = z
+  .object({
+    host: z.enum(["github", "gitlab"]),
+    runUrl: z.string().url().startsWith("https://").max(500),
+  })
+  .strict();
+export type CiProvenance = z.infer<typeof CiProvenance>;
 
 /** The uploaded pair, recorded verbatim: the trust-request triple the CLI wrote
  * (onboard.go — `{repo, commitSha, prescanSha256}`, the REAL schema) plus the
  * parsed report AND its raw bytes (`rawReport`), so the sha binding can be
  * re-verified at any later point. `rawReport` never serializes to clients —
- * see routes/projects.ts `publicProject`. */
+ * see routes/projects.ts `publicProject`. `ci` is additive (see {@link CiProvenance}). */
 export const ProjectTrustRequestRecord = z.object({
   repo: z.string(),
   commitSha: z.string(),
@@ -592,8 +682,11 @@ export const ProjectTrustRequestRecord = z.object({
   uploadedAt: z.string(),
   report: PrescanReport,
   rawReport: z.string(),
+  ci: CiProvenance.optional(),
 });
-export type ProjectTrustRequestRecord = z.infer<typeof ProjectTrustRequestRecord>;
+export type ProjectTrustRequestRecord = z.infer<
+  typeof ProjectTrustRequestRecord
+>;
 
 /** The trust block, verbatim (admin-and-multiproject.md): written ONLY by
  * the dual-controlled trust flow, never accepted from any request body. */
@@ -619,7 +712,12 @@ export const ProjectArtifacts = z.object({
 });
 export type ProjectArtifacts = z.infer<typeof ProjectArtifacts>;
 
-export const ProjectStatus = z.enum(['draft', 'pending-trust', 'trusted', 'ready']);
+export const ProjectStatus = z.enum([
+  "draft",
+  "pending-trust",
+  "trusted",
+  "ready",
+]);
 export type ProjectStatus = z.infer<typeof ProjectStatus>;
 
 /**
@@ -632,9 +730,9 @@ export type ProjectStatus = z.infer<typeof ProjectStatus>;
  */
 export const RepoRef = z
   .object({
-    host: z.enum(['github', 'gitlab']),
+    host: z.enum(["github", "gitlab"]),
     /** Self-hosted forge origin (https only). Absent = github.com / gitlab.com. */
-    baseUrl: z.string().url().startsWith('https://').max(200).optional(),
+    baseUrl: z.string().url().startsWith("https://").max(200).optional(),
     owner: z
       .string()
       .max(200)
@@ -650,18 +748,39 @@ export type RepoRef = z.infer<typeof RepoRef>;
  * legacy `github`-only row maps to host 'github'. Total for every valid stored
  * row; `undefined` only for a row that (impossibly) carries neither.
  */
-export function repoRefOf(p: { repo?: RepoRef; github?: { owner: string; repo: string } }): RepoRef | undefined {
+export function repoRefOf(p: {
+  repo?: RepoRef;
+  github?: { owner: string; repo: string };
+}): RepoRef | undefined {
   if (p.repo) return p.repo;
-  if (p.github) return { host: 'github', owner: p.github.owner, name: p.github.repo };
+  if (p.github)
+    return { host: "github", owner: p.github.owner, name: p.github.repo };
   return undefined;
 }
 
 /** The legacy `github` mirror for a {@link RepoRef} — only a github-hosted repo
  * has one (mirroring a GitLab repo into a `github` field would be a lie). */
-export function githubMirrorOf(repo: RepoRef | undefined): { owner: string; repo: string } | undefined {
-  if (!repo || repo.host !== 'github') return undefined;
+export function githubMirrorOf(
+  repo: RepoRef | undefined,
+): { owner: string; repo: string } | undefined {
+  if (!repo || repo.host !== "github") return undefined;
   return { owner: repo.owner, repo: repo.name };
 }
+
+/**
+ * The admin-confirmed cloud identity record (ADR-0033 Decision 5) — written
+ * ONLY by `PUT /projects/:id/identity` (routes/projects.ts), never accepted
+ * on the register body or any other write. Presence of this block is ONE of
+ * the two ways {@link isIdentityConfirmed} recognizes a confirmed identity —
+ * see that function's comment for the other (register-time) way.
+ */
+export const ProjectIdentityConfirmation = z.object({
+  confirmedBy: z.string(),
+  confirmedAt: z.string(),
+});
+export type ProjectIdentityConfirmation = z.infer<
+  typeof ProjectIdentityConfirmation
+>;
 
 /**
  * A registered project. GLOBAL key space like identity — the registry
@@ -693,7 +812,7 @@ export const ProjectItem = z.object({
    * An azure row carries the {@link subscriptionId}/{@link tenantId}/{@link location}
    * identity triple below IN PLACE OF {@link accountId}/{@link region}.
    */
-  provider: z.enum(['aws', 'azure']).optional(),
+  provider: z.enum(["aws", "azure"]).optional(),
   /** AWS account id, `^\d{12}$`. Present for an aws project (provider absent or
    * 'aws'); an azure project carries `subscriptionId`/`tenantId`/`location`
    * instead, so this is now OPTIONAL. */
@@ -707,6 +826,17 @@ export const ProjectItem = z.object({
   /** Azure default location (allowlisted at register — routes/projects.ts
    * AZURE_LOCATION_ALLOWLIST) — present iff `provider === 'azure'`. */
   location: z.string().optional(),
+  /**
+   * ADR-0033 Decision 5 — the admin-confirmed identity record, written ONLY
+   * by `PUT /projects/:id/identity`. ADDITIVE + OPTIONAL: absent on every
+   * project this phase's register flow creates (which still collects
+   * accountId/region or subscriptionId/tenantId/location AT register time —
+   * `isIdentityConfirmed` treats THAT as already-confirmed too, so nothing
+   * about today's register flow changes). This block only becomes load-bearing
+   * once a LATER phase's url-only register can produce a project with no
+   * identity fields at all — see {@link isIdentityConfirmed}.
+   */
+  identityConfirmed: ProjectIdentityConfirmation.optional(),
   status: ProjectStatus,
   createdBy: z.string(),
   createdAt: z.string(),
@@ -721,7 +851,11 @@ export const ProjectItem = z.object({
    * nothing is served (a staged upload alone serves nothing — fail closed).
    */
   dataActive: z
-    .object({ version: z.number().int().positive(), activatedBy: z.string(), activatedAt: z.string() })
+    .object({
+      version: z.number().int().positive(),
+      activatedBy: z.string(),
+      activatedAt: z.string(),
+    })
     .optional(),
   /**
    * Archive block. An archived project stops being routable/servable and refuses
@@ -729,11 +863,52 @@ export const ProjectItem = z.object({
    * is tightening (immediate, one admin); UNarchiving is loosening (2-admin
    * envelope). ADDITIVE: absent on every existing row.
    */
-  archived: z.object({ archivedBy: z.string(), archivedAt: z.string() }).optional(),
+  archived: z
+    .object({ archivedBy: z.string(), archivedAt: z.string() })
+    .optional(),
   GSI1PK: z.string().optional(),
   GSI1SK: z.string().optional(),
 });
 export type ProjectItem = z.infer<typeof ProjectItem>;
+
+/**
+ * Whether a project's cloud identity is CONFIRMED — the fail-closed predicate
+ * `POST /projects/:id/upload-tokens` mint (routes/projectData.ts) checks
+ * before minting, refusing `IDENTITY_UNCONFIRMED` when this is false (ADR-0033
+ * Decision 5: "so a project can never reach the data lane on an unconfirmed,
+ * machine-proposed identity"). TRUE for either of two honest reasons:
+ *
+ *  1. An explicit confirmation exists ({@link ProjectIdentityConfirmation},
+ *     written only by `PUT /projects/:id/identity`).
+ *  2. The project carries a FULL identity at all (aws: accountId+region ·
+ *     azure: subscriptionId+tenantId+location) — because a human TYPED those
+ *     values into the register form, so they are honestly "confirmed by the
+ *     operator who typed it" the moment the row exists. Backfilling an
+ *     explicit confirmation block for every such project would be a fiction
+ *     (nobody clicked a confirm button), so arm 2 recognizes the fact instead
+ *     of manufacturing one. This is what keeps every project registered before
+ *     the url-only form — and every project registered through it WITH an
+ *     identity typed — minting uploads exactly as before.
+ *
+ * 2026-07-26: THIS GATE NOW HAS TEETH. `RegisterBody` accepts a body carrying
+ * no identity key at all (the url-only register, ADR-0033 Decision 5), which
+ * produces a row with NEITHER identity fields NOR a confirmation — both arms
+ * false. Such a project scans and reaches trust review normally; it simply
+ * cannot mint an upload token until an admin has confirmed the identity the
+ * scan proposed. That is the whole point: the deferral moved WHEN the cloud
+ * identity is decided, never WHETHER a person decides it.
+ */
+export function isIdentityConfirmed(p: ProjectItem): boolean {
+  if (p.identityConfirmed) return true;
+  if (p.provider === "azure") {
+    return (
+      p.subscriptionId !== undefined &&
+      p.tenantId !== undefined &&
+      p.location !== undefined
+    );
+  }
+  return p.accountId !== undefined && p.region !== undefined;
+}
 
 /**
  * The one-time boot SETTLEMENT marker (data-birth spec §9). Presence means the
@@ -848,6 +1023,76 @@ export const ProjectUploadTokenItem = z.object({
 });
 export type ProjectUploadTokenItem = z.infer<typeof ProjectUploadTokenItem>;
 
+/**
+ * One PRE-TRUST onboarding token (easy-first-import spec §3 A-ii) — the
+ * credential for the Bearer lane on `PUT /projects/:id/trust-request`. A
+ * SEPARATE type and key namespace from {@link ProjectUploadTokenItem}
+ * (fail-closed: the two must never be cross-usable — I10). Mint is legal only
+ * while the project is draft/pending-trust, the EXACT INVERSE of the upload
+ * token's trusted/ready gate, so the two credentials' lifetimes never
+ * overlap. Same argon2id-at-rest, shown-once-at-mint posture as the upload
+ * token. UNLIKE the upload token, revoke does not delete the row: it stamps
+ * `revokedAt` (a tombstone, mirroring `ProjectItem.archived` rather than a
+ * hard delete) so the mint stays in the audit/history trail, and the Bearer
+ * lane's fail-closed gate checks `revokedAt` as its own explicit step.
+ */
+export const ProjectOnboardTokenItem = z.object({
+  PK: z.string(),
+  SK: z.string(), // 'ONBOARDTOKEN#<tokenId>'
+  tokenId: z.string(),
+  projectId: z.string(),
+  /** argon2id hash of the token's secret half. NEVER serialized to any client. */
+  secretHash: z.string(),
+  createdBy: z.string(),
+  createdAt: z.string(),
+  expiresAt: z.string(),
+  /** Soft-revoke tombstone — present iff `DELETE /projects/:id/onboard-tokens/:tokenId` revoked it. */
+  revokedAt: z.string().optional(),
+});
+export type ProjectOnboardTokenItem = z.infer<typeof ProjectOnboardTokenItem>;
+
+/**
+ * One server-side scan job (ADR-0033). The control plane records the INTENT to
+ * scan; a separate worker does the cloning and parsing and reports back.
+ *
+ * The row deliberately holds NO secret and no clone URL: the URL is rebuilt at
+ * claim time from the project's validated RepoRef (`domain/scanner.ts`
+ * buildCloneUrl) and the upload token is minted per claim with a short TTL. A
+ * leaked job row therefore grants nothing and reveals nothing about how the
+ * deployment reaches the forge.
+ *
+ * `status` moves only along the forward-only machine in `domain/scanner.ts`.
+ * `error` is ALREADY sanitized before it is written here — it originates in a
+ * worker that ran against an untrusted repository, so raw worker output must
+ * never reach this row.
+ */
+export const ProjectScanJobItem = z.object({
+  PK: z.string(),
+  SK: z.string(), // 'SCANJOB#<jobId>'
+  jobId: z.string(),
+  projectId: z.string(),
+  status: z.enum([
+    "queued",
+    "claimed",
+    "cloning",
+    "scanning",
+    "uploaded",
+    "failed",
+  ]),
+  createdBy: z.string(),
+  createdAt: z.string(),
+  /** Set when a worker claims it; absent while queued. */
+  startedAt: z.string().optional(),
+  /** Set on reaching a terminal status (uploaded | failed). */
+  finishedAt: z.string().optional(),
+  /** Sanitized worker-reported failure reason — never raw worker output. */
+  error: z.string().optional(),
+  /** Queue index: {@link scanJobQueueGsi} while waiting, {@link scanJobDoneGsi} once taken. */
+  GSI1PK: z.string().optional(),
+  GSI1SK: z.string().optional(),
+});
+export type ProjectScanJobItem = z.infer<typeof ProjectScanJobItem>;
+
 /* ── drift telemetry: published reports (versions on disk; metadata rows here) ── */
 
 /**
@@ -939,8 +1184,8 @@ export const DriftProposalItem = z.object({
    * 2026-07-20-drift-restore-tranche.md §2.5 — is additive too: a proposal
    * re-asserting the code already on `main` over an out-of-band deletion,
    * address-keyed like adopt/revert. */
-  flavor: z.enum(['adopt', 'revert', 'import', 'restore']),
-  status: z.enum(['open', 'submitted', 'superseded']),
+  flavor: z.enum(["adopt", "revert", "import", "restore"]),
+  status: z.enum(["open", "submitted", "superseded"]),
   addresses: z.array(z.string()),
   attrCount: z.number().int().nonnegative(),
   /** The report version this exact digest was FIRST generated from. */
@@ -978,103 +1223,185 @@ const P = (projectId: string): string => `P#${projectId}#`;
 
 /** Month partition key component (UTC), e.g. '202607'. */
 export function yyyymm(d: Date = new Date()): string {
-  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 /* GLOBAL identity keys — NOT project-scoped. */
 export function accountKey(username: string): Key {
-  return { PK: `ACCOUNT#${username}`, SK: 'META' };
+  return { PK: `ACCOUNT#${username}`, SK: "META" };
 }
 export function sessionKey(tokenSha: string): Key {
-  return { PK: `SESSION#${tokenSha}`, SK: 'META' };
+  return { PK: `SESSION#${tokenSha}`, SK: "META" };
 }
 export function sessionUserGsi(userId: string): string {
   return `SESSUSER#${userId}`;
 }
 /** GLOBAL registry key (the registry defines the project namespace). */
 export function projectKey(id: string): Key {
-  return { PK: `PROJECT#${id}`, SK: 'META' };
+  return { PK: `PROJECT#${id}`, SK: "META" };
 }
 /** The GLOBAL settlement-marker row (data-birth spec §9) — one per store. */
 export function settlementKey(): Key {
-  return { PK: 'SETTLEMENT', SK: 'META' };
+  return { PK: "SETTLEMENT", SK: "META" };
 }
 /** The GLOBAL instance-identity row (ADR-0023) — one per store, like
  * {@link settlementKey}; never project-scoped. */
 export function instanceKey(): Key {
-  return { PK: 'INSTANCE', SK: 'META' };
+  return { PK: "INSTANCE", SK: "META" };
 }
 /** One uploaded data version's metadata row (content lives on disk). */
 export function projectDataVersionKey(id: string, version: number): Key {
-  return { PK: `PROJECT#${id}`, SK: `DATA#v${String(version).padStart(6, '0')}` };
+  return {
+    PK: `PROJECT#${id}`,
+    SK: `DATA#v${String(version).padStart(6, "0")}`,
+  };
 }
 /** SK prefix that lists a project's data versions in ascending order. */
-export const PROJECT_DATA_SK_PREFIX = 'DATA#v';
+export const PROJECT_DATA_SK_PREFIX = "DATA#v";
 /** One CI upload token row (secret argon2id-hashed at rest). */
 export function uploadTokenKey(id: string, tokenId: string): Key {
   return { PK: `PROJECT#${id}`, SK: `UPLOADTOKEN#${tokenId}` };
 }
+/**
+ * A project's operator-supplied FORGE credential — the read-only token that
+ * lets the scanner clone a private repository (ADR-0033 Decision 1).
+ *
+ * Its own ROW, never a field on {@link ProjectItem}, for one reason: the
+ * project row is serialized by `GET /projects` on every page load, and a secret
+ * that lives on it is one careless projection away from the wire. Nothing
+ * serializes this row — the registry exposes only the boolean fact that one
+ * exists, and the sealed blob is opened exactly once per scan job, in memory,
+ * at claim time.
+ *
+ * `sealed` is AES-256-GCM over `username:token` under `CCP_FORGE_SEAL_KEY`
+ * (domain/forgeCredentials.ts) — a key deliberately separate from the TOTP key.
+ */
+export const ProjectForgeCredentialItem = z.object({
+  PK: z.string(),
+  SK: z.string(), // 'FORGECRED'
+  projectId: z.string(),
+  /** AES-256-GCM envelope. NEVER served, NEVER logged, NEVER echoed back. */
+  sealed: z.string(),
+  /** The username half, in clear, so the wizard can show WHICH identity is
+   * stored without ever revealing the token. Non-secret by construction. */
+  username: z.string(),
+  createdBy: z.string(),
+  createdAt: z.string(),
+});
+export type ProjectForgeCredentialItem = z.infer<
+  typeof ProjectForgeCredentialItem
+>;
+
+/** One pre-trust onboarding-token row (secret argon2id-hashed at rest) — a
+ * SEPARATE key namespace from {@link uploadTokenKey}, never cross-usable. */
+export function onboardTokenKey(id: string, tokenId: string): Key {
+  return { PK: `PROJECT#${id}`, SK: `ONBOARDTOKEN#${tokenId}` };
+}
+/** SK prefix that lists a project's onboarding tokens. */
+export const ONBOARD_TOKEN_SK_PREFIX = "ONBOARDTOKEN#";
+/** The project's single forge credential row (at most one per project). */
+export function forgeCredentialKey(id: string): Key {
+  return { PK: `PROJECT#${id}`, SK: "FORGECRED" };
+}
+/** One server-side scan job for a project (ADR-0033). */
+export function scanJobKey(id: string, jobId: string): Key {
+  return { PK: `PROJECT#${id}`, SK: `SCANJOB#${jobId}` };
+}
+/**
+ * GSI1 partition holding ONLY jobs still waiting to be picked up, so a worker
+ * finds work with one indexed read instead of walking every project. A job
+ * LEAVES this partition the moment it is claimed (the claim's compare-and-swap
+ * rewrites GSI1PK to {@link scanJobDoneGsi}), which is what keeps the queue
+ * small and makes "already taken" unrepresentable rather than merely unlikely.
+ */
+export function scanJobQueueGsi(): string {
+  return "SCANJOB#QUEUED";
+}
+/** Where a claimed/finished job's GSI1PK moves to — out of the queue partition. */
+export function scanJobDoneGsi(): string {
+  return "SCANJOB#TAKEN";
+}
+/** SK prefix for querying a project's scan jobs (ULID jobIds sort chronologically). */
+export const SCAN_JOB_SK_PREFIX = "SCANJOB#";
 /** One published drift report version's metadata row (content lives on disk). */
 export function driftVersionKey(id: string, version: number): Key {
-  return { PK: `PROJECT#${id}`, SK: `DRIFT#v${String(version).padStart(6, '0')}` };
+  return {
+    PK: `PROJECT#${id}`,
+    SK: `DRIFT#v${String(version).padStart(6, "0")}`,
+  };
 }
 /** SK prefix that lists a project's drift report versions in ascending order. */
-export const DRIFT_VERSION_SK_PREFIX = 'DRIFT#v';
+export const DRIFT_VERSION_SK_PREFIX = "DRIFT#v";
 /** The served-drift pointer row — its own row, never on the registry item. */
 export function driftPointerKey(id: string): Key {
-  return { PK: `PROJECT#${id}`, SK: 'DRIFT#latest' };
+  return { PK: `PROJECT#${id}`, SK: "DRIFT#latest" };
 }
 /** One generated drift-fix proposal's metadata row (content lives on disk). */
 export function driftProposalKey(id: string, digest: string): Key {
   return { PK: `PROJECT#${id}`, SK: `DRIFTPROP#${digest}` };
 }
 /** SK prefix that lists a project's drift proposals (any status). */
-export const DRIFT_PROPOSAL_SK_PREFIX = 'DRIFTPROP#';
+export const DRIFT_PROPOSAL_SK_PREFIX = "DRIFTPROP#";
 
 /* PROJECT-SCOPED keys — projectId is ALWAYS the first argument. */
 export function teamKey(projectId: string, id: string): Key {
-  return { PK: `${P(projectId)}TEAM#${id}`, SK: 'META' };
+  return { PK: `${P(projectId)}TEAM#${id}`, SK: "META" };
 }
 export function policyKey(projectId: string): Key {
-  return { PK: `${P(projectId)}POLICY`, SK: 'CURRENT' };
+  return { PK: `${P(projectId)}POLICY`, SK: "CURRENT" };
 }
 export function policyVersionKey(projectId: string, n: number): Key {
   return { PK: `${P(projectId)}POLICY`, SK: `VERSION#${n}` };
 }
 export function riskOverrideKey(projectId: string, opId: string): Key {
-  return { PK: `${P(projectId)}RISKOVR#${opId}`, SK: 'CURRENT' };
+  return { PK: `${P(projectId)}RISKOVR#${opId}`, SK: "CURRENT" };
 }
 export function settingKey(projectId: string, key: string): Key {
-  return { PK: `${P(projectId)}SETTING#${key}`, SK: 'CURRENT' };
+  return { PK: `${P(projectId)}SETTING#${key}`, SK: "CURRENT" };
 }
 export function requestKey(projectId: string, ulid: string): Key {
-  return { PK: `${P(projectId)}REQ#${ulid}`, SK: 'META' };
+  return { PK: `${P(projectId)}REQ#${ulid}`, SK: "META" };
 }
 /** Idempotency marker for a submit — scoped to (project, requester, client key), so a resubmit
  * carrying the same key resolves the FIRST request instead of creating a duplicate, and a key
  * can never collide across accounts or projects. Value: `{ requestId }`. */
-export function requestIdempotencyKey(projectId: string, actor: string, key: string): Key {
-  return { PK: `${P(projectId)}IDEMPOTENCY#${actor}#${key}`, SK: 'META' };
+export function requestIdempotencyKey(
+  projectId: string,
+  actor: string,
+  key: string,
+): Key {
+  return { PK: `${P(projectId)}IDEMPOTENCY#${actor}#${key}`, SK: "META" };
 }
-export function approvalKey(projectId: string, ulid: string, actor: string): Key {
+export function approvalKey(
+  projectId: string,
+  ulid: string,
+  actor: string,
+): Key {
   return { PK: `${P(projectId)}REQ#${ulid}`, SK: `APPROVAL#${actor}` };
 }
 export function eventKey(projectId: string, ulid: string, seq: number): Key {
-  return { PK: `${P(projectId)}REQ#${ulid}`, SK: `EVT#${String(seq).padStart(6, '0')}` };
+  return {
+    PK: `${P(projectId)}REQ#${ulid}`,
+    SK: `EVT#${String(seq).padStart(6, "0")}`,
+  };
 }
 export function configChangeKey(projectId: string, ulid: string): Key {
-  return { PK: `${P(projectId)}CONFIGCHANGE#${ulid}`, SK: 'META' };
+  return { PK: `${P(projectId)}CONFIGCHANGE#${ulid}`, SK: "META" };
 }
-export function auditKey(projectId: string, yyyymmStr: string, ulid: string): Key {
+export function auditKey(
+  projectId: string,
+  yyyymmStr: string,
+  ulid: string,
+): Key {
   return { PK: `${P(projectId)}AUDIT#${yyyymmStr}`, SK: ulid };
 }
 export function chainHead(projectId: string): Key {
-  return { PK: `${P(projectId)}AUDIT`, SK: 'CHAINHEAD' };
+  return { PK: `${P(projectId)}AUDIT`, SK: "CHAINHEAD" };
 }
 
 /* GSI1 partition helpers (single global secondary index, namespaced by prefix). */
 export function accountsGsi(): string {
-  return 'ACCOUNTS'; // GLOBAL account directory (one across projects)
+  return "ACCOUNTS"; // GLOBAL account directory (one across projects)
 }
 export function teamCollectionGsi(projectId: string): string {
   return `${P(projectId)}TEAM`;
@@ -1086,5 +1413,5 @@ export function pendingConfigGsi(projectId: string): string {
   return `${P(projectId)}CONFIGCHANGE#PENDING`;
 }
 export function projectCollectionGsi(): string {
-  return 'PROJECTS'; // GLOBAL project registry (one namespace across the estate)
+  return "PROJECTS"; // GLOBAL project registry (one namespace across the estate)
 }

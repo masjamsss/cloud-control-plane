@@ -1,0 +1,86 @@
+# The FIRST onboarding scan for a new Cloud Control Plane project — GitLab
+# twin of .github/workflows/ccp-onboard.yml. Design and full background:
+# ccp/docs/onboarding-runbook.md and ccp/docs/onboarding-security.md in the
+# control-plane repository.
+#
+# GitLab has no per-workflow "Run workflow" button the way GitHub does, so
+# this ships as a `when: manual` job on the default branch: from CI/CD →
+# Pipelines → "Run pipeline" (on the default branch), this job appears with a
+# play button once that pipeline starts — click it to run the scan. Copy this
+# file in (or `include:` it if the control-plane repo is mirrored on the same
+# GitLab), then set under Settings → CI/CD → Variables (details:
+# ccp/docs/onboarding-runbook.md):
+#
+#   CCP_ONBOARD_TOKEN       masked + protected — the short-lived,
+#                              single-purpose onboarding token minted in
+#                              Admin → Projects (shown once at mint) — a
+#                              SEPARATE credential from CCP_UPLOAD_TOKEN (the
+#                              recurring data lane's key)
+#   CCP_CONTROL_PLANE_URL   e.g. https://ccp.example.com/api
+#                              (unset = scan only, keep the artifact)
+#   CCP_PROJECT_ID          the control-plane project id (must still be draft
+#                              or pending-trust — minting the token above
+#                              already checked that)
+#
+# A protected variable only reaches pipelines on PROTECTED refs — protect the
+# default branch or the job dies with "CCP_ONBOARD_TOKEN is empty".
+#
+# THE TRUST BOUNDARY THIS JOB MUST NEVER CROSS
+# (ccp/docs/onboarding-security.md is the full contract):
+#   - PRESCAN ONLY. catalogctl onboard is invoked with NO --trusted-commit, so
+#     the run stops at the trust gate by construction, before any terraform
+#     call — nothing from this untrusted repo is ever executed.
+#   - NO TERRAFORM. There is no terraform setup step anywhere in this job.
+#   - NO CLOUD SECRET. Nothing below references an AWS/GOOGLE/ARM credential —
+#     only the narrow, pre-trust-only CCP_ONBOARD_TOKEN.
+# Do not add a --trusted-commit re-run to this job, ever, without first
+# shipping the sandboxed container (tools/catalogctl/sandbox/) that invariant
+# requires for running any external repo's schema step (I7).
+
+ccp-onboard:
+  # Mirrors tools/catalogctl/go.mod's `go 1.25` pin (ccp/toolbox/Dockerfile
+  # pins the identical tag) — GitLab can't compute an image tag from a script
+  # the way the GitHub workflow's setup-go/go-version-file does; a too-old
+  # self-hosted mirror fails the build loudly instead of silently, since a
+  # go.mod `go` directive is a hard minimum. Self-hosted/air-gapped runners
+  # should mirror this image (and may pin it by digest) in their own registry.
+  image: golang:1.25-bookworm
+  rules:
+    # Same ref as the recurring data lane's own rule — the default branch —
+    # but `when: manual` means it never runs on its own; it waits on the play
+    # button (see the header comment).
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+  variables:
+    # Shallow clone — the scan only ever needs HEAD, never history; same
+    # depth actions/checkout defaults to on the GitHub side.
+    GIT_DEPTH: "1"
+  before_script:
+    # No-op on the image above (golang:*-bookworm ships git); keeps the job
+    # alive on a slimmed self-hosted mirror, mirroring ccp-data.gitlab-ci.yml's
+    # own guard.
+    - command -v git >/dev/null || (apt-get update && apt-get install -y --no-install-recommends git ca-certificates)
+  script:
+    # Same-repo layout (the control-plane repo itself) or a foreign estate
+    # that cloned the tools into .ccp-tools/ — same resolution as the GitHub
+    # workflow.
+    - |
+      if [ -f tools/catalogctl/go.mod ]; then
+        DIR=tools/catalogctl
+      elif [ -f .ccp-tools/tools/catalogctl/go.mod ]; then
+        DIR=.ccp-tools/tools/catalogctl
+      else
+        echo "catalogctl module not found — estate repos must also clone the control-plane repo into .ccp-tools/ (see ccp/docs/onboarding-runbook.md)" >&2
+        exit 1
+      fi
+      go build -C "$DIR" -o /tmp/catalogctl ./cmd/catalogctl
+      /tmp/catalogctl onboard "$CI_PROJECT_DIR" --project-id "$CCP_PROJECT_ID" --out "$CI_PROJECT_DIR/ccp-onboard-out" --server "$CCP_CONTROL_PLANE_URL"
+  artifacts:
+    # Manual-upload fallback: on an unreachable control plane the two scan
+    # files are still kept here — pick them from this artifact in the
+    # wizard's "Run locally" tab (Admin → Projects, step 2).
+    when: always
+    name: ccp-onboard-out
+    paths:
+      - ccp-onboard-out/
+    expire_in: 14 days

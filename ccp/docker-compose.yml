@@ -53,7 +53,27 @@ services:
       # Settings rename never needs this knob touched again).
       CCP_INSTANCE_NAME: ${CCP_INSTANCE_NAME:-}
       CCP_INSTANCE_TAGLINE: ${CCP_INSTANCE_TAGLINE:-}
+      # ADR-0033 — the built-in repository scanner. BOTH must be set for the
+      # lane to open (an armed scanner with no key is a closed lane, not an
+      # open one); empty ⇒ every scan endpoint answers SCANNER_DISABLED and the
+      # `scanner` service below has nothing to claim. CCP_FORGE_HOSTS adds
+      # self-hosted forge hostnames to the clone allowlist (github.com and
+      # gitlab.com are always allowed).
+      CCP_SCANNER: ${CCP_SCANNER:-}
+      CCP_SCANNER_KEY: ${CCP_SCANNER_KEY:-}
+      CCP_FORGE_HOSTS: ${CCP_FORGE_HOSTS:-}
+      # PRIVATE repositories. Only the API holds these — the scanner container
+      # gets a resolved, per-job credential and never the App key or the seal.
+      # Empty ⇒ public repos only, which is a working deployment, not a broken one.
+      CCP_FORGE_SEAL_KEY: ${CCP_FORGE_SEAL_KEY:-}
+      CCP_GITHUB_APP_ID: ${CCP_GITHUB_APP_ID:-}
+      CCP_GITHUB_APP_KEY_FILE: ${CCP_GITHUB_APP_KEY_FILE:-}
     volumes:
+      # The GitHub App's private key, when one is configured — a read-only bind
+      # of a host file so it keeps its own permissions and never enters the
+      # image or the store. Points at ${CCP_GITHUB_APP_KEY_FILE} inside the
+      # container; leave the host path empty and this is an inert empty dir.
+      - ${CCP_GITHUB_APP_KEY_HOST_DIR:-/data/ccp/forge}:/run/secrets/forge:ro
       # DURABLE store: accounts, TOTP, audit chain. Bind (not a named volume) —
       # created + chowned by `scripts/setup.sh data`; an existing host on the old
       # named volume migrates via `scripts/migrate-data.sh`.
@@ -110,6 +130,54 @@ services:
       timeout: 5s
       start_period: 60s
       retries: 3
+
+  # ── Repository scanner (opt-in, profile: scanner) ────────────────────────────
+  # ADR-0033 — the zero-touch first import: the operator pastes a repo URL and
+  # THIS container does the scan, instead of the estate repo running a CI job or
+  # someone running catalogctl on a laptop.
+  #
+  # OFF unless you opt in TWICE, on purpose: the api only accepts scan jobs with
+  # CCP_SCANNER=1 + CCP_SCANNER_KEY set on the `api` service, and this container
+  # only runs under `--profile scanner`. Arming it is what gives this deployment
+  # read access to estate repositories, so it is never a side effect of `up`.
+  #
+  # It is the only service that fetches untrusted code, hence the posture:
+  # no ports, no volumes, no docker socket, read-only rootfs, non-root, all
+  # capabilities dropped, and a tmpfs workspace that both bounds how much disk a
+  # hostile repository can consume and guarantees no checkout survives a restart.
+  # The image ships NO terraform and the worker refuses to start if it finds any
+  # (see scanner/Dockerfile).
+  #
+  #   docker compose --profile scanner up -d --build scanner
+  scanner:
+    build:
+      context: ..                       # repo root — builds catalogctl from tools/catalogctl
+      dockerfile: ccp/scanner/Dockerfile
+    image: ccp-scanner:local
+    profiles: ["scanner"]
+    restart: unless-stopped
+    stop_grace_period: 30s              # let an in-flight scan report a terminal status
+    command:
+      - --server
+      - ${CCP_SCANNER_SERVER:-http://api:${PORT:-8801}}
+      - --workdir
+      - /workspace
+    environment:
+      # The ONLY credential this container gets. Same value as the api's
+      # CCP_SCANNER_KEY — it is the shared key for the /scan-jobs lane, and it
+      # authorizes nothing else. Deliberately NOT given any cloud credential;
+      # the worker refuses to start if it finds one.
+      CCP_SCANNER_KEY: ${CCP_SCANNER_KEY:?set CCP_SCANNER_KEY in .env before enabling the scanner profile — the shared scanner-worker key, >=32 chars}
+    read_only: true
+    tmpfs:
+      # Every checkout lives here and nowhere else. Size it for your largest
+      # estate repo; a repository that will not fit is a failed job, not a full
+      # host disk.
+      - /workspace:size=${CCP_SCANNER_WORKSPACE_SIZE:-2g},mode=0700,uid=1000,gid=1000
+      - /tmp:size=64m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
 
   # ── Toolbox (opt-in, profile: toolbox) ───────────────────────────────────────
   # Pinned Terraform + the built catalogctl, for armed-lane operator commands (see

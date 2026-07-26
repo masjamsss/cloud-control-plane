@@ -1,12 +1,16 @@
 import type {
   AdminWriteOutcome,
+  CiProvenanceWire,
   HttpApiClient,
+  OnboardTokenMint,
   PrescanFinding,
   PrescanReportWire,
   ProjectDataVersion,
   ProjectDataVersions,
   RegisterProjectInput,
   RepoRef,
+  ScanJobCreated,
+  ScanJobState,
   ServerProject,
   ServerProjectStatus,
   TrustRequestUpload,
@@ -19,14 +23,18 @@ import {
   deregisterLocalProject,
   listLocalProjectDataVersions,
   listLocalProjects,
+  mintLocalOnboardToken,
   mintLocalUploadToken,
+  ProjectOnboardingError,
   proposeLocalProjectTrust,
   registerLocalProject,
+  revokeLocalOnboardToken,
   revokeLocalUploadToken,
   unarchiveLocalProject,
   uploadLocalTrustRequest,
 } from '@/lib/projectOnboarding';
 import { projectCalendarAgeDays } from '@/lib/datetime';
+import { GITHUB_ONBOARD_CI_PATH } from './ciTemplates';
 
 /**
  * Pure logic for the Admin → Projects onboarding wizard. React-free so
@@ -198,6 +206,134 @@ export function repoRefFromForm(input: {
   return { ok: true, repo: { host: 'gitlab', baseUrl, owner, name } };
 }
 
+/**
+ * Turn ONE pasted repository address into the wire {@link RepoRef} plus a
+ * suggested project id and display name — the whole url-only register.
+ *
+ * Accepts what a person actually has in their clipboard, because asking them to
+ * normalise it first is the friction this replaces:
+ *   https://github.com/acme-co/terraform-acme        (browser address bar)
+ *   https://github.com/acme-co/terraform-acme.git    (the clone button)
+ *   https://github.com/acme-co/terraform-acme/tree/main/envs/prod  (a deep link)
+ *   git@github.com:acme-co/terraform-acme.git        (the ssh clone button)
+ *   github.com/acme-co/terraform-acme                (no scheme)
+ *   acme-co/terraform-acme                           (the shorthand)
+ *
+ * github.com and gitlab.com are recognised by name; any OTHER host is treated
+ * as a self-hosted GitLab, which is the only self-hosted shape the RepoRef
+ * supports. A deep link's extra path is DISCARDED, not guessed at — `/tree/…`
+ * and `/-/blob/…` are viewer routes, not part of the repository's identity.
+ *
+ * Fail-soft with a plain reason; the server re-validates the RepoRef either way
+ * and is the authority on what a legal owner/name looks like.
+ */
+export function parseRepoUrl(
+  raw: string,
+):
+  | { ok: true; repo: RepoRef; suggestedId: string; suggestedName: string }
+  | { ok: false; reason: string } {
+  const text = raw.trim();
+  if (text.length === 0) return { ok: false, reason: 'Paste the repository’s address.' };
+
+  let host = '';
+  let path = '';
+
+  // scp-style ssh — `git@host:owner/name.git`, what a forge's SSH clone button
+  // gives you. Not a URL, so it has to be recognised before `new URL`.
+  const scp = /^(?:[\w.-]+@)?([\w.-]+):(?!\/)(.+)$/.exec(text);
+  if (scp && !text.includes('://')) {
+    host = scp[1]!;
+    path = scp[2]!;
+  } else if (/^[\w+.-]+:\/\//.test(text) || /^[\w.-]+\.[\w.-]+\//.test(text)) {
+    // A real URL, or host-looking text with no scheme (assume https, which is
+    // the only scheme the server will clone over anyway).
+    let parsed: URL;
+    try {
+      parsed = new URL(/^[\w+.-]+:\/\//.test(text) ? text : `https://${text}`);
+    } catch {
+      return { ok: false, reason: 'That does not look like a repository address.' };
+    }
+    if (parsed.username !== '' || parsed.password !== '') {
+      // A pasted URL with a token in it would otherwise be stored and shown.
+      return {
+        ok: false,
+        reason:
+          'Remove the username or token from the address — paste just the repository’s location.',
+      };
+    }
+    host = parsed.hostname;
+    path = parsed.pathname;
+  } else {
+    // Bare `owner/name` shorthand — assume the most common forge.
+    host = 'github.com';
+    path = text;
+  }
+
+  // Drop a trailing `.git`, then split. A forge deep link appends viewer
+  // segments after owner/name; everything past the second segment is dropped.
+  const segments = path
+    .replace(/\.git$/i, '')
+    .split('/')
+    .filter((seg) => seg.length > 0);
+  if (segments.length < 2) {
+    return { ok: false, reason: 'The address needs both an owner and a repository name.' };
+  }
+  // GitLab subgroups are legal in `owner` but its viewer routes are not: `/-/`
+  // marks where GitLab's own UI path begins, so anything from there on is UI.
+  const uiAt = segments.indexOf('-');
+  const meaningful = uiAt > 1 ? segments.slice(0, uiAt) : segments;
+  // GitHub's viewer routes (`/tree/…`, `/blob/…`) always sit at position 2.
+  const trimmed =
+    meaningful.length > 2 &&
+    ['tree', 'blob', 'commit', 'commits', 'releases', 'pull', 'issues'].includes(meaningful[2]!)
+      ? meaningful.slice(0, 2)
+      : meaningful;
+
+  const name = trimmed[trimmed.length - 1]!;
+  const owner = trimmed.slice(0, -1).join('/');
+  const lower = host.toLowerCase();
+  const repo: RepoRef =
+    lower === 'github.com' || lower === 'www.github.com'
+      ? { host: 'github', owner, name }
+      : lower === 'gitlab.com' || lower === 'www.gitlab.com'
+        ? { host: 'gitlab', owner, name }
+        : { host: 'gitlab', baseUrl: `https://${lower}`, owner, name };
+
+  return {
+    ok: true,
+    repo,
+    suggestedId: suggestProjectId(name),
+    suggestedName: suggestProjectName(name),
+  };
+}
+
+/** A project id the server's grammar accepts, derived from the repo name:
+ * lowercase, letters/digits/dashes, must start with a letter, 2–32 chars. A
+ * SUGGESTION the operator can overwrite — never silently authoritative. */
+export function suggestProjectId(repoName: string): string {
+  const slug = repoName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    // The most common estate-repo prefixes carry no information once the repo
+    // IS the project; dropping them turns `terraform-acme` into `acme`.
+    .replace(/^(?:terraform|tf|infra|infrastructure)-/, '');
+  const started = /^[a-z]/.test(slug) ? slug : `p-${slug}`;
+  return started.replace(/-+$/, '').slice(0, 32);
+}
+
+/** A display name derived from the repo name — Title Case, dashes to spaces.
+ * Also only a suggestion. */
+export function suggestProjectName(repoName: string): string {
+  const words = repoName
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0);
+  const titled = words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  return titled.slice(0, 100) || repoName.slice(0, 100);
+}
+
 /** "owner/name" for a registry card — prefers the host-agnostic record and
  * falls back to the legacy github mirror for projects predating it (both are
  * optional on the wire; {@link projectRepoLabel} owns the fallback order). */
@@ -215,7 +351,11 @@ export function projectCloudLabel(p: { provider?: 'aws' | 'azure' }): string {
  * project renders Account + Region; an azure project renders Subscription +
  * Tenant + Location (0039 S1). Narrows on the `provider` discriminant, so every
  * legacy aws project (no provider key) renders exactly the two rows it did
- * before this seam. */
+ * before this seam.
+ *
+ * A url-only registration has NO identity yet — the scan proposes it and an
+ * admin confirms it — so this returns ONE honest row saying so rather than
+ * blank values that would read as a rendering bug. */
 export function projectIdentityRows(
   p: ServerProject,
 ): ReadonlyArray<{ label: string; value: string; mono?: boolean }> {
@@ -225,6 +365,9 @@ export function projectIdentityRows(
       { label: 'Tenant', value: p.tenantId, mono: true },
       { label: 'Location', value: p.location },
     ];
+  }
+  if (p.accountId === undefined || p.region === undefined) {
+    return [{ label: 'Cloud account', value: 'Not confirmed yet — the scan will propose it' }];
   }
   return [
     { label: 'Account', value: p.accountId, mono: true },
@@ -269,21 +412,78 @@ export async function readArtifactFile(
   file: ArtifactFile,
 ): Promise<{ ok: true; text: string } | { ok: false; reason: string }> {
   if (file.size > ARTIFACT_FILE_MAX_BYTES) {
-    return { ok: false, reason: `${file.name} is too big to be a scan artifact — pick the JSON file the scan wrote.` };
+    return {
+      ok: false,
+      reason: `${file.name} is too big to be a scan artifact — pick the JSON file the scan wrote.`,
+    };
   }
   try {
     const bytes = await file.arrayBuffer();
     const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
     return { ok: true, text };
   } catch {
-    return { ok: false, reason: `${file.name} is not a text file — pick the JSON file the scan wrote.` };
+    return {
+      ok: false,
+      reason: `${file.name} is not a text file — pick the JSON file the scan wrote.`,
+    };
   }
 }
 
-/** The copy-paste command for the local scan (step 2). The scan runs where the
- * checkout and terraform binary live — never on the api host. */
+/** The copy-paste command for the local scan (step 2, "Run locally" tab). The
+ * scan runs where the checkout and terraform binary live — never on the api
+ * host. Kept verbatim for air-gapped estates with no usable CI. */
 export function onboardCommand(projectId: string): string {
   return `catalogctl onboard <path-to-your-checkout> --project-id ${projectId} --out out/`;
+}
+
+/* ── step 2, "Run in the repo's CI" tab (design:
+ * docs/superpowers/specs/2026-07-24-easy-first-import.md, option A): a
+ * mint-onboarding-token button + a host-aware deep link to the workflow's
+ * dispatch page. Owner/repo are already known from step 1's RepoRef, so
+ * nothing here asks the operator to retype anything. ─────────────────────── */
+
+/** The GitHub Actions workflow's own "Run workflow" page — the button only
+ * appears there once the file is committed on the default branch. */
+function githubOnboardDispatchUrl(repo: RepoRef): string {
+  const file = GITHUB_ONBOARD_CI_PATH.split('/').pop();
+  return `https://github.com/${repo.owner}/${repo.name}/actions/workflows/${file}`;
+}
+
+/** GitLab has no per-pipeline-definition dispatch button — the operator
+ * starts a new pipeline on the default branch ("Run pipeline") and clicks the
+ * `when: manual` job's own play button once that pipeline is running (the
+ * spec's own documented GitLab caveat). Self-hosted GitLab uses the project's
+ * own server address; GitHub is always github.com (this schema models no
+ * self-hosted GitHub Enterprise base). */
+function gitlabOnboardDispatchUrl(repo: RepoRef): string {
+  const base = (repo.baseUrl ?? 'https://gitlab.com').replace(/\/+$/, '');
+  return `${base}/${repo.owner}/${repo.name}/-/pipelines/new`;
+}
+
+/** The host-aware "run the first scan" deep link for the CI tab, or `null`
+ * when no project is selected yet (step 1 not completed) — the caller falls
+ * back to plain instructions in that case. */
+export function onboardDispatchUrl(repo: RepoRef | undefined): string | null {
+  if (!repo) return null;
+  return repo.host === 'github' ? githubOnboardDispatchUrl(repo) : gitlabOnboardDispatchUrl(repo);
+}
+
+/** Plain words for a CI-run provenance host — used next to the link the
+ * step-3 review renders when the uploaded trust request carries one. */
+export function ciProvenanceLabel(ci: Pick<CiProvenanceWire, 'host'>): string {
+  return ci.host === 'github' ? 'GitHub Actions run' : 'GitLab pipeline run';
+}
+
+/** Human-friendly rendering of `trustRequest.uploadedBy` for step 3's review.
+ * A session upload names the actor's own account id (unchanged rendering);
+ * an onboarding-token upload's actor is the server's own bookkeeping string
+ * (`onboard-token:<id>`, routes/projects.ts `tokenActor`) — that reads as a
+ * cryptic code, not a person, so show the plain fact instead. Matches on the
+ * actor prefix rather than on {@link CiProvenanceWire} presence, so it also
+ * humanizes a plain `catalogctl onboard --server` upload (Phase 1's CLI
+ * lane), which carries no `ci` block at all. */
+export function uploadedByLabel(uploadedBy: string): string {
+  return uploadedBy.startsWith('onboard-token:') ? 'the repository’s CI' : uploadedBy;
 }
 
 /** The post-trust re-run — the CLI's own commit gate. The connected CI job
@@ -317,7 +517,8 @@ export function groupDataVersions(v: ProjectDataVersions): {
 } {
   const byNewest = [...v.versions].sort((a, b) => b.version - a.version);
   const active = byNewest.find(
-    (x) => x.status === 'active' || (v.activeVersion !== undefined && x.version === v.activeVersion),
+    (x) =>
+      x.status === 'active' || (v.activeVersion !== undefined && x.version === v.activeVersion),
   );
   const rest = byNewest.filter((x) => x !== active);
   return {
@@ -374,13 +575,16 @@ export function staleDataNotice(
  */
 export const REFUSAL_COPY: Readonly<Record<string, string>> = {
   DUPLICATE_PROJECT: 'A project with this id already exists — pick a different id.',
-  VALIDATION_FAILED: 'The server refused one of the fields — fix the highlighted value and try again.',
+  VALIDATION_FAILED:
+    'The server refused one of the fields — fix the highlighted value and try again.',
   PRESCAN_SHA_MISMATCH:
     'The report does not match the fingerprint in the trust request — a person on a terminal must re-run the scan and upload the fresh pair.',
   TRUST_VERDICT_NOT_CLEAN:
     'The scan rejected this repository, so there is nothing to trust — a person on a terminal must fix the findings, commit, and scan again.',
-  STATE_CONFLICT: 'This project has moved on since you loaded the page — reload to see where it is.',
-  NOT_FOUND: 'The server does not know this — it may have been removed or renamed; reload the list.',
+  STATE_CONFLICT:
+    'This project has moved on since you loaded the page — reload to see where it is.',
+  NOT_FOUND:
+    'The server does not know this — it may have been removed or renamed; reload the list.',
   FORBIDDEN: 'Your session may not do this — an admin has to.',
   DATA_DIGEST_MISMATCH:
     'The uploaded data does not match its own fingerprints — the repo’s CI must regenerate and upload it again.',
@@ -491,7 +695,12 @@ export async function uploadTrustRequestVia(
   }
   const summary = summarizePrescanReport(reportJson);
   if (!summary) throw new Error('Not a prescan-report.json — paste the whole file the scan wrote.');
-  return uploadLocalTrustRequest(id, input.trustRequest, input.prescanReport, wireFromSummary(summary));
+  return uploadLocalTrustRequest(
+    id,
+    input.trustRequest,
+    input.prescanReport,
+    wireFromSummary(summary),
+  );
 }
 
 export async function proposeTrustVia(
@@ -514,6 +723,76 @@ export async function deregisterProjectVia(
   deregisterLocalProject(id);
   return { applied: true };
 }
+
+/* ── the pre-trust onboarding-token lane (mint/revoke; the token's own
+ * upload happens from the estate's CI, never from this app — design:
+ * docs/superpowers/specs/2026-07-24-easy-first-import.md, option A) ─────── */
+
+export async function mintOnboardTokenVia(
+  authoritative: boolean,
+  client: HttpApiClient | null,
+  id: string,
+): Promise<OnboardTokenMint> {
+  if (authoritative && client) return client.mintOnboardToken(id);
+  return mintLocalOnboardToken(id);
+}
+
+export async function revokeOnboardTokenVia(
+  authoritative: boolean,
+  client: HttpApiClient | null,
+  id: string,
+  tokenId: string,
+): Promise<void> {
+  if (authoritative && client) return client.revokeOnboardToken(id, tokenId);
+  revokeLocalOnboardToken(id, tokenId);
+}
+
+/* ── the zero-touch first scan ─────────────────────────────────────────────
+ * The control plane scans the repo ITSELF, on its own isolated worker. There
+ * is deliberately no preview stand-in: the whole feature IS a real deployment
+ * cloning a real repository, so a mock would be theatre. Without an
+ * authoritative server both calls refuse, which is also the honest answer
+ * there. */
+
+export async function createScanJobVia(
+  authoritative: boolean,
+  client: HttpApiClient | null,
+  id: string,
+): Promise<ScanJobCreated> {
+  if (authoritative && client) return client.createScanJob(id);
+  throw new ProjectOnboardingError(SCANNER_UNAVAILABLE_IN_DEMO);
+}
+
+export async function latestScanJobVia(
+  authoritative: boolean,
+  client: HttpApiClient | null,
+  id: string,
+): Promise<ScanJobState | null> {
+  if (authoritative && client) return client.latestScanJob(id);
+  return null;
+}
+
+export async function setForgeCredentialVia(
+  authoritative: boolean,
+  client: HttpApiClient | null,
+  id: string,
+  input: { username: string; token: string },
+): Promise<{ username: string }> {
+  if (authoritative && client) return client.setForgeCredential(id, input);
+  throw new ProjectOnboardingError(SCANNER_UNAVAILABLE_IN_DEMO);
+}
+
+export async function removeForgeCredentialVia(
+  authoritative: boolean,
+  client: HttpApiClient | null,
+  id: string,
+): Promise<void> {
+  if (authoritative && client) return client.removeForgeCredential(id);
+  throw new ProjectOnboardingError(SCANNER_UNAVAILABLE_IN_DEMO);
+}
+
+const SCANNER_UNAVAILABLE_IN_DEMO =
+  'The built-in repository scanner needs a real deployment to run on — this preview has no server to clone from. Use one of the other two ways to run the first scan.';
 
 /* ── the CI data lane (mint key → CI uploads staged versions → activate) ───── */
 

@@ -592,6 +592,118 @@
   color: var(--text-secondary);
 }
 
+/* ── the url-only register: the echo of what a pasted address resolved to ──
+   Shown as the operator types, so the parse is visible before it is acted on
+   rather than a silent guess. */
+.projadmin__urlecho {
+  margin: var(--space-2) 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.projadmin__urlecho--bad {
+  color: var(--risk-high, var(--text-secondary));
+}
+/* A text-weight control for the mode switch — this is a change of view, not an
+   action, so it must not compete with the primary submit next to it. */
+.projadmin__linkbtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.projadmin__linkbtn:hover {
+  text-decoration: none;
+}
+.projadmin__linkbtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-1);
+}
+
+/* ── the private-repo credential, folded away by default ──────────────────
+   Most repositories do not need one, and a token field permanently on screen
+   invites typing a token where none is wanted. */
+.projadmin__private {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+}
+.projadmin__private-summary {
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.projadmin__private-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-1);
+}
+.projadmin__private[open] .projadmin__private-summary {
+  margin-bottom: var(--space-3);
+}
+
+/* ── the server-side scan's live progress ───────────────────────────────────
+   One status line with a state dot. The dot PULSES only while work is
+   actually happening, so "still running" is readable at a glance without a
+   spinner that keeps moving after the job has finished. */
+.projadmin__scanjob {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+  background: var(--surface-2);
+}
+.projadmin__scanjob-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.projadmin__scanjob-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.projadmin__scanjob-dot--queued,
+.projadmin__scanjob-dot--claimed,
+.projadmin__scanjob-dot--cloning,
+.projadmin__scanjob-dot--scanning {
+  background: var(--accent);
+  animation: projadmin-scanpulse var(--dur-shimmer) var(--ease-standard) infinite;
+}
+.projadmin__scanjob-dot--uploaded {
+  background: var(--risk-low, var(--accent));
+}
+.projadmin__scanjob-dot--failed {
+  background: var(--risk-high, var(--text-primary));
+}
+.projadmin__scanjob-error {
+  margin: var(--space-2) 0 0;
+  font-size: 13px;
+  color: var(--risk-high, var(--text-secondary));
+  /* Sanitized server-side, but it is still text from a failed clone: wrap it
+     rather than letting one long token stretch the card. */
+  overflow-wrap: anywhere;
+}
+@keyframes projadmin-scanpulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .projadmin__paste,
   .projadmin__input,
@@ -599,5 +711,9 @@
   .projadmin__tab,
   .projadmin__file::file-selector-button {
     transition: none;
+  }
+  /* The dot still carries its colour; only the motion goes. */
+  .projadmin__scanjob-dot {
+    animation: none;
   }
 }

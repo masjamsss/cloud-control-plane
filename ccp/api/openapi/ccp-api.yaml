@@ -108,13 +108,28 @@ components:
     PrescanFinding: { type: object, required: [code, file, line],
       properties: { code: {type: string, description: 'DATA_EXTERNAL | PROVISIONER | PROVIDER_SOURCE | MODULE_SOURCE | NONSTATIC_SOURCE'},
         file: {type: string}, line: {type: integer} } }
+    LiteralValue:   # ADR-0033 Decision 5 — one static string literal the census found, with file:line provenance
+      type: object
+      required: [value, file, line]
+      properties: { value: {type: string}, file: {type: string}, line: {type: integer} }
+    ProviderConfig:   # ADR-0033 Decision 5 — the static-literal cloud-identity PROPOSAL (prescan.go ProviderConfig).
+      # A proposal for a human to confirm via PUT /projects/{id}/identity — NEVER an authoritative fact. Every field
+      # independently absent when not statically determinable (fail closed — see prescan.go providerconfig.go).
+      type: object
+      properties: { providers: {type: array, items: {$ref: '#/components/schemas/LiteralValue'}, description: 'recognized cloud provider type(s) — aws / azurerm only'},
+        awsRegion: {$ref: '#/components/schemas/LiteralValue'},
+        awsAllowedAccountIds: {type: array, items: {$ref: '#/components/schemas/LiteralValue'}},
+        azureLocation: {$ref: '#/components/schemas/LiteralValue'},
+        azureSubscriptionId: {$ref: '#/components/schemas/LiteralValue'},
+        azureTenantId: {$ref: '#/components/schemas/LiteralValue'} }
     PrescanReport:   # the prescan-report.json catalogctl onboard writes — key set golden-pinned Go-side
       type: object
       required: [repo, verdict, findings, resourceBlocks, moduleBlocks, tfJsonFiles, fmtDirtyFiles, providerPins]
       properties: { repo: {type: string}, verdict: {type: string, enum: [clean, reject]},
         findings: {type: array, items: {$ref: '#/components/schemas/PrescanFinding'}},
         resourceBlocks: {type: integer}, moduleBlocks: {type: integer}, tfJsonFiles: {type: integer},
-        fmtDirtyFiles: {type: integer}, providerPins: {type: object, additionalProperties: {type: string}} }
+        fmtDirtyFiles: {type: integer}, providerPins: {type: object, additionalProperties: {type: string}},
+        providerConfig: {$ref: '#/components/schemas/ProviderConfig', description: 'ADR-0033 Decision 5 — OPTIONAL; absent on a report from a catalogctl that predates this field (forward compat)'} }
     RepoRef:   # host-agnostic repo reference — the migration target for the GitHub-only `github` field
       type: object
       required: [host, owner, name]
@@ -261,6 +276,11 @@ components:
           description: 'R3 §6.4 trust block — written ONLY by the dual-controlled trust flow, never accepted from a body',
           properties: { trustedBy: {type: string}, trustedAt: {type: string},
             preScanReportSha256: {type: string}, commitSha: {type: string} } },
+        identityConfirmed: { type: object, required: [confirmedBy, confirmedAt],
+          description: 'ADR-0033 Decision 5 — written ONLY by PUT /projects/{id}/identity. ABSENT does not mean
+            unconfirmed for a project registered the old way (identity typed at register time) — see
+            isIdentityConfirmed, ccp/api/src/store/schema.ts',
+          properties: { confirmedBy: {type: string}, confirmedAt: {type: string} } },
         artifacts: { type: object, required: [inventorySha256, blocksSha256, recordedBy, recordedAt],
           description: 'the go-live digest record — written ONLY by the FIRST data activation''s ack (server-computed
             digests of the activated version). manifestsSha256 present iff the recorded version carried manifests',
@@ -654,8 +674,15 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { type: object,
         required: [id, name], additionalProperties: false,
         description: 'send exactly ONE repo shape — the legacy github pair OR the host-agnostic repo (both is 422).
-          PROVIDER-DISCRIMINATED identity (0039 S1): provider absent/''aws'' requires accountId+region and refuses
-          the azure fields; provider ''azure'' requires subscriptionId+tenantId+location and refuses accountId/region',
+          IDENTITY IS OPTIONAL (0033 decision 5, the url-only register): a body carrying NO identity key at all
+          DEFERS it — the scan proposes provider/region (and statically-present account ids) with file:line
+          provenance and an admin confirms them through PUT /projects/{id}/identity. Such a project scans and
+          reaches trust review normally but can never mint an upload token (422 IDENTITY_UNCONFIRMED) until a
+          human has confirmed, so the deferral moves WHEN identity is decided, never WHETHER a person decides it.
+          A body carrying ANY identity key must carry a COMPLETE, unmixed one — half an identity is a mistake,
+          not a deferral. PROVIDER-DISCRIMINATED (0039 S1): provider absent/''aws'' requires accountId+region and
+          refuses the azure fields; provider ''azure'' requires subscriptionId+tenantId+location and refuses
+          accountId/region',
         properties: { id: {type: string, pattern: '^[a-z][a-z0-9-]{1,31}$'}, name: {type: string, minLength: 2, maxLength: 100},
           github: {type: object, required: [owner, repo], additionalProperties: false,
             properties: { owner: {type: string}, repo: {type: string} }},
@@ -676,18 +703,158 @@ paths:
         trustRequest.prescanSha256 (else 422 PRESCAN_SHA_MISMATCH), then the bytes must strictly parse as a
         PrescanReport whose repo matches. A reject-verdict report uploads fine — findings must persist for
         human review — it just can never be trusted. Status → pending-trust; refused (409) once trusted/ready
-        (re-aiming a recorded trust decision requires deregister + fresh onboard). Audit: project-trust-request',
+        (re-aiming a recorded trust decision requires deregister + fresh onboard). ALSO accepts a PRE-TRUST
+        onboard-token Bearer lane (`Authorization: Bearer <tokenId>.<secret>`, minted by
+        POST /projects/{id}/onboard-tokens) for the one-shot CI scan — no session, no X-Ccp-Client, like
+        PUT /projects/{id}/data. Same downstream pipeline, but its OWN fail-closed gate runs FIRST (per-tokenId
+        rate limit → store lookup → project binding → not-revoked → expiry → argon2id verify → status); a
+        revoked/expired/mismatched token is refused 401 ONBOARD_TOKEN_INVALID. On that lane uploadedBy records
+        `onboard-token:<tokenId>` and the write audits to the TARGET project''s chain; an optional `ci` provenance
+        block is stored for the trust review. The two-admin trust on POST /projects/{id}/trust is UNCHANGED.
+        Audit: project-trust-request',
       parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
       requestBody: { required: true, content: { application/json: { schema: { type: object,
         required: [trustRequest, prescanReport], additionalProperties: false,
         properties: { trustRequest: { type: object, required: [repo, commitSha, prescanSha256], additionalProperties: false,
             properties: { repo: {type: string}, commitSha: {type: string, pattern: '^[0-9a-f]{7,64}$'},
               prescanSha256: {type: string, pattern: '^[a-f0-9]{64}$'} } },
-          prescanReport: {type: string, maxLength: 524288, description: 'raw prescan-report.json file text — hashed byte-for-byte'} } } } } },
+          prescanReport: {type: string, maxLength: 524288, description: 'raw prescan-report.json file text — hashed byte-for-byte'},
+          ci: { type: object, additionalProperties: false, required: [host, runUrl], description: 'OPTIONAL CI-run provenance (spec §3 A-iii) — rendered in the trust review so admins can cross-check the forge log; omitted → treated as absent, malformed → whole body refused',
+            properties: { host: {type: string, enum: [github, gitlab]}, runUrl: {type: string, format: uri, description: 'https-only, ≤500 chars'} } } } } } } },
       responses: { '200': { description: Artifacts recorded; pending-trust, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } },
         '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
         '404': { description: Not found }, '409': { $ref: '#/components/responses/E409' },
         '422': { description: 'VALIDATION_FAILED | PRESCAN_SHA_MISMATCH', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } } } }
+  /projects/{id}/onboard-tokens:
+    post: { summary: 'Mint a PRE-TRUST onboarding token (lead + isAdmin) — a SEPARATE, narrower credential from the
+        CI upload token, never cross-usable (own type + key namespace). Valid ONLY while the project is
+        draft/pending-trust — the EXACT INVERSE of the upload token''s trusted/ready gate, so the two credentials''
+        lifetimes never overlap — refused (409) once trusted/ready, and for an archived project. Authorizes
+        EXACTLY one verb: the Bearer lane of PUT /projects/{id}/trust-request. The clear token
+        (`<tokenId>.<secret>`) is returned exactly ONCE — the server stores only an argon2id hash. Expiring
+        (default 24h, max 7 days) and revocable. Audit: onboard-token-mint',
+      parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
+      requestBody: { required: false, content: { application/json: { schema: { type: object, additionalProperties: false,
+        properties: { ttlMinutes: {type: integer, minimum: 5, maximum: 10080} } } } } },
+      responses: { '201': { description: 'Token minted (shown once)', content: { application/json: { schema: { type: object,
+          required: [tokenId, token, expiresAt],
+          properties: { tokenId: {type: string}, token: {type: string}, expiresAt: {type: string} } } } } },
+        '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
+        '404': { description: Not found }, '409': { $ref: '#/components/responses/E409' },
+        '422': { $ref: '#/components/responses/E422' } } }
+  /projects/{id}/onboard-tokens/{tokenId}:
+    delete: { summary: 'Revoke a pre-trust onboarding token (lead + isAdmin) — immediate. UNLIKE the upload
+        token''s hard-delete, the row is TOMBSTONED (`revokedAt` stamped, kept for audit — mirrors the project''s
+        own `archived` block); the trust-request Bearer lane checks `revokedAt` as its own explicit fail-closed
+        step. Already-revoked or unknown → 404. Audit: onboard-token-revoke',
+      parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' },
+        { name: tokenId, in: path, required: true, schema: {type: string} }],
+      responses: { '200': { description: Revoked },
+        '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
+        '404': { description: Not found } } }
+  /projects/{id}/forge-credential:
+    put: { summary: 'Store the READ-ONLY forge token that lets the built-in scanner clone a PRIVATE repository
+        (lead + isAdmin, 0033 decision 1). For GitLab, a self-hosted forge, or a github.com operator who cannot
+        install the App. The {username, token} pair is sealed AES-256-GCM under CCP_FORGE_SEAL_KEY the moment it
+        arrives — a key deliberately separate from the TOTP key — and stored on its OWN row, never on the project
+        row that every registry read serializes. NOTHING EVER READS IT BACK: this route''s own response returns
+        only the username, the registry exposes only that a credential exists, and the audit entry records the
+        username and the actor but never the token. The sealed blob is opened exactly once per scan job, in
+        memory, at claim time. Refused 422 FORGE_CREDENTIAL_REFUSED when the deployment has no seal key — a
+        secret sealed under a guessable default is worse than refusing to store one. Replacing simply overwrites,
+        so a rotated token needs no delete first. Audit: forge-credential-set',
+      parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
+      requestBody: { required: true, content: { application/json: { schema: { type: object,
+        required: [username, token], additionalProperties: false,
+        properties: { username: {type: string, minLength: 1, maxLength: 100, pattern: '^[^:\\s]+$',
+            description: 'no colon — the pair is joined on the first colon for the git Basic header'},
+          token: {type: string, minLength: 8, maxLength: 500, description: 'a READ-ONLY project/deploy token; never returned by any endpoint'} } } } } },
+      responses: { '200': { description: 'Stored (the username only — never the token)', content: { application/json: { schema: { type: object,
+          required: [username], properties: { username: {type: string} } } } } },
+        '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
+        '404': { description: Not found }, '409': { $ref: '#/components/responses/E409' },
+        '422': { description: 'VALIDATION_FAILED | FORGE_CREDENTIAL_REFUSED', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } } } }
+    delete: { summary: 'Remove the stored forge credential (lead + isAdmin). A HARD delete, unlike the onboarding
+        token''s tombstone: there is nothing about a removed forge secret worth keeping, and retaining the sealed
+        blob after the operator asked for its removal would be the opposite of what they asked for — the audit row
+        is the record that it existed. Audit: forge-credential-remove',
+      parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
+      responses: { '200': { description: Removed },
+        '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
+        '404': { description: Not found } } }
+  /projects/{id}/scan-jobs:
+    post: { summary: 'Ask the CONTROL PLANE to scan this project''s repository itself (lead + isAdmin, ADR-0033) —
+        the zero-touch first import: no CI file in the estate repo, no local run. Records the INTENT only; an
+        isolated worker container does the cloning and parsing and uploads the SAME artifact pair over the SAME
+        pre-trust onboard-token lane, so the two-admin trust ceremony is untouched. OFF BY DEFAULT: refused 409
+        SCANNER_DISABLED unless the deployment set CCP_SCANNER=1 with a ≥32-char CCP_SCANNER_KEY — checked FIRST,
+        so a disabled deployment discloses nothing about the project. Then, in order: past the pre-trust window or
+        archived → 409; the repo host is not one this deployment may clone → 422 SCAN_TARGET_REFUSED (validated at
+        creation so the operator learns immediately, and rebuilt again at claim time — the URL is never stored);
+        a job already in flight for this project → 409 (one at a time, so a repeated click cannot fan out clones).
+        Audit: scan-job-create',
+      parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
+      responses: { '201': { description: Queued, content: { application/json: { schema: { type: object,
+          required: [jobId, status], properties: { jobId: {type: string}, status: {type: string, enum: [queued]} } } } } },
+        '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
+        '404': { description: Not found },
+        '409': { description: 'SCANNER_DISABLED | STATE_CONFLICT', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } },
+        '422': { description: 'SCAN_TARGET_REFUSED', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } } } }
+  /projects/{id}/scan-jobs/latest:
+    get: { summary: 'The wizard''s progress read (lead + isAdmin) — the most recent scan job only. `error` is
+        already sanitized at write time, and the projection deliberately carries NO clone URL and NO token, so it
+        cannot disclose how the deployment reaches the forge.',
+      parameters: [{ $ref: '#/components/parameters/id' }],
+      responses: { '200': { description: Latest job, content: { application/json: { schema: { type: object,
+          required: [jobId, status, createdAt],
+          properties: { jobId: {type: string}, status: { type: string, enum: [queued, claimed, cloning, scanning, uploaded, failed] },
+            createdAt: {type: string}, startedAt: {type: string}, finishedAt: {type: string},
+            error: {type: string, maxLength: 500} } } } } },
+        '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
+        '404': { description: No scan job } } }
+  /scan-jobs/claim:
+    post: { summary: 'THE SCANNER WORKER LANE (ADR-0033) — "give me the next repository to scan". A MACHINE lane:
+        no cookie, no session, no X-Ccp-Client; the worker presents the deployment''s shared CCP_SCANNER_KEY as
+        `Authorization: Bearer <key>` (timing-safe compare, BEFORE any store read). Mounted OUTSIDE /projects so
+        it inherits no session/membership middleware. THE WORKER NEVER CHOOSES ITS TARGET: it cannot name a
+        project, a job, or a URL — the server picks the oldest queued job and rebuilds the clone URL server-side
+        from the stored repo ref through the forge-host allowlist (that is the SSRF answer). The claim is a
+        compare-and-swap on status=queued that simultaneously moves the row out of the queue index, so two workers
+        can never both win. The lifecycle window is RE-CHECKED here: a project that left pre-trust (or was
+        archived) since queueing has its job failed instead of scanned. The response carries a freshly minted,
+        60-minute PRE-TRUST onboarding token authorizing exactly one verb — PUT /projects/{id}/trust-request —
+        minted LAST, so a job that was never going to run produces no credential at all. 204 when idle.
+        Audit: scan-job-claim',
+      responses: { '200': { description: Work packet, content: { application/json: { schema: { type: object,
+          required: [jobId, projectId, cloneUrl, onboardToken, tokenExpiresAt],
+          properties: { jobId: {type: string}, projectId: {type: string},
+            cloneUrl: {type: string, description: 'server-built https URL — an allowlisted forge host, never worker input'},
+            onboardToken: {type: string, description: '`<tokenId>.<secret>`, shown once'},
+            tokenExpiresAt: {type: string},
+            cloneAuthHeader: {type: string, description: 'ONLY for a private repo (absent for a public one): the ready-to-use Authorization header value — a per-job GitHub App installation token (one repository, <=1h, contents:read) or the operator''s sealed forge token, opened here. The server assembles the scheme and encoding so the worker never parses a credential, and the worker passes it to git through the ENVIRONMENT, never argv (readable via ps) and never the URL (written into .git/config and echoed in git''s errors)'} } } } } },
+        '204': { description: Nothing queued },
+        '401': { description: SCANNER_KEY_INVALID, content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } },
+        '403': { description: 'MISSING_CLIENT_HEADER — the CSRF exemption is Bearer-shaped-only; a call with no Bearer stays under the browser rules', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } },
+        '409': { description: SCANNER_DISABLED, content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } } } }
+  /scan-jobs/{jobId}/status:
+    post: { summary: 'The scanner worker reports progress (same CCP_SCANNER_KEY Bearer lane). NOTHING THE WORKER
+        SAYS IS TRUSTED: the transition is validated against the STORED status, never the one the worker claims to
+        be leaving, and it is strictly forward-only (queued→claimed→cloning→scanning→uploaded, any state→failed) —
+        a terminal job can never be reopened (409 STATE_CONFLICT). The job row is keyed by (projectId, jobId), so
+        naming the wrong project simply 404s. `error` is untrusted output from a process that just ran against a
+        hostile repository: control characters, URLs and token-shaped strings are redacted and it is truncated to
+        500 chars before storage. Audit: scan-job-status',
+      parameters: [{ name: jobId, in: path, required: true, schema: {type: string} }],
+      requestBody: { required: true, content: { application/json: { schema: { type: object,
+        required: [projectId, status], additionalProperties: false,
+        properties: { projectId: {type: string}, status: { type: string, enum: [queued, claimed, cloning, scanning, uploaded, failed] },
+          error: {type: string, maxLength: 4000, description: 'only meaningful with status=failed; sanitized before storage'} } } } } },
+      responses: { '200': { description: Recorded, content: { application/json: { schema: { type: object,
+          required: [jobId, status], properties: { jobId: {type: string}, status: {type: string} } } } } },
+        '401': { description: SCANNER_KEY_INVALID, content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } },
+        '404': { description: Not found },
+        '409': { description: 'SCANNER_DISABLED | STATE_CONFLICT', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } },
+        '422': { $ref: '#/components/responses/E422' } } }
   /projects/{id}/trust:
     post: { summary: 'The trust decision (lead + isAdmin) — ALWAYS dual-controlled, never single-keystroke:
         this PROPOSES (202, kind project-trust); a SECOND distinct admin applies it via
@@ -706,6 +873,35 @@ paths:
         '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
         '404': { description: Not found }, '409': { $ref: '#/components/responses/E409' },
         '422': { description: 'VALIDATION_FAILED | PRESCAN_SHA_MISMATCH | TRUST_VERDICT_NOT_CLEAN', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } } } }
+  /projects/{id}/identity:
+    put: { summary: 'Record the admin-confirmed cloud identity (ADR-0033 Decision 5) — lead + isAdmin, SINGLE-ADMIN
+        immediate write (mirrors register''s own guard+apply shape, NOT the two-admin trust ceremony above — the
+        ADR scopes "two-admin ceremony" to trust and the first data activation only). Body is the SAME
+        provider-discriminated identity shape POST /projects validates (same regex/allowlist validators, same
+        shape rule, reused not duplicated): aws needs accountId+region, azure needs
+        subscriptionId+tenantId+location, never both. Overwrites the project''s stored identity fields — clearing
+        the OTHER cloud''s fields when the provider changes — and stamps identityConfirmed {confirmedBy,
+        confirmedAt}; callable repeatedly to correct a mistake WHILE STILL PRE-TRUST. GATED to draft/pending-trust,
+        and refused for an archived project (409 STATE_CONFLICT): the identity IS which cloud account every future
+        request for this project targets, so leaving it settable post-trust would let ONE admin silently re-point a
+        trusted — or live, account-bound ready — project at a different account while the recorded two-admin trust
+        decision still stood as if it had vouched for that configuration. The same refusal PUT /trust-request gives
+        for re-aiming a trusted/ready binding; the deliberate path is deregister (dual-controlled) + a fresh onboard.
+        A project registered the OLD way (identity typed
+        at register time, still how POST /projects works this phase) already counts as confirmed WITHOUT ever
+        calling this route — see isIdentityConfirmed, ccp/api/src/store/schema.ts. Audit: project-identity-confirm',
+      parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
+      requestBody: { required: true, content: { application/json: { schema: { type: object,
+        additionalProperties: false,
+        properties: { provider: {type: string, enum: [aws, azure], description: 'absent = aws (the wire convention)'},
+          accountId: {type: string, pattern: '^\d{12}$'}, region: {type: string},
+          subscriptionId: {type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'},
+          tenantId: {type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'},
+          location: {type: string, description: 'Azure location (explicit allowlist, routes/projects.ts AZURE_LOCATION_ALLOWLIST)'} } } } } },
+      responses: { '200': { description: Confirmed, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } },
+        '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
+        '404': { description: Not found }, '409': { $ref: '#/components/responses/E409' },
+        '422': { $ref: '#/components/responses/E422' } } }
   /projects/{id}:
     delete: { summary: 'Deregister (lead + isAdmin) — ALWAYS a two-admin envelope: proposes (202, kind
         project-deregister); a second distinct admin''s ack deletes the registry item and drops the project

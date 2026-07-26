@@ -8,5 +8,14 @@
   "fmtDirtyFiles": 0,
   "providerPins": {
     "aws": "~\u003e 6.0"
+  },
+  "providerConfig": {
+    "providers": [
+      {
+        "value": "aws",
+        "file": "main.tf",
+        "line": 5
+      }
+    ]
   }
 }

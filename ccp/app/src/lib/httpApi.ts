@@ -8,7 +8,13 @@ import type {
   ServiceManifest,
   User,
 } from '@/types';
-import type { ApiClient, DriftCheckResult, DriftGenerateResult, MutationResult, SubmitResult } from '@/lib/api';
+import type {
+  ApiClient,
+  DriftCheckResult,
+  DriftGenerateResult,
+  MutationResult,
+  SubmitResult,
+} from '@/lib/api';
 import type { DriftProposal, DriftReport, DriftStatus } from '@/types/drift';
 import { noCapabilities, type ServerInfo } from '@/lib/serverInfo';
 import { currentProjectId, SAMPLE_ESTATE_ID } from '@/lib/projectScope';
@@ -361,6 +367,22 @@ export interface PrescanReportWire {
 export type ServerProjectStatus = 'draft' | 'pending-trust' | 'trusted' | 'ready';
 
 /**
+ * CI-run provenance recorded on a trust-request uploaded through the
+ * pre-trust onboarding-token lane (design:
+ * docs/superpowers/specs/2026-07-24-easy-first-import.md, option A) —
+ * present only when the estate's own CI workflow uploaded the scan
+ * artifacts (the wizard's "Run in the repo's CI" tab). Absent on every
+ * session-uploaded ("Run locally") row, and on every row written before this
+ * field existed. The wizard renders it in step 3 as a link so the two
+ * reviewing admins can cross-check it against the repo's own Actions/pipeline
+ * log — it is provenance for the human review, never a substitute for it.
+ */
+export interface CiProvenanceWire {
+  host: 'github' | 'gitlab';
+  runUrl: string;
+}
+
+/**
  * HOST-AGNOSTIC repo reference — the migration target for the GitHub-only
  * `github` pair. `baseUrl` only for a self-hosted forge; `owner` may carry
  * `/`-separated group segments (GitLab subgroups).
@@ -402,6 +424,12 @@ export class ApiRefusalError extends Error {
  * github-only row); the legacy `github` mirror is present ONLY when the host
  * really is github — a GitLab project has no `github` field. Read repos through
  * {@link projectRepoLabel} or `repo`, never `github` directly.
+ *
+ * A THIRD member, {@link ServerProjectUnidentified}, carries NO cloud identity
+ * at all: the url-only register defers it, so between registering and the
+ * admin's confirm the project genuinely has none. Anything rendering identity
+ * must handle that — it is a real state, not a loading placeholder — which is
+ * why the union makes it impossible to read `accountId` without narrowing.
  */
 export interface ServerProjectBase {
   id: string;
@@ -422,6 +450,9 @@ export interface ServerProjectBase {
     uploadedBy: string;
     uploadedAt: string;
     report: PrescanReportWire;
+    /** Present only when the estate's own CI uploaded this artifact pair
+     * (see {@link CiProvenanceWire}) — absent for a session/local upload. */
+    ci?: CiProvenanceWire;
   };
   trust?: { trustedBy: string; trustedAt: string; preScanReportSha256: string; commitSha: string };
   /** The go-live digest record — written by the FIRST data activation's ack
@@ -476,7 +507,16 @@ export interface ServerProjectAzure extends ServerProjectBase {
  * really is github — a GitLab project has no `github` field. Read repos through
  * {@link projectRepoLabel} or `repo`, never `github` directly.
  */
-export type ServerProject = ServerProjectAws | ServerProjectAzure;
+export interface ServerProjectUnidentified extends ServerProjectBase {
+  provider?: undefined;
+  accountId?: undefined;
+  region?: undefined;
+  subscriptionId?: undefined;
+  tenantId?: undefined;
+  location?: undefined;
+}
+
+export type ServerProject = ServerProjectAws | ServerProjectAzure | ServerProjectUnidentified;
 
 /** The `owner/name` label for a project row, whichever repo shape it carries. */
 export function projectRepoLabel(p: Pick<ServerProjectBase, 'github' | 'repo'>): string {
@@ -511,11 +551,35 @@ export interface RegisterProjectAzureInput extends RegisterProjectBase {
   location: string;
 }
 
+/**
+ * DEFERRED-identity register input — the url-only register. Carries the repo
+ * and nothing about the cloud, which is what tells the server to wait: the scan
+ * proposes provider/region with file:line provenance and an admin confirms them
+ * through `PUT /projects/:id/identity`. Such a project scans and reaches trust
+ * review normally, but can never mint an upload token (`IDENTITY_UNCONFIRMED`)
+ * until a person has confirmed. The deferral moves WHEN the identity is
+ * decided, never WHETHER a person decides it.
+ *
+ * A body must carry NO identity key at all to defer. Half an identity is a
+ * mistake, not a deferral, and the server refuses it — which is why this is a
+ * separate member of the union rather than the two below with optional fields.
+ */
+export interface RegisterProjectDeferredInput extends RegisterProjectBase {
+  provider?: undefined;
+  accountId?: undefined;
+  region?: undefined;
+  subscriptionId?: undefined;
+  tenantId?: undefined;
+  location?: undefined;
+}
+
 /** PROVIDER-DISCRIMINATED register input (0039 S1): an aws body carries
  * accountId/region (and no `provider` key); an azure body carries `provider:
  * 'azure'` + subscriptionId/tenantId/location. The aws shape is byte-identical
- * to every pre-azure caller. */
-export type RegisterProjectInput = RegisterProjectAwsInput | RegisterProjectAzureInput;
+ * to every pre-azure caller. A body with NEITHER defers the identity — see
+ * {@link RegisterProjectDeferredInput}. */
+export type RegisterProjectInput =
+  RegisterProjectAwsInput | RegisterProjectAzureInput | RegisterProjectDeferredInput;
 
 /* ── the per-account data plane (upload tokens → CI upload → activate → serve) ── */
 
@@ -524,6 +588,54 @@ export interface UploadTokenMint {
   tokenId: string;
   token: string;
   expiresAt: string;
+}
+
+/**
+ * `POST /projects/:id/onboard-tokens` — the clear token is shown exactly
+ * once, same shape and same one-time-reveal UX as {@link UploadTokenMint},
+ * but a SEPARATE credential: legal to mint only while draft/pending-trust
+ * (the exact inverse of the upload token's trusted/ready gate), and it
+ * authorizes exactly one verb — the Bearer lane on
+ * `PUT /projects/:id/trust-request`. Never interchangeable with an upload
+ * token; the two never share a key namespace server-side (I10).
+ */
+export interface OnboardTokenMint {
+  tokenId: string;
+  token: string;
+  expiresAt: string;
+}
+
+/**
+ * `POST /projects/:id/scan-jobs` / `GET /projects/:id/scan-jobs/latest` —
+ * the ZERO-TOUCH first scan: the control plane clones and prescans the
+ * repository itself, on its own isolated worker, so the admin adds nothing to
+ * the estate repo and runs nothing locally.
+ *
+ * The projection is deliberately thin: NO clone URL and NO token, so this
+ * response can never disclose how the deployment reaches the forge. `error` is
+ * already sanitized server-side (control characters, URLs and token-shaped
+ * strings redacted) before it ever reaches a screen.
+ *
+ * The lane is OFF unless the deployment armed it, and asking on a deployment
+ * that did not throws `SCANNER_DISABLED` — the same armed/disarmed posture as
+ * the approval-to-apply bundle (`BUNDLE_DISARMED`), with the server's own
+ * reason as the explanation shown to the admin.
+ */
+export type ScanJobStatus = 'queued' | 'claimed' | 'cloning' | 'scanning' | 'uploaded' | 'failed';
+
+export interface ScanJobState {
+  jobId: string;
+  status: ScanJobStatus;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  /** Server-sanitized failure reason; present only on `failed`. */
+  error?: string;
+}
+
+export interface ScanJobCreated {
+  jobId: string;
+  status: 'queued';
 }
 
 /** sha256 over the CANONICAL JSON (recursive key-sorted, no whitespace) of each
@@ -770,7 +882,10 @@ export interface HttpApiClient extends ApiClient {
    * uses.
    */
   getInstance(): Promise<{ name: string | null; tagline: string | null }>;
-  setInstance(input: { name: string; tagline: string }): Promise<{ name: string; tagline: string; version: number }>;
+  setInstance(input: {
+    name: string;
+    tagline: string;
+  }): Promise<{ name: string; tagline: string; version: number }>;
 
   /**
    * Admin — the five estate-governance flows (approval policy, settings incl.
@@ -819,6 +934,44 @@ export interface HttpApiClient extends ApiClient {
   ): Promise<AdminWriteOutcome>;
   /** DELETE /projects/:id — always 202 (two-admin envelope). */
   deregisterProject(id: string): Promise<AdminWriteOutcome>;
+
+  /**
+   * The PRE-TRUST onboarding-token lane — mint/revoke the narrow,
+   * short-lived credential the estate's own CI uses to PUT the first scan's
+   * artifacts straight to
+   * `PUT /projects/:id/trust-request`, no laptop and no paste. Mint is legal
+   * only while draft/pending-trust; a trusted/ready/archived project refuses
+   * (`STATE_CONFLICT`). A SEPARATE credential from {@link mintUploadToken} —
+   * never interchangeable, never shown twice.
+   */
+  mintOnboardToken(projectId: string, opts?: { ttlMinutes?: number }): Promise<OnboardTokenMint>;
+  revokeOnboardToken(projectId: string, tokenId: string): Promise<void>;
+
+  /**
+   * The ZERO-TOUCH first scan: ask the control plane to scan the project's
+   * repository ITSELF instead of the admin wiring up CI or running catalogctl
+   * locally. `createScanJob` records the intent (one job in flight
+   * per project); `latestScanJob` is the progress read, and resolves to null
+   * when this project has never had one. Both throw `SCANNER_DISABLED` on a
+   * deployment that did not arm the scanner — that refusal IS the UI's
+   * explanation, so there is no separate capability flag to drift out of sync.
+   */
+  createScanJob(projectId: string): Promise<ScanJobCreated>;
+  latestScanJob(projectId: string): Promise<ScanJobState | null>;
+
+  /**
+   * The READ-ONLY forge token that lets the built-in scanner clone a PRIVATE
+   * repository. Write-only by design: `setForgeCredential` returns the username
+   * it stored and nothing else, and there is deliberately NO getter — the token
+   * is sealed server-side the moment it arrives and no endpoint ever reads it
+   * back, so a client that could ask for it would be the leak. Not needed at
+   * all for a public repo, or when the deployment runs a GitHub App.
+   */
+  setForgeCredential(
+    projectId: string,
+    input: { username: string; token: string },
+  ): Promise<{ username: string }>;
+  removeForgeCredential(projectId: string): Promise<void>;
 
   /**
    * The per-account DATA plane (the app-rebuild killer): mint/revoke the CI
@@ -1039,7 +1192,10 @@ export function createHttpApiClient(baseUrl: string, opts?: HttpApiOptions): Htt
         // proposals is approver+ only server-side (absent entirely for a
         // Requester) — carried through exactly as received, never defaulted
         // to an empty array (presence follows duty).
-        return { report: body.report, ...(body.proposals !== undefined ? { proposals: body.proposals } : {}) };
+        return {
+          report: body.report,
+          ...(body.proposals !== undefined ? { proposals: body.proposals } : {}),
+        };
       } catch {
         return null;
       }
@@ -1071,7 +1227,9 @@ export function createHttpApiClient(baseUrl: string, opts?: HttpApiOptions): Htt
           body: JSON.stringify({
             justification: input.justification,
             schedule: input.schedule,
-            ...(input.alsoDigests && input.alsoDigests.length > 0 ? { alsoDigests: input.alsoDigests } : {}),
+            ...(input.alsoDigests && input.alsoDigests.length > 0
+              ? { alsoDigests: input.alsoDigests }
+              : {}),
           }),
         },
       );
@@ -1720,6 +1878,67 @@ export function createHttpApiClient(baseUrl: string, opts?: HttpApiOptions): Htt
       const res = await request(`/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
       if (!res.ok) await throwRefusal(res);
       return writeOutcome(res);
+    },
+
+    /* ── the pre-trust onboarding-token lane (mint/revoke only — the token's
+     * OWN upload happens from the estate's CI, never from this SPA) ────────── */
+
+    async mintOnboardToken(
+      projectId: string,
+      opts?: { ttlMinutes?: number },
+    ): Promise<OnboardTokenMint> {
+      const res = await request(`/projects/${encodeURIComponent(projectId)}/onboard-tokens`, {
+        method: 'POST',
+        body: JSON.stringify(opts?.ttlMinutes !== undefined ? { ttlMinutes: opts.ttlMinutes } : {}),
+      });
+      if (!res.ok) await throwRefusal(res);
+      return (await res.json()) as OnboardTokenMint;
+    },
+
+    async revokeOnboardToken(projectId: string, tokenId: string): Promise<void> {
+      const res = await request(
+        `/projects/${encodeURIComponent(projectId)}/onboard-tokens/${encodeURIComponent(tokenId)}`,
+        { method: 'DELETE' },
+      );
+      if (!res.ok) await throwRefusal(res);
+    },
+
+    /* ── the zero-touch first scan: the control plane scans the repo itself ── */
+
+    async createScanJob(projectId: string): Promise<ScanJobCreated> {
+      const res = await request(`/projects/${encodeURIComponent(projectId)}/scan-jobs`, {
+        method: 'POST',
+      });
+      if (!res.ok) await throwRefusal(res);
+      return (await res.json()) as ScanJobCreated;
+    },
+
+    async setForgeCredential(
+      projectId: string,
+      input: { username: string; token: string },
+    ): Promise<{ username: string }> {
+      const res = await request(`/projects/${encodeURIComponent(projectId)}/forge-credential`, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) await throwRefusal(res);
+      return (await res.json()) as { username: string };
+    },
+
+    async removeForgeCredential(projectId: string): Promise<void> {
+      const res = await request(`/projects/${encodeURIComponent(projectId)}/forge-credential`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) await throwRefusal(res);
+    },
+
+    async latestScanJob(projectId: string): Promise<ScanJobState | null> {
+      const res = await request(`/projects/${encodeURIComponent(projectId)}/scan-jobs/latest`);
+      // A project that has never been scanned is not an error — it is the
+      // ordinary starting state, and the caller renders "not started".
+      if (res.status === 404) return null;
+      if (!res.ok) await throwRefusal(res);
+      return (await res.json()) as ScanJobState;
     },
 
     /* ── the per-account data plane (upload tokens / versions / activate) ──────
