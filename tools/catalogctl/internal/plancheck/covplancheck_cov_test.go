@@ -2,6 +2,7 @@ package plancheck
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -329,6 +330,11 @@ func TestCovplancheckGrowOnlyEdges(t *testing.T) {
 // TestCovplancheckGrowOnlyIntegerRequestValue pins that a request value arriving as a
 // Go int (a YAML-decoded integer) compares equal to the plan's float64 after — the
 // grow-only "after == requested" limb must not false-positive on numeric type.
+//
+// Each shape is asserted in BOTH directions. The clean half alone would also pass if
+// the coercion silently failed for that type (an unreadable request value makes the
+// limb skip, so "no violation" is exactly what a broken toFloat produces); the
+// mismatched half is what proves the value was actually read and compared.
 func TestCovplancheckGrowOnlyIntegerRequestValue(t *testing.T) {
 	op := manifests.Op{ID: "ebs-grow", Macd: "Change", CodemodOp: "set_attribute"}
 	op.Target.ResourceType = "aws_ebs_volume"
@@ -339,10 +345,27 @@ func TestCovplancheckGrowOnlyIntegerRequestValue(t *testing.T) {
 	plan := Plan{ResourceChanges: []ResourceChange{
 		covplancheckUpd("aws_ebs_volume.v", map[string]any{"size": 20.0}, map[string]any{"size": 40.0}),
 	}}
-	for _, val := range []any{40, int64(40), 40.0, "40"} {
-		r := covplancheckReq("ebs-grow", map[string]any{"volume": "aws_ebs_volume.v", "new_size_gib": val})
-		vs, _ := Check(plan, op, r)
-		covplancheckAssertRules(t, vs, nil)
+	check := func(val any) []Violation {
+		vs, _ := Check(plan, op, covplancheckReq("ebs-grow",
+			map[string]any{"volume": "aws_ebs_volume.v", "new_size_gib": val}))
+		return vs
+	}
+	cases := []struct{ match, mismatch any }{
+		{match: 40, mismatch: 41},
+		{match: int64(40), mismatch: int64(41)},
+		{match: 40.0, mismatch: 41.0},
+		{match: "40", mismatch: "41"},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%T", tc.match), func(t *testing.T) {
+			covplancheckAssertRules(t, check(tc.match), nil)
+
+			vs := check(tc.mismatch)
+			covplancheckAssertRules(t, vs, []string{"grow-only"})
+			if want := "size after 40 != requested 41"; !strings.Contains(vs[0].Reason, want) {
+				t.Fatalf("reason = %q, want it to contain %q", vs[0].Reason, want)
+			}
+		})
 	}
 }
 
@@ -770,8 +793,17 @@ func TestCovplancheckRunResolutionErrors(t *testing.T) {
 		if code != 3 {
 			t.Fatalf("code = %d, want 3 (stderr=%q)", code, errb)
 		}
-		if errb == "" {
-			t.Fatal("stderr is empty, want the request load error")
+		// The schema error must be the one request.Load raises, naming BOTH the
+		// rejected schema and the only accepted one — a bare "something went
+		// wrong" would not tell an operator which field to fix, and would not
+		// distinguish this from the plan/manifest failures above.
+		if !strings.Contains(errb, "request schema") {
+			t.Fatalf("stderr = %q, want the request-schema load error", errb)
+		}
+		for _, want := range []string{`"something/else"`, "ccp.request/v1"} {
+			if !strings.Contains(errb, want) {
+				t.Fatalf("stderr = %q, want it to mention %q", errb, want)
+			}
 		}
 	})
 

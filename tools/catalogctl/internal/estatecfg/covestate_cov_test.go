@@ -228,13 +228,16 @@ func TestCovestateResolveIsDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Resolve err = %v, want nil", err)
 	}
-	if first.EstateTZ != second.EstateTZ {
-		t.Fatalf("EstateTZ differs across calls: %q vs %q", first.EstateTZ, second.EstateTZ)
-	}
-	_, firstOff := covestateFixedJul.In(first.Loc).Zone()
-	_, secondOff := covestateFixedJul.In(second.Loc).Zone()
-	if firstOff != secondOff {
-		t.Fatalf("July offset differs across calls: %d vs %d", firstOff, secondOff)
+	// Both calls must agree, AND agree on the RIGHT answer: comparing the two
+	// results only to each other would also hold for a resolver that returned the
+	// zero Config every time.
+	for i, cfg := range []Config{first, second} {
+		if cfg.EstateTZ != "America/New_York" {
+			t.Fatalf("call %d EstateTZ = %q, want America/New_York (the env value)", i+1, cfg.EstateTZ)
+		}
+		if _, off := covestateFixedJul.In(cfg.Loc).Zone(); off != -4*3600 {
+			t.Fatalf("call %d July offset = %d, want %d (EDT)", i+1, off, -4*3600)
+		}
 	}
 }
 

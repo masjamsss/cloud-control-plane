@@ -131,7 +131,11 @@ func TestCovrenderScalarValue(t *testing.T) {
 		{name: "bool param accepts the string \"true\"", paramType: "bool", in: "true", want: "true"},
 		{name: "bool param accepts the string \"false\"", paramType: "bool", in: "false", want: "false"},
 		{name: "bool param quotes any other string", paramType: "bool", in: "yes", want: `"yes"`},
-		{name: "bool param quotes a number", paramType: "bool", in: 1, want: "1"},
+		// A number under a bool param matches neither bool arm, so it falls through
+		// to literalValue and renders as a BARE number (not a quoted string). Neither
+		// spelling is valid Terraform for a bool attribute — the manifest's own type
+		// bound is what has to reject this shape, not the renderer.
+		{name: "bool param falls through to the literal renderer for a number", paramType: "bool", in: 1, want: "1"},
 		{name: "string param quotes a bool-looking string", paramType: "string", in: "true", want: `"true"`},
 	}
 	for _, tt := range tests {

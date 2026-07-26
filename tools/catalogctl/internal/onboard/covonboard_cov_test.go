@@ -636,6 +636,13 @@ func TestCovonboardVersionSatisfies_OperatorMatrix(t *testing.T) {
 		{"neq allows anything else", "1.15.8", "!= 1.15.7", true},
 		{"empty term is ignored", "1.15.7", ">= 1.10, ", true},
 		{"whitespace-only constraint is satisfied", "1.15.7", "   ", true},
+		// KNOWN LENIENCE, not a safety contract: parseVer drops a prerelease
+		// suffix, so an installed 1.16.0-beta1 compares EQUAL to 1.16.0 and
+		// satisfies ">= 1.16.0" even though hashicorp/go-version orders a
+		// prerelease BELOW its release and would refuse. Harmless today — the gate
+		// runs only after the trust-ack, and the sandboxed `terraform init` that
+		// follows enforces required_version itself — but do not read this row as
+		// the intended semantics of the gate.
 		{"prerelease suffix is compared on the release part", "1.16.0-beta1", ">= 1.16.0", true},
 		{"build metadata is stripped", "1.16.0+ent", ">= 1.16.0", true},
 		{"shorter installed compares as zero-padded", "1", ">= 1.0.1", false},

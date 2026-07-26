@@ -686,8 +686,10 @@ func TestCovprprepBundleWriteFailures(t *testing.T) {
 }
 
 // TestCovprprepMissingEnvTreeIsNotAPR proves a --env directory that does not exist
-// fails closed: nonzero exit, an explanation on stderr, and no bundle. (The exit code
-// itself is deliberately not pinned here — see the note in the slice report.)
+// fails closed with exit 3: reading the caller-supplied tree is RESOLUTION, exactly
+// like the --request read, and exit 1 is reserved for catalogctl itself
+// malfunctioning — a script dispatching on the exit code alone must not read an
+// operator's `--env /typo` as an internal fault.
 func TestCovprprepMissingEnvTreeIsNotAPR(t *testing.T) {
 	out := t.TempDir()
 	missing := filepath.Join(t.TempDir(), "no-such-env")
@@ -701,8 +703,8 @@ func TestCovprprepMissingEnvTreeIsNotAPR(t *testing.T) {
 		"--request", reqPath, "--manifests", covprprepManifests,
 		"--env", missing, "--out", out,
 	}, &stdout, &stderr)
-	if code == 0 {
-		t.Fatalf("exit 0 on a missing env tree; stdout=%s", stdout.String())
+	if code != 3 {
+		t.Fatalf("exit %d, want 3 (an unreadable --env tree is a resolution error, not an internal one); stderr=%s", code, stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "no-such-env") {
 		t.Errorf("stderr should name the missing env tree:\n%s", stderr.String())
@@ -714,8 +716,9 @@ func TestCovprprepMissingEnvTreeIsNotAPR(t *testing.T) {
 
 // TestCovprprepUnreadableEnvEntry proves an env tree pr-prepare cannot faithfully
 // snapshot (here a dangling symlink, which is neither a directory nor readable bytes)
-// fails closed before `edit` runs: nonzero exit, the offending path on stderr, no
-// bundle. A tree that cannot be copied byte-for-byte must never become a PR.
+// fails closed before `edit` runs: exit 3 (reading the caller's tree is resolution),
+// the offending path on stderr, no bundle. A tree that cannot be copied byte-for-byte
+// must never become a PR.
 func TestCovprprepUnreadableEnvEntry(t *testing.T) {
 	env := covprprepEnv(t, "r6i.large")
 	if err := os.Symlink(filepath.Join(env, "gone.tf"), filepath.Join(env, "dangling.tf")); err != nil {
@@ -732,8 +735,8 @@ func TestCovprprepUnreadableEnvEntry(t *testing.T) {
 		"--request", reqPath, "--manifests", covprprepManifests,
 		"--env", env, "--out", out,
 	}, &stdout, &stderr)
-	if code == 0 {
-		t.Fatalf("exit 0 on an unsnapshottable env tree; stdout=%s", stdout.String())
+	if code != 3 {
+		t.Fatalf("exit %d, want 3 (an unsnapshottable --env tree is a resolution error); stderr=%s", code, stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "dangling.tf") {
 		t.Errorf("stderr should name the unreadable entry:\n%s", stderr.String())
