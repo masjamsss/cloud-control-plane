@@ -710,3 +710,51 @@ func TestCovhclopsRedactionRulesLoaded(t *testing.T) {
 		t.Fatal("allowPrefixes empty — value allowlist did not load")
 	}
 }
+
+// A change that lives only in the EOF newline used to render as an EMPTY
+// diff: splitLines strips the trailing newline into a bool computeEdits never
+// sees, so the line lists compared equal and no hunk was produced. That let
+// `edit` write a file and emit zero diff bytes — a change with no evidence,
+// which the "the changed set is visible in the diff" property forbids. git
+// renders this as a rewrite of the last line plus the no-newline marker.
+func TestCovhclopsUnifiedDiffSeesATrailingNewlineOnlyChange(t *testing.T) {
+	cases := []struct {
+		name       string
+		a, b       string
+		wantHeader string
+		wantMarker bool
+	}{
+		{name: "newline added", a: "x", b: "x\n", wantHeader: "@@ -1 +1 @@", wantMarker: true},
+		{name: "newline removed", a: "x\n", b: "x", wantHeader: "@@ -1 +1 @@", wantMarker: true},
+		{name: "newline added to a multi-line file", a: "a\nb", b: "a\nb\n", wantHeader: "@@ -1,2 +1,2 @@", wantMarker: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := string(UnifiedDiff("f.tf", "f.tf", []byte(c.a), []byte(c.b)))
+			if got == "" {
+				t.Fatalf("UnifiedDiff(%q, %q) is EMPTY for two different files", c.a, c.b)
+			}
+			if !strings.Contains(got, c.wantHeader) {
+				t.Errorf("want hunk header %q in:\n%s", c.wantHeader, got)
+			}
+			if c.wantMarker && !strings.Contains(got, `\ No newline at end of file`) {
+				t.Errorf("want the no-newline marker in:\n%s", got)
+			}
+			// The rewritten last line must appear on both sides.
+			if !strings.Contains(got, "-x") && !strings.Contains(got, "-b") {
+				t.Errorf("want the removed final line in:\n%s", got)
+			}
+			if !strings.Contains(got, "+x") && !strings.Contains(got, "+b") {
+				t.Errorf("want the added final line in:\n%s", got)
+			}
+		})
+	}
+	t.Run("identical input is still an empty diff", func(t *testing.T) {
+		if got := UnifiedDiff("f.tf", "f.tf", []byte("x\n"), []byte("x\n")); len(got) != 0 {
+			t.Fatalf("identical input produced a diff:\n%s", got)
+		}
+		if got := UnifiedDiff("f.tf", "f.tf", []byte("x"), []byte("x")); len(got) != 0 {
+			t.Fatalf("identical no-newline input produced a diff:\n%s", got)
+		}
+	})
+}

@@ -662,11 +662,21 @@ func TestCovonboardVersionSatisfies_OperatorMatrix(t *testing.T) {
 }
 
 func TestCovonboardParseVerAndCmpVer(t *testing.T) {
-	if got := parseVer(" 1.15.7-rc1 "); len(got) != 3 || got[0] != 1 || got[1] != 15 || got[2] != 7 {
-		t.Errorf("parseVer(1.15.7-rc1) = %v, want [1 15 7]", got)
+	got, err := parseVer(" 1.15.7-rc1 ")
+	if err != nil || len(got) != 3 || got[0] != 1 || got[1] != 15 || got[2] != 7 {
+		t.Errorf("parseVer(1.15.7-rc1) = %v, %v, want [1 15 7], nil", got, err)
 	}
-	if got := parseVer("1.x.3"); len(got) != 3 || got[1] != 0 {
-		t.Errorf("parseVer(1.x.3) = %v, want a zero for the unparseable segment", got)
+	// A leading "v" is tolerated rather than rejected — HashiCorp's own
+	// constraint parser accepts it, and silently reading it as 0 is what made
+	// the required_version gate fail open.
+	if got, err := parseVer("v2.0.0"); err != nil || len(got) != 3 || got[0] != 2 {
+		t.Errorf("parseVer(v2.0.0) = %v, %v, want [2 0 0], nil", got, err)
+	}
+	// A genuinely unparseable segment must be an error, NOT a silent zero.
+	for _, bad := range []string{"1.x.3", "abc", "", "v"} {
+		if got, err := parseVer(bad); err == nil {
+			t.Errorf("parseVer(%q) = %v, nil — want an error, not a silent zero segment", bad, got)
+		}
 	}
 	if got := cmpVer([]int{1}, []int{1, 0, 0}); got != 0 {
 		t.Errorf("cmpVer([1],[1 0 0]) = %d, want 0 (missing segments are zero)", got)
@@ -1221,4 +1231,40 @@ func TestCovonboardCLISeamIsWired(t *testing.T) {
 	if !strings.Contains(stderr.String(), "usage: catalogctl onboard <path>") {
 		t.Errorf("stderr = %q, want the onboard usage line", stderr.String())
 	}
+}
+
+// The required_version gate must FAIL CLOSED. parseVer used to coerce a
+// non-numeric segment to 0, so ">= v2.0.0" evaluated as ">= 0.0.0" and every
+// installed terraform satisfied it — a repo demanding 2.x was onboarded with
+// 1.15.7. Regression test for that fail-open.
+func TestCovonboardVersionGateFailsClosedOnAnUnparseableBound(t *testing.T) {
+	t.Run("v-prefixed bound is honoured, not read as zero", func(t *testing.T) {
+		ok, err := versionSatisfies("1.15.7", ">= v2.0.0")
+		if err != nil {
+			t.Fatalf("versionSatisfies: unexpected error %v", err)
+		}
+		if ok {
+			t.Fatal("installed 1.15.7 satisfied \">= v2.0.0\" — the gate failed OPEN")
+		}
+		// ...and the same bound is still satisfiable by a version that does meet it.
+		if ok, err := versionSatisfies("2.1.0", ">= v2.0.0"); err != nil || !ok {
+			t.Fatalf("versionSatisfies(2.1.0, >= v2.0.0) = %v, %v, want true, nil", ok, err)
+		}
+	})
+	t.Run("a garbage bound errors rather than evaluating to satisfied", func(t *testing.T) {
+		for _, c := range []string{">= not-a-version", "~> ...", ">= "} {
+			ok, err := versionSatisfies("1.15.7", c)
+			if err == nil {
+				t.Errorf("versionSatisfies(1.15.7, %q) = %v, nil — want an error so Run refuses VERSION_UNPARSEABLE", c, ok)
+			}
+			if ok {
+				t.Errorf("versionSatisfies(1.15.7, %q) reported satisfied on an unparseable bound", c)
+			}
+		}
+	})
+	t.Run("an unparseable installed version errors too", func(t *testing.T) {
+		if _, err := versionSatisfies("not-a-version", ">= 1.0.0"); err == nil {
+			t.Fatal("an unparseable installed version was accepted")
+		}
+	})
 }

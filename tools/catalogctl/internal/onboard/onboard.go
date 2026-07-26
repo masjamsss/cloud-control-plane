@@ -287,7 +287,10 @@ func versionSatisfies(installed, constraint string) (bool, error) {
 	if constraint == "" {
 		return true, nil
 	}
-	iv := parseVer(installed)
+	iv, err := parseVer(installed)
+	if err != nil {
+		return false, fmt.Errorf("installed terraform version %q: %w", installed, err)
+	}
 	for _, term := range strings.Split(constraint, ",") {
 		term = strings.TrimSpace(term)
 		if term == "" {
@@ -300,7 +303,10 @@ func versionSatisfies(installed, constraint string) (bool, error) {
 				break
 			}
 		}
-		cv := parseVer(rest)
+		cv, err := parseVer(rest)
+		if err != nil {
+			return false, fmt.Errorf("constraint term %q: %w", term, err)
+		}
 		c := cmpVer(iv, cv)
 		var ok bool
 		switch op {
@@ -328,21 +334,35 @@ func versionSatisfies(installed, constraint string) (bool, error) {
 	return true, nil
 }
 
-func parseVer(s string) []int {
+// parseVer splits a dotted version into numeric segments. A leading "v" is
+// tolerated (HashiCorp's own constraint parser accepts it) and prerelease /
+// build metadata is dropped, but a segment that is not a number is an ERROR.
+//
+// Coercing an unparseable segment to 0, as this used to, made the
+// required_version gate fail OPEN: ">= v2.0.0" parsed as [0,0,0], so an
+// installed 1.15.7 compared greater and was accepted for a repo that demands
+// 2.x. The gate's whole job is to refuse before terraform runs, so a
+// constraint it cannot understand must refuse (VERSION_UNPARSEABLE) rather
+// than quietly evaluate to "satisfied".
+func parseVer(s string) ([]int, error) {
 	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(strings.TrimPrefix(s, "v"), "V")
 	if i := strings.IndexAny(s, "-+"); i >= 0 {
 		s = s[:i]
+	}
+	if s == "" {
+		return nil, fmt.Errorf("no version number")
 	}
 	parts := strings.Split(s, ".")
 	out := make([]int, 0, len(parts))
 	for _, p := range parts {
 		n, err := strconv.Atoi(strings.TrimSpace(p))
 		if err != nil {
-			n = 0
+			return nil, fmt.Errorf("unparseable version segment %q", p)
 		}
 		out = append(out, n)
 	}
-	return out
+	return out, nil
 }
 
 func cmpVer(a, b []int) int {

@@ -925,3 +925,95 @@ func TestCovmanifestsLintDeterministicOrder(t *testing.T) {
 		t.Fatalf("empty catalogue findings = %v, want none", fs)
 	}
 }
+
+// ── regressions for two fail-open holes found during the coverage sweep ──────
+
+// A duplicate operation id used to overwrite silently (last glob-order write
+// wins), dropping one definition from the catalogue with no error — so a
+// laxer duplicate could quietly replace a forcesReplace/riskFloor-bearing op.
+// LoadDir's stated contract is to fail VISIBLY on manifest drift.
+func TestCovmanifestsLoadDirRefusesDuplicateOpIDs(t *testing.T) {
+	const dupInOneFile = `{"service":"s3","operations":[
+		{"id":"dup-op","service":"s3","macd":"change","codemodOp":"set_attribute","title":"A"},
+		{"id":"dup-op","service":"s3","macd":"change","codemodOp":"set_attribute","title":"B"}
+	]}`
+	t.Run("within a single file", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "s3.json"), []byte(dupInOneFile), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		ops, err := LoadDir(dir)
+		if err == nil {
+			t.Fatalf("LoadDir accepted a duplicate op id, returning %d ops", len(ops))
+		}
+		if !strings.Contains(err.Error(), "duplicate operation id") || !strings.Contains(err.Error(), "dup-op") {
+			t.Errorf("error should name the duplicate id, got %q", err)
+		}
+	})
+	t.Run("across two files", func(t *testing.T) {
+		dir := t.TempDir()
+		one := `{"service":"s3","operations":[{"id":"shared","service":"s3","macd":"change","codemodOp":"set_attribute","title":"A"}]}`
+		two := `{"service":"ec2","operations":[{"id":"shared","service":"ec2","macd":"change","codemodOp":"set_attribute","title":"B"}]}`
+		for name, body := range map[string]string{"a-s3.json": one, "b-ec2.json": two} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := LoadDir(dir); err == nil {
+			t.Fatal("LoadDir accepted the same op id defined by two services")
+		}
+	})
+	t.Run("distinct ids still load", func(t *testing.T) {
+		dir := t.TempDir()
+		body := `{"service":"s3","operations":[
+			{"id":"op-a","service":"s3","macd":"change","codemodOp":"set_attribute","title":"A"},
+			{"id":"op-b","service":"s3","macd":"change","codemodOp":"set_attribute","title":"B"}
+		]}`
+		if err := os.WriteFile(filepath.Join(dir, "s3.json"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		ops, err := LoadDir(dir)
+		if err != nil {
+			t.Fatalf("LoadDir on distinct ids: %v", err)
+		}
+		if len(ops) != 2 {
+			t.Fatalf("loaded %d ops, want 2", len(ops))
+		}
+	})
+}
+
+// maxLength used to measure fmt.Sprint of the WHOLE value, so on a collection
+// param it bounded the Go repr (brackets and separators included) rather than
+// each element — no real per-element cap, and short elements wrongly refused.
+func TestCovmanifestsMaxLengthIsPerElement(t *testing.T) {
+	maxLen := 5
+	op := Op{ID: "o", Service: "s", Macd: "change", CodemodOp: "set_attribute"}
+	op.Params = []Param{{Name: "tags", Type: "list", Bounds: &Bounds{MaxLength: &maxLen}}}
+
+	t.Run("a list of short elements is accepted despite a long repr", func(t *testing.T) {
+		// repr is "[aaa bbb ccc]" = 13 chars; every ELEMENT is 3.
+		code, reason := Validate(op, map[string]any{"tags": []any{"aaa", "bbb", "ccc"}})
+		if code != "" {
+			t.Fatalf("refused a list of 3-char elements against maxLength 5: %s %s", code, reason)
+		}
+	})
+	t.Run("a single over-long element is refused", func(t *testing.T) {
+		code, reason := Validate(op, map[string]any{"tags": []any{"ok", "waytoolong"}})
+		if code != "OUT_OF_BOUNDS" {
+			t.Fatalf("code = %q, want OUT_OF_BOUNDS (an element exceeds maxLength)", code)
+		}
+		if !strings.Contains(reason, "10") {
+			t.Errorf("reason should report the offending element's length, got %q", reason)
+		}
+	})
+	t.Run("scalar behaviour is unchanged", func(t *testing.T) {
+		sop := Op{ID: "o", Service: "s", Macd: "change", CodemodOp: "set_attribute"}
+		sop.Params = []Param{{Name: "name", Type: "string", Bounds: &Bounds{MaxLength: &maxLen}}}
+		if code, _ := Validate(sop, map[string]any{"name": "abcd"}); code != "" {
+			t.Fatalf("a 4-char scalar was refused against maxLength 5: %s", code)
+		}
+		if code, _ := Validate(sop, map[string]any{"name": "abcdef"}); code != "OUT_OF_BOUNDS" {
+			t.Fatalf("a 6-char scalar was accepted against maxLength 5: %q", code)
+		}
+	})
+}

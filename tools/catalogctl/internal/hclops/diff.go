@@ -43,6 +43,19 @@ func UnifiedDiff(aPath, bPath string, a, b []byte) []byte {
 	aLines, aNL := splitLines(a)
 	bLines, bNL := splitLines(b)
 	edits := computeEdits(aLines, bLines)
+	// splitLines strips the EOF newline into a bool that computeEdits never
+	// sees, so a change that ONLY adds or removes the trailing newline compares
+	// as all-equal and yields no hunks — UnifiedDiff then returned empty for
+	// two provably different files. That is reachable: Locate leaves End at
+	// len(src) when a block's closing brace is the last byte with no trailing
+	// newline, and edit splices in an hclwrite-rendered block that always ends
+	// in "\n", so the file is written while stdout and --diff-out get zero
+	// bytes — a change with no evidence. Mark the shared final line as
+	// rewritten so the hunk renders the way git does, with the
+	// "\ No newline at end of file" marker carrying the actual difference.
+	if aNL != bNL {
+		edits = markFinalLineRewritten(edits, len(aLines)-1, len(bLines)-1)
+	}
 	hunks := groupHunks(edits, diffContext)
 	if len(hunks) == 0 {
 		return nil
@@ -122,6 +135,26 @@ func lcsEdits(a, b []string, aLo, aHi, bLo, bHi int) []edit {
 	}
 	for ; j < m; j++ {
 		edits = append(edits, edit{insTag, -1, bLo + j})
+	}
+	return edits
+}
+
+// markFinalLineRewritten replaces the equal-edit covering both files' last
+// line with a delete/insert pair, so a difference that lives only in the EOF
+// newline still produces a hunk. A no-op when the final lines already differ
+// (there is a hunk already) or when either side has no lines.
+func markFinalLineRewritten(edits []edit, aLast, bLast int) []edit {
+	if aLast < 0 || bLast < 0 {
+		return edits
+	}
+	for i, e := range edits {
+		if e.tag != eqTag || e.ai != aLast || e.bi != bLast {
+			continue
+		}
+		out := make([]edit, 0, len(edits)+1)
+		out = append(out, edits[:i]...)
+		out = append(out, edit{delTag, aLast, -1}, edit{insTag, -1, bLast})
+		return append(out, edits[i+1:]...)
 	}
 	return edits
 }
