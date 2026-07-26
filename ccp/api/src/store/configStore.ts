@@ -45,6 +45,13 @@ export type QueryOptions = {
   limit?: number;
   /** SK-ascending (default, DynamoDB `ScanIndexForward: true`) or descending. */
   forward?: boolean;
+  /**
+   * Resume STRICTLY AFTER this sort-key value, in whichever direction `forward`
+   * selects — the seam's spelling of DynamoDB `ExclusiveStartKey`, reduced to the
+   * one component that varies within a partition. This is what lets a paged
+   * endpoint fetch page N without re-reading pages 1..N-1.
+   */
+  after?: string;
 };
 
 export interface ConfigStore {
@@ -53,8 +60,8 @@ export interface ConfigStore {
   put(item: Item, opts?: { ifNotExists?: boolean }): Promise<void>;
   /** Query by exact PK, optional SK prefix. SK-ascending unless `opts` says otherwise. */
   query(pk: string, skPrefix?: string, opts?: QueryOptions): Promise<Item[]>;
-  /** Query the single GSI1 by exact GSI1PK, returned in GSI1SK-ascending order. */
-  queryGSI1(gsi1pk: string): Promise<Item[]>;
+  /** Query the single GSI1 by exact GSI1PK. GSI1SK-ascending unless `opts` says otherwise. */
+  queryGSI1(gsi1pk: string, opts?: QueryOptions): Promise<Item[]>;
   /** All-or-nothing batch. A failed condition throws ConditionError and applies NOTHING. */
   transact(writes: TransactWrite[]): Promise<void>;
   delete(pk: string, sk: string): Promise<void>;

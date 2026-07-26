@@ -59,6 +59,7 @@ type Options = {
   stores: StoreKind[];
   json: string | null;
   only: string | null;
+  concurrency: number;
 };
 
 function parseArgs(argv: string[]): Options {
@@ -74,6 +75,7 @@ function parseArgs(argv: string[]): Options {
     stores: storeArg === 'both' ? ['memory', 'file'] : [storeArg as StoreKind],
     json: get('--json') ?? null,
     only: get('--only') ?? null,
+    concurrency: Number(get('--concurrency') ?? 32),
   };
 }
 
@@ -268,6 +270,11 @@ const SCENARIOS: Scenario[] = [
     build: ({ cookie }) => req('/requests?scope=mine', cookie),
   },
   {
+    name: 'GET /requests?all&limit=50',
+    note: 'one page of the estate list — should not track corpus size',
+    build: ({ cookie }) => req('/requests?scope=all&limit=50', cookie),
+  },
+  {
     name: 'GET /admin/accounts',
     note: 'global account directory (small GSI partition, large table)',
     build: ({ cookie }) => req('/admin/accounts', cookie),
@@ -351,7 +358,48 @@ async function measureWrites(store: ConfigStore, scale: number, iterations: numb
     await store.put(item);
     samples.push(performance.now() - t0);
   }
-  return summarize('store.put (1 request row)', 'the durable-write path — one mutation', samples);
+  return summarize('store.put (sequential)', 'the durable-write path — one mutation at a time', samples);
+}
+
+/**
+ * The number a server actually lives or dies by: what a BURST of concurrent
+ * durable writes costs. A store that snapshots per mutation serializes the burst —
+ * every writer waits for every earlier writer's full fsync — so per-op cost stays
+ * flat and wall-clock grows linearly with the burst. A store that batches pays for
+ * roughly one snapshot for the whole burst.
+ */
+async function measureConcurrentWrites(store: ConfigStore, scale: number, burst: number, rounds: number): Promise<Stat> {
+  const samples: number[] = [];
+  for (let r = 0; r < rounds; r++) {
+    const base = scale + 10_000 + r * burst;
+    const t0 = performance.now();
+    await Promise.all(Array.from({ length: burst }, (_, i) => store.put(benchRequest(base + i) as unknown as Item)));
+    samples.push((performance.now() - t0) / burst); // per-op cost within the burst
+  }
+  return summarize(`store.put (x${burst} concurrent)`, 'per-op cost inside a concurrent write burst', samples);
+}
+
+/** Sustained read throughput with `concurrency` requests in flight, not one at a time. */
+async function measureThroughput(
+  app: ReturnType<typeof createApp>,
+  sc: Scenario,
+  cookie: string,
+  total: number,
+  concurrency: number,
+): Promise<{ rps: number; meanMs: number }> {
+  let issued = 0;
+  const t0 = performance.now();
+  await Promise.all(
+    Array.from({ length: concurrency }, async () => {
+      while (issued < total) {
+        issued++;
+        const res = await app.fetch(sc.build({ cookie }));
+        await res.arrayBuffer();
+      }
+    }),
+  );
+  const elapsed = performance.now() - t0;
+  return { rps: (total / elapsed) * 1000, meanMs: elapsed / total };
 }
 
 /* ── driver ──────────────────────────────────────────────────────────────── */
@@ -406,11 +454,23 @@ async function main(): Promise<void> {
         );
       }
       if (!opts.only) {
-        const w = await measureWrites(store, opts.scale, Math.min(opts.iterations, 100));
-        stats.push(w);
-        console.log(
-          `${w.name.padEnd(30)} ${fmt(w.p50).padStart(9)} ${fmt(w.p95).padStart(9)} ${fmt(w.p99).padStart(9)} ${fmt(w.max).padStart(9)} ${w.rps.toFixed(0).padStart(10)}`,
-        );
+        for (const w of [
+          await measureWrites(store, opts.scale, Math.min(opts.iterations, 100)),
+          await measureConcurrentWrites(store, opts.scale, opts.concurrency, 10),
+        ]) {
+          stats.push(w);
+          console.log(
+            `${w.name.padEnd(30)} ${fmt(w.p50).padStart(9)} ${fmt(w.p95).padStart(9)} ${fmt(w.p99).padStart(9)} ${fmt(w.max).padStart(9)} ${w.rps.toFixed(0).padStart(10)}`,
+          );
+        }
+
+        // Concurrent read throughput — what the server sustains, as opposed to how
+        // fast one idle request completes.
+        console.log(`\n  concurrent read throughput (${opts.concurrency} in flight):`);
+        for (const sc of SCENARIOS) {
+          const t = await measureThroughput(app, sc, cookie, Math.max(opts.iterations, 100), opts.concurrency);
+          console.log(`  ${sc.name.padEnd(30)} ${t.rps.toFixed(0).padStart(8)} req/s   (${fmt(t.meanMs)} ms mean)`);
+        }
       }
       console.log();
       results[kind] = stats;

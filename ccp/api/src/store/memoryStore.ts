@@ -77,9 +77,12 @@ export class MemoryStore implements ConfigStore {
   private primary = new Map<string, Partition<string>>();
   /** GSI1PK -> (composite primary key -> item). */
   private gsi1 = new Map<string, Partition<string>>();
-  /** Cached composite keys in key-sorted order, for a stable snapshot file.
-   *  Invalidated on insert/delete only — a value update never reorders it. */
-  private exportOrder: string[] | null = null;
+  /** Cached live item references in key-sorted order — the snapshot layout.
+   *  Invalidated when the KEY SET changes (insert/delete) or when a row is
+   *  replaced, since the cache holds references to the old object. A stable file
+   *  needs a stable order, and rebuilding it per snapshot was ~20% of the durable
+   *  write on a large store. */
+  private exportCache: Item[] | null = null;
   private count = 0;
 
   /* ── index maintenance ─────────────────────────────────────────────────── */
@@ -91,6 +94,7 @@ export class MemoryStore implements ConfigStore {
   /** Insert or replace one row, keeping both indexes and the export order consistent. */
   private setItem(item: Item): void {
     const prev = this.lookup(item.PK, item.SK);
+    this.exportCache = null; // holds references; a replaced row makes it stale
     if (prev) {
       // A replacement can move the row to a DIFFERENT GSI1 partition (or out of the
       // index entirely) — drop the old placement before adding the new one.
@@ -98,7 +102,6 @@ export class MemoryStore implements ConfigStore {
       if (typeof prevGsi === 'string') partitionRemove(this.gsi1, prevGsi, keyOf(prev.PK, prev.SK));
     } else {
       this.count++;
-      this.exportOrder = null;
     }
     partitionInsert(this.primary, item.PK, item.SK, item);
     const gsi = item.GSI1PK;
@@ -119,27 +122,27 @@ export class MemoryStore implements ConfigStore {
     const gsi = prev.GSI1PK;
     if (typeof gsi === 'string') partitionRemove(this.gsi1, gsi, keyOf(pk, sk));
     this.count--;
-    this.exportOrder = null;
+    this.exportCache = null;
     return true;
   }
 
   /** Live item references in stable key order — the snapshot layout, WITHOUT cloning. */
   protected itemsInKeyOrder(): Item[] {
-    if (this.exportOrder === null) {
-      const keys: string[] = new Array(this.count);
-      let i = 0;
-      for (const [pk, part] of this.primary) for (const sk of part.rows.keys()) keys[i++] = keyOf(pk, sk);
-      keys.length = i;
-      this.exportOrder = keys.sort(cmp);
-    }
-    const out: Item[] = new Array(this.exportOrder.length);
+    if (this.exportCache !== null) return this.exportCache;
+    const keys: string[] = new Array(this.count);
+    let i = 0;
+    for (const [pk, part] of this.primary) for (const sk of part.rows.keys()) keys[i++] = keyOf(pk, sk);
+    keys.length = i;
+    keys.sort(cmp);
+    const out: Item[] = new Array(keys.length);
     let n = 0;
-    for (const k of this.exportOrder) {
+    for (const k of keys) {
       const idx = k.indexOf(SEP);
       const it = this.lookup(k.slice(0, idx), k.slice(idx + 1));
       if (it) out[n++] = it;
     }
     out.length = n;
+    this.exportCache = out;
     return out;
   }
 
@@ -164,7 +167,7 @@ export class MemoryStore implements ConfigStore {
   importItems(items: Item[]): void {
     this.primary = new Map();
     this.gsi1 = new Map();
-    this.exportOrder = null;
+    this.exportCache = null;
     this.count = 0;
     for (const it of items) this.setItem(cloneValue(it));
   }
@@ -197,7 +200,7 @@ export class MemoryStore implements ConfigStore {
     return out;
   }
 
-  async queryGSI1(gsi1pk: string): Promise<Item[]> {
+  async queryGSI1(gsi1pk: string, opts?: QueryOptions): Promise<Item[]> {
     const part = this.gsi1.get(gsi1pk);
     if (!part) return [];
     const rows = part.rows;
@@ -206,13 +209,23 @@ export class MemoryStore implements ConfigStore {
       const ib = rows.get(b);
       return cmp(ia ? gsiSortKey(ia) : a, ib ? gsiSortKey(ib) : b);
     });
-    const out: Item[] = new Array(keys.length);
-    let n = 0;
-    for (const k of keys) {
-      const it = rows.get(k);
-      if (it) out[n++] = cloneValue(it);
+    const limit = opts?.limit;
+    if (limit !== undefined && limit <= 0) return [];
+    const descending = opts?.forward === false;
+    const after = opts?.after;
+    const out: Item[] = [];
+    for (let i = 0; i < keys.length; i++) {
+      const it = rows.get(keys[descending ? keys.length - 1 - i : i]!);
+      if (!it) continue;
+      // `after` is EXCLUSIVE and direction-aware: resuming a descending page means
+      // "strictly smaller", an ascending one "strictly larger".
+      if (after !== undefined) {
+        const sk = gsiSortKey(it);
+        if (descending ? sk >= after : sk <= after) continue;
+      }
+      out.push(cloneValue(it));
+      if (limit !== undefined && out.length >= limit) break;
     }
-    out.length = n;
     return out;
   }
 
