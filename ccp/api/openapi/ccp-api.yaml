@@ -674,8 +674,15 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { type: object,
         required: [id, name], additionalProperties: false,
         description: 'send exactly ONE repo shape — the legacy github pair OR the host-agnostic repo (both is 422).
-          PROVIDER-DISCRIMINATED identity (0039 S1): provider absent/''aws'' requires accountId+region and refuses
-          the azure fields; provider ''azure'' requires subscriptionId+tenantId+location and refuses accountId/region',
+          IDENTITY IS OPTIONAL (0033 decision 5, the url-only register): a body carrying NO identity key at all
+          DEFERS it — the scan proposes provider/region (and statically-present account ids) with file:line
+          provenance and an admin confirms them through PUT /projects/{id}/identity. Such a project scans and
+          reaches trust review normally but can never mint an upload token (422 IDENTITY_UNCONFIRMED) until a
+          human has confirmed, so the deferral moves WHEN identity is decided, never WHETHER a person decides it.
+          A body carrying ANY identity key must carry a COMPLETE, unmixed one — half an identity is a mistake,
+          not a deferral. PROVIDER-DISCRIMINATED (0039 S1): provider absent/''aws'' requires accountId+region and
+          refuses the azure fields; provider ''azure'' requires subscriptionId+tenantId+location and refuses
+          accountId/region',
         properties: { id: {type: string, pattern: '^[a-z][a-z0-9-]{1,31}$'}, name: {type: string, minLength: 2, maxLength: 100},
           github: {type: object, required: [owner, repo], additionalProperties: false,
             properties: { owner: {type: string}, repo: {type: string} }},

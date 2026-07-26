@@ -641,6 +641,15 @@ check_pg6() {
   while IFS=$'\t' read -r f ln m; do
     [[ -z "$f" ]] && continue
     _pg6_allowlisted_email "$m" && continue
+    # A file+substring reviewed exception (publish-gate-allowlist.txt), for the
+    # one real false-positive class here: a public forge's own SSH clone URL —
+    # `git@` + the forge host + `:owner/repo.git` — is email-SHAPED but is
+    # vendor API surface, not a person. NOTE this arm passes the matched TOKEN,
+    # not the whole line, so an entry's substring is scoped to the address
+    # itself and can never blanket-exempt a line that merely mentions it. Same
+    # file-scoped discipline PG-3 and PG-10 already use; the gate's own files
+    # stay fully in scope for this check, as they must.
+    _gate_allowlisted "$f" "$m" && continue
     case "$f" in */package-lock.json|package-lock.json) continue ;; esac
     total=$((total + 1))
     [[ -z "$example" ]] && example="$f:$ln"

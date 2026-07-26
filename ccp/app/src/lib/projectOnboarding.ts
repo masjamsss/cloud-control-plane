@@ -256,10 +256,15 @@ export function registerLocalProject(input: RegisterProjectInput): ServerProject
     createdAt: nowIso(),
   };
   let project: StoredProject;
-  if (input.provider === 'azure') {
-    const subscriptionId = input.subscriptionId.trim();
-    const tenantId = input.tenantId.trim();
-    const location = input.location.trim();
+  if (input.provider === undefined && !('accountId' in input && input.accountId !== undefined)) {
+    // Deferred identity (the url-only register): no cloud fields at all. The
+    // preview mirrors the server — the row is stored identity-less, and the
+    // upload-token mint below refuses it until an admin confirms.
+    project = { ...common };
+  } else if (input.provider === 'azure') {
+    const subscriptionId = (input.subscriptionId ?? '').trim();
+    const tenantId = (input.tenantId ?? '').trim();
+    const location = (input.location ?? '').trim();
     if (!AZURE_GUID.test(subscriptionId)) {
       fail('Azure subscription id must be a GUID (8-4-4-4-12 hex).');
     }
@@ -267,8 +272,8 @@ export function registerLocalProject(input: RegisterProjectInput): ServerProject
     if (!AZURE_LOCATION.test(location)) fail('That does not look like an Azure location.');
     project = { ...common, provider: 'azure', subscriptionId, tenantId, location };
   } else {
-    const accountId = input.accountId.trim();
-    const region = input.region.trim();
+    const accountId = (input.accountId ?? '').trim();
+    const region = (input.region ?? '').trim();
     if (!ACCOUNT_ID.test(accountId)) fail('AWS account id must be exactly twelve digits.');
     if (!REGION_CODE.test(region)) fail('That does not look like an AWS region code.');
     project = { ...common, accountId, region };

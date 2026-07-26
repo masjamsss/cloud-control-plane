@@ -424,6 +424,12 @@ export class ApiRefusalError extends Error {
  * github-only row); the legacy `github` mirror is present ONLY when the host
  * really is github — a GitLab project has no `github` field. Read repos through
  * {@link projectRepoLabel} or `repo`, never `github` directly.
+ *
+ * A THIRD member, {@link ServerProjectUnidentified}, carries NO cloud identity
+ * at all: the url-only register defers it, so between registering and the
+ * admin's confirm the project genuinely has none. Anything rendering identity
+ * must handle that — it is a real state, not a loading placeholder — which is
+ * why the union makes it impossible to read `accountId` without narrowing.
  */
 export interface ServerProjectBase {
   id: string;
@@ -501,7 +507,16 @@ export interface ServerProjectAzure extends ServerProjectBase {
  * really is github — a GitLab project has no `github` field. Read repos through
  * {@link projectRepoLabel} or `repo`, never `github` directly.
  */
-export type ServerProject = ServerProjectAws | ServerProjectAzure;
+export interface ServerProjectUnidentified extends ServerProjectBase {
+  provider?: undefined;
+  accountId?: undefined;
+  region?: undefined;
+  subscriptionId?: undefined;
+  tenantId?: undefined;
+  location?: undefined;
+}
+
+export type ServerProject = ServerProjectAws | ServerProjectAzure | ServerProjectUnidentified;
 
 /** The `owner/name` label for a project row, whichever repo shape it carries. */
 export function projectRepoLabel(p: Pick<ServerProjectBase, 'github' | 'repo'>): string {
@@ -536,11 +551,35 @@ export interface RegisterProjectAzureInput extends RegisterProjectBase {
   location: string;
 }
 
+/**
+ * DEFERRED-identity register input — the url-only register. Carries the repo
+ * and nothing about the cloud, which is what tells the server to wait: the scan
+ * proposes provider/region with file:line provenance and an admin confirms them
+ * through `PUT /projects/:id/identity`. Such a project scans and reaches trust
+ * review normally, but can never mint an upload token (`IDENTITY_UNCONFIRMED`)
+ * until a person has confirmed. The deferral moves WHEN the identity is
+ * decided, never WHETHER a person decides it.
+ *
+ * A body must carry NO identity key at all to defer. Half an identity is a
+ * mistake, not a deferral, and the server refuses it — which is why this is a
+ * separate member of the union rather than the two below with optional fields.
+ */
+export interface RegisterProjectDeferredInput extends RegisterProjectBase {
+  provider?: undefined;
+  accountId?: undefined;
+  region?: undefined;
+  subscriptionId?: undefined;
+  tenantId?: undefined;
+  location?: undefined;
+}
+
 /** PROVIDER-DISCRIMINATED register input (0039 S1): an aws body carries
  * accountId/region (and no `provider` key); an azure body carries `provider:
  * 'azure'` + subscriptionId/tenantId/location. The aws shape is byte-identical
- * to every pre-azure caller. */
-export type RegisterProjectInput = RegisterProjectAwsInput | RegisterProjectAzureInput;
+ * to every pre-azure caller. A body with NEITHER defers the identity — see
+ * {@link RegisterProjectDeferredInput}. */
+export type RegisterProjectInput =
+  RegisterProjectAwsInput | RegisterProjectAzureInput | RegisterProjectDeferredInput;
 
 /* ── the per-account data plane (upload tokens → CI upload → activate → serve) ── */
 

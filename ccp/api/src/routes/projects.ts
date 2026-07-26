@@ -252,6 +252,23 @@ function refineIdentityShape(
   }
 }
 
+/** The six identity keys. A register body that carries NONE of them is
+ * DEFERRING its identity to the scan's proposal + a human confirm; a body that
+ * carries ANY of them is typing one now, and must type a complete, unmixed
+ * one. Named once so the deferral test and the refine below cannot drift. */
+const IDENTITY_KEYS = [
+  "provider",
+  "accountId",
+  "region",
+  "subscriptionId",
+  "tenantId",
+  "location",
+] as const;
+
+function carriesAnyIdentity(b: Record<string, unknown>): boolean {
+  return IDENTITY_KEYS.some((k) => b[k] !== undefined);
+}
+
 /**
  * The register body — PROVIDER-DISCRIMINATED identity (0039 S1). `provider` is
  * optional and absence means 'aws' (the wire convention), so every existing
@@ -284,7 +301,24 @@ const RegisterBody = z
   .refine((b) => (b.github !== undefined) !== (b.repo !== undefined), {
     message: "send exactly one of github or repo",
   })
-  .superRefine(refineIdentityShape);
+  // IDENTITY IS OPTIONAL AT REGISTER (Decision 5, the url-only register this
+  // schema's own comments were written in anticipation of). A body carrying
+  // NO identity key at all defers it: the scan proposes the values with
+  // file:line provenance and an admin confirms them through
+  // `PUT /:id/identity`. That project is NOT identity-confirmed
+  // (schema.ts#isIdentityConfirmed returns false for it), so the fail-closed
+  // backstop on upload-token mint refuses it IDENTITY_UNCONFIRMED until a
+  // human has actually looked — the deferral moves WHEN identity is decided,
+  // never WHETHER a person decides it.
+  //
+  // A body carrying ANY identity key still gets the FULL, unchanged rule:
+  // complete for its provider and not mixed with the other cloud's. Half an
+  // identity is a mistake, not a deferral, so `{provider:'azure'}` alone is
+  // refused exactly as before.
+  .superRefine((b, ctx) => {
+    if (!carriesAnyIdentity(b)) return;
+    refineIdentityShape(b, ctx);
+  });
 
 /**
  * `PUT /projects/:id/identity` body (ADR-0033 Decision 5) — the SAME
@@ -477,7 +511,6 @@ const OnboardMintBody = z
 
 const ONBOARD_DEFAULT_TTL_MINUTES = 24 * 60;
 
-
 export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
   const p = new Hono<AppEnv>();
   // Registry READS need any bound session; each write names its own stricter
@@ -555,8 +588,13 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     // tenant/location triple (and `provider:'azure'`); an aws project stores
     // accountId/region and — the wire convention — NO `provider` key, so the
     // stored row stays byte-identical to every pre-azure register.
-    const identity: Partial<ProjectItem> =
-      parsed.data.provider === "azure"
+    // A deferred identity writes NO identity keys at all — not keys set to
+    // undefined. The row is then honestly "identity unknown", which is what
+    // isIdentityConfirmed reads to keep the data lane closed until a human
+    // confirms the scan's proposal.
+    const identity: Partial<ProjectItem> = !carriesAnyIdentity(parsed.data)
+      ? {}
+      : parsed.data.provider === "azure"
         ? {
             provider: "azure",
             subscriptionId: parsed.data.subscriptionId,
@@ -628,8 +666,7 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
         return c.json({ code: "NOT_FOUND", reason: "No such project." }, 404);
       // Fail closed: only a project that has NOT yet passed trust review has a
       // legitimate pre-trust CI producer; an archived project mints nothing.
-      if (!isOnboardable(project))
-        return apiError(c, "STATE_CONFLICT");
+      if (!isOnboardable(project)) return apiError(c, "STATE_CONFLICT");
 
       // The mint itself is shared with the scanner worker's claim lane
       // (domain/onboardToken.ts) so both produce an identically-hardened
@@ -718,8 +755,7 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     const project = (await store.get(k.PK, k.SK)) as ProjectItem | null;
     if (!project)
       return c.json({ code: "NOT_FOUND", reason: "No such project." }, 404);
-    if (!isOnboardable(project))
-      return apiError(c, "STATE_CONFLICT");
+    if (!isOnboardable(project)) return apiError(c, "STATE_CONFLICT");
 
     const repo = repoRefOf(project);
     if (!repo) return apiError(c, "SCAN_TARGET_REFUSED");
@@ -1094,8 +1130,7 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
       return c.json({ code: "NOT_FOUND", reason: "No such project." }, 404);
     // Fail closed: identity is part of the binding two admins trust, so it is
     // settable only BEFORE that decision exists (see the docblock above).
-    if (!isOnboardable(project))
-      return apiError(c, "STATE_CONFLICT");
+    if (!isOnboardable(project)) return apiError(c, "STATE_CONFLICT");
 
     const identityConfirmed = { confirmedBy: actor, confirmedAt: nowIso() };
     const updated: ProjectItem = {

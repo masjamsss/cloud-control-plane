@@ -36,6 +36,7 @@ import {
   onboardDispatchUrl,
   projectCloudLabel,
   projectIdentityRows,
+  parseRepoUrl,
   proposeTrustVia,
   readArtifactFile,
   refusalCopy,
@@ -344,8 +345,18 @@ export function ProjectsAdmin(): JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
 
-  // Step 1 — add form (host-aware repo field + provider-discriminated identity)
+  // Step 1 — add form. DEFAULT is the one-field paste: `repoUrl` alone becomes
+  // the repo reference plus a suggested id/name, and the cloud identity is
+  // deferred to the review step (the scan proposes it, an admin confirms it).
+  // `detailed` switches to the original field-by-field form, which is unchanged
+  // and still the way to type an identity up front.
   const [form, setForm] = useState({
+    repoUrl: '',
+    detailed: false,
+    // Whether the operator has hand-edited the suggestion, so a later edit to
+    // the URL stops overwriting what they chose.
+    idTouched: false,
+    nameTouched: false,
     id: '',
     name: '',
     host: 'github' as RepoHostChoice,
@@ -445,6 +456,30 @@ export function ProjectsAdmin(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
+  // What the pasted address resolves to, recomputed as it is typed. Rendered
+  // back to the operator so they SEE the interpretation before registering —
+  // a parser that guesses silently is a parser you cannot trust.
+  const parsedRepoUrl = useMemo(
+    () => (form.repoUrl.trim().length === 0 ? null : parseRepoUrl(form.repoUrl)),
+    [form.repoUrl],
+  );
+
+  /** Typing in the URL field re-suggests the id and name — until the operator
+   * edits one, after which theirs is kept. */
+  function onRepoUrlChange(repoUrl: string): void {
+    const parsed = repoUrl.trim().length === 0 ? null : parseRepoUrl(repoUrl);
+    setForm((f) => ({
+      ...f,
+      repoUrl,
+      ...(parsed?.ok
+        ? {
+            ...(f.idTouched ? {} : { id: parsed.suggestedId }),
+            ...(f.nameTouched ? {} : { name: parsed.suggestedName }),
+          }
+        : {}),
+    }));
+  }
+
   const parsedTrustReq = useMemo(() => {
     if (trustReqText.trim().length === 0) return null;
     try {
@@ -483,34 +518,46 @@ export function ProjectsAdmin(): JSX.Element {
   function onRegister(e: FormEvent): void {
     e.preventDefault();
     run(async () => {
-      const repo = repoRefFromForm({
-        host: form.host,
-        baseUrl: form.baseUrl,
-        owner: form.owner,
-        name: form.repoName,
-      });
+      const repo = form.detailed
+        ? repoRefFromForm({
+            host: form.host,
+            baseUrl: form.baseUrl,
+            owner: form.owner,
+            name: form.repoName,
+          })
+        : parseRepoUrl(form.repoUrl);
       if (!repo.ok) throw new Error(repo.reason);
       // EXACTLY ONE repo shape — the server refuses a body carrying both the
       // host-agnostic record and the legacy github pair (it derives the
-      // mirror itself when the host is github). The IDENTITY half is
-      // provider-discriminated: an azure subscription sends its subscription/
-      // tenant/location triple, an aws account sends accountId/region.
+      // mirror itself when the host is github).
       const base = { id: form.id.trim(), name: form.name.trim(), repo: repo.repo };
+      // THE PASTE PATH SENDS NO IDENTITY. Not empty strings — no identity key
+      // at all, which is what tells the server this project is deferring: the
+      // scan will propose provider/region with file:line provenance and an
+      // admin confirms it in step 3. Until they do, the project cannot mint an
+      // upload token (IDENTITY_UNCONFIRMED), so nothing is decided by a machine.
+      // The detailed form is unchanged and still types an identity up front.
       const created = await registerProjectVia(
         authoritative,
         authClient,
-        form.provider === 'azure'
-          ? {
-              ...base,
-              provider: 'azure',
-              subscriptionId: form.subscriptionId.trim(),
-              tenantId: form.tenantId.trim(),
-              location: form.location.trim(),
-            }
-          : { ...base, accountId: form.accountId.trim(), region: form.region.trim() },
+        !form.detailed
+          ? base
+          : form.provider === 'azure'
+            ? {
+                ...base,
+                provider: 'azure',
+                subscriptionId: form.subscriptionId.trim(),
+                tenantId: form.tenantId.trim(),
+                location: form.location.trim(),
+              }
+            : { ...base, accountId: form.accountId.trim(), region: form.region.trim() },
       );
       await refresh(created.id);
       setForm({
+        repoUrl: '',
+        detailed: false,
+        idTouched: false,
+        nameTouched: false,
         id: '',
         name: '',
         host: 'github',
@@ -962,229 +1009,329 @@ export function ProjectsAdmin(): JSX.Element {
           </h2>
         </div>
         <p className="projadmin__lead">
-          Registers a draft. A draft grants nothing — no requests can target it until the whole path
-          below is walked.
+          Paste the repository&apos;s address — that is the whole form. Registers a draft, and a
+          draft grants nothing: no requests can target it until the whole path below is walked.
         </p>
         <GateFieldset disabled={!writable}>
           <form className="projadmin__form" onSubmit={onRegister} noValidate>
-            {/* A labelled radiogroup, not a nested <fieldset> — a fieldset in
-                this tree is the advisory gate's disabled fingerprint (see
-                test/advisoryGate.test.ts) and means something else here. */}
-            <div className="projadmin__hostset">
-              <p className="projadmin__label" id="projadmin-host-label">
-                Where does the code live?
-              </p>
-              <div
-                className="projadmin__hosttoggle"
-                role="radiogroup"
-                aria-labelledby="projadmin-host-label"
-              >
-                {REPO_HOST_CHOICES.map((choice) => (
-                  <label
-                    key={choice.value}
-                    className={`projadmin__hostopt${form.host === choice.value ? ' projadmin__hostopt--on' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name="proj-host"
-                      value={choice.value}
-                      checked={form.host === choice.value}
-                      onChange={() => setForm({ ...form, host: choice.value })}
-                    />
-                    <span>{choice.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            {/* Which cloud — switches the identity fields below (AWS account +
-                region · Azure subscription + tenant + location). */}
-            <div className="projadmin__hostset">
-              <p className="projadmin__label" id="projadmin-cloud-label">
-                Which cloud is this estate on?
-              </p>
-              <div
-                className="projadmin__hosttoggle"
-                role="radiogroup"
-                aria-labelledby="projadmin-cloud-label"
-              >
-                {(['aws', 'azure'] as const).map((cloud) => (
-                  <label
-                    key={cloud}
-                    className={`projadmin__hostopt${form.provider === cloud ? ' projadmin__hostopt--on' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name="proj-provider"
-                      value={cloud}
-                      checked={form.provider === cloud}
-                      onChange={() => setForm({ ...form, provider: cloud })}
-                    />
-                    <span>{cloud === 'aws' ? 'AWS' : 'Azure'}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className="projadmin__form-grid">
-              {form.host === 'gitlab-self-hosted' && (
+            {!form.detailed && (
+              <>
                 <div className="projadmin__field">
-                  <label className="projadmin__label" htmlFor="proj-baseurl">
-                    GitLab server address
+                  <label className="projadmin__label" htmlFor="proj-url">
+                    Repository address
                   </label>
                   <input
-                    id="proj-baseurl"
+                    id="proj-url"
                     className="projadmin__input"
-                    value={form.baseUrl}
-                    onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
-                    placeholder="https://gitlab.example.com"
+                    value={form.repoUrl}
+                    onChange={(e) => onRepoUrlChange(e.target.value)}
+                    placeholder="https://github.com/acme-co/terraform-acme"
                     inputMode="url"
                     spellCheck={false}
+                    autoComplete="off"
                   />
                   <p className="projadmin__hint">
-                    The address you open in a browser — it must start with https.
+                    Whatever your browser or the repository&apos;s clone button gives you — a link
+                    into a folder is fine too.
                   </p>
+                  {/* Show the interpretation rather than applying it silently. */}
+                  {parsedRepoUrl &&
+                    (parsedRepoUrl.ok ? (
+                      <p className="projadmin__urlecho">
+                        Reads as{' '}
+                        <strong>
+                          {parsedRepoUrl.repo.owner}/{parsedRepoUrl.repo.name}
+                        </strong>{' '}
+                        on {repoHostLabel({ repo: parsedRepoUrl.repo })}.
+                      </p>
+                    ) : (
+                      <p className="projadmin__urlecho projadmin__urlecho--bad">
+                        {parsedRepoUrl.reason}
+                      </p>
+                    ))}
                 </div>
-              )}
-              <div className="projadmin__field">
-                <label className="projadmin__label" htmlFor="proj-owner">
-                  Repository owner or group
-                </label>
-                <input
-                  id="proj-owner"
-                  className="projadmin__input"
-                  value={form.owner}
-                  onChange={(e) => setForm({ ...form, owner: e.target.value })}
-                  placeholder={form.host === 'github' ? 'acme-co' : 'platform/infrastructure'}
-                  spellCheck={false}
-                />
-                {form.host !== 'github' && (
-                  <p className="projadmin__hint">Subgroups join with a slash.</p>
-                )}
-              </div>
-              <div className="projadmin__field">
-                <label className="projadmin__label" htmlFor="proj-repo">
-                  Repository
-                </label>
-                <input
-                  id="proj-repo"
-                  className="projadmin__input"
-                  value={form.repoName}
-                  onChange={(e) => setForm({ ...form, repoName: e.target.value })}
-                  placeholder="terraform-acme"
-                  spellCheck={false}
-                />
-              </div>
-              <div className="projadmin__field">
-                <label className="projadmin__label" htmlFor="proj-id">
-                  Project id
-                </label>
-                <input
-                  id="proj-id"
-                  className="projadmin__input"
-                  value={form.id}
-                  onChange={(e) => setForm({ ...form, id: e.target.value })}
-                  placeholder="acme"
-                  spellCheck={false}
-                />
+
+                <div className="projadmin__form-grid">
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-id">
+                      Project id
+                    </label>
+                    <input
+                      id="proj-id"
+                      className="projadmin__input"
+                      value={form.id}
+                      onChange={(e) => setForm({ ...form, id: e.target.value, idTouched: true })}
+                      placeholder="acme"
+                      spellCheck={false}
+                    />
+                    <p className="projadmin__hint">
+                      Suggested from the repository name — change it if you like. It becomes the
+                      switcher entry.
+                    </p>
+                  </div>
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-name">
+                      Display name
+                    </label>
+                    <input
+                      id="proj-name"
+                      className="projadmin__input"
+                      value={form.name}
+                      onChange={(e) =>
+                        setForm({ ...form, name: e.target.value, nameTouched: true })
+                      }
+                      placeholder="Acme estate"
+                    />
+                  </div>
+                </div>
+
                 <p className="projadmin__hint">
-                  Short lowercase slug — it becomes the switcher entry.
+                  Which cloud account this estate manages is <strong>not</strong> asked here: the
+                  scan reads it out of the Terraform and shows you where it found it, and an admin
+                  confirms it at the review step. Nothing reaches the live data until someone has.
                 </p>
-              </div>
-              <div className="projadmin__field">
-                <label className="projadmin__label" htmlFor="proj-name">
-                  Display name
-                </label>
-                <input
-                  id="proj-name"
-                  className="projadmin__input"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="Acme estate"
-                />
-              </div>
-              {form.provider === 'aws' ? (
-                <>
-                  <div className="projadmin__field">
-                    <label className="projadmin__label" htmlFor="proj-account">
-                      AWS account id
-                    </label>
-                    <input
-                      id="proj-account"
-                      className="projadmin__input"
-                      value={form.accountId}
-                      onChange={(e) => setForm({ ...form, accountId: e.target.value })}
-                      placeholder="123456789012"
-                      inputMode="numeric"
-                      spellCheck={false}
-                    />
-                    <p className="projadmin__hint">Twelve digits.</p>
-                  </div>
-                  <div className="projadmin__field">
-                    <label className="projadmin__label" htmlFor="proj-region">
-                      AWS region
-                    </label>
-                    <input
-                      id="proj-region"
-                      className="projadmin__input"
-                      value={form.region}
-                      onChange={(e) => setForm({ ...form, region: e.target.value })}
-                      placeholder="ap-southeast-1"
-                      spellCheck={false}
-                    />
-                    <p className="projadmin__hint">
-                      A standard region code — anything else is refused.
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="projadmin__field">
-                    <label className="projadmin__label" htmlFor="proj-subscription">
-                      Azure subscription id
-                    </label>
-                    <input
-                      id="proj-subscription"
-                      className="projadmin__input"
-                      value={form.subscriptionId}
-                      onChange={(e) => setForm({ ...form, subscriptionId: e.target.value })}
-                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                      spellCheck={false}
-                    />
-                    <p className="projadmin__hint">The subscription GUID (8-4-4-4-12).</p>
-                  </div>
-                  <div className="projadmin__field">
-                    <label className="projadmin__label" htmlFor="proj-tenant">
-                      Azure tenant id
-                    </label>
-                    <input
-                      id="proj-tenant"
-                      className="projadmin__input"
-                      value={form.tenantId}
-                      onChange={(e) => setForm({ ...form, tenantId: e.target.value })}
-                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                      spellCheck={false}
-                    />
-                    <p className="projadmin__hint">The directory (tenant) GUID.</p>
-                  </div>
-                  <div className="projadmin__field">
-                    <label className="projadmin__label" htmlFor="proj-location">
-                      Azure default location
-                    </label>
-                    <input
-                      id="proj-location"
-                      className="projadmin__input"
-                      value={form.location}
-                      onChange={(e) => setForm({ ...form, location: e.target.value })}
-                      placeholder="southeastasia"
-                      spellCheck={false}
-                    />
-                    <p className="projadmin__hint">
-                      A standard Azure location — anything else is refused.
-                    </p>
-                  </div>
-                </>
-              )}
-            </div>
+              </>
+            )}
+
             <div className="projadmin__form-actions">
+              <button
+                type="button"
+                className="projadmin__linkbtn"
+                onClick={() => setForm({ ...form, detailed: !form.detailed })}
+              >
+                {form.detailed
+                  ? 'Go back to pasting one address'
+                  : 'Or type the details separately'}
+              </button>
+            </div>
+
+            {form.detailed && (
+              <>
+                {/* A labelled radiogroup, not a nested <fieldset> — a fieldset in
+                this tree is the advisory gate's disabled fingerprint (see
+                test/advisoryGate.test.ts) and means something else here. */}
+                <div className="projadmin__hostset">
+                  <p className="projadmin__label" id="projadmin-host-label">
+                    Where does the code live?
+                  </p>
+                  <div
+                    className="projadmin__hosttoggle"
+                    role="radiogroup"
+                    aria-labelledby="projadmin-host-label"
+                  >
+                    {REPO_HOST_CHOICES.map((choice) => (
+                      <label
+                        key={choice.value}
+                        className={`projadmin__hostopt${form.host === choice.value ? ' projadmin__hostopt--on' : ''}`}
+                      >
+                        <input
+                          type="radio"
+                          name="proj-host"
+                          value={choice.value}
+                          checked={form.host === choice.value}
+                          onChange={() => setForm({ ...form, host: choice.value })}
+                        />
+                        <span>{choice.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {/* Which cloud — switches the identity fields below (AWS account +
+                region · Azure subscription + tenant + location). */}
+                <div className="projadmin__hostset">
+                  <p className="projadmin__label" id="projadmin-cloud-label">
+                    Which cloud is this estate on?
+                  </p>
+                  <div
+                    className="projadmin__hosttoggle"
+                    role="radiogroup"
+                    aria-labelledby="projadmin-cloud-label"
+                  >
+                    {(['aws', 'azure'] as const).map((cloud) => (
+                      <label
+                        key={cloud}
+                        className={`projadmin__hostopt${form.provider === cloud ? ' projadmin__hostopt--on' : ''}`}
+                      >
+                        <input
+                          type="radio"
+                          name="proj-provider"
+                          value={cloud}
+                          checked={form.provider === cloud}
+                          onChange={() => setForm({ ...form, provider: cloud })}
+                        />
+                        <span>{cloud === 'aws' ? 'AWS' : 'Azure'}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="projadmin__form-grid">
+                  {form.host === 'gitlab-self-hosted' && (
+                    <div className="projadmin__field">
+                      <label className="projadmin__label" htmlFor="proj-baseurl">
+                        GitLab server address
+                      </label>
+                      <input
+                        id="proj-baseurl"
+                        className="projadmin__input"
+                        value={form.baseUrl}
+                        onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
+                        placeholder="https://gitlab.example.com"
+                        inputMode="url"
+                        spellCheck={false}
+                      />
+                      <p className="projadmin__hint">
+                        The address you open in a browser — it must start with https.
+                      </p>
+                    </div>
+                  )}
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-owner">
+                      Repository owner or group
+                    </label>
+                    <input
+                      id="proj-owner"
+                      className="projadmin__input"
+                      value={form.owner}
+                      onChange={(e) => setForm({ ...form, owner: e.target.value })}
+                      placeholder={form.host === 'github' ? 'acme-co' : 'platform/infrastructure'}
+                      spellCheck={false}
+                    />
+                    {form.host !== 'github' && (
+                      <p className="projadmin__hint">Subgroups join with a slash.</p>
+                    )}
+                  </div>
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-repo">
+                      Repository
+                    </label>
+                    <input
+                      id="proj-repo"
+                      className="projadmin__input"
+                      value={form.repoName}
+                      onChange={(e) => setForm({ ...form, repoName: e.target.value })}
+                      placeholder="terraform-acme"
+                      spellCheck={false}
+                    />
+                  </div>
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-id">
+                      Project id
+                    </label>
+                    <input
+                      id="proj-id"
+                      className="projadmin__input"
+                      value={form.id}
+                      onChange={(e) => setForm({ ...form, id: e.target.value })}
+                      placeholder="acme"
+                      spellCheck={false}
+                    />
+                    <p className="projadmin__hint">
+                      Short lowercase slug — it becomes the switcher entry.
+                    </p>
+                  </div>
+                  <div className="projadmin__field">
+                    <label className="projadmin__label" htmlFor="proj-name">
+                      Display name
+                    </label>
+                    <input
+                      id="proj-name"
+                      className="projadmin__input"
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      placeholder="Acme estate"
+                    />
+                  </div>
+                  {form.provider === 'aws' ? (
+                    <>
+                      <div className="projadmin__field">
+                        <label className="projadmin__label" htmlFor="proj-account">
+                          AWS account id
+                        </label>
+                        <input
+                          id="proj-account"
+                          className="projadmin__input"
+                          value={form.accountId}
+                          onChange={(e) => setForm({ ...form, accountId: e.target.value })}
+                          placeholder="123456789012"
+                          inputMode="numeric"
+                          spellCheck={false}
+                        />
+                        <p className="projadmin__hint">Twelve digits.</p>
+                      </div>
+                      <div className="projadmin__field">
+                        <label className="projadmin__label" htmlFor="proj-region">
+                          AWS region
+                        </label>
+                        <input
+                          id="proj-region"
+                          className="projadmin__input"
+                          value={form.region}
+                          onChange={(e) => setForm({ ...form, region: e.target.value })}
+                          placeholder="ap-southeast-1"
+                          spellCheck={false}
+                        />
+                        <p className="projadmin__hint">
+                          A standard region code — anything else is refused.
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="projadmin__field">
+                        <label className="projadmin__label" htmlFor="proj-subscription">
+                          Azure subscription id
+                        </label>
+                        <input
+                          id="proj-subscription"
+                          className="projadmin__input"
+                          value={form.subscriptionId}
+                          onChange={(e) => setForm({ ...form, subscriptionId: e.target.value })}
+                          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                          spellCheck={false}
+                        />
+                        <p className="projadmin__hint">The subscription GUID (8-4-4-4-12).</p>
+                      </div>
+                      <div className="projadmin__field">
+                        <label className="projadmin__label" htmlFor="proj-tenant">
+                          Azure tenant id
+                        </label>
+                        <input
+                          id="proj-tenant"
+                          className="projadmin__input"
+                          value={form.tenantId}
+                          onChange={(e) => setForm({ ...form, tenantId: e.target.value })}
+                          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                          spellCheck={false}
+                        />
+                        <p className="projadmin__hint">The directory (tenant) GUID.</p>
+                      </div>
+                      <div className="projadmin__field">
+                        <label className="projadmin__label" htmlFor="proj-location">
+                          Azure default location
+                        </label>
+                        <input
+                          id="proj-location"
+                          className="projadmin__input"
+                          value={form.location}
+                          onChange={(e) => setForm({ ...form, location: e.target.value })}
+                          placeholder="southeastasia"
+                          spellCheck={false}
+                        />
+                        <p className="projadmin__hint">
+                          A standard Azure location — anything else is refused.
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+            <div className="projadmin__form-actions">
+              {/* Deliberately NOT disabled on an unparsed address. A dead
+                  control with no explanation is the exact complaint the UX
+                  audit raised; submitting an address that does not parse
+                  surfaces the parser's own plain reason as a notice, and the
+                  live echo under the field says so before you even press it. */}
               <Button variant="primary" type="submit">
                 Register draft project
               </Button>

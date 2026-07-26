@@ -179,6 +179,20 @@ async function plantProjectAt(
   });
 }
 
+/** Move an EXISTING project to a status, preserving everything else on the row.
+ * Distinct from {@link plantProjectAt}, which builds a fresh row from scratch
+ * and would erase exactly the identity these cases are about. */
+async function promoteStatus(
+  store: ConfigStore,
+  status: ProjectItem["status"],
+  id = "acme",
+): Promise<void> {
+  const k = projectKey(id);
+  const row = (await store.get(k.PK, k.SK)) as ProjectItem;
+  expect(row, `no such project ${id}`).toBeTruthy();
+  await store.put({ ...row, status });
+}
+
 async function putIdentity(
   s: Setup,
   cookie: string,
@@ -615,5 +629,124 @@ describe("IDENTITY_UNCONFIRMED — the fail-closed backstop on upload-token mint
     const res = await mint(s, "draftproj"); // still 'draft' — not UPLOADABLE regardless of identity
     expect(res.status).toBe(409);
     expect((await res.json()).code).toBe("STATE_CONFLICT");
+  });
+});
+
+/**
+ * Decision 5's other half, now built: REGISTER MAY DEFER THE IDENTITY. A body
+ * carrying no identity key at all is the url-only register — the scan proposes
+ * the values and a human confirms them. What must hold either way is that a
+ * person decides: the deferred project is NOT identity-confirmed, so the data
+ * lane stays shut behind IDENTITY_UNCONFIRMED until somebody looks.
+ */
+describe("register with a DEFERRED identity (the url-only form)", () => {
+  const URL_ONLY = {
+    id: "acme",
+    name: "Acme estate",
+    repo: { host: "github", owner: "acme-co", name: "terraform-acme" },
+  };
+
+  async function registerUrlOnly(
+    s: Setup,
+    body: unknown = URL_ONLY,
+  ): Promise<Response> {
+    return s.app.request("/projects", {
+      method: "POST",
+      headers: hdrs(s.putra, { json: true }),
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("accepts a body with NO identity key and stores NO identity fields", async () => {
+    const s = await setup();
+    expect((await registerUrlOnly(s)).status).toBe(201);
+
+    const k = projectKey("acme");
+    const row = (await s.store.get(k.PK, k.SK)) as ProjectItem;
+    expect(row.status).toBe("draft");
+    // Not "set to undefined" — genuinely absent, so the row is honestly
+    // "identity unknown" rather than pretending to an empty answer.
+    for (const key of [
+      "provider",
+      "accountId",
+      "region",
+      "subscriptionId",
+      "tenantId",
+      "location",
+    ])
+      expect(row).not.toHaveProperty(key);
+    expect(row.identityConfirmed).toBeUndefined();
+    expect(isIdentityConfirmed(row)).toBe(false);
+  });
+
+  it("that project can still be scanned and reach trust review", async () => {
+    // The deferral must not block onboarding — only the DATA lane.
+    const s = await setup();
+    await registerUrlOnly(s);
+    const report = reportText();
+    const res = await s.app.request("/projects/acme/trust-request", {
+      method: "PUT",
+      headers: hdrs(s.putra, { json: true }),
+      body: JSON.stringify({
+        trustRequest: {
+          repo: "terraform-acme",
+          commitSha: COMMIT,
+          prescanSha256: sha256(report),
+        },
+        prescanReport: report,
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe("pending-trust");
+  });
+
+  it("but the DATA lane stays shut until a human confirms — IDENTITY_UNCONFIRMED", async () => {
+    const s = await setup();
+    await registerUrlOnly(s);
+    // Move it to 'trusted' so the mint's own status gate is satisfied and the
+    // ONLY thing left standing between it and a token is the identity check.
+    await promoteStatus(s.store, "trusted");
+    const res = await mint(s);
+    expect(res.status).toBe(422);
+    expect((await res.json()).code).toBe("IDENTITY_UNCONFIRMED");
+  });
+
+  it("…and opens once an admin confirms the identity, pre-trust", async () => {
+    const s = await setup();
+    await registerUrlOnly(s);
+    expect((await putIdentity(s, s.putra, AWS_BODY)).status).toBe(200);
+    await promoteStatus(s.store, "trusted");
+    expect((await mint(s)).status).toBe(201);
+  });
+
+  it("HALF an identity is a mistake, not a deferral — still refused", async () => {
+    const s = await setup();
+    for (const partial of [
+      { accountId: "123456789012" }, // no region
+      { region: "ap-southeast-1" }, // no accountId
+      { provider: "azure" }, // named a cloud, gave nothing
+      {
+        provider: "azure",
+        subscriptionId: "11111111-2222-3333-4444-555555555555",
+      },
+      {
+        accountId: "123456789012",
+        region: "ap-southeast-1",
+        location: "southeastasia",
+      }, // mixed
+    ]) {
+      const res = await registerUrlOnly(s, { ...URL_ONLY, ...partial });
+      expect(res.status, JSON.stringify(partial)).toBe(422);
+    }
+  });
+
+  it("a COMPLETE identity at register still counts as confirmed — nothing regressed", async () => {
+    const s = await setup();
+    await registerOnly(s); // the classic body, identity typed by a human
+    const k = projectKey("acme");
+    const row = (await s.store.get(k.PK, k.SK)) as ProjectItem;
+    expect(isIdentityConfirmed(row)).toBe(true);
+    await promoteStatus(s.store, "trusted");
+    expect((await mint(s)).status).toBe(201);
   });
 });

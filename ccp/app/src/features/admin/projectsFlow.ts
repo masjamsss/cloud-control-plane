@@ -206,6 +206,134 @@ export function repoRefFromForm(input: {
   return { ok: true, repo: { host: 'gitlab', baseUrl, owner, name } };
 }
 
+/**
+ * Turn ONE pasted repository address into the wire {@link RepoRef} plus a
+ * suggested project id and display name — the whole url-only register.
+ *
+ * Accepts what a person actually has in their clipboard, because asking them to
+ * normalise it first is the friction this replaces:
+ *   https://github.com/acme-co/terraform-acme        (browser address bar)
+ *   https://github.com/acme-co/terraform-acme.git    (the clone button)
+ *   https://github.com/acme-co/terraform-acme/tree/main/envs/prod  (a deep link)
+ *   git@github.com:acme-co/terraform-acme.git        (the ssh clone button)
+ *   github.com/acme-co/terraform-acme                (no scheme)
+ *   acme-co/terraform-acme                           (the shorthand)
+ *
+ * github.com and gitlab.com are recognised by name; any OTHER host is treated
+ * as a self-hosted GitLab, which is the only self-hosted shape the RepoRef
+ * supports. A deep link's extra path is DISCARDED, not guessed at — `/tree/…`
+ * and `/-/blob/…` are viewer routes, not part of the repository's identity.
+ *
+ * Fail-soft with a plain reason; the server re-validates the RepoRef either way
+ * and is the authority on what a legal owner/name looks like.
+ */
+export function parseRepoUrl(
+  raw: string,
+):
+  | { ok: true; repo: RepoRef; suggestedId: string; suggestedName: string }
+  | { ok: false; reason: string } {
+  const text = raw.trim();
+  if (text.length === 0) return { ok: false, reason: 'Paste the repository’s address.' };
+
+  let host = '';
+  let path = '';
+
+  // scp-style ssh — `git@host:owner/name.git`, what a forge's SSH clone button
+  // gives you. Not a URL, so it has to be recognised before `new URL`.
+  const scp = /^(?:[\w.-]+@)?([\w.-]+):(?!\/)(.+)$/.exec(text);
+  if (scp && !text.includes('://')) {
+    host = scp[1]!;
+    path = scp[2]!;
+  } else if (/^[\w+.-]+:\/\//.test(text) || /^[\w.-]+\.[\w.-]+\//.test(text)) {
+    // A real URL, or host-looking text with no scheme (assume https, which is
+    // the only scheme the server will clone over anyway).
+    let parsed: URL;
+    try {
+      parsed = new URL(/^[\w+.-]+:\/\//.test(text) ? text : `https://${text}`);
+    } catch {
+      return { ok: false, reason: 'That does not look like a repository address.' };
+    }
+    if (parsed.username !== '' || parsed.password !== '') {
+      // A pasted URL with a token in it would otherwise be stored and shown.
+      return {
+        ok: false,
+        reason:
+          'Remove the username or token from the address — paste just the repository’s location.',
+      };
+    }
+    host = parsed.hostname;
+    path = parsed.pathname;
+  } else {
+    // Bare `owner/name` shorthand — assume the most common forge.
+    host = 'github.com';
+    path = text;
+  }
+
+  // Drop a trailing `.git`, then split. A forge deep link appends viewer
+  // segments after owner/name; everything past the second segment is dropped.
+  const segments = path
+    .replace(/\.git$/i, '')
+    .split('/')
+    .filter((seg) => seg.length > 0);
+  if (segments.length < 2) {
+    return { ok: false, reason: 'The address needs both an owner and a repository name.' };
+  }
+  // GitLab subgroups are legal in `owner` but its viewer routes are not: `/-/`
+  // marks where GitLab's own UI path begins, so anything from there on is UI.
+  const uiAt = segments.indexOf('-');
+  const meaningful = uiAt > 1 ? segments.slice(0, uiAt) : segments;
+  // GitHub's viewer routes (`/tree/…`, `/blob/…`) always sit at position 2.
+  const trimmed =
+    meaningful.length > 2 &&
+    ['tree', 'blob', 'commit', 'commits', 'releases', 'pull', 'issues'].includes(meaningful[2]!)
+      ? meaningful.slice(0, 2)
+      : meaningful;
+
+  const name = trimmed[trimmed.length - 1]!;
+  const owner = trimmed.slice(0, -1).join('/');
+  const lower = host.toLowerCase();
+  const repo: RepoRef =
+    lower === 'github.com' || lower === 'www.github.com'
+      ? { host: 'github', owner, name }
+      : lower === 'gitlab.com' || lower === 'www.gitlab.com'
+        ? { host: 'gitlab', owner, name }
+        : { host: 'gitlab', baseUrl: `https://${lower}`, owner, name };
+
+  return {
+    ok: true,
+    repo,
+    suggestedId: suggestProjectId(name),
+    suggestedName: suggestProjectName(name),
+  };
+}
+
+/** A project id the server's grammar accepts, derived from the repo name:
+ * lowercase, letters/digits/dashes, must start with a letter, 2–32 chars. A
+ * SUGGESTION the operator can overwrite — never silently authoritative. */
+export function suggestProjectId(repoName: string): string {
+  const slug = repoName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    // The most common estate-repo prefixes carry no information once the repo
+    // IS the project; dropping them turns `terraform-acme` into `acme`.
+    .replace(/^(?:terraform|tf|infra|infrastructure)-/, '');
+  const started = /^[a-z]/.test(slug) ? slug : `p-${slug}`;
+  return started.replace(/-+$/, '').slice(0, 32);
+}
+
+/** A display name derived from the repo name — Title Case, dashes to spaces.
+ * Also only a suggestion. */
+export function suggestProjectName(repoName: string): string {
+  const words = repoName
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0);
+  const titled = words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  return titled.slice(0, 100) || repoName.slice(0, 100);
+}
+
 /** "owner/name" for a registry card — prefers the host-agnostic record and
  * falls back to the legacy github mirror for projects predating it (both are
  * optional on the wire; {@link projectRepoLabel} owns the fallback order). */
@@ -223,7 +351,11 @@ export function projectCloudLabel(p: { provider?: 'aws' | 'azure' }): string {
  * project renders Account + Region; an azure project renders Subscription +
  * Tenant + Location (0039 S1). Narrows on the `provider` discriminant, so every
  * legacy aws project (no provider key) renders exactly the two rows it did
- * before this seam. */
+ * before this seam.
+ *
+ * A url-only registration has NO identity yet — the scan proposes it and an
+ * admin confirms it — so this returns ONE honest row saying so rather than
+ * blank values that would read as a rendering bug. */
 export function projectIdentityRows(
   p: ServerProject,
 ): ReadonlyArray<{ label: string; value: string; mono?: boolean }> {
@@ -233,6 +365,9 @@ export function projectIdentityRows(
       { label: 'Tenant', value: p.tenantId, mono: true },
       { label: 'Location', value: p.location },
     ];
+  }
+  if (p.accountId === undefined || p.region === undefined) {
+    return [{ label: 'Cloud account', value: 'Not confirmed yet — the scan will propose it' }];
   }
   return [
     { label: 'Account', value: p.accountId, mono: true },

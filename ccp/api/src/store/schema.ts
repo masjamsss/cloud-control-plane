@@ -881,22 +881,22 @@ export type ProjectItem = z.infer<typeof ProjectItem>;
  *  1. An explicit confirmation exists ({@link ProjectIdentityConfirmation},
  *     written only by `PUT /projects/:id/identity`).
  *  2. The project carries a FULL identity at all (aws: accountId+region ·
- *     azure: subscriptionId+tenantId+location) — because THIS PHASE's
- *     register flow (`POST /projects`, RegisterBody) still REQUIRES the full
- *     identity to be typed at register time (the url-only register form that
- *     shrinks it to a repo URL is a later phase, ADR-0033 action item 4). A
- *     human typed those values into the register form, so they are honestly
- *     "confirmed by the operator who typed it" the moment the row exists —
- *     backfilling an explicit confirmation block for every such project would
- *     be a fiction (nobody clicked a confirm button), so arm 2 recognizes the
- *     fact instead of manufacturing one.
+ *     azure: subscriptionId+tenantId+location) — because a human TYPED those
+ *     values into the register form, so they are honestly "confirmed by the
+ *     operator who typed it" the moment the row exists. Backfilling an
+ *     explicit confirmation block for every such project would be a fiction
+ *     (nobody clicked a confirm button), so arm 2 recognizes the fact instead
+ *     of manufacturing one. This is what keeps every project registered before
+ *     the url-only form — and every project registered through it WITH an
+ *     identity typed — minting uploads exactly as before.
  *
- * This keeps every project this phase's register flow can produce — old or
- * new — minting uploads exactly as before (arm 2 is always true for them);
- * the gate only ever has teeth once a FUTURE phase's url-only register can
- * produce a project with NEITHER identity fields NOR a confirmation — exactly
- * the state this phase's providerConfig proposal + identity-confirm route
- * exist to prepare for.
+ * 2026-07-26: THIS GATE NOW HAS TEETH. `RegisterBody` accepts a body carrying
+ * no identity key at all (the url-only register, ADR-0033 Decision 5), which
+ * produces a row with NEITHER identity fields NOR a confirmation — both arms
+ * false. Such a project scans and reaches trust review normally; it simply
+ * cannot mint an upload token until an admin has confirmed the identity the
+ * scan proposed. That is the whole point: the deferral moved WHEN the cloud
+ * identity is decided, never WHETHER a person decides it.
  */
 export function isIdentityConfirmed(p: ProjectItem): boolean {
   if (p.identityConfirmed) return true;
