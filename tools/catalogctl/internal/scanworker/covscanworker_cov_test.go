@@ -691,7 +691,12 @@ func TestCovscanworkercheckCloneURL(t *testing.T) {
 		{name: "unparseable", raw: "https://exa mple.com/o/r.git", want: "not a URL"},
 		{name: "control character", raw: "https://exam\x7fple.com/o/r.git", want: "not a URL"},
 		{name: "downgraded scheme", raw: "http://github.com/o/r.git", want: "not https"},
-		{name: "embedded credentials", raw: "https://u:p@github.com/o/r.git", want: "credentials embedded in the URL"},
+		// The host here is an RFC 2606 reserved domain on purpose: `u:p@<host>`
+		// is email-SHAPED, and the publish gate's PG-6 people check (correctly)
+		// flags a non-example address anywhere in the public tree. The guard
+		// under test reads the URL's userinfo, not its host, so the assertion is
+		// unchanged.
+		{name: "embedded credentials", raw: "https://u:p@example.com/o/r.git", want: "credentials embedded in the URL"},
 		{name: "explicit port", raw: "https://github.com:2222/o/r.git", want: "explicit port"},
 		{name: "no host", raw: "https:///o/r.git", want: "no host"},
 	}
