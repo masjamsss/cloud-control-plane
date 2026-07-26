@@ -10,6 +10,7 @@ import (
 	_ "github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/onboard"      // installs cli.Onboard
 	_ "github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/plancheck"    // installs cli.PlanCheck
 	_ "github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/prprep"       // installs cli.PRPrepare
+	_ "github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/scanworker"   // installs cli.ScanWorker
 	_ "github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/windowcheck"  // installs cli.WindowCheck
 )
 

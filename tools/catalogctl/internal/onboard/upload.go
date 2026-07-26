@@ -104,6 +104,12 @@ type Uploader interface {
 	UploadTrustRequest(server, projectID, token string, body TrustRequestUpload) error
 }
 
+// HTTPUploader returns the real, production Uploader. Exported so the
+// scan-worker can WRAP it (to learn whether the upload actually landed) instead
+// of reimplementing the PUT — the request shape, the Bearer header, and the
+// non-2xx handling stay defined in exactly one place.
+func HTTPUploader() Uploader { return httpUploader{} }
+
 // httpUploader is the real, production Uploader: plain net/http, one attempt,
 // no retries. Unlike scripts/gen-project-data.sh's curl --retry (a CI
 // context), a laptop run is interactive — on failure we print the manual-

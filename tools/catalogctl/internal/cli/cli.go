@@ -16,12 +16,13 @@ var (
 	Onboard      func(args []string, stdout, stderr io.Writer) int
 	PlanCheck    func(args []string, stdout, stderr io.Writer) int
 	PRPrepare    func(args []string, stdout, stderr io.Writer) int
+	ScanWorker   func(args []string, stdout, stderr io.Writer) int
 	WindowCheck  func(args []string, stdout, stderr io.Writer) int
 )
 
 func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: catalogctl <drift-edit|drift-propose|edit|expected-diff|onboard|plan-check|pr-prepare|window-check> [flags]")
+		fmt.Fprintln(stderr, "usage: catalogctl <drift-edit|drift-propose|edit|expected-diff|onboard|plan-check|pr-prepare|scan-worker|window-check> [flags]")
 		return 3
 	}
 	switch args[0] {
@@ -67,6 +68,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		return PRPrepare(args[1:], stdout, stderr)
+	case "scan-worker": // the control plane's own repository scanner (ADR-0033)
+		if ScanWorker == nil {
+			fmt.Fprintln(stderr, "internal: scan-worker not wired")
+			return 1
+		}
+		return ScanWorker(args[1:], stdout, stderr)
 	case "window-check": // maintenance-window + cooling-off gate at a supplied instant
 		if WindowCheck == nil {
 			fmt.Fprintln(stderr, "internal: window-check not wired")

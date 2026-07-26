@@ -594,6 +594,13 @@ func (execRunner) ProvidersSchema(dir string) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+// AssertNoCloudCreds is the sandbox contract's first guard, exported because
+// the scan-worker (internal/scanworker) needs the SAME rule before it clones an
+// untrusted repository: a process that handles hostile code must not be holding
+// a cloud credential while it does so. One implementation, two callers — never
+// a second copy that can drift from this list.
+func AssertNoCloudCreds() error { return assertNoCloudCreds() }
+
 func assertNoCloudCreds() error {
 	for _, kv := range os.Environ() {
 		name := kv
