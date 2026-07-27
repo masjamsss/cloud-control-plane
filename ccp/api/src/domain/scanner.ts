@@ -53,12 +53,22 @@ export function scannerWorkerKey(env: Env = process.env): string | null {
  * explicitly, so reaching a self-hosted forge is a deliberate deployment
  * decision rather than a consequence of whatever an admin typed.
  */
-export function allowedForgeHosts(env: Env = process.env): Set<string> {
-  const extra = (env.CCP_FORGE_HOSTS ?? "")
+export function allowedForgeHosts(
+  env: Env = process.env,
+  extraHosts: readonly string[] = [],
+): Set<string> {
+  // `extraHosts` is the PORTAL's list, resolved by the caller
+  // (domain/deploymentSettings.ts owns the portal-beats-environment
+  // precedence). It is passed IN rather than read here so this module stays
+  // pure and its refusals stay exhaustively testable without a store.
+  const fromEnv = (env.CCP_FORGE_HOSTS ?? "")
     .split(",")
     .map((h) => h.trim().toLowerCase())
     .filter((h) => h.length > 0);
-  return new Set([...Object.values(DEFAULT_HOSTS), ...extra]);
+  const fromPortal = extraHosts
+    .map((h) => h.trim().toLowerCase())
+    .filter((h) => h.length > 0);
+  return new Set([...Object.values(DEFAULT_HOSTS), ...fromEnv, ...fromPortal]);
 }
 
 /** Why a clone URL was refused — surfaced to the operator, never to the worker. */
@@ -98,6 +108,7 @@ export type CloneUrlResult =
 export function buildCloneUrl(
   repo: RepoRef,
   env: Env = process.env,
+  extraHosts: readonly string[] = [],
 ): CloneUrlResult {
   let host = DEFAULT_HOSTS[repo.host];
 
@@ -118,7 +129,7 @@ export function buildCloneUrl(
     host = parsed.hostname.toLowerCase();
   }
 
-  if (!allowedForgeHosts(env).has(host))
+  if (!allowedForgeHosts(env, extraHosts).has(host))
     return { ok: false, refusal: "host-not-allowed" };
 
   // Encode each path segment. `owner` may carry `/` for GitLab subgroups;

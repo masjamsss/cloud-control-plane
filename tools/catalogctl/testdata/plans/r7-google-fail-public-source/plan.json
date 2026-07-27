@@ -1,0 +1,23 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "google_compute_firewall.web_allow_corp",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "name": "web-allow-corp",
+          "network": "core-net",
+          "direction": "INGRESS",
+          "priority": 1000,
+          "allow": [
+            {"protocol": "tcp", "ports": ["443"]}
+          ],
+          "deny": [],
+          "source_ranges": ["0.0.0.0/0"]
+        }
+      }
+    }
+  ]
+}

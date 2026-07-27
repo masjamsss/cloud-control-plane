@@ -54,6 +54,8 @@ function arg(flag: string, fallback: string): string {
 
 const providerArg = arg('--provider', 'aws');
 if (providerArg !== 'aws' && providerArg !== 'azure') {
+  // gcp is refused here BY DESIGN until its schema dump + PROVIDER_TAGS pin
+  // land (ADR-0034 lane G2) — with no dump there is no truth to build from.
   console.error(`FATAL: --provider must be aws|azure, got "${providerArg}"`);
   process.exit(1);
 }

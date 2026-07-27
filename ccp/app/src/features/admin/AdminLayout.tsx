@@ -10,6 +10,7 @@ const TABS = [
   { to: '/admin/policy', label: 'Approval policy' },
   { to: '/admin/risk', label: 'Activity risk' },
   { to: '/admin/settings', label: 'Settings' },
+  { to: '/admin/deployment', label: 'Deployment' },
   { to: '/admin/history', label: 'History' },
   { to: '/admin/projects', label: 'Projects' },
   { to: '/admin/pending-changes', label: 'Pending changes' },
@@ -25,7 +26,8 @@ export function AdminLayout(): JSX.Element {
         <p className="page-eyebrow">Governance</p>
         <h1 className="admin__title">Admin</h1>
         <p className="admin__sub">
-          Govern the control plane — accounts, team ownership, and how many approvals a change needs.
+          Govern the control plane — accounts, team ownership, and how many approvals a change
+          needs.
         </p>
       </header>
 
@@ -39,7 +41,9 @@ export function AdminLayout(): JSX.Element {
           <NavLink
             key={t.to}
             to={t.to}
-            className={({ isActive }) => (isActive ? 'admin__tab admin__tab--active' : 'admin__tab')}
+            className={({ isActive }) =>
+              isActive ? 'admin__tab admin__tab--active' : 'admin__tab'
+            }
           >
             {t.label}
           </NavLink>

@@ -491,6 +491,15 @@ export interface ServerProjectAzure extends ServerProjectBase {
   location: string;
 }
 
+/** A GCP registered project (0034 G1) — identity is `gcpProjectId` +
+ * `gcpRegion` (prefixed: a bare `projectId` would collide with the registry's
+ * own project ids). `provider: 'gcp'` is the discriminant. */
+export interface ServerProjectGcp extends ServerProjectBase {
+  provider: 'gcp';
+  gcpProjectId: string;
+  gcpRegion: string;
+}
+
 /**
  * The registry projection `GET /projects` serves — PROVIDER-DISCRIMINATED (0039
  * S1): an aws project carries `accountId`/`region` (no `provider` key), an azure
@@ -514,9 +523,12 @@ export interface ServerProjectUnidentified extends ServerProjectBase {
   subscriptionId?: undefined;
   tenantId?: undefined;
   location?: undefined;
+  gcpProjectId?: undefined;
+  gcpRegion?: undefined;
 }
 
-export type ServerProject = ServerProjectAws | ServerProjectAzure | ServerProjectUnidentified;
+export type ServerProject =
+  ServerProjectAws | ServerProjectAzure | ServerProjectGcp | ServerProjectUnidentified;
 
 /** The `owner/name` label for a project row, whichever repo shape it carries. */
 export function projectRepoLabel(p: Pick<ServerProjectBase, 'github' | 'repo'>): string {
@@ -551,6 +563,14 @@ export interface RegisterProjectAzureInput extends RegisterProjectBase {
   location: string;
 }
 
+/** GCP register input — gcpProjectId + gcpRegion in place of accountId/region
+ * (0034 G1). */
+export interface RegisterProjectGcpInput extends RegisterProjectBase {
+  provider: 'gcp';
+  gcpProjectId: string;
+  gcpRegion: string;
+}
+
 /**
  * DEFERRED-identity register input — the url-only register. Carries the repo
  * and nothing about the cloud, which is what tells the server to wait: the scan
@@ -571,15 +591,21 @@ export interface RegisterProjectDeferredInput extends RegisterProjectBase {
   subscriptionId?: undefined;
   tenantId?: undefined;
   location?: undefined;
+  gcpProjectId?: undefined;
+  gcpRegion?: undefined;
 }
 
-/** PROVIDER-DISCRIMINATED register input (0039 S1): an aws body carries
- * accountId/region (and no `provider` key); an azure body carries `provider:
- * 'azure'` + subscriptionId/tenantId/location. The aws shape is byte-identical
- * to every pre-azure caller. A body with NEITHER defers the identity — see
+/** PROVIDER-DISCRIMINATED register input (0039 S1 / 0034 G1): an aws body
+ * carries accountId/region (and no `provider` key); an azure body carries
+ * `provider:'azure'` + subscriptionId/tenantId/location; a gcp body carries
+ * `provider:'gcp'` + gcpProjectId/gcpRegion. The aws shape is byte-identical
+ * to every pre-azure caller. A body with NONE defers the identity — see
  * {@link RegisterProjectDeferredInput}. */
 export type RegisterProjectInput =
-  RegisterProjectAwsInput | RegisterProjectAzureInput | RegisterProjectDeferredInput;
+  | RegisterProjectAwsInput
+  | RegisterProjectAzureInput
+  | RegisterProjectGcpInput
+  | RegisterProjectDeferredInput;
 
 /* ── the per-account data plane (upload tokens → CI upload → activate → serve) ── */
 
@@ -636,6 +662,29 @@ export interface ScanJobState {
 export interface ScanJobCreated {
   jobId: string;
   status: 'queued';
+}
+
+/** One row of the deployment-settings screen. `value` is absent for a secret;
+ * `configured` says only whether one is set. `notEditable` is present exactly
+ * when `editable` is false, and always carries both halves — why, and what to
+ * do instead. */
+export interface DeploymentSetting {
+  id: string;
+  label: string;
+  help: string;
+  group: string;
+  kind: 'toggle' | 'text' | 'list' | 'number';
+  /** The environment variable this corresponds to, so a reader can connect the
+   * screen to their deployment config. */
+  env: string;
+  editable: boolean;
+  notEditable?: { reason: string; instead: string };
+  /** Where the current value came from: an admin set it, the deployment's
+   * environment supplied it, or it is the built-in default. */
+  source: 'portal' | 'environment' | 'default';
+  secret?: true;
+  value?: unknown;
+  configured?: boolean;
 }
 
 /** sha256 over the CANONICAL JSON (recursive key-sorted, no whitespace) of each
@@ -972,6 +1021,25 @@ export interface HttpApiClient extends ApiClient {
     input: { username: string; token: string },
   ): Promise<{ username: string }>;
   removeForgeCredential(projectId: string): Promise<void>;
+
+  /**
+   * DEPLOYMENT SETTINGS — everything this system is configured with, in one
+   * place, so an operator never has to open a config file to see how it is set
+   * up and rarely has to open one to change it.
+   *
+   * The read returns EVERY knob, including the ones the portal cannot edit;
+   * those carry a plain reason and what to do instead, rather than being hidden
+   * (a screen with silent gaps is what sends people back to the files). A
+   * secret's VALUE is never returned — only whether one is configured — so this
+   * response is safe in a screenshot.
+   *
+   * The write refuses anything the server's own registry marks non-editable,
+   * and a change that WIDENS what the deployment may do — arming the scanner,
+   * adding a repository host, lifting the apply freeze — comes back as a
+   * two-admin proposal (`applied: false`) rather than taking effect.
+   */
+  loadDeploymentSettings(): Promise<DeploymentSetting[]>;
+  setDeploymentSetting(id: string, value: unknown): Promise<AdminWriteOutcome>;
 
   /**
    * The per-account DATA plane (the app-rebuild killer): mint/revoke the CI
@@ -1911,6 +1979,22 @@ export function createHttpApiClient(baseUrl: string, opts?: HttpApiOptions): Htt
       });
       if (!res.ok) await throwRefusal(res);
       return (await res.json()) as ScanJobCreated;
+    },
+
+    async loadDeploymentSettings(): Promise<DeploymentSetting[]> {
+      const res = await request('/admin/deployment');
+      if (!res.ok) await throwRefusal(res);
+      return ((await res.json()) as { settings: DeploymentSetting[] }).settings;
+    },
+
+    async setDeploymentSetting(id: string, value: unknown): Promise<AdminWriteOutcome> {
+      const res = await request(`/admin/deployment/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ value }),
+      });
+      if (!res.ok) await throwRefusal(res);
+      // 202 => a loosening change, now waiting on a second admin.
+      return writeOutcome(res);
     },
 
     async setForgeCredential(

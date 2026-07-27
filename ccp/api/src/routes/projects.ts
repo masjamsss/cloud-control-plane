@@ -29,9 +29,9 @@ import {
 import {
   buildCloneUrl,
   isTerminalScanStatus,
-  scannerEnabled,
   scannerWorkerKey,
 } from "../domain/scanner";
+import { knobEnabled, resolveKnob } from "../domain/deploymentSettings";
 import {
   ForgeCredentialError,
   forgeSealKey,
@@ -188,6 +188,56 @@ export const AZURE_LOCATION_ALLOWLIST = [
   "westus3",
 ] as const;
 
+/** Explicit GCP region allowlist (the gcp analogue of REGION_ALLOWLIST,
+ * ADR-0034 G1). Fail-closed: an unlisted region string is refused, not
+ * normalized. GCP names its regions `<area>-<direction><n>` (`us-central1`,
+ * `europe-west4`); zones (`us-central1-a`) are deliberately NOT accepted here
+ * — a project's identity is regional, and zonal placement is a per-resource
+ * fact the catalog owns. */
+export const GCP_REGION_ALLOWLIST = [
+  "africa-south1",
+  "asia-east1",
+  "asia-east2",
+  "asia-northeast1",
+  "asia-northeast2",
+  "asia-northeast3",
+  "asia-south1",
+  "asia-south2",
+  "asia-southeast1",
+  "asia-southeast2",
+  "australia-southeast1",
+  "australia-southeast2",
+  "europe-central2",
+  "europe-north1",
+  "europe-southwest1",
+  "europe-west1",
+  "europe-west2",
+  "europe-west3",
+  "europe-west4",
+  "europe-west6",
+  "europe-west8",
+  "europe-west9",
+  "europe-west10",
+  "europe-west12",
+  "me-central1",
+  "me-central2",
+  "me-west1",
+  "northamerica-northeast1",
+  "northamerica-northeast2",
+  "northamerica-south1",
+  "southamerica-east1",
+  "southamerica-west1",
+  "us-central1",
+  "us-east1",
+  "us-east4",
+  "us-east5",
+  "us-south1",
+  "us-west1",
+  "us-west2",
+  "us-west3",
+  "us-west4",
+] as const;
+
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 /** Git object id: 7–64 lowercase hex (short sha through sha256-repo full sha). */
 const COMMIT_SHA = /^[0-9a-f]{7,64}$/;
@@ -198,6 +248,11 @@ const AWS_ACCOUNT_ID = /^\d{12}$/;
  * 8-4-4-4-12 hex form, case-insensitive (the portal shows lowercase). */
 const AZURE_GUID =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+/** A GCP project id — 6–30 chars, lowercase letter first, lowercase
+ * letters/digits/hyphens, no trailing hyphen (Google's own project-id rule).
+ * Named gcpProjectId on the wire: a bare "projectId" would collide with the
+ * control plane's own project ids (ADR-0034 G1). */
+const GCP_PROJECT_ID = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
 
 /** The provider-discriminated identity FIELDS shared by RegisterBody (identity
  * typed at register time) and IdentityBody (ADR-0033 Decision 5, `PUT
@@ -206,7 +261,7 @@ const AZURE_GUID =
  * apart on what counts as a valid aws/azure identity. */
 const IdentityFields = {
   /** Absent = 'aws' (the wire convention — an aws body never carries it). */
-  provider: z.enum(["aws", "azure"]).optional(),
+  provider: z.enum(["aws", "azure", "gcp"]).optional(),
   /** AWS identity (provider absent/'aws'). */
   accountId: z.string().regex(AWS_ACCOUNT_ID).optional(),
   region: z.enum(REGION_ALLOWLIST).optional(),
@@ -214,6 +269,9 @@ const IdentityFields = {
   subscriptionId: z.string().regex(AZURE_GUID).optional(),
   tenantId: z.string().regex(AZURE_GUID).optional(),
   location: z.enum(AZURE_LOCATION_ALLOWLIST).optional(),
+  /** GCP identity (provider 'gcp', ADR-0034 G1) — project id + region. */
+  gcpProjectId: z.string().regex(GCP_PROJECT_ID).optional(),
+  gcpRegion: z.enum(GCP_REGION_ALLOWLIST).optional(),
 } as const;
 
 /**
@@ -226,12 +284,14 @@ const IdentityFields = {
  */
 function refineIdentityShape(
   b: {
-    provider?: "aws" | "azure";
+    provider?: "aws" | "azure" | "gcp";
     accountId?: string;
     region?: string;
     subscriptionId?: string;
     tenantId?: string;
     location?: string;
+    gcpProjectId?: string;
+    gcpRegion?: string;
   },
   ctx: z.RefinementCtx,
 ): void {
@@ -239,27 +299,60 @@ function refineIdentityShape(
   const bad = (path: string, message: string): void => {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
   };
-  if (provider === "aws") {
-    if (b.accountId === undefined)
-      bad("accountId", "an aws project needs an accountId");
-    if (b.region === undefined) bad("region", "an aws project needs a region");
-    for (const k of ["subscriptionId", "tenantId", "location"] as const) {
-      if (b[k] !== undefined) bad(k, `an aws project must not carry ${k}`);
-    }
-  } else {
-    if (b.subscriptionId === undefined)
-      bad("subscriptionId", "an azure project needs a subscriptionId");
-    if (b.tenantId === undefined)
-      bad("tenantId", "an azure project needs a tenantId");
-    if (b.location === undefined)
-      bad("location", "an azure project needs a location");
-    for (const k of ["accountId", "region"] as const) {
-      if (b[k] !== undefined) bad(k, `an azure project must not carry ${k}`);
-    }
+  // An exhaustive switch, one arm per provider — never an else-is-a-cloud
+  // (ADR-0034 rule 8: a provider value with no arm of its own must fail
+  // loudly, not inherit another cloud's requirements).
+  switch (provider) {
+    case "aws":
+      if (b.accountId === undefined)
+        bad("accountId", "an aws project needs an accountId");
+      if (b.region === undefined)
+        bad("region", "an aws project needs a region");
+      for (const k of [
+        "subscriptionId",
+        "tenantId",
+        "location",
+        "gcpProjectId",
+        "gcpRegion",
+      ] as const) {
+        if (b[k] !== undefined) bad(k, `an aws project must not carry ${k}`);
+      }
+      break;
+    case "azure":
+      if (b.subscriptionId === undefined)
+        bad("subscriptionId", "an azure project needs a subscriptionId");
+      if (b.tenantId === undefined)
+        bad("tenantId", "an azure project needs a tenantId");
+      if (b.location === undefined)
+        bad("location", "an azure project needs a location");
+      for (const k of [
+        "accountId",
+        "region",
+        "gcpProjectId",
+        "gcpRegion",
+      ] as const) {
+        if (b[k] !== undefined) bad(k, `an azure project must not carry ${k}`);
+      }
+      break;
+    case "gcp":
+      if (b.gcpProjectId === undefined)
+        bad("gcpProjectId", "a gcp project needs a gcpProjectId");
+      if (b.gcpRegion === undefined)
+        bad("gcpRegion", "a gcp project needs a gcpRegion");
+      for (const k of [
+        "accountId",
+        "region",
+        "subscriptionId",
+        "tenantId",
+        "location",
+      ] as const) {
+        if (b[k] !== undefined) bad(k, `a gcp project must not carry ${k}`);
+      }
+      break;
   }
 }
 
-/** The six identity keys. A register body that carries NONE of them is
+/** The eight identity keys. A register body that carries NONE of them is
  * DEFERRING its identity to the scan's proposal + a human confirm; a body that
  * carries ANY of them is typing one now, and must type a complete, unmixed
  * one. Named once so the deferral test and the refine below cannot drift. */
@@ -270,6 +363,8 @@ const IDENTITY_KEYS = [
   "subscriptionId",
   "tenantId",
   "location",
+  "gcpProjectId",
+  "gcpRegion",
 ] as const;
 
 function carriesAnyIdentity(b: Record<string, unknown>): boolean {
@@ -350,24 +445,41 @@ const IdentityBody = z
 function identityFieldsFor(
   body: z.infer<typeof IdentityBody>,
 ): Partial<ProjectItem> {
-  if (body.provider === "azure") {
-    return {
-      provider: "azure",
-      subscriptionId: body.subscriptionId,
-      tenantId: body.tenantId,
-      location: body.location,
-      accountId: undefined,
-      region: undefined,
-    };
+  switch (body.provider ?? "aws") {
+    case "azure":
+      return {
+        provider: "azure",
+        subscriptionId: body.subscriptionId,
+        tenantId: body.tenantId,
+        location: body.location,
+        accountId: undefined,
+        region: undefined,
+        gcpProjectId: undefined,
+        gcpRegion: undefined,
+      };
+    case "gcp":
+      return {
+        provider: "gcp",
+        gcpProjectId: body.gcpProjectId,
+        gcpRegion: body.gcpRegion,
+        accountId: undefined,
+        region: undefined,
+        subscriptionId: undefined,
+        tenantId: undefined,
+        location: undefined,
+      };
+    default:
+      return {
+        provider: undefined,
+        accountId: body.accountId,
+        region: body.region,
+        subscriptionId: undefined,
+        tenantId: undefined,
+        location: undefined,
+        gcpProjectId: undefined,
+        gcpRegion: undefined,
+      };
   }
-  return {
-    provider: undefined,
-    accountId: body.accountId,
-    region: body.region,
-    subscriptionId: undefined,
-    tenantId: undefined,
-    location: undefined,
-  };
 }
 
 const TrustRequestBody = z
@@ -408,15 +520,23 @@ const TrustBody = z
  * the thin and rich tiers never diverge on identity.
  */
 function identityProjection(p: ProjectItem): Record<string, unknown> {
-  if (p.provider === "azure") {
-    return {
-      provider: "azure",
-      subscriptionId: p.subscriptionId,
-      tenantId: p.tenantId,
-      location: p.location,
-    };
+  switch (p.provider ?? "aws") {
+    case "azure":
+      return {
+        provider: "azure",
+        subscriptionId: p.subscriptionId,
+        tenantId: p.tenantId,
+        location: p.location,
+      };
+    case "gcp":
+      return {
+        provider: "gcp",
+        gcpProjectId: p.gcpProjectId,
+        gcpRegion: p.gcpRegion,
+      };
+    default:
+      return { accountId: p.accountId, region: p.region };
   }
-  return { accountId: p.accountId, region: p.region };
 }
 
 /**
@@ -623,7 +743,13 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
             tenantId: parsed.data.tenantId,
             location: parsed.data.location,
           }
-        : { accountId: parsed.data.accountId, region: parsed.data.region };
+        : parsed.data.provider === "gcp"
+          ? {
+              provider: "gcp",
+              gcpProjectId: parsed.data.gcpProjectId,
+              gcpRegion: parsed.data.gcpRegion,
+            }
+          : { accountId: parsed.data.accountId, region: parsed.data.region };
     const item: ProjectItem = {
       ...k,
       id,
@@ -770,7 +896,12 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     const actor = c.get("account")!.id;
     const id = c.req.param("id");
 
-    if (!scannerEnabled() || scannerWorkerKey() === null)
+    // Armed by the PORTAL toggle or, failing that, the deployment's own
+    // environment — one precedence, resolved in domain/deploymentSettings.ts.
+    if (
+      !(await knobEnabled(store, "scanner.enabled")) ||
+      scannerWorkerKey() === null
+    )
       return apiError(c, "SCANNER_DISABLED");
 
     const k = projectKey(id);
@@ -785,7 +916,10 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     // deliberately DISCARDED — the worker gets a freshly-built URL at claim
     // time, so nothing derived from a credentialed or host-specific string is
     // ever persisted.
-    if (!buildCloneUrl(repo).ok) return apiError(c, "SCAN_TARGET_REFUSED");
+    const extraHosts = ((await resolveKnob(store, "scanner.forgeHosts"))
+      .value ?? []) as string[];
+    if (!buildCloneUrl(repo, process.env, extraHosts).ok)
+      return apiError(c, "SCAN_TARGET_REFUSED");
 
     const existing = (await store.query(
       k.PK,
