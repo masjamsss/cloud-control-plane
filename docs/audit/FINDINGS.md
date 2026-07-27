@@ -314,7 +314,7 @@ Missing error and retry paths; permanent loading states.
 
 Bootstrap, install, migration, compose and overlays.
 
-- [ ] OPS-1 | critical | install-ops | open | 10-reliability-operations.md | Fresh-install bootstrap deadlock: boot-time settlement creates the store file, then `CCP_BOOTSTRAP=1` is refused
+- [x] OPS-1 | critical | install-ops | fixed:install.sh + intranet-setup.sh decide bootstrap before the first up; ccp/scripts/test/install-bootstrap-decision.test.sh | 10-reliability-operations.md | Fresh-install bootstrap deadlock: boot-time settlement creates the store file, then `CCP_BOOTSTRAP=1` is refused
 - [ ] OPS-5 | high | install-ops | open | 10-reliability-operations.md | `migrate-data.sh`'s post-cutover byte-identical check is tripped by the new code's own boot writes: legacy migrations auto-roll back
 - [ ] CI-5 | medium | install-ops | open | 13-ci-cd.md | Whether the api's live parity/integration suites run in CI depends on unpinned runner-preinstalled toolchains; nothing asserts they ran
 - [ ] CI-7 | medium | install-ops | open | 13-ci-cd.md | The Docker build path (the documented production install) is never exercised by CI; images are first built at release time

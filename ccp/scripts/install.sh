@@ -77,7 +77,6 @@ compose() { ( cd "$CCP_DIR" && docker compose "$@" ); }
 api_port() { grep -E '^PORT=' "$CCP_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '[:space:]'; }
 app_port() { grep -E '^APP_PORT=' "$CCP_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '[:space:]'; }
 readyz_code() { curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$1/readyz" 2>/dev/null || echo 000; }
-readyz_body() { curl -s "http://127.0.0.1:$1/readyz" 2>/dev/null || echo '{}'; }
 
 # ---- 1. prepare /data + write .env (via setup.sh) ----------------------------
 say "1/5  preparing /data + writing .env for ${HOST} (${TOPOLOGY}-origin)"
@@ -103,26 +102,53 @@ else
 fi
 
 # ---- 3. build + start --------------------------------------------------------
-say "3/5  building images + starting containers (docker compose up -d --build)"
-compose up -d --build || die "docker compose up failed"
-
-# ---- 4. initialize if the store is empty (idempotent) -----------------------
-say "4/5  checking readiness on http://127.0.0.1:$AP/readyz"
+# Whether this is a first install has to be decided HERE, before anything starts,
+# because the api refuses `CCP_BOOTSTRAP=1` whenever the store file already exists
+# (server.ts) — a deliberate guard, so an emptied or half-restored store can never
+# reseed a fresh admin over a vanished audit chain.
+#
+# The old flow could not satisfy it: it brought the stack up WITHOUT bootstrap, polled
+# /readyz, saw `"accounts":0`, and only then re-upped with CCP_BOOTSTRAP=1. But that
+# first boot already created the store file — opening the store and the boot-time
+# settlement pass both materialize it — so the second up hit the refusal and exited 1.
+# With `restart: unless-stopped` that became a crash loop with CCP_BOOTSTRAP=1 baked
+# into the container, and the install died at "/readyz never went green after first
+# boot". It failed on every genuinely fresh host; only the manual go-live flow worked,
+# because there bootstrap is set on the very first `up` ever.
+#
+# So: look at the durable store on the host BEFORE the first `up`, and if it is absent,
+# bootstrap on that first `up` — the same shape as the manual flow. The guard in the api
+# is untouched; this stops asking it to accept something it is right to refuse.
+#
+# The path is the host side of the api's durable bind mount, `- /data/ccp/store:/var/lib/ccp`
+# in docker-compose.yml; CCP_DATA_DIR names the file `ccp.json` inside it.
+#
+# Overridable solely so the decision can be tested without a real /data mount — this is
+# the one impure read the whole first-install decision turns on, and isolating it is what
+# makes it testable at all (same shape as apply-window-gate.sh isolating its clock read).
+# Production never sets it.
+STORE_FILE="${CCP_STORE_FILE:-/data/ccp/store/ccp.json}"
 already=0
-for _ in $(seq 1 60); do
-  code="$(readyz_code "$AP")"
-  if [ "$code" = "200" ]; then already=1; break; fi
-  # 503 = up but store empty/0 accounts (a fresh install) — stop waiting, go bootstrap
-  echo "$(readyz_body "$AP")" | grep -q '"accounts":0' && break
-  sleep 1
-done
+[ -e "$STORE_FILE" ] && already=1
 
 OTP=""
 if [ "$already" = "1" ]; then
+  say "3/5  building images + starting containers (docker compose up -d --build)"
+  compose up -d --build || die "docker compose up failed"
+  say "4/5  checking readiness on http://127.0.0.1:$AP/readyz"
+  ready=0
+  for _ in $(seq 1 60); do
+    [ "$(readyz_code "$AP")" = "200" ] && { ready=1; break; }
+    sleep 1
+  done
+  [ "$ready" = "1" ] || { compose logs --tail=40 api; die "/readyz never went green"; }
   ok "store already initialized — this is a rebuild/update, not a first install (no re-bootstrap)"
+  say "5/5  (nothing to disable — was already initialized)"
 else
-  say "      fresh store — running first-boot ONCE (CCP_BOOTSTRAP=1, ephemeral env only)"
+  say "3/5  building images + starting containers, first-boot ON (no store at $STORE_FILE)"
+  say "      CCP_BOOTSTRAP=1 is passed to this one 'up' only, never written to any file"
   ( cd "$CCP_DIR" && CCP_BOOTSTRAP=1 docker compose up -d --build ) || die "first-boot up failed"
+  say "4/5  checking readiness on http://127.0.0.1:$AP/readyz"
   ready=0
   for _ in $(seq 1 90); do
     [ "$(readyz_code "$AP")" = "200" ] && { ready=1; break; }
@@ -135,7 +161,6 @@ else
   say "5/5  disabling first-boot (recreate with CCP_BOOTSTRAP unset)"
   compose up -d || warn "re-up without bootstrap failed — run 'docker compose up -d' in ccp/ to clear it"
 fi
-[ "$already" = "1" ] && say "5/5  (nothing to disable — was already initialized)"
 
 # ---- done -------------------------------------------------------------------
 cat <<EOF

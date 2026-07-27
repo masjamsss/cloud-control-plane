@@ -68,3 +68,26 @@ finding as live, and re-anchored two live findings without checking they still h
 **Do differently:** automate the mechanical part, and let it *fail loudly* on anything it
 cannot resolve by content match — that residue is exactly the set needing judgement. Three
 citations fell out, and all three turned out to be substantive rather than positional.
+
+### L-4 — When a guard is deliberate, fix the caller, not the guard
+
+Findings: OPS-1
+
+The fresh-install deadlock had an obvious-looking fix: the api refuses `CCP_BOOTSTRAP=1`
+when the store file exists, and on a fresh install that file contains only a settlement
+marker — so teach the refusal to treat a marker-only store as fresh. The finding offers
+exactly that as one of three options.
+
+It is the wrong one. That check is file-presence *on purpose*, and the code says why: an
+emptied, zeroed or half-restored store loads zero accounts, so an account-based check would
+happily reseed a fresh admin over a vanished audit chain. Relaxing it to "marker and
+nothing else" reopens that hole for any store emptied down to its marker.
+
+The caller was what had it backwards. The installer brought the stack up without bootstrap,
+which *created the file*, and only then asked to bootstrap. The manual flow always worked
+because it sets bootstrap on the very first `up` ever.
+
+**Do differently:** when a guard blocks a legitimate flow, read why it exists before
+relaxing it — and if it is load-bearing, change the sequence that walks into it. A comment
+explaining a guard is evidence someone already thought about the case you are about to
+re-open. Here both installers now decide before anything starts, and the guard is untouched.

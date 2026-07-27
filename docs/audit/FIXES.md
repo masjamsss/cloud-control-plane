@@ -81,3 +81,45 @@ the script converts the failure into a pass.*
    common shapes, *and* its designated backstop does not run. The backstop now runs, and
    demonstrably catches all three shapes PG-5 misses. PG-5's regex is still weak, so the
    finding is not closed.
+
+## OPS-1
+
+*Fresh-install bootstrap deadlock: boot-time settlement creates the store file, then
+`CCP_BOOTSTRAP=1` is refused.*
+
+- [x] **Defect reproduced first** — traced the exact sequence in the shipped scripts, then
+      pinned it as a failing test: against the pre-fix `install.sh` the new regression test
+      reports `first up was 'up bootstrap=<unset>'`, which is the deadlock. Two of its three
+      assertions fail there and all three pass after the fix.
+- [x] **Cause, not symptom** — the finding offered three routes. Two were rejected:
+      teaching the refusal to accept a marker-only store (option b) **weakens a deliberate
+      guard** — `server.ts` refuses on file presence precisely so an emptied or
+      half-restored store cannot reseed an admin over a vanished audit chain, and the code
+      says so. Deferring the settlement write (option c) does not help, because opening the
+      store materialises the file anyway. Took option (a): decide before anything starts.
+      The api's guard is untouched; the installer stops asking it to accept what it is
+      right to refuse.
+- [x] **Regression test** — `ccp/scripts/test/install-bootstrap-decision.test.sh`. Runs the
+      *actual shipped* `install.sh` with `docker` and `curl` stubbed, and asserts the
+      decision: store absent → `CCP_BOOTSTRAP=1` on the **first** up; store present → never.
+      Verified to fail against the pre-fix script.
+- [x] **Failure is loud** — unchanged and deliberately so. The api still exits 1 and says
+      why; this fix stops the installer walking into it.
+- [x] **Evidence in the status line** — both scripts plus the test path.
+- [x] **Lesson recorded** — L-4.
+
+**Residue:**
+
+1. **No end-to-end install-journey smoke.** The finding asks for one that runs the real
+   two-phase compose flow. The new test covers the *decision*, with docker stubbed — it
+   cannot catch a failure that only appears against real containers. Building that needs a
+   docker-capable CI lane which does not exist yet; **CI-1 and CI-3 are the findings that
+   cover the missing lanes.**
+2. **`docs/go-live.md` still documents the old ordering** ("pick back up at Step 3"). It is
+   now merely redundant for the intranet path rather than harmful, since that path
+   bootstraps itself when the store is absent, but it should be rewritten. Tracked by
+   `DOC-*` work in the `contracts-docs` batch, not separately.
+3. **`install.sh` and `intranet-setup.sh` now duplicate the store-path literal and the
+   decision.** Two copies of one rule, free to drift — the exact shape of the `duplication`
+   topic. Acceptable for two call sites in shell; worth folding into a shared helper if a
+   third appears.
