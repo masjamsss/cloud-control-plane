@@ -152,8 +152,10 @@ The PG-5 pattern is `(_TOKEN|_SECRET|_KEY|[Pp]assword)[[:space:]]*[:=][[:space:]
 | `ADMIN_PASSWORD=Xq9rT2vLbN8sWd41` | **no** (`[Pp]assword` never matches all-caps `PASSWORD`, the dominant env-var convention) |
 | `DB_PASSWD: Xq9rT2vLbN8sWd41` | **no** |
 | `apikey = "Xq9rT2vLbN8sWd41abc"` | **no** (`_KEY` requires the underscore) |
-| `db_password: Xq9rT2vLbN8sWd41` | yes |
-| `API_TOKEN=Xq9rT2vLbN8sWd41` | yes |
+| `db_password: <16+ base64-ish chars>` | yes |
+| `API_TOKEN=<16+ base64-ish chars>` | yes |
+
+The two caught probes have their values elided, and that elision is itself the finding in miniature: written out in full they are exactly what PG-5 hard-fails on, so this file could not pass the gate it documents. The three uncaught probes keep their literal value (`Xq9rT2vLbN8sWd41`) precisely because the gate does not see them — which is the point of the row.
 
 Values under 16 chars or containing spaces/symbols outside the base64-ish class also pass. The script explicitly accepts this approximateness because "PG-9 (gitleaks) is the authoritative, entropy-aware detector" (lines 585–586) — but per CI-2, PG-9 currently scans nothing in CI, so the layered design collapses to this heuristic alone there. Also note content checks use `grep -I` (`publish-gate.sh:376`), so a secret inside any binary-classified file is invisible to PG-1…PG-6; PG-8 only catches known blob extensions.
 
