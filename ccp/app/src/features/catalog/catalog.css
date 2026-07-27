@@ -47,19 +47,39 @@
   font-weight: 600;
 }
 
-/* Sticky search row */
+/* ── Sticky browse controls: search + filters + the category jump rail ───────
+   The catalog is one continuous ~20,000px scroll over 150+ services, so this
+   bar is the page's only persistent orientation. It pins directly under the
+   60px app bar (`--catalog-bar-h`) — the old 56px left a 4px sliver of rows
+   scrolling through the gap above it.
+
+   `--catalog-stick` is where the bar's bottom edge sits: what every section's
+   scroll-margin clears (so a jump never parks a heading under the chrome) and
+   where the sticky category rail parks. The value below is only the
+   first-paint fallback — ServiceCatalog measures the bar and overwrites this
+   property inline, because the bar reflows at several widths and a static
+   number is correct at exactly one of them. */
+.catalog {
+  --catalog-bar-h: 60px;
+  --catalog-stick: 161px;
+}
 .catalog__controls {
   position: sticky;
-  top: 56px;
+  top: var(--catalog-bar-h);
   z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: var(--space-6) 0 var(--space-8);
+  padding: var(--space-4) 0 0;
+  background: var(--bg-canvas);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.catalog__controls-row {
   display: flex;
   align-items: center;
   gap: var(--space-5);
   flex-wrap: wrap;
-  margin: var(--space-6) 0 var(--space-8);
-  padding: var(--space-4) 0;
-  background: var(--bg-canvas);
-  border-bottom: 1px solid var(--border-hairline);
 }
 .catalog__search {
   position: relative;
@@ -84,7 +104,9 @@
   font: inherit;
   font-size: 14px;
   padding: 9px 11px 9px 32px;
-  transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
 }
 .catalog__search-input::placeholder {
   color: var(--text-faint);
@@ -98,13 +120,169 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
+/* Filter toggles — the Ledger's mono-caps chip, off by default (hairline on the
+   canvas) and accent-soft when engaged, matching the team tag's on-state
+   treatment (contract #5: soft fill + accent text, never a colored border). */
+.catalog__filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.catalog__filter {
+  appearance: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  padding: 5px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.catalog__filter:hover {
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+.catalog__filter--on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+.catalog__filter--on:hover {
+  color: var(--accent);
+  border-color: transparent;
+}
+.catalog__clear {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  padding: 5px 4px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.catalog__clear:hover {
+  color: var(--text-primary);
+}
+
+/* Data-authority count for the current browse — same mono/right-aligned voice
+   as the header meta it narrows. */
+.catalog__count {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+/* ── Category jump rail ─────────────────────────────────────────────────────
+   A horizontal scroller (21 categories on the widest estate), never wrapping:
+   a wrapping rail changes height as you filter, which would make the sticky
+   bar jump and invalidate every section's scroll-margin. */
+.catalog__jump {
+  min-width: 0;
+}
+.catalog__jump-rail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 0 0 var(--space-4);
+  scrollbar-width: none;
+}
+.catalog__jump-rail::-webkit-scrollbar {
+  display: none;
+}
+/* Edge fades — only on the side that actually has more chips (data-* set by
+   CategoryNav), so the leading chip is never dimmed while the rail is at rest.
+   Purely an affordance: the chips stay reachable by scroll, drag and keyboard
+   regardless of whether mask-image is supported. */
+.catalog__jump-rail[data-overflow-left='true'] {
+  mask-image: linear-gradient(to right, transparent 0, #000 28px);
+}
+.catalog__jump-rail[data-overflow-right='true'] {
+  mask-image: linear-gradient(to left, transparent 0, #000 28px);
+}
+.catalog__jump-rail[data-overflow-left='true'][data-overflow-right='true'] {
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 28px,
+    #000 calc(100% - 28px),
+    transparent 100%
+  );
+}
+.catalog__chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 12.5px;
+  font-weight: 550;
+  line-height: 1;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  padding: 6px 10px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard);
+}
+.catalog__chip:hover {
+  color: var(--text-primary);
+  background: var(--surface-2);
+  text-decoration: none;
+}
+.catalog__chip--active,
+.catalog__chip--active:hover {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.catalog__chip-count {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+.catalog__chip--active .catalog__chip-count {
+  color: var(--accent-ink);
+  opacity: 0.75;
+}
+
 /* Category sections — a numbered left rail (150px) beside the rows (Ledger
-   contract #2). */
+   contract #2). The rail rides along with its own rows (sticky, under the
+   control bar) so the category you're reading stays named through a section
+   taller than the viewport. */
 .catalog__section {
   display: grid;
   grid-template-columns: 150px 1fr;
   gap: var(--space-8);
   margin-top: var(--space-10);
+  scroll-margin-top: var(--catalog-stick);
+}
+.catalog__rail {
+  position: sticky;
+  top: var(--catalog-stick);
+  align-self: start;
 }
 .catalog__secnum {
   font-family: var(--font-mono);
@@ -137,6 +315,10 @@
   color: var(--text-muted);
   font-size: 15px;
   margin: var(--space-8) 0;
+}
+/* A dead-end browse always offers the way back out, not just the bad news. */
+.catalog__empty-line {
+  margin: 0 0 var(--space-5);
 }
 
 /* ── ServiceCard — a Ledger divider row, not a card (contract #3) ────────────── */
@@ -335,7 +517,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .service-card,
-  .catalog__search-input {
+  .catalog__search-input,
+  .catalog__filter,
+  .catalog__chip {
     transition: none;
   }
 }
@@ -343,6 +527,12 @@
 /* Narrow viewports: the header meta and the 3-column rail/row grids don't
    have room to stay side-by-side — stack them instead of clipping. */
 @media (max-width: 720px) {
+  .catalog {
+    /* Narrow first-paint fallback only (the measured value takes over on
+       mount): the count line wraps below the filters here, and below ~520px
+       the search takes a row of its own too. */
+    --catalog-stick: 229px;
+  }
   .catalog__head {
     grid-template-columns: 1fr;
   }
@@ -354,8 +544,20 @@
     grid-template-columns: 1fr;
     gap: var(--space-3);
   }
+  /* Stacked layout: the rail is a heading above its rows, so pinning it would
+     cover them. */
+  .catalog__rail {
+    position: static;
+  }
   .catalog__secname {
     margin-top: var(--space-2);
+  }
+  /* The count line sits under the search rather than pushing the filters into
+     a third row on a phone. */
+  .catalog__count {
+    margin-left: 0;
+    order: 3;
+    flex-basis: 100%;
   }
   .service-card {
     grid-template-columns: 1fr;
