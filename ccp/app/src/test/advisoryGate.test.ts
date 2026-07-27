@@ -10,6 +10,7 @@ import {
   GateFieldset,
   INITIAL_SERVER_INFO_STATE,
   SERVER_MODE,
+  UNRESOLVED_SERVER_INFO_STATE,
   advisoryNote,
   canServe,
   serverInfoToState,
@@ -584,3 +585,22 @@ function tagFor(html: string, marker: string): string {
   const tagEnd = html.indexOf('>', markerIdx);
   return html.slice(tagStart, tagEnd + 1);
 }
+
+describe('an UNANSWERED serverInfo() is not an eternally-loading one (FE-1/FE-2)', () => {
+  it('clears `loading` — a rejected call used to leave it true for the tab’s lifetime', () => {
+    // While `loading` stayed true, every gated control sat in its advisory
+    // stand-in indefinitely, indistinguishable from "still resolving", with
+    // nothing anywhere saying why. Clearing the flag is the whole fix.
+    expect(INITIAL_SERVER_INFO_STATE.loading).toBe(true);
+    expect(UNRESOLVED_SERVER_INFO_STATE.loading).toBe(false);
+  });
+
+  it('serves NO flow — clearing `loading` must not arm anything', () => {
+    // The dangerous way to fix a stuck loading flag is to clear it toward a
+    // permissive default. Capabilities stay empty, so every gate still refuses.
+    for (const flow of SERVER_FLOWS) {
+      expect(canServe(UNRESOLVED_SERVER_INFO_STATE, flow), flow).toBe(false);
+    }
+    expect(UNRESOLVED_SERVER_INFO_STATE.capabilities).toEqual(noCapabilities());
+  });
+});

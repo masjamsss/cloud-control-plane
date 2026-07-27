@@ -1,4 +1,5 @@
-import type { DriftCheckResult, DriftGenerateResult } from '@/lib/api';
+import type { ApiClient, DriftCheckResult, DriftGenerateResult } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
 
 /**
  * Pure state-derivation for the drift page's two operator buttons ("Start
@@ -45,4 +46,35 @@ export function nextGenerateState(result: DriftGenerateResult): DriftGenerateBut
   if (result.ok) return { kind: 'done', reportVersion: result.reportVersion };
   if (result.code === 'DRIFT_DISARMED') return { kind: 'disarmed', reason: result.reason };
   return { kind: 'error', reason: result.reason };
+}
+
+/**
+ * The two triggers themselves, wrapped so they NEVER REJECT (FE-1).
+ *
+ * `nextCheckState`/`nextGenerateState` above have always been total over
+ * their result types — but DriftPage reached them through
+ * `void api.startDriftCheck(id).then(…)`, so a rejected fetch skipped the
+ * fold entirely and left `checkState:'requesting'` / `generateState:
+ * 'generating'` for ever: the operator's button stayed disabled with a
+ * spinner until a full reload. Folding the rejection into the SAME
+ * `{ok:false, reason}` shape means it lands in the `'error'` branch these
+ * functions already have — a retryable inline error with the button still
+ * enabled, which is exactly the right posture for "we could not reach the
+ * server".
+ */
+export async function startDriftCheckVia(
+  client: Pick<ApiClient, 'startDriftCheck'>,
+  projectId: string,
+): Promise<DriftCheckResult> {
+  const outcome = await attempt(() => client.startDriftCheck(projectId));
+  return outcome.ok ? outcome.value : { ok: false, reason: outcome.reason };
+}
+
+/** Generation-refresh twin of {@link startDriftCheckVia}; same guarantee. */
+export async function generateDriftProposalsVia(
+  client: Pick<ApiClient, 'generateDriftProposals'>,
+  projectId: string,
+): Promise<DriftGenerateResult> {
+  const outcome = await attempt(() => client.generateDriftProposals(projectId));
+  return outcome.ok ? outcome.value : { ok: false, reason: outcome.reason };
 }

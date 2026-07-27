@@ -9,6 +9,7 @@ import type {
   ServiceManifest,
 } from '@/types';
 import { api } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
 import { isChangeFrozen, isOpDisabled, useSettings } from '@/lib/settings';
 import { getServiceMeta } from '@/lib/serviceMeta';
@@ -40,6 +41,8 @@ import { RiskBadge } from '@/components/ui/RiskBadge';
 import { MacdTag } from '@/components/ui/MacdTag';
 import { AccessBadge } from '@/components/ui/AccessBadge';
 import { Button } from '@/components/ui/Button';
+import { LoadError } from '@/components/LoadError';
+import { submitChangeSetVia } from '@/features/request/submitFlow';
 import './resource-detail.css';
 
 const MIN_JUSTIFICATION = 10;
@@ -651,12 +654,11 @@ function ReviewPanel({
       schedule,
       replaceOp ? replaceConfirmation.trim() : undefined,
     );
-    void api.submitChangeSet(draft).then((result) => {
-      if (result.ok) navigate('/requests/' + result.request.id);
-      else {
-        setSubmitting(false);
-        setBlocked(result.reason);
-      }
+    // Never rejects (FE-1) — see features/request/submitFlow.ts.
+    void submitChangeSetVia(api, (path) => navigate(path), draft).then((result) => {
+      if (result.ok) return; // already navigated
+      setSubmitting(false);
+      setBlocked(result.reason);
     });
   };
 
@@ -758,15 +760,27 @@ export function ResourceDetail(): JSX.Element {
   const [blocks, setBlocks] = useState<Record<string, BlockSource> | null>(null);
   const settings = useSettings();
   const projectId = useActiveProjectId();
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     let alive = true;
-    void Promise.all([
-      api.listManifests(),
-      api.getInventory(),
-      allBlockSources().catch((): Record<string, BlockSource> => ({})),
-    ]).then(([m, inv, b]) => {
+    setLoadError(null);
+    // FE-2/UI-1: listManifests/getInventory reject on any non-2xx, which
+    // used to leave this page on "Loading resource…" indefinitely.
+    void attempt(() =>
+      Promise.all([
+        api.listManifests(),
+        api.getInventory(),
+        allBlockSources().catch((): Record<string, BlockSource> => ({})),
+      ]),
+    ).then((outcome) => {
       if (!alive) return;
+      if (!outcome.ok) {
+        setLoadError(outcome.reason);
+        return;
+      }
+      const [m, inv, b] = outcome.value;
       setManifests(m);
       setInventory(inv);
       setBlocks(b);
@@ -774,7 +788,7 @@ export function ResourceDetail(): JSX.Element {
     return () => {
       alive = false;
     };
-  }, [projectId]);
+  }, [projectId, reloadToken]);
 
   const state = useMemo<RouteState>(() => {
     if (!manifests || !inventory || !blocks) return { status: 'loading', serviceSlug, ops: [] };
@@ -798,6 +812,19 @@ export function ResourceDetail(): JSX.Element {
   }, [manifests, inventory, blocks, serviceSlug, address, settings]);
 
   const meta = getServiceMeta(serviceSlug);
+
+  if (loadError !== null) {
+    return (
+      <div className="rd">
+        <Breadcrumbs items={[{ label: 'Catalog', to: '/' }, { label: meta.displayName }]} />
+        <LoadError
+          message={loadError}
+          what="this resource"
+          onRetry={() => setReloadToken((n) => n + 1)}
+        />
+      </div>
+    );
+  }
 
   if (state.status === 'loading') {
     return (

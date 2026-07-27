@@ -47,6 +47,11 @@ export interface ReviewStepProps {
   /** When set, submission is blocked (e.g. an admin change-freeze) and the reason
    * is shown; the submit button is disabled. */
   blocked?: string;
+  /** A RETRYABLE submit failure — the server was never reached, so nothing was
+   * decided and nothing was created (FE-1). Shown like `blocked`, but
+   * deliberately does NOT disable the button: pressing Submit again is the
+   * whole remedy, and the drafted request is still right here. */
+  submitError?: string;
   /** Controlled schedule (RequestForm owns it so it can set draft.schedule). */
   schedule?: Schedule;
   onScheduleChange?: (schedule: Schedule) => void;
@@ -75,6 +80,7 @@ export function ReviewStep({
   targetAddress,
   submitting,
   blocked,
+  submitError,
   schedule: scheduleProp,
   onScheduleChange,
   replaceConfirmation: replaceConfirmationProp,
@@ -283,6 +289,15 @@ export function ReviewStep({
       {blocked && (
         <p className="rq-quorum-warn" role="alert">
           {blocked}
+        </p>
+      )}
+
+      {/* FE-1: a submit that never reached the server. Same slot, but the
+          button below stays live — nothing was created, so re-pressing it is
+          the fix, and the draft is still on this page. */}
+      {submitError && (
+        <p className="rq-quorum-warn" role="alert">
+          {submitError}
         </p>
       )}
 

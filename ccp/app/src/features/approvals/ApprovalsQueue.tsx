@@ -3,6 +3,7 @@ import type { JSX } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { ChangeRequest, Inventory, RequestStatus, ServiceManifest } from '@/types';
 import { api } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
 import { resolveName } from '@/lib/accounts';
 import { getCurrentUser, useCurrentUser } from '@/lib/session';
@@ -34,7 +35,9 @@ import { AccessBadge } from '@/components/ui/AccessBadge';
 import { Button } from '@/components/ui/Button';
 import { ApprovalLadder } from '@/components/ui/ApprovalLadder';
 import { SearchBar } from '@/components/SearchBar';
+import { LoadError } from '@/components/LoadError';
 import { describeApproveError } from './approveError';
+import { approveRequestVia, rejectRequestVia } from './approvalsFlow';
 import './approvals.css';
 
 function userName(id: string): string {
@@ -547,6 +550,8 @@ export function ApprovalsQueue(): JSX.Element {
   const [manifests, setManifests] = useState<ServiceManifest[]>([]);
   const [inventory, setInventory] = useState<Inventory | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -567,16 +572,19 @@ export function ApprovalsQueue(): JSX.Element {
   // Keyed on the active project: a project switch mints a new `load`, and the
   // effect below re-runs it against the newly scoped catalog/inventory/queue.
   const projectId = useActiveProjectId();
+  //
+  // `load` FETCHES ONLY — it commits nothing. The effect below owns every
+  // setState, behind its own `active` check (FE-2/FE-4): the previous shape
+  // wrote state inside `load` and then checked `active` in an empty
+  // continuation, so the guard could not guard anything.
   const load = useCallback(async () => {
-    const [pending, m, inv] = await Promise.all([
-      api.listPendingApprovals(getCurrentUser()),
-      api.listManifests(),
-      api.getInventory(),
-    ]);
-    setRequests(pending);
-    setManifests(m);
-    setInventory(inv);
-    setLoading(false);
+    return attempt(() =>
+      Promise.all([
+        api.listPendingApprovals(getCurrentUser()),
+        api.listManifests(),
+        api.getInventory(),
+      ]),
+    );
     // projectId is the refetch key, not an input to the fetch itself —
     // api.ts reads the ambient project scope at call time (same shape as
     // ServiceConsole's `settings` memo dependency).
@@ -584,13 +592,26 @@ export function ApprovalsQueue(): JSX.Element {
 
   useEffect(() => {
     let active = true;
-    void load().then(() => {
+    setLoadError(null);
+    void load().then((outcome) => {
       if (!active) return;
+      if (!outcome.ok) {
+        // FE-2/UI-1: listPendingApprovals throws on any non-2xx, so the
+        // approver's queue used to hang on "Loading…" for ever.
+        setLoadError(outcome.reason);
+        setLoading(false);
+        return;
+      }
+      const [pending, m, inv] = outcome.value;
+      setRequests(pending);
+      setManifests(m);
+      setInventory(inv);
+      setLoading(false);
     });
     return () => {
       active = false;
     };
-  }, [load]);
+  }, [load, reloadToken]);
 
   // See applyMutatedRequestToList's doc comment for why a patch replaces the
   // old triple refetch, and why manifests/inventory are never re-fetched
@@ -605,7 +626,10 @@ export function ApprovalsQueue(): JSX.Element {
     async (id: string) => {
       setBusyId(id);
       setError(null);
-      const result = await api.approveRequest(id);
+      // approveRequestVia never rejects (FE-1/UI-4) — a dropped connection
+      // used to skip the setBusyId(null) below and leave this card's
+      // Approve AND Reject disabled until a page reload.
+      const result = await approveRequestVia(api, id);
       startTransition(() => {
         if (result.ok) {
           applyMutatedRequest(result.request);
@@ -643,7 +667,7 @@ export function ApprovalsQueue(): JSX.Element {
     async (id: string, reason: string) => {
       setBusyId(id);
       setError(null);
-      const result = await api.rejectRequest(id, reason);
+      const result = await rejectRequestVia(api, id, reason);
       startTransition(() => {
         if (result.ok) applyMutatedRequest(result.request);
         else setError(result.reason);
@@ -749,7 +773,13 @@ export function ApprovalsQueue(): JSX.Element {
         </div>
       )}
 
-      {loading ? (
+      {loadError !== null ? (
+        <LoadError
+          message={loadError}
+          what="the approvals queue"
+          onRetry={() => setReloadToken((n) => n + 1)}
+        />
+      ) : loading ? (
         <p className="apv__empty">Loading…</p>
       ) : inventory === undefined || sorted.length === 0 ? (
         <p className="apv__empty">Nothing waiting for your approval.</p>

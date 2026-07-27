@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import * as Popover from '@radix-ui/react-popover';
 import type { ChangeRequest } from '@/types';
 import { api } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
 import { useCurrentUser } from '@/lib/session';
 import { getServiceMeta } from '@/lib/serviceMeta';
@@ -88,6 +89,11 @@ export function Notifications(): JSX.Element {
   const [open, setOpen] = useState(false);
   const [own, setOwn] = useState<ChangeRequest[]>([]);
   const [pending, setPending] = useState<ChangeRequest[]>([]);
+  // FE-2/UI-1/FE-15: the bell's fetches throw in api mode. They used to be
+  // an unhandled rejection that left whatever the panel last had on screen
+  // as if it were current, which is the dishonest failure — the panel now
+  // says it could not refresh rather than presenting stale data as fresh.
+  const [refreshFailed, setRefreshFailed] = useState(false);
 
   // The bell lives in AppShell and never unmounts on a project switch.
   const projectId = useActiveProjectId();
@@ -98,15 +104,19 @@ export function Notifications(): JSX.Element {
   // fresh each time it opens. (UIUX-13)
   useEffect(() => {
     let alive = true;
-    void (async () => {
-      const [mine, toApprove] = await Promise.all([
-        api.listRequests(user.id),
-        api.listPendingApprovals(user),
-      ]);
+    void attempt(() =>
+      Promise.all([api.listRequests(user.id), api.listPendingApprovals(user)]),
+    ).then((outcome) => {
       if (!alive) return;
+      if (!outcome.ok) {
+        setRefreshFailed(true);
+        return;
+      }
+      const [mine, toApprove] = outcome.value;
+      setRefreshFailed(false);
       setOwn(mine);
       setPending(toApprove);
-    })();
+    });
     return () => {
       alive = false;
     };
@@ -159,6 +169,12 @@ export function Notifications(): JSX.Element {
             <span className="notif__title">Notifications</span>
             <span className="notif__chat" title="Every change is echoed to team chat">→ #ops-changes</span>
           </header>
+
+          {refreshFailed && (
+            <p className="notif__empty" role="alert">
+              Could not refresh — this list may be out of date.
+            </p>
+          )}
 
           {notes.length === 0 ? (
             <p className="notif__empty">You're all caught up.</p>

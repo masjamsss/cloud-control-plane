@@ -10,8 +10,11 @@ import { reusableParams } from '@/lib/requestAgain';
 import { deriveFormPlan } from '@/lib/catalog';
 import { getServiceMeta } from '@/lib/serviceMeta';
 import { getCurrentUser } from '@/lib/session';
+import { attempt } from '@/lib/asyncGuard';
 import { SchemaForm } from '@/components/SchemaForm/SchemaForm';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
+import { LoadError } from '@/components/LoadError';
+import { submitRequestVia } from './submitFlow';
 import { Button } from '@/components/ui/Button';
 import { RiskBadge } from '@/components/ui/RiskBadge';
 import { resolveRisk } from '@/lib/riskOverrides';
@@ -87,6 +90,9 @@ export function RequestForm(): JSX.Element {
   const [manifests, setManifests] = useState<ServiceManifest[]>([]);
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Bumped by the retry control — re-keys both load effects (FE-2 / UI-1).
+  const [reloadToken, setReloadToken] = useState(0);
   const [fromRequest, setFromRequest] = useState<ChangeRequest | undefined>(undefined);
   const [fromLoaded, setFromLoaded] = useState(!from);
 
@@ -101,6 +107,11 @@ export function RequestForm(): JSX.Element {
   const [revealErrors, setRevealErrors] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
+  // A submit that never reached the server (FE-1). Kept SEPARATE from
+  // blockedReason on purpose: that one is a server REFUSAL and correctly
+  // disables the button, whereas this one means nothing was decided at all,
+  // so the button must stay live for the retry.
+  const [submitError, setSubmitError] = useState<string | null>(null);
   // Live settings — dims the Review step's submit control the
   // moment an admin freezes changes or disables this op (this tab or
   // another), even before the requester has attempted to submit once
@@ -114,8 +125,16 @@ export function RequestForm(): JSX.Element {
 
   useEffect(() => {
     let alive = true;
-    void Promise.all([api.listManifests(), api.getInventory()]).then(([m, inv]) => {
+    setLoadError(null);
+    void attempt(() => Promise.all([api.listManifests(), api.getInventory()])).then((outcome) => {
       if (!alive) return;
+      if (!outcome.ok) {
+        // FE-2/UI-1: `loaded` stays false but the page no longer renders a
+        // bare "Loading…" — it says what failed and offers the retry.
+        setLoadError(outcome.reason);
+        return;
+      }
+      const [m, inv] = outcome.value;
       setManifests(m);
       setInventory(inv);
       setLoaded(true);
@@ -123,24 +142,27 @@ export function RequestForm(): JSX.Element {
     return () => {
       alive = false;
     };
-  }, [projectId]);
+  }, [projectId, reloadToken]);
 
   // Resolve the "Request again" source, when one is named. A missing id just
-  // leaves the form default-seeded — degrade, don't dead-end.
+  // leaves the form default-seeded — degrade, don't dead-end. A FAILED fetch
+  // must degrade the same way (FE-2): before this, a rejected getRequest left
+  // `fromLoaded` false for ever, so the seed effect below never ran and the
+  // form rendered permanently unseeded with no explanation.
   useEffect(() => {
     let alive = true;
     setFromRequest(undefined);
     setFromLoaded(!from);
     if (!from) return;
-    void api.getRequest(from).then((r) => {
+    void attempt(() => api.getRequest(from)).then((outcome) => {
       if (!alive) return;
-      setFromRequest(r);
+      if (outcome.ok) setFromRequest(outcome.value);
       setFromLoaded(true);
     });
     return () => {
       alive = false;
     };
-  }, [from, projectId]);
+  }, [from, projectId, reloadToken]);
 
   const op: ManifestOperation | undefined = useMemo(
     () => (operationId ? getOperation(operationId, manifests) : undefined),
@@ -179,6 +201,18 @@ export function RequestForm(): JSX.Element {
     const targetParam = op.params.find((p) => p.source === 'inventory');
     return targetParam ? String(values[targetParam.name] ?? '') : '';
   }, [op, values]);
+
+  if (loadError !== null) {
+    return (
+      <div className="rq">
+        <LoadError
+          message={loadError}
+          what="this form"
+          onRetry={() => setReloadToken((n) => n + 1)}
+        />
+      </div>
+    );
+  }
 
   if (!loaded) {
     return (
@@ -268,20 +302,24 @@ export function RequestForm(): JSX.Element {
       return;
     }
     setSubmitting(true);
+    setSubmitError(null);
     const draft = buildRequestDraft(op, targetAddress, values, justification, getCurrentUser().id);
     draft.schedule = schedule;
     // Forces-replace ops carry the requester's typed confirmation (the review page blocks
     // submit until it matches targetAddress; the server re-checks and stores it). Trimmed so
     // the sent value equals targetAddress exactly — the server + executor compare strictly.
     if (op.forcesReplace) draft.replaceConfirmation = replaceConfirmation.trim();
-    void api.submitRequest(draft).then((result) => {
-      // submitRequest returns a SubmitResult: navigate on success, else surface
-      // the server-side rejection reason inline (freeze / disabled op / bounds).
-      if (result.ok) navigate('/requests/' + result.request.id);
-      else {
-        setSubmitting(false);
-        setBlockedReason(result.reason);
-      }
+    // submitRequestVia navigates on success and NEVER rejects: a dropped
+    // connection comes back as code:'UNREACHABLE' instead of killing this
+    // handler and stranding `submitting` for ever (FE-1).
+    void submitRequestVia(api, (path) => navigate(path), draft).then((result) => {
+      if (result.ok) return; // already navigated
+      setSubmitting(false);
+      // A server REFUSAL (freeze / disabled op / bounds) is final for this
+      // draft and keeps disabling submit. A never-reached server is not a
+      // refusal — nothing was created — so it goes to the retryable slot.
+      if (result.code === 'UNREACHABLE') setSubmitError(result.reason);
+      else setBlockedReason(result.reason);
     });
   };
 
@@ -316,6 +354,7 @@ export function RequestForm(): JSX.Element {
           targetAddress={targetAddress}
           submitting={submitting}
           blocked={blockedReason ?? liveBlockedReason ?? undefined}
+          submitError={submitError ?? undefined}
           schedule={schedule}
           onScheduleChange={setSchedule}
           replaceConfirmation={replaceConfirmation}

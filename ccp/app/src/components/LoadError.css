@@ -1,0 +1,25 @@
+/* The shared failed-load state (FE-2 / UI-1). Deliberately the same quiet,
+   uncarded ethos as route-error.css — a failed fetch is an ordinary event,
+   not a crash screen — but left-aligned and compact, because unlike
+   RouteError this can render inside a card/pane next to content that DID
+   load (AccountSecurityPage's three independent panes, the drift page). */
+.loaderr {
+  padding: var(--space-5) 0;
+  max-width: 520px;
+}
+.loaderr__title {
+  margin: 0 0 var(--space-2);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.loaderr__reason {
+  margin: 0 0 var(--space-4);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.loaderr__retry {
+  /* Button already carries the focus ring + motion ramp; nothing to add. */
+  margin: 0;
+}

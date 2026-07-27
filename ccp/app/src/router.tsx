@@ -217,7 +217,12 @@ export const router = createBrowserRouter([
         ),
         handle: { title: 'Admin' },
         children: [
-          { index: true, element: <Navigate to="/admin/users" replace /> },
+          // RELATIVE, not `/admin/users` (UI-3): an absolute target here left
+          // the `/p/:projectId` tree, matched the top-level `*` route, and
+          // bounced back through LegacyRedirect — a full unmount/remount of
+          // the shell on every visit to /admin. Resolved against this route it
+          // lands directly on `/p/<id>/admin/users`.
+          { index: true, element: <Navigate to="users" replace /> },
           { path: 'users', element: <UsersAdmin />, handle: { title: 'Admin · Users' } },
           { path: 'teams', element: <TeamsAdmin />, handle: { title: 'Admin · Teams' } },
           {

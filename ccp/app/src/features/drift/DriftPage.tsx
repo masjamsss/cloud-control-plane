@@ -11,6 +11,7 @@ import type {
   DriftVerdict,
 } from '@/types/drift';
 import { api } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
 import { useCurrentUser } from '@/lib/session';
 import { Badge, type BadgeColor } from '@/components/ui/Badge';
@@ -26,12 +27,15 @@ import { UnmanagedResourcesSection } from './UnmanagedResources';
 import { ResolutionFlow, partitionForResolution } from './ResolutionFlow';
 import { submitDriftProposalVia, legitimizeDriftSecurityVia } from './proposalFlow';
 import {
+  generateDriftProposalsVia,
   nextCheckState,
   nextGenerateState,
+  startDriftCheckVia,
   type DriftCheckButtonState,
   type DriftGenerateButtonState,
 } from './driftActionsFlow';
 import { formatProjectTime } from '@/lib/datetime';
+import { LoadError } from '@/components/LoadError';
 import './drift.css';
 
 /**
@@ -251,6 +255,8 @@ export function DriftReportBody({ report, proposals, onOpenProposal, onOpenResto
 
 export function DriftPage(): JSX.Element {
   const [status, setStatus] = useState<DriftStatus | null | undefined>(undefined);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const projectId = useActiveProjectId();
   const navigate = useNavigate();
   const currentUser = useCurrentUser();
@@ -335,13 +341,18 @@ export function DriftPage(): JSX.Element {
   useEffect(() => {
     let active = true;
     setStatus(undefined);
-    void api.getDriftStatus().then((s) => {
-      if (active) setStatus(s);
+    setStatusError(null);
+    // FE-2/UI-1: a rejected getDriftStatus used to leave `status`
+    // undefined for ever, which this page renders as a bare "Loading…".
+    void attempt(() => api.getDriftStatus()).then((outcome) => {
+      if (!active) return;
+      if (outcome.ok) setStatus(outcome.value);
+      else setStatusError(outcome.reason);
     });
     return () => {
       active = false;
     };
-  }, [projectId]);
+  }, [projectId, reloadToken]);
 
   useEffect(() => {
     setOpenDigest(null);
@@ -443,9 +454,19 @@ export function DriftPage(): JSX.Element {
   const importDigests = partition ? (partition.importEligible ?? []).map((c) => c.proposal.digest) : [];
   const restoreDigests = partition ? partition.restore.map((c) => c.proposal.digest) : [];
 
+  /** The post-trigger status refresh. Guarded so a failed refresh degrades to
+   * "the card keeps what it had" instead of an unhandled rejection. */
+  const refreshStatus = async (): Promise<void> => {
+    const outcome = await attempt(() => api.getDriftStatus());
+    if (outcome.ok) setStatus(outcome.value);
+  };
+
   const handleStartCheck = (): void => {
     setCheckState({ kind: 'requesting' });
-    void api.startDriftCheck(projectId).then((result) => {
+    // startDriftCheckVia never rejects (FE-1): the old bare call left
+    // checkState:'requesting' — a permanently disabled operator button —
+    // whenever the trigger POST failed to reach the server.
+    void startDriftCheckVia(api, projectId).then((result) => {
       setCheckState(nextCheckState(result));
       if (result.ok) {
         // Mock parity: a triggered check "completes" immediately in mock
@@ -453,7 +474,7 @@ export function DriftPage(): JSX.Element {
         // harmless no-op re-fetch (the report lands later, through the
         // normal ingest PUT — the status card's own staleness display
         // covers arrival).
-        void api.getDriftStatus().then(setStatus);
+        void refreshStatus();
       }
     });
   };
@@ -469,10 +490,11 @@ export function DriftPage(): JSX.Element {
 
   const handleGenerate = (): void => {
     setGenerateState({ kind: 'generating' });
-    void api.generateDriftProposals(projectId).then((result) => {
+    // Same never-rejects guarantee as handleStartCheck above (FE-1).
+    void generateDriftProposalsVia(api, projectId).then((result) => {
       setGenerateState(nextGenerateState(result));
       if (result.ok) {
-        void api.getDriftStatus().then(setStatus);
+        void refreshStatus();
         // A refresh can supersede a previously-open proposal — drop any
         // selection made before this run rather than risk a stale digest
         // that no longer matches an open adopt row (the submit path would
@@ -683,7 +705,13 @@ export function DriftPage(): JSX.Element {
         </p>
       </header>
 
-      {status === undefined ? (
+      {statusError !== null ? (
+        <LoadError
+          message={statusError}
+          what="the drift report"
+          onRetry={() => setReloadToken((n) => n + 1)}
+        />
+      ) : status === undefined ? (
         <p className="drift-page__loading">Loading…</p>
       ) : (
         <>
