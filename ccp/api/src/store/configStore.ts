@@ -38,8 +38,17 @@ export type TransactWrite =
 
 export interface ConfigStore {
   get(pk: string, sk: string): Promise<Item | null>;
-  /** Put an item; with `{ ifNotExists: true }` throws ConditionError if the key exists. */
-  put(item: Item, opts?: { ifNotExists?: boolean }): Promise<void>;
+  /**
+   * Put an item; with `{ ifNotExists: true }` throws ConditionError if the key exists,
+   * with `{ ifEquals }` only if the named attribute still holds the captured value.
+   * The guard is what makes a read-modify-write safe outside a transaction — see CONC-3,
+   * where a login's blind put of a stale account row could restore `status:'active'`
+   * over an admin's disable.
+   */
+  put(
+    item: Item,
+    opts?: { ifNotExists?: boolean; ifEquals?: { attr: string; value: unknown } },
+  ): Promise<void>;
   /** Query by exact PK, optional SK prefix, returned in SK-ascending order. */
   query(pk: string, skPrefix?: string): Promise<Item[]>;
   /** Query the single GSI1 by exact GSI1PK, returned in GSI1SK-ascending order. */

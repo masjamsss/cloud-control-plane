@@ -3,6 +3,10 @@
 One entry per finding marked `fixed:` in [`FINDINGS.md`](FINDINGS.md), with that finding's
 definition-of-done worked through honestly.
 
+A finding that is only **partly** done may also have an entry, while its ledger line stays
+`open`. That is the point of separating the two files: partial work gets recorded so the
+next person does not redo it, without the finding being rounded up to closed.
+
 **The gate requires this.** A finding cannot be marked `fixed:` without a `## <ID>` section
 here — that is what stops "fixed" from becoming a word someone types. Where a
 definition-of-done item is *not* satisfied, the box stays unticked and the entry says why,
@@ -254,3 +258,46 @@ which retries with the stale snapshot.*
 3. **The scheduler's `APPLYING` claim** is named in the finding as collateral. It is not
    separately verified here; the guards make the claim harder to clobber, but nothing pins
    that behaviour yet.
+
+## CONC-3
+
+*The entire auth/self-service lane writes the account row with blind full-row puts.*
+
+**PARTIAL — this finding stays `open`.** The headline scenario is closed; roughly a dozen
+other call sites are not. Recorded here so the remaining work starts from what exists.
+
+- [x] **Defect reproduced first** — pinned as a test, including the corruption: with an
+      unguarded put, a login that read the row before an admin disable writes
+      `status:'active'` and the old `sessionVersion` straight back. The disable is undone
+      and revoked sessions become valid again.
+- [ ] **Cause, not symptom** — **not satisfied.** The missing primitive is now there
+      (`ifEquals` on the standalone `ConfigStore.put`, matching the transactional one), and
+      the two login writes use it. `account.ts` (device confirm, device remove,
+      recovery-code regenerate) and the remaining `auth.ts` sites — TOTP `lastUsedAt`,
+      first-login enrol, recovery, change-password, reauth — are still blind puts, and
+      each can undo a disable the same way.
+- [x] **Regression test** — `test/loginDisableRace.test.ts`, 4 cases. Two fail without the
+      guard with `promise resolved "undefined" instead of rejecting`.
+- [x] **Failure is loud** — on the success path a conflict now aborts the login. It returns
+      the same generic 401 as every other failure, deliberately: a distinguishable error
+      would leak that the account exists.
+- [x] **Evidence in the status line** — n/a while the finding stays open.
+- [ ] **Lesson recorded** — nothing generalises beyond L-6 yet.
+
+**What landed:**
+
+1. `ifEquals` on the standalone `ConfigStore.put`, implemented in `MemoryStore` and
+   inherited by `FileStore`, failing closed against a missing item exactly as `transact`
+   already does. This was CONC-1's recorded residue.
+2. `auth.ts` login-failure and login-success now guard on the `accountVersion` they read
+   and bump it — the schema has documented since the beginning
+   (`store/schema.ts:181-196`) that every account mutation must bump it, and the
+   login-failure path never did at all.
+3. The two conflict behaviours differ on purpose: the lockout counter is best-effort, so a
+   conflict drops the counter bump (the attempt is still audited and still refused), while
+   the success path aborts the login, because the likeliest concurrent change is the
+   disable the write would undo.
+
+**Residue:** the ~13 unguarded sites above, and the same legacy-row window as CONC-1/2 —
+where `accountVersion` is `undefined` on both sides, the guard cannot bite until one write
+lands. That window has now been recorded three times and still has no finding of its own.

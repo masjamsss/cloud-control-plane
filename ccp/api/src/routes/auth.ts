@@ -29,6 +29,7 @@ import { record } from '../domain/audit';
 import { nowIso, nowMs } from '../clock';
 import type { ConfigStore } from '../store/configStore';
 import type { SessionItem } from '../store/schema';
+import { ConditionError } from '../store/configStore';
 
 const LoginBody = z.object({ username: z.string().min(1), password: z.string().min(1) });
 const ChangePwBody = z.object({
@@ -106,14 +107,31 @@ export function authRoutes(): Hono<AppEnv> {
       // Failure: bump lockout on an active account; audit; generic 401 (never distinguishable).
       if (account?.status === 'active') {
         const failedAttempts = (account.failedAttempts ?? 0) + 1;
-        const patch: AccountItem = { ...account, failedAttempts };
+        // Every account mutation bumps accountVersion (store/schema.ts:181-196). This path
+        // never did, which is half of why a stale login write could restore a pre-disable
+        // row wholesale.
+        const patch: AccountItem = {
+          ...account,
+          failedAttempts,
+          accountVersion: (account.accountVersion ?? 0) + 1,
+        };
         let lockedNow = false;
         if (failedAttempts >= 5) {
           const mins = Math.min(60, 2 ** (failedAttempts - 5));
           patch.lockedUntil = new Date(nowMs() + mins * 60_000).toISOString();
           lockedNow = true;
         }
-        await store.put(patch);
+        // Guarded on the row this handler read. The argon2id verify above is a deliberate
+        // ~50-200 ms yield, wide enough for an admin disable to commit in the middle; an
+        // unguarded put would write `status:'active'` and the old sessionVersion straight
+        // back over it (CONC-3). The lockout counter is best-effort — if the row moved,
+        // the attempt is still audited and still refused, so we drop the counter bump
+        // rather than clobber whatever landed.
+        try {
+          await store.put(patch, { ifEquals: { attr: 'accountVersion', value: account.accountVersion } });
+        } catch (e) {
+          if (!(e instanceof ConditionError)) throw e;
+        }
         await record(store, projectId, {
           action: lockedNow ? 'login-lockout' : 'login-failure',
           actor: account.id,
@@ -132,10 +150,23 @@ export function authRoutes(): Hono<AppEnv> {
     }
 
     // 1FA passed: reset lockout; transparently re-hash pbkdf2 → argon2id.
-    const updated: AccountItem = { ...account, failedAttempts: 0 };
+    const updated: AccountItem = {
+      ...account,
+      failedAttempts: 0,
+      accountVersion: (account.accountVersion ?? 0) + 1,
+    };
     delete updated.lockedUntil;
     if (verdict.pbkdf2) updated.credential = { algo: 'argon2id', hash: await hashPassword(password) };
-    await store.put(updated);
+    // Same guard, and here a conflict must ABORT the login rather than be swallowed: the
+    // account changed while we were verifying, and the likeliest change is the disable
+    // this write would otherwise undo. Fail closed with the same generic 401 every other
+    // failure returns — a distinguishable error here would leak that the account exists.
+    try {
+      await store.put(updated, { ifEquals: { attr: 'accountVersion', value: account.accountVersion } });
+    } catch (e) {
+      if (e instanceof ConditionError) return apiError(c, 'BAD_CREDENTIALS');
+      throw e;
+    }
 
     // TOTP step. Challenge condition widened (ADR-0024 clause 4): an ENROLLED
     // factor is ALWAYS challenged, even when `needsTotp` alone would say no

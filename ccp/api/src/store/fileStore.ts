@@ -55,7 +55,10 @@ export class FileStore extends MemoryStore {
     this.importItems(JSON.parse(raw) as Item[]);
   }
 
-  override async put(item: Item, opts?: { ifNotExists?: boolean }): Promise<void> {
+  override async put(
+    item: Item,
+    opts?: { ifNotExists?: boolean; ifEquals?: { attr: string; value: unknown } },
+  ): Promise<void> {
     await super.put(item, opts); // throws BEFORE we persist if the condition fails → no write
     await this.persist();
   }
