@@ -479,3 +479,38 @@ largest piece of both, but neither is finished.
 **Residue:** the lane is named `importer` and now runs an app suite. Accurate enough today
 and the step is commented, but if a third unrelated Python suite joins, the workflow should
 be renamed rather than accreting.
+
+## DOC-4
+
+*Multiple docs and a code header cite `ccp/docs/specs/ccp-api.md`, which does not exist in
+this repo.*
+
+- [x] **Defect reproduced first** — 4 references, and `ls ccp/docs/specs/` returns
+      "No such file or directory". The real contract is `ccp/api/openapi/ccp-api.yaml`.
+- [x] **Cause, not symptom** — and the symptom was the least of it. `docs/ERROR-STATES.md`
+      *audited* the `errors.ts` transcription claim by grepping that path for each error
+      code, and **grep on a missing file returns 0 hits for everything**. The document
+      therefore concluded that fourteen codes were absent from the contract, and that
+      conclusion was an artifact of the broken path.
+      Re-measured against the real contract: **12 of the 14 are present.** Only
+      `DUPLICATE_TEAM` and `ENGINEER_REVIEW_REQUIRED` are genuinely absent. The header's
+      claim was broadly right and the document said it was wrong. Fixing only the path
+      would have left the false conclusion standing, which is why the analysis was redone
+      rather than the link repaired.
+- [x] **Regression test** — none, and none is possible here: this is prose accuracy, not
+      behaviour. The measurement is reproducible instead — `ERROR-STATES.md` carries the
+      exact shell loop, now pointed at the real file, so the next reader can re-run it.
+- [x] **Failure is loud** — n/a; no runtime path involved.
+- [x] **Evidence in the status line** — both files.
+- [x] **Lesson recorded** — L-10.
+
+**Newly surfaced, and worse than what was fixed:** `BAD_CREDENTIALS` appears **nowhere** in
+`ccp-api.yaml`. Both the `errors.ts` header and `ERROR-STATES.md` asserted its `reason` is
+the one string the spec pins. It is not pinned by the contract at all. The no-enumeration
+property is real and enforced in `auth.ts`, but nothing in the spec preserves it. Recorded
+in both files rather than quietly dropped.
+
+**Residue:** the two genuinely-absent codes (`DUPLICATE_TEAM`, `ENGINEER_REVIEW_REQUIRED`)
+are a real spec/implementation gap and belong to **DOC-2**, which stays open. The five
+inline `c.json` literals that bypass the taxonomy were "checked" by the same broken method
+and remain unverified against the real contract.

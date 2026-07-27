@@ -104,7 +104,22 @@ These are returned as inline `c.json({code, reason}, status)` literals — the s
 
 ### Header transcription claim vs the spec
 
-errors.ts:6 claims "Statuses and codes are transcribed verbatim from `ccp/docs/specs/ccp-api.md`". Fourteen taxonomy codes do NOT appear in that spec: `DUPLICATE_TEAM`, `ENGINEER_REVIEW_REQUIRED`, `WRONG_APPROVAL_LEVEL`, `SELF_DELETE`, `PROJECT_SCOPE`, `REPLACE_CONFIRMATION_REQUIRED`, `SCHEDULE_INVALID`, `SCHEDULE_TOO_SOON`, `SCHEDULE_TOO_FAR`, `SCHEDULE_STALE_APPROVAL`, `CONTROL_SCOPE` (added 2026-07-22, data-birth), `REAUTH_REQUIRED`, `LAST_FACTOR`, `DEVICE_LIMIT` (added 2026-07-22, account & security) (grep of ccp/docs/specs/ccp-api.md returns 0 hits for each). None of the five inline literals above are in the spec either. Only `BAD_CREDENTIALS.reason` is pinned by the spec (errors.ts:8).
+**Corrected 2026-07-27 (DOC-4). The paragraph this replaces was measuring nothing.**
+
+It read the `errors.ts:6` claim that codes are "transcribed verbatim from `ccp/docs/specs/ccp-api.md`", audited it by grepping that path for each code, and concluded fourteen codes were absent. **That file does not exist in this repository** — it was removed in the public split and the header was never updated. `grep` on a missing file returns 0 hits for *everything*, so the finding was an artifact of the broken path, not a fact about the contract.
+
+Re-measured against the real contract, `ccp/api/openapi/ccp-api.yaml`:
+
+| | codes |
+|---|---|
+| **Present** (12 of the 14) | `WRONG_APPROVAL_LEVEL`, `SELF_DELETE`, `PROJECT_SCOPE`, `REPLACE_CONFIRMATION_REQUIRED`, `SCHEDULE_INVALID`, `SCHEDULE_TOO_SOON`, `SCHEDULE_TOO_FAR`, `SCHEDULE_STALE_APPROVAL`, `CONTROL_SCOPE`, `REAUTH_REQUIRED`, `LAST_FACTOR`, `DEVICE_LIMIT` |
+| **Genuinely absent** (2) | `DUPLICATE_TEAM`, `ENGINEER_REVIEW_REQUIRED` |
+
+So the transcription claim was broadly *right* and this document said it was wrong.
+
+One thing the correction makes worse rather than better: **`BAD_CREDENTIALS` appears nowhere in `ccp-api.yaml`.** Both this document and the `errors.ts` header asserted that its `reason` is the one string pinned by the spec. It is not pinned by the spec at all. The no-enumeration property is real and enforced in `auth.ts`, but nothing in the contract preserves it, so a future spec edit cannot break it — because there is nothing there to break.
+
+The five inline literals noted above were also "checked" against the missing file and are equally unverified by that method.
 
 ## Onboarding reject codes (`catalogctl onboard`)
 
@@ -179,7 +194,9 @@ for c in DUPLICATE_TEAM ENGINEER_REVIEW_REQUIRED WRONG_APPROVAL_LEVEL SELF_DELET
          PROJECT_SCOPE REPLACE_CONFIRMATION_REQUIRED SCHEDULE_INVALID SCHEDULE_TOO_SOON \
          SCHEDULE_TOO_FAR SCHEDULE_STALE_APPROVAL CONTROL_SCOPE \
          REAUTH_REQUIRED LAST_FACTOR DEVICE_LIMIT; do \
-  printf "%s " $c; grep -c "$c" ccp/docs/specs/ccp-api.md; done
+  printf "%s " $c; grep -c "$c" ccp/api/openapi/ccp-api.yaml; done
+# (was ccp/docs/specs/ccp-api.md, which does not exist — the command returned 0 for every
+#  code and the conclusion drawn from it was wrong. See the corrected table above.)
 
 # 7. Onboarding refusal codes and exit-code contract:
 grep -n 'refuse(stdout, "' tools/catalogctl/internal/onboard/onboard.go
@@ -204,7 +221,7 @@ Found while deriving this doc from code at commit d781c25 — kept verbatim so n
 is lost. Actionable ones are tracked separately; do not silently "fix" this doc to hide them.
 
 - The task said to state facts "measured at commit undefined" — the orchestrator appears to have failed to interpolate a sha. I substituted the actual worktree HEAD, 3a77618 (branch claude/docs-restructure-fundamentals-a929a5, 2026-07-17). If the parent expected a different sha, only that one sentence needs changing.
-- errors.ts header contradiction: ccp/api/src/errors.ts:6 claims codes are "transcribed verbatim from ccp/docs/specs/ccp-api.md", but 10 taxonomy codes (DUPLICATE_TEAM, ENGINEER_REVIEW_REQUIRED, WRONG_APPROVAL_LEVEL, SELF_DELETE, PROJECT_SCOPE, REPLACE_CONFIRMATION_REQUIRED, SCHEDULE_INVALID, SCHEDULE_TOO_SOON, SCHEDULE_TOO_FAR, SCHEDULE_STALE_APPROVAL) have zero occurrences in that spec — documented in the doc body, but it means either the spec or the header comment is stale.
+- errors.ts header contradiction: RESOLVED 2026-07-27 (DOC-4), and it resolved the other way. The cited path ccp/docs/specs/ccp-api.md does not exist, so the "zero occurrences" measurement was grep against a missing file and proved nothing. Against the real contract (ccp/api/openapi/ccp-api.yaml) 12 of those codes ARE present; only DUPLICATE_TEAM and ENGINEER_REVIEW_REQUIRED are absent. The header now cites the real file. Newly surfaced by the same re-measurement: BAD_CREDENTIALS is in NEITHER, despite both the header and this document claiming the spec pins its reason.
 - errors.ts:5 claims the taxonomy is "the ONLY error surface. Every 4xx body is {code, reason, details?}", yet five codes are emitted as inline c.json literals outside the ERRORS map: NOT_FOUND (404, 20 sites, e.g. ccp/api/src/routes/requests.ts:502), TOTP_ENROLLMENT_REQUIRED (403, requests.ts:549), CANCEL_FORBIDDEN (403, requests.ts:856), REWINDOW_FORBIDDEN (403, requests.ts:943), INTERNAL (500, errors.ts:119). 404 is arguably a deliberate carve-out (like 500) but nothing in code says so.
 - ACCOUNT_LOCKED (ccp/api/src/errors.ts:65) is in the spec and the taxonomy but never emitted anywhere in ccp/api/src (non-test); the actual login-lockout path returns LOGIN_BACKOFF 429 (ccp/api/src/routes/auth.ts:75-77). I cannot tell whether it is dead or reserved for a future admin-disable flow.
 - ENGINEER_REVIEW_REQUIRED (errors.ts:26) is defined, absent from the spec, AND never emitted — the engineer-tier gate emits WRONG_APPROVAL_LEVEL (requests.ts:571) instead. Doubly suspicious; flagged in the table.

@@ -3,9 +3,20 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 /**
  * Error taxonomy — the ONLY error surface. Every 4xx body is `{code, reason, details?}`.
- * Statuses and codes are transcribed verbatim from `ccp/docs/specs/ccp-api.md`.
+ * Statuses and codes are transcribed from the contract in `ccp/api/openapi/ccp-api.yaml`.
  * `reason` is the human string the SPA surfaces as `MutationResult.ok:false`.
- * Only `BAD_CREDENTIALS.reason` is pinned by the spec (auth.ts:91 parity, no enumeration).
+ *
+ * This header used to cite `ccp/docs/specs/ccp-api.md`, which does not exist in this
+ * repository (DOC-4). That mattered more than a broken path: `docs/ERROR-STATES.md`
+ * audited the claim by grepping that file for each code, and grep on a missing file
+ * returns 0 for everything — so it concluded fourteen codes were absent from the spec
+ * when they were not. Measured against the real contract, twelve of those fourteen ARE
+ * present; only `DUPLICATE_TEAM` and `ENGINEER_REVIEW_REQUIRED` are genuinely missing.
+ *
+ * The old header also claimed `BAD_CREDENTIALS.reason` is pinned by the spec. It is not —
+ * that code appears nowhere in `ccp-api.yaml`. The no-enumeration property it refers to
+ * is real and enforced in `auth.ts`, but the spec does not pin it, so do not rely on the
+ * contract to preserve it.
  */
 export const ERRORS = {
   // 401 — missing/expired/version-bumped session; login failure (generic); TOTP step pending

@@ -190,3 +190,26 @@ construction over one that is merely rare today. A real value asserts a fact abo
 world that the test does not control; a synthetic one asserts only the behaviour under
 test. Where a real value is genuinely required, derive it at runtime from the same source
 of truth the code uses, so it cannot drift.
+
+### L-10 — A measurement against a missing input is not a weak result, it is a fabricated one
+
+Findings: DOC-4
+
+`docs/ERROR-STATES.md` set out to audit a claim in `errors.ts` — that the error codes are
+transcribed from a spec — and did it properly: a shell loop, one `grep -c` per code, the
+counts written into the document. The method was sound. The file it grepped did not exist.
+
+`grep` on a missing path returns 0, so every code scored zero, and the document concluded
+that fourteen codes were absent from the contract. Measured against the real contract,
+twelve of them are present. The audit produced a confident, specific, *inverted* answer,
+and it looked more rigorous than a vague one would have.
+
+This is CI-2's shape in prose rather than in a gate: a check that could not run, reporting
+as though it had. The tell was identical — a suspiciously uniform result. Fourteen out of
+fourteen absent should have prompted the same question as PG-9's permanently clean 0 findings.
+
+**Do differently:** when a measurement produces a uniform result across every input, verify
+the input exists before believing the output. Cheapest possible check: run the command
+against a value you *know* should hit, and confirm it does. Had anyone grepped that file
+for `BAD_CREDENTIALS` — which the same paragraph asserted the spec *does* pin — the zero
+would have contradicted the sentence next to it.
