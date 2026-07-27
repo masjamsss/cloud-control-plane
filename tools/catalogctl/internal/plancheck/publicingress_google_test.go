@@ -162,7 +162,7 @@ func TestCheckPublicIngressGoogle(t *testing.T) {
 			name: "no ranges but source_service_accounts present suppresses the default ⇒ clean",
 			op:   fwOp("l1_with_guardrails"),
 			plan: planOf(sgChange("google_compute_firewall.sa", []string{"create"},
-				nil, withSources(fwRule("INGRESS", true), "source_service_accounts", "svc@p.iam.gserviceaccount.com"))),
+				nil, withSources(fwRule("INGRESS", true), "source_service_accounts", "svc@p.iam.gserviceaccount.example"))),
 			wantVuln: 0,
 		},
 		{
