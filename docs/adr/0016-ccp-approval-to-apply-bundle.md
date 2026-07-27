@@ -57,7 +57,7 @@ approval page. Mechanics, in order, all server-side:
 ## Consequences
 
 - `SECURITY.md`'s "every change lands via PR" sentence is amended to name the two lanes.
-- [Proposal 0018](../proposals/0018-enablement-deployment-unresolved.md) tracks the rollout
+- Proposal 0018 (`docs/proposals/0018-enablement-deployment-unresolved.md`, private planning archive — not published) tracks the rollout
   (credentials, environment-reviewer registration, first live bundle).
 - The SPA approval page gains the bundle status + Apply control (spec:
   `docs/superpowers/specs/2026-07-20-ccp-approval-to-apply-bundle.md`).

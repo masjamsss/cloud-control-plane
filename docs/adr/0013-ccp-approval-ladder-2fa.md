@@ -11,7 +11,7 @@
 **Status:** Accepted; clause 4's dormant-secret sentence partially superseded 2026-07-22
 by [ADR-0024](0024-ccp-multi-device-totp.md) clause 4 (see banner above)
 **Date:** 2026-07-17 (records the owner decisions of 2026-07-15 in
-[proposal 0037](../proposals/0037-two-level-approval-and-2fa-control.md))
+proposal 0037 (`docs/proposals/0037-two-level-approval-and-2fa-control.md`, private planning archive — not published))
 **Deciders:** repo owner
 **Supersedes:** [ADR-0009](0009-gerbang-approver-quorum.md); also the forces-replace
 "two leads" rule in proposal 0035 §3.5 and the quorum behaviour described in 0003 §2
@@ -48,7 +48,7 @@ approver (`approver`) · **L3** final approver (`lead`). `isAdmin` stays orthogo
 - Easier: predictable approval routing; an auditable ladder instead of per-request math.
 - Harder: riskier changes need both an L2 and an L3 enrolled on the account before they
   can flow; enrolment mechanics live in
-  [second-approver-enrolment](../runbooks/second-approver-enrolment.md) (its banner names
-  what changed vs. the old model).
+  a second-approver enrolment runbook — `docs/runbooks/second-approver-enrolment.md`, which
+  is **not written**; the mechanics it was to describe are otherwise unrecorded.
 - Roles and team are per account; admin stays global (PRD roles table, DECISIONS #6).
 - Proposal 0021's exposure-quorum enablement plan is historical.

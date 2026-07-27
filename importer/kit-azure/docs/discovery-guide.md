@@ -2,15 +2,15 @@
 
 How to enumerate everything that exists in an Azure estate before importing it —
 **read-only, always**. This mirrors the AWS discovery guide
-([importer/docs/discovery-guide.md](../../../importer/docs/discovery-guide.md)), but where AWS
+(`importer/docs/discovery-guide.md` (not written)), but where AWS
 needs a broad tag sweep plus dozens of targeted per-service `list`/`describe` calls, Azure
 has **one** unified control-plane inventory API: Azure Resource Graph.
 
 Output feeds `discovery-manifest.json`, built offline by
 [../discover.py](../discover.py). The runnable driver is
 [../discover.sh](../discover.sh); the operator procedure is
-[docs/runbooks/azure-subscription-import.md](../../../docs/runbooks/azure-subscription-import.md).
-Governance: [proposal 0039](../../../docs/proposals/0039-azure-second-provider-concept.md).
+`docs/runbooks/azure-subscription-import.md` (not written).
+Governance: proposal 0039 (`docs/proposals/0039-azure-second-provider-concept.md`, private planning archive — not published).
 
 ## 1. Unified sweep — Azure Resource Graph
 

@@ -1,7 +1,7 @@
 # ADR-0025: One-time recovery codes — hashed at rest, shown once, a login path of last resort
 
 **Status:** Proposed (build landed on `claude/account-security-build` per the spec:
-[account & security center](../superpowers/specs/2026-07-22-ccp-account-security-center.md) —
+account & security center (`docs/superpowers/specs/2026-07-22-ccp-account-security-center.md`, private planning archive — not published) —
 the owner greenlit codes-at-enrolment + the 10×80-bit format and the recovery-code
 ceremony at forced first login (§13 open questions 4 and 5) as defaults not to be
 re-litigated; status flips to Accepted on the owner's formal word)

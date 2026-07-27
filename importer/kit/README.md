@@ -4,7 +4,7 @@ The parameterized machinery for taking a NEW environment (new account, region,
 or env like staging/dev) from zero → imported Terraform code → ready for
 Cloud Control Plane onboarding. `importer/prod` + `importer/docs` are the *archive* of how
 prod was imported; this kit is that procedure made runnable. The human runbook
-that drives it end-to-end: [docs/runbooks/new-env-import.md](../../docs/runbooks/new-env-import.md).
+that drives it end-to-end: `docs/runbooks/new-env-import.md` (not written).
 Design + limits are documented inline below (the original design record is an internal doc, not published).
 
 ```
@@ -80,7 +80,7 @@ failure-mode table — is
 [ccp/docs/onboarding-runbook.md](../../ccp/docs/onboarding-runbook.md).
 Nothing in this bridge grants an apply path: onboarding a data plane and
 applying Terraform changes are separate lanes end to end (the manual PR lane's
-gated apply, [docs/cicd.md](../../docs/cicd.md), is untouched by any of this).
+gated apply, `docs/cicd.md` (not written), is untouched by any of this).
 
 ## Extending coverage
 

@@ -3,11 +3,11 @@
 **Status:** Proposed (owner acceptance = merging the governance-birth PR)
 **Date:** 2026-07-22
 **Deciders:** repo owner
-**Design:** [spec 2026-07-21](../superpowers/specs/2026-07-21-ccp-bootstrap-lifecycle.md)
+**Design:** spec 2026-07-21 (`docs/superpowers/specs/2026-07-21-ccp-bootstrap-lifecycle.md`, private planning archive — not published)
 §3.4 · **Companions:** [ADR-0017](0017-ccp-bootstrap-lifecycle.md) (the lifecycle this
 predicate seals) · [ADR-0019](0019-ccp-day-zero-threat-model.md) (why the predicate is
 attack-relevant). **Evidence base:**
-[proposal 0021](../proposals/0021-second-approver-enablement.md) §0/F2 (the SoD verification
+proposal 0021 (`docs/proposals/0021-second-approver-enablement.md`, private planning archive — not published) §0/F2 (the SoD verification
 and the minted-account lesson) · [ADR-0013](0013-ccp-approval-ladder-2fa.md) (the ladder
 this quorum must make satisfiable).
 

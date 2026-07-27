@@ -34,6 +34,21 @@ jobs:
           cache: npm
           cache-dependency-path: ccp/api/package-lock.json
       - run: npm ci
+      # DOC-1/DOC-2: the vitest suite reads ccp-api.yaml as TEXT (string containment,
+      # plus a line-based path extractor for the route-parity diff). Neither parses it,
+      # so a syntactically invalid contract used to pass every check — this was not
+      # hypothetical, an unquoted `>=` inside a flow mapping did exactly that during the
+      # DOC-2 work. One real parse, before the tests that assume the file is well-formed.
+      - name: OpenAPI contract is valid YAML
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 -c "
+          import sys, yaml
+          spec = yaml.safe_load(open('openapi/ccp-api.yaml'))
+          assert spec['openapi'].startswith('3.1'), spec['openapi']
+          assert spec['paths'], 'no paths declared — the parse succeeded but found nothing'
+          print(f\"contract parses: {len(spec['paths'])} paths, {len(spec['components']['schemas'])} schemas\")
+          "
       - name: Typecheck
         run: npm run typecheck
       - name: Tests

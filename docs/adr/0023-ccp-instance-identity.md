@@ -34,7 +34,7 @@ Constraints and forces:
   against posture-flash — AdvisoryGate's constant-mode doctrine).
 
 Companion design (full recon, build lanes, collisions, Phase-2 logo/accent boundary):
-[docs/superpowers/specs/2026-07-22-ccp-generic-branding.md](../superpowers/specs/2026-07-22-ccp-generic-branding.md).
+`docs/superpowers/specs/2026-07-22-ccp-generic-branding.md` (private planning archive — not published).
 
 ## Decision
 

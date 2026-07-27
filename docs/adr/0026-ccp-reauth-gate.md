@@ -1,7 +1,7 @@
 # ADR-0026: A session-stamped re-authentication gate (10-minute window) guards sensitive self-service
 
 **Status:** Proposed (build landed on `claude/account-security-build` per the spec:
-[account & security center](../superpowers/specs/2026-07-22-ccp-account-security-center.md) —
+account & security center (`docs/superpowers/specs/2026-07-22-ccp-account-security-center.md`, private planning archive — not published) —
 the owner greenlit the 10-minute window and the either-factor rule (§13 open question 2)
 as defaults not to be re-litigated; status flips to Accepted on the owner's formal word)
 **Date:** 2026-07-22

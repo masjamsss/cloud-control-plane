@@ -17,7 +17,7 @@ The Cloud Control Plane keeps admin-controllable configuration in **two stores**
 
 **Note (data-birth, 2026-07-22):** no setting anywhere in this catalog controls whether a fresh
 install ships an estate — a blank install shipping zero estates is unconditional application
-behavior, not a flag ([ADR-0020](../../docs/adr/0020-ccp-data-birth-blank-install.md)).
+behavior, not a flag ([ADR-0029](../../docs/adr/0029-ccp-data-birth-blank-install-public-summary.md)).
 Loading the bundled sample estate is a mock/standalone-default or an explicit "Load sample
 data" click on the first-run screen — a client-side act, not an admin-controlled setting, and
 it has no server-side counterpart in either store above.
