@@ -131,3 +131,22 @@ fresh read, the loop is not resilience, it is a way of persisting stale writes p
 check that was meant to stop them. When distinguishing *which* condition failed is
 possible — here, re-reading the row and comparing the guarded attribute — refuse the case
 you cannot safely retry rather than retrying everything.
+
+### L-7 — Run the checks CI runs, after the LAST edit, not the second-to-last
+
+Findings: CONC-14
+
+CONC-14's fix was verified thoroughly: typecheck clean, 1197 tests green, the negative case
+confirmed to trip. Then the regression test file was added, `vitest` was run against it, the
+full suite was run — and typecheck was not run again. CI failed on
+`TS2532: Object is possibly 'undefined'` in that new file.
+
+The sequencing is the whole lesson. Every individual check was run at some point; none was
+run after the final edit. Verification decays the moment the tree changes, and a test file
+is a source file — it type-checks like one.
+
+**Do differently:** the last action before pushing should be the CI command set, run in one
+go, against the tree as it will be pushed. Here that is `npm run typecheck && npm test`,
+which is literally what `.github/workflows/ccp-api.yml` runs — the job exists and its steps
+are readable, so there is no excuse for approximating it. Running a subset and inferring
+the rest is how a green local tree pushes a red build.

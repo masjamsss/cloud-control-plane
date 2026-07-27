@@ -52,7 +52,7 @@ describe('CONC-14 — guarded team writes', () => {
     // Exactly one team owns s3.
     const owners = [a, b].filter((t) => (t.serviceSlugs as string[]).includes('s3'));
     expect(owners).toHaveLength(1);
-    expect(owners[0].id).toBe('b');
+    expect(owners[0]?.id).toBe('b');
   });
 
   it('demonstrates the defect: UNGUARDED writes leave one slug owned by two teams', async () => {
