@@ -18,8 +18,18 @@
 #              must pass before the audit work is considered finished. Wire it
 #              into the final PR, not into everyday CI.
 #
-# Lower the baseline as findings close — never raise it to make a red build
-# green. Raising it is the one edit that defeats the whole mechanism.
+# Lower the baseline as findings close. Raising it is allowed ONLY when new findings
+# were genuinely declared — and that is checked rather than trusted: the baseline file
+# records BOTH counts, `<open> <declared>`, and a rise in `open` must be paid for by a
+# rise in `declared`. So "we found more work" is expressible; "raise the number until
+# the build goes green" is not, because it would require inventing findings in the
+# reports to pay for it. A fall in `declared` fails outright — a finding cannot be
+# retired by deleting it from a report.
+#
+# This distinction exists because the first honest attempt to record two newly-found
+# defects hit a gate that forbade the raise outright, which would have created pressure
+# NOT to write new findings down. A ratchet that punishes discovery is worse than no
+# ratchet.
 #
 # Exit codes: 0 ok · 1 gate failure · 2 usage/internal error.
 set -euo pipefail
@@ -39,7 +49,7 @@ esac
 [[ -f "$LEDGER" ]] || { echo "findings-gate: missing $LEDGER" >&2; exit 2; }
 
 python3 - "$AUDIT_DIR" "$LEDGER" "$BASELINE_FILE" "$STRICT" <<'PY'
-import sys, re, glob, os
+import sys, re, glob, os, subprocess
 audit_dir, ledger_path, baseline_path, strict = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "1"
 SEV = r"critical|high|medium|low"
 
@@ -190,10 +200,15 @@ if os.path.exists(lessons_path):
     if current:
         errors.append(f"{lessons_path}: lesson {current} has no 'Findings:' line")
 
+baseline = None
+baseline_declared = None
 try:
-    baseline = int(open(baseline_path).read().strip())
+    parts = open(baseline_path).read().split()
+    baseline = int(parts[0])
+    # Second field is the declared total at the time the baseline was set. A bare number
+    # (the original format) still parses; it just cannot police a raise.
+    baseline_declared = int(parts[1]) if len(parts) > 1 else None
 except Exception:
-    baseline = None
     errors.append(f"findings-gate: cannot read baseline at {baseline_path}")
 
 print(f"findings-gate: {len(declared)} findings declared · {len(entries)} tracked · {n_open} open"
@@ -219,6 +234,42 @@ if baseline is not None and n_open > baseline:
     print(f"findings-gate: FAIL — open findings rose {baseline} -> {n_open}. "
           "Close them, or fix the entry; do not raise the baseline.")
     sys.exit(1)
+
+if baseline_declared is not None and len(declared) != baseline_declared:
+    print(f"findings-gate: FAIL — the baseline's declared count ({baseline_declared}) does not "
+          f"match the reports ({len(declared)}). Update scripts/findings-baseline.txt to "
+          f"'<open> {len(declared)}' in the same commit that adds or removes a finding.")
+    sys.exit(1)
+
+# Was the baseline RAISED, and was the raise paid for? The working copy alone cannot
+# answer that — a baseline file is just a number someone can edit. So compare against the
+# committed one. Any rise in `open` must be covered by a rise in `declared`: new findings
+# can be recorded, but a stalled backlog cannot be legalised by editing the number.
+prev = subprocess.run(
+    ["git", "show", "HEAD:scripts/findings-baseline.txt"],
+    capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(baseline_path)),
+)
+if prev.returncode == 0 and baseline is not None:
+    parts = prev.stdout.split()
+    try:
+        prev_open = int(parts[0])
+        prev_declared = int(parts[1]) if len(parts) > 1 else None
+    except (ValueError, IndexError):
+        prev_open, prev_declared = None, None
+    if prev_open is not None and baseline > prev_open:
+        allowance = (len(declared) - prev_declared) if prev_declared is not None else None
+        raised = baseline - prev_open
+        if allowance is None:
+            print(f"findings-gate: FAIL — baseline raised {prev_open} -> {baseline}, and the "
+                  "previous baseline recorded no declared count to justify it against.")
+            sys.exit(1)
+        if raised > allowance:
+            print(f"findings-gate: FAIL — baseline raised by {raised} but only {allowance} new "
+                  f"finding(s) were declared ({prev_declared} -> {len(declared)}). A raise must be "
+                  "paid for by newly declared findings, not by an edit.")
+            sys.exit(1)
+        print(f"findings-gate: baseline raised {prev_open} -> {baseline}, covered by "
+              f"{allowance} newly declared finding(s).")
 
 if baseline is not None and n_open < baseline:
     print(f"findings-gate: {baseline - n_open} finding(s) closed since the baseline. "
