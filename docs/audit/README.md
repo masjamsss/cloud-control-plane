@@ -27,6 +27,7 @@ The reports state what was found. These three files track what happened next, an
 | [`FINDINGS.md`](FINDINGS.md) | every finding, one line, grouped by root cause | none may be dropped; status and topic must be valid; the open count may only fall |
 | [`FIXES.md`](FIXES.md) | the definition-of-done worked through, per closed finding | nothing may be marked `fixed` without an entry here |
 | [`LESSONS.md`](LESSONS.md) | what generalises beyond the line changed | every lesson must cite a real finding |
+| [`PLAN.md`](PLAN.md) | the order to work them in, and why | — (a plan, not a contract) |
 
 Run `bash scripts/findings-gate.sh` any time; `--strict` fails while any finding is still
 open, and is the mode that must pass before this work is called finished.
