@@ -1,6 +1,6 @@
 # Test Suite Quality & Coverage Audit
 
-**Audit date:** unknown-date
+**Audit date:** 2026-07-26
 **Dimension:** testing (TEST)
 **Repository:** `cloud-control-plane` @ `3000920` ("Easy first import: paste a repo address and this system scans it (#2)")
 
@@ -209,7 +209,7 @@ examples, all verified by reading the code:
   no component measures statement/branch coverage, and no CI gate enforces a floor. The files
   named `coverage.test.ts`, `fullCoverage.test.ts`, `adminCoverage.test.ts` are **catalog-data
   drift gates** — excellent ones (e.g. `coverage.test.ts:80-101` fails if any of the 311 browsable
-  services lacks a team or metadata; `fullCoverage.test.ts:81-97` fails on any dead op-less
+  services lacks a team or metadata; `fullCoverage.test.ts:85-101` fails on any dead op-less
   provision tile) — but they measure the data catalog, not code execution.
 - **Impact:** Untested code paths are invisible. Given the demonstrated pattern (the parts of the
   repo without a metric or a lane are the parts that rotted), there is no way to know, e.g., how
@@ -243,13 +243,13 @@ examples, all verified by reading the code:
 
 ### TEST-7 — The SPA has no DOM/interaction testing; ~25 test files pin UI by source-string inspection
 - **Severity:** medium
-- **Location:** `ccp/app/package.json` (no jsdom / @testing-library anywhere), `ccp/app/src/test/driftPanel.test.tsx:19-23`, `ccp/app/src/test/fullCoverage.test.ts:130-150`, 25 files matching `readFileSync` under `ccp/app/src/test/`
+- **Location:** `ccp/app/package.json` (no jsdom / @testing-library anywhere), `ccp/app/src/test/driftPanel.test.tsx:19-23`, `ccp/app/src/test/fullCoverage.test.ts:134-154`, 25 files matching `readFileSync` under `ccp/app/src/test/`
 - **Description:** The app deliberately ships without jsdom/RTL ("The repo has no jsdom/RTL …
-  the tile/console UX is pinned by source inspection" — `fullCoverage.test.ts:131-134`).
+  the tile/console UX is pinned by source inspection" — `fullCoverage.test.ts:135-138`).
   Components are tested via `renderToStaticMarkup` (SSR strings), which means **no effects ever
   run** (`useEffect` is skipped in SSR), no events fire, and no state transitions are exercised;
   and 25 of 144 test files additionally assert against the component *source text*, e.g.
-  `expect(src).toContain('provisionPathFor(primaryType)')` (`fullCoverage.test.ts:137-149`).
+  `expect(src).toContain('provisionPathFor(primaryType)')` (`fullCoverage.test.ts:141-153`).
   Source-pinning is the definition of mirroring the implementation: it fails on harmless renames
   and passes on behavioral bugs that keep the string intact.
 - **Impact:** Every interactive gate the functional plan treats as load-bearing — the typed

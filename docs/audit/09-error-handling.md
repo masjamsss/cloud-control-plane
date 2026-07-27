@@ -1,6 +1,6 @@
 # Error Handling & Failure Modes Audit — cloud-control-plane
 
-- **Audit date:** unknown-date
+- **Audit date:** 2026-07-26
 - **Dimension:** Error handling & failure modes (`error-handling`)
 - **Auditor scope:** backend pipeline failure behavior — `ccp/api/src` (deploy, scheduler/apply subsystem, bundle, drift, scan-job lanes, stores, error taxonomy), `ccp/runner/entrypoint.sh`, `ccp/scanner` + the Go scan worker (`tools/catalogctl/internal/scanworker`), CI gating scripts, compose/Dockerfile runtime posture.
 
@@ -32,13 +32,13 @@ This codebase's failure-mode discipline is well above average, and it is worth b
 
 3. **Crash-safe durable store.** Every FileStore mutation is applied to the map, snapshotted synchronously, then written temp+fsync+rename on a serialized chain, and the caller *awaits real durability* before its 2xx (`fileStore.ts:58-99`). The write chain survives a failed write (`persist()` keeps the chain alive while surfacing the error to the caller, fileStore.ts:79-85).
 
-4. **CAS-guarded state transitions everywhere.** The scheduler's claim (`AWAITING → APPLYING` under `ifEquals`, `scheduler.ts:236-256`), the scan-job claim (`queued → claimed` CAS that atomically leaves the queue partition, `scanJobs.ts:273-306`), settleWindow, and drift-proposal submit (`routes/drift.ts:831-886`, whole-batch atomicity: request put + N proposal flips + audit in ONE transact) all follow the same lost-guard → re-read → report-true-state idempotent pattern, with chain contention retried exactly once then surfaced as 409 `CHAIN_CONTENTION` (`domain/audit.ts:177-233`).
+4. **CAS-guarded state transitions everywhere.** The scheduler's claim (`AWAITING → APPLYING` under `ifEquals`, `scheduler.ts:236-256`), the scan-job claim (`queued → claimed` CAS that atomically leaves the queue partition, `scanJobs.ts:281-314`), settleWindow, and drift-proposal submit (`routes/drift.ts:831-886`, whole-batch atomicity: request put + N proposal flips + audit in ONE transact) all follow the same lost-guard → re-read → report-true-state idempotent pattern, with chain contention retried exactly once then surfaced as 409 `CHAIN_CONTENTION` (`domain/audit.ts:177-233`).
 
 5. **Compensation on the file/row seam.** Both upload lanes write the version row first (`ifNotExists` = the version claim), then the file, and delete the row (drift also restores the pointer) if the file write throws — "nothing half-exists" (`routes/projectData.ts:268-324`, `routes/drift.ts:384-416`). File writes themselves are temp+rename atomic (`domain/drift.ts:572-586`).
 
 6. **Readiness that does not lie.** `/healthz` is deliberately shallow; `/readyz` re-verifies every project's audit hash chain and reports 0-account stores as 503 with reasons (`domain/readiness.ts:41-69`, `index.ts:68-76`); the container HEALTHCHECK probes `/readyz` (`ccp/api/Dockerfile:96-97`).
 
-7. **Worker input is never trusted.** Scan status transitions are validated against the *stored* status with a forward-only table and CAS-guarded (`domain/scanner.ts:151-175`, `scanJobs.ts:412-454`); worker error text is control-char/URL/token-scrubbed and capped at the boundary (`scanner.ts:191-203`). The Go worker re-validates the server-supplied clone URL client-side (`worker.go:274-292`), bounds claim/status HTTP at 30s and clones at 10m (`worker.go:108-114, 208-217`), reports a terminal status on every job exit path (`worker.go:181-244`), and survives any single job's failure (`worker.go:158-163`).
+7. **Worker input is never trusted.** Scan status transitions are validated against the *stored* status with a forward-only table and CAS-guarded (`domain/scanner.ts:151-175`, `scanJobs.ts:424-466`); worker error text is control-char/URL/token-scrubbed and capped at the boundary (`scanner.ts:202-214`). The Go worker re-validates the server-supplied clone URL client-side (`worker.go:274-292`), bounds claim/status HTTP at 30s and clones at 10m (`worker.go:108-114, 208-217`), reports a terminal status on every job exit path (`worker.go:181-244`), and survives any single job's failure (`worker.go:158-163`).
 
 8. **Off-by-default arming, refuse-don't-fallback.** A misconfigured terraform executor refuses to arm the loop rather than silently running dry-run (`loop.ts:91-101`); a missing forge seal key is a refusal, never a default-key fallback (`forgeCredentials.ts:56-69`); an unreadable configured GitHub App key throws instead of pretending no App exists (`forgeCredentials.ts:124-154`).
 
@@ -74,9 +74,9 @@ The bundle claim writes `bundle:{state:'running'}` (requests.ts:914), then runs 
 **Recommendation:** store a `startedAt` with the running claim and treat a running claim older than the worst-case bundle duration as expired (allow re-claim); record the bundle outcome with an unconditional write (or retry loop without the status guard — the outcome is evidence, not a transition); add an admin reset verb.
 
 ### ERR-3 — Scan jobs stuck in non-terminal states are unrecoverable and block all future scans for the project — HIGH
-**Location:** `ccp/api/src/routes/scanJobs.ts:273-362`, `ccp/api/src/routes/projects.ts:790-795`, `tools/catalogctl/internal/scanworker/worker.go:205-207`
+**Location:** `ccp/api/src/routes/scanJobs.ts:281-374`, `ccp/api/src/routes/projects.ts:924-929`, `tools/catalogctl/internal/scanworker/worker.go:205-207`
 
-Once a job is CAS-claimed (`queued → claimed`, scanJobs.ts:273-306), only the worker can move it forward, and only via legal transitions. There is **no stale-claim timeout, no requeue, and no operator route to force-fail a job**. Ways a job wedges permanently in `claimed`/`cloning`/`scanning`:
+Once a job is CAS-claimed (`queued → claimed`, scanJobs.ts:281-314), only the worker can move it forward, and only via legal transitions. There is **no stale-claim timeout, no requeue, and no operator route to force-fail a job**. Ways a job wedges permanently in `claimed`/`cloning`/`scanning`:
 
 - `mintOnboardToken` throws after the claim committed (chain contention after both retries — `onboardToken.ts:81-92` via `audit.ts:210-233`; the call at scanJobs.ts:357 is outside the route's try/catch): the worker never receives the packet, the job stays `claimed`.
 - The worker process dies mid-clone/mid-scan (its tmpfs checkout is by design lost on restart, `ccp/docker-compose.yml:171-177`), or a progress report fails transiently — `worker.go:205-207` returns without attempting a terminal `failed` report.
@@ -200,7 +200,7 @@ Curl exits 5/6/7/28/35/52/55/56 are classified "unreachable" and the job **exits
 - **`runner/entrypoint.sh` is clean** (`set -euo pipefail`, `exec ./run.sh` for signal delivery, never re-registers over live credentials, actionable exit-1 message with the exact commands); only note: an interrupted dist extraction leaves a partial tree that the stamp check will correctly re-extract next boot — self-healing, no action needed.
 - **`middleware/rateLimit.ts` upload bucket is bounded and evicts junk keys** (rateLimit.ts:66-109) — a nice contrast to the common unbounded-map failure.
 - **`verifyPassword` never throws on malformed hashes** (`auth/credentials.ts:24-31`) — the malformed-stored-credential path degrades to a clean auth failure, not a 500.
-- **`sanitizeScanError` defends its own future call sites** (scanner.ts:191-203): URL- and token-shaped redaction at the boundary rather than trusting each caller.
+- **`sanitizeScanError` defends its own future call sites** (scanner.ts:202-214): URL- and token-shaped redaction at the boundary rather than trusting each caller.
 
 ---
 

@@ -1,7 +1,7 @@
 # Audit: catalogctl Go codemod correctness
 
 - **Dimension key:** `catalogctl`
-- **Audit date:** unknown-date
+- **Audit date:** 2026-07-26
 - **Component:** `tools/catalogctl` — the Go HCL codemod, the only component that writes Terraform on the control plane's behalf
 - **Auditor verdict at a glance:** a genuinely careful, guard-dense codebase with strong tests — undermined by one confirmed exit-0 mis-edit class in the shared literal-object parser, plus several latent guard gaps in the less-travelled verbs.
 
@@ -124,7 +124,7 @@ Ran (Go 1.24.7 toolchain, module auto-downloads go1.25.0):
 ### CTL-4 — plan-check R1 structurally vetoes every legitimate plan for a `local.`-targeted foreach op
 
 - **Severity:** medium (latent for the shipped catalog — all 67 production foreach ops target resource attributes — but the executor, fixtures and goldens fully support the `local.` shape)
-- **Location:** `tools/catalogctl/internal/plancheck/plancheck.go:291-309` (`allowSet` default arm); executor support at `internal/edit/foreach.go:156-168` and `internal/hclops/locate.go:72-79`
+- **Location:** `tools/catalogctl/internal/plancheck/plancheck.go:297-315` (`allowSet` default arm); executor support at `internal/edit/foreach.go:156-168` and `internal/hclops/locate.go:72-79`
 - **Status:** **[verified by execution]**.
 
 **Description.** For a foreach op whose inventory target is `local.legacy_host_alarms` (the shape `hclops.Locate` and `foreachMapAttr` explicitly support, and which `testdata/golden/append-foreach/add-key` exercises), the R1 allow set is `{target, target[...}` — i.e. only the `local.` address itself. But editing a `for_each` source map changes the *consuming resources'* instances. Reproduced: a plan creating `aws_cloudwatch_metric_alarm.host["newhost01"]` after an `fx-append-foreach` add is refused:
@@ -176,7 +176,7 @@ So the executor happily authors an edit whose only honest plan can never pass th
 ### CTL-7 — plancheck's `inventoryAddr` does not skip `role:"reference"` inventory params, diverging from the executor's `targetAddress`
 
 - **Severity:** low (one shipped op affected today, harmlessly; the drift is a loaded gun for future manifests)
-- **Location:** `tools/catalogctl/internal/plancheck/plancheck.go:313-322` vs `tools/catalogctl/internal/edit/edit.go:385-400` (and the third copy, `internal/prprep/prprep.go:213-222`, which *does* skip references)
+- **Location:** `tools/catalogctl/internal/plancheck/plancheck.go:319-328` vs `tools/catalogctl/internal/edit/edit.go:385-400` (and the third copy, `internal/prprep/prprep.go:213-222`, which *does* skip references)
 - **Status:** verified by reading plus a scripted census of the shipped catalog.
 
 **Description.** `edit.targetAddress` and `prprep.inventoryAddr` both take the first `source:"inventory"` param whose role is **not** `"reference"`; `plancheck.inventoryAddr` takes the first inventory param unconditionally. A census of the 1617 shipped ops found one divergent op — `ec2-provision-instance`, where plancheck would bind `key_pair` (a reference) while the executor binds `iam_instance_profile`. Today that op is `create_resource`, whose R1/create-guard path never consults `inventoryAddr` and which has no grow-only params, so R4/R6 are unaffected — but the first non-create op authored with a reference param ahead of its target silently gets a wrong plancheck target: R1 would then veto every legitimate plan (fail-closed but broken), and R4/R6 would look for interiors on the wrong resource.
@@ -237,7 +237,7 @@ So the executor happily authors an edit whose only honest plan can never pass th
 
 - **R7 does not model the legacy `aws_security_group_rule` resource** (`internal/plancheck/publicingress.go:43` covers `aws_security_group` inline + `aws_vpc_security_group_ingress_rule` only). No shipped op emits the legacy resource today, and edit-time `cidrPolicy` is the primary guard, so this is a belt-and-braces gap only.
 - **R2's Delete-op count includes replace actions** (`plancheck.go:108-121` counts any `changed && contains(delete)`), so a Delete op planning one *replace* and zero pure destroys satisfies "exactly one destroy"; in practice R3 blocks the replace unless `forcesReplace`, so the composite gate holds.
-- `moduleName` for `instantiate_module` R1 is best-effort and explicitly untested "by design" (`plancheck.go:326-338`) — fine while instantiate is a frozen always-refuse, worth revisiting when an overlay lands.
+- `moduleName` for `instantiate_module` R1 is best-effort and explicitly untested "by design" (`plancheck.go:332-344`) — fine while instantiate is a frozen always-refuse, worth revisiting when an overlay lands.
 - `keyString` (`setattr.go:424-435`) strips quote tokens but not escape sequences, so a quoted map key containing `\"` never byte-matches its request form — merge would append a duplicate. Pathological keys only; folds into the CTL-1/CTL-10 rework.
 - `dash` and `dashRaw` in `prbody.go:78-90` are byte-identical functions.
 - Grow-only reads (`currentNumber`, `setattr.go:223-242`) exit 1 when the current value is an expression (`var.x`) — fail-closed and acceptable, but a `REFUSE NOT_LITERAL` would be a more honest code than an internal error.

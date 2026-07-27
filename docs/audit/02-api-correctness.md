@@ -1,6 +1,6 @@
 # API Backend Correctness Audit — ccp/api
 
-Audit date: unknown-date
+Audit date: 2026-07-26
 Dimension: `api-correctness` — functional correctness of the Node/Hono backend (`ccp/api/src`)
 
 ---
@@ -99,7 +99,7 @@ Two defects in `POST /requests/:id/apply`:
 
 ### API-6 — The 72-hour dual-control expiry is dead code: `sweepExpired` has no callers and `ackPending` never checks `expiresAt`
 **Severity: medium**
-**Location:** `ccp/api/src/domain/dualControl.ts:216, 239-265, 347-358`; `ccp/api/src/routes/admin.ts:644-671`
+**Location:** `ccp/api/src/domain/dualControl.ts:216, 239-265, 347-358`; `ccp/api/src/routes/admin.ts:1144-1176`
 
 Every pending loosening change is stamped `expiresAt = now + 72h` (`dualControl.ts:216`), and `sweepExpired` exists to flip stale PENDING rows to EXPIRED — but nothing outside tests ever calls it (repo-wide grep: only `dualControl.test.ts`), and `ackPending` validates status/self-ack/drift-guard but never `expiresAt` (`:246-265`). So a privilege-loosening proposal (senior grant, policy downgrade, freeze-off, project trust) can be acked weeks or months after proposal; the `EXPIRED` status is unreachable in production. Secondary defects in `sweepExpired` itself if it is ever wired: it rewrites the row with an **unguarded** `store.put` from a stale snapshot (a concurrent ack that just APPLIED the change gets clobbered back to EXPIRED), and it writes no audit entry for a governance-record state change (also flagged in `ccp/docs/DOMAIN-MODEL.md:287`).
 **Impact:** the documented time-bound on the second-control window is not enforced; stale proposals against unchanged targets (settings at the same version, fresh accounts) replay cleanly long after context changed.
@@ -123,7 +123,7 @@ At quorum-met during a freeze, any schedule (including `kind:'now'`) is parked i
 
 ### API-9 — Project deregistration leaves orphaned satellite rows; a reused id inherits the previous tenant's state
 **Severity: medium**
-**Location:** `ccp/api/src/domain/projectsLifecycle.ts:65-80`; `ccp/api/src/routes/projects.ts:590-602`
+**Location:** `ccp/api/src/domain/projectsLifecycle.ts:65-80`; `ccp/api/src/routes/projects.ts:710-722`
 
 The deregister-ack cleanup deletes only `UPLOADTOKEN#`, `ONBOARDTOKEN#`, and `DATA#v` rows plus the on-disk data dir. Surviving rows under the same `PROJECT#<id>` partition: `FORGECRED` (the sealed forge credential), every `SCANJOB#`, every `DRIFT#v…` report row, the `DRIFT#latest` pointer, and every `DRIFTPROP#` proposal row. Registration only checks the META row for collision (`routes/projects.ts:601`), so re-registering the same id yields a "fresh" project that: (a) resolves the *previous* operator's forge credential at scan-claim time (`routes/scanJobs.ts:214-231`), (b) carries a drift pointer aimed at deleted files (GET serves the confusing `connected:true, report:null` degraded state, `routes/drift.ts:461-469`), and (c) lists stale proposal rows.
 **Impact:** cross-lifecycle state bleed; wrong credential used to clone a new tenant's repository; misleading drift status.
@@ -160,7 +160,7 @@ The regex `/\/(\d{1,9})\/?$/` matches the trailing path segment of *any* https U
 
 ### API-14 — Conditional-write collisions inside `transactWithAudit` surface as the wrong error
 **Severity: low**
-**Location:** `ccp/api/src/domain/audit.ts:210-233`; e.g. `ccp/api/src/routes/admin.ts:321-374`
+**Location:** `ccp/api/src/domain/audit.ts:210-233`; e.g. `ccp/api/src/routes/admin.ts:673-724`
 
 `transactWithAudit`'s own doc warns that callers carrying their own dedupe condition must not use it — but several do. Example: admin enroll (tightening path) races a concurrent registration of the same username; the account `ifNotExists` collision is retried once (against the same collision) and then thrown as `409 CHAIN_CONTENTION` ("the audit chain is busy; please retry") instead of `DUPLICATE_USERNAME`. Same pattern for team creates and the instance PUT (which at least maps it to `INSTANCE_STALE` explicitly — `routes/instance.ts:114-133`).
 **Recommendation:** after a `CHAIN_CONTENTION` from `transactWithAudit`, re-read the domain key and return the domain-accurate conflict (the instance route's pattern), or hand-roll the loop as approve/submit do.

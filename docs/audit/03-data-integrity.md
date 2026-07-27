@@ -1,6 +1,6 @@
 # Data Integrity & Persistence Audit — ccp/api store layer
 
-Audit date: unknown-date
+Audit date: 2026-07-26
 Dimension key: `data-integrity` · Finding prefix: `DATA`
 
 ## Scope & method
@@ -76,16 +76,16 @@ drift proposal bodies) live on disk beside the store file, referenced by store r
   TOTP, requests, approvals, settings, and the verifying chain all survive.
 - **Idempotent submit.** The idempotency marker is written `ifNotExists` in the same
   transact as the request row (`routes/requests.ts:472-503`), scoped to
-  (project, requester, key) (`schema.ts:1365-1374`), and the loss path re-resolves the
+  (project, requester, key) (`schema.ts:1390-1399`), and the loss path re-resolves the
   winner's request rather than erroring.
 - **Readiness that "does not lie".** `/readyz` probes account count and re-verifies
   every project chain (`domain/readiness.ts`), so a wiped or corrupted store reads 503
   rather than green.
 - **Exceptionally documented migration invariants.** `schema.ts` documents, per field,
   whether it is additive-optional, which read-time shim canonicalizes legacy shapes
-  (`rolesOf`, `totpDevicesOf`, `repoRefOf` at `schema.ts:751-759`), and the
+  (`rolesOf`, `totpDevicesOf`, `repoRefOf` at `schema.ts:759-767`), and the
   producer/consumer ordering contract for `.strict()` schemas
-  (`schema.ts:632-639`). The one-time settlement migration is idempotent, marker-
+  (`schema.ts:640-647`). The one-time settlement migration is idempotent, marker-
   guarded, written last, and fail-closed on unconfigurable stores
   (`domain/settlement.ts:188-219`).
 
@@ -315,9 +315,9 @@ drift proposal bodies) live on disk beside the store file, referenced by store r
 - **Location:** `ccp/api/scripts/backup.ts:34-42` (copies only `dataFile`);
   `src/domain/projectData.ts:300-307` (content root `<CCP_DATA_DIR>/projects` "beside
   the FileStore's ccp.json, never inside it"); referencing rows:
-  `ProjectDataVersionItem.chunks`/`digests` (`schema.ts:975-1006`),
-  `ProjectItem.dataActive` (`schema.ts:852-859`), `DriftReportItem`/`DriftProposalItem`
-  (`schema.ts:1105-1216`).
+  `ProjectDataVersionItem.chunks`/`digests` (`schema.ts:1000-1031`),
+  `ProjectItem.dataActive` (`schema.ts:867-874`), `DriftReportItem`/`DriftProposalItem`
+  (`schema.ts:1130-1241`).
 - **Description:** The durable state spans two stores: the snapshot file and a directory
   tree of immutable version dirs, drift reports, and proposal bodies that store rows
   point into. `backup.ts` captures only the former. A restore therefore reconstructs
@@ -410,7 +410,7 @@ drift proposal bodies) live on disk beside the store file, referenced by store r
 ### DATA-15 · LOW — Map key concatenation with a space separator is aliasable in principle; client-controlled bytes reach PKs unconstrained
 
 - **Location:** `ccp/api/src/store/memoryStore.ts:4-5` (`keyOf = pk + ' ' + sk`);
-  `schema.ts:1368-1374` + `routes/requests.ts:95` (idempotency key: any 1–200 chars,
+  `schema.ts:1393-1399` + `routes/requests.ts:95` (idempotency key: any 1–200 chars,
   including spaces and `#`, concatenated into a PK); `migrate.ts:22` (unconstrained
   imported usernames).
 - **Description:** `get`/`put`/`delete` identity is the string `PK + ' ' + SK`, so two
@@ -419,7 +419,7 @@ drift proposal bodies) live on disk beside the store file, referenced by store r
   nothing enforces that invariant, and the idempotency-key PK embeds arbitrary client
   bytes. DynamoDB keys are native tuples — it would never alias — so this is also a
   seam divergence.
-- **Recommendation:** Use a non-printable separator (`' '`) or a tuple-keyed
+- **Recommendation:** Use a non-printable separator (`'\0'`, written as an escape) or a tuple-keyed
   nested map; constrain `idempotencyKey` to a safe charset at the schema.
 
 ### DATA-16 · LOW — No format/version marker in the snapshot file; migration rests entirely on convention

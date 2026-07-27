@@ -1,7 +1,7 @@
 # Reliability, Deployment & Observability Audit — Cloud Control Plane
 
 **Dimension:** Deployment, runtime reliability & observability (`reliability-ops`)
-**Audit date:** unknown-date
+**Audit date:** 2026-07-26
 **Auditor scope:** operational surface only — compose files, Dockerfiles, entrypoints, ops scripts, health/readiness, logging, upgrade/migration paths, first-run journey. Cybersecurity is explicitly out of scope; everything below is framed as robustness/correctness.
 
 ---
@@ -68,10 +68,10 @@ These are the right instincts. The findings below are mostly places where two co
 
 ### OPS-4 — A scan job whose worker dies stays `claimed`/`cloning`/`scanning` forever and permanently wedges that project's onboarding
 - **Severity:** high
-- **Location:** `ccp/api/src/routes/scanJobs.ts:266-306` (claim), `ccp/api/src/routes/projects.ts:790-795` (one-in-flight refusal), `tools/catalogctl/internal/scanworker/worker.go:153-179`
-- **Description:** The claim CAS moves a job out of the queue partition; from then on only the worker can advance it via `/scan-jobs/:jobId/status`. There is no lease, no timeout, no janitor, and no operator-facing cancel/requeue endpoint (verified: the only scan-job routes are create, latest, claim, status). A restarted worker has no memory of its claimed job and simply polls for new ones. Meanwhile `POST /projects/:id/scan-jobs` refuses (`STATE_CONFLICT`) while any non-terminal job exists (`projects.ts:794-795`). A worker death mid-job is a *routine* event: `self-update.sh` runs `compose up -d --build` (which rebuilds/recreates a profile-enabled scanner mid-scan), host reboots, OOM. The only recovery is hand-crafting a `POST /scan-jobs/<id>/status {status:"failed"}` with the shared worker key — undocumented, and invisible to the wizard user, who just sees a spinner forever.
+- **Location:** `ccp/api/src/routes/scanJobs.ts:274-314` (claim), `ccp/api/src/routes/projects.ts:924-929` (one-in-flight refusal), `tools/catalogctl/internal/scanworker/worker.go:153-179`
+- **Description:** The claim CAS moves a job out of the queue partition; from then on only the worker can advance it via `/scan-jobs/:jobId/status`. There is no lease, no timeout, no janitor, and no operator-facing cancel/requeue endpoint (verified: the only scan-job routes are create, latest, claim, status). A restarted worker has no memory of its claimed job and simply polls for new ones. Meanwhile `POST /projects/:id/scan-jobs` refuses (`STATE_CONFLICT`) while any non-terminal job exists (`projects.ts:928-929`). A worker death mid-job is a *routine* event: `self-update.sh` runs `compose up -d --build` (which rebuilds/recreates a profile-enabled scanner mid-scan), host reboots, OOM. The only recovery is hand-crafting a `POST /scan-jobs/<id>/status {status:"failed"}` with the shared worker key — undocumented, and invisible to the wizard user, who just sees a spinner forever.
 - **Impact:** One container restart during a scan permanently blocks that project's paste-a-URL onboarding path — the feature ADR-0033 calls the zero-touch first import.
-- **Recommendation:** Add a claim lease (e.g. requeue or fail jobs whose `startedAt` exceeds clone-timeout + margin — the claim already stamps `startedAt`, `scanJobs.ts:283`), checked lazily at claim time or from the existing scheduler loop; and/or an admin "cancel scan job" route. Document the manual recovery in the runbook meanwhile.
+- **Recommendation:** Add a claim lease (e.g. requeue or fail jobs whose `startedAt` exceeds clone-timeout + margin — the claim already stamps `startedAt`, `scanJobs.ts:291`), checked lazily at claim time or from the existing scheduler loop; and/or an admin "cancel scan job" route. Document the manual recovery in the runbook meanwhile.
 
 ### OPS-5 — `migrate-data.sh`'s post-cutover byte-identical check is tripped by the new code's own boot writes: legacy migrations auto-roll back
 - **Severity:** high

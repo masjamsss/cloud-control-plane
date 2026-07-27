@@ -1,6 +1,6 @@
 # Concurrency & Race Conditions Audit — `ccp/api`
 
-Audit date: unknown-date
+Audit date: 2026-07-26
 Dimension: concurrency (finding prefix: CONC)
 Auditor scope: the Node/Hono backend (`ccp/api`), plus its child-process seams (`domain/bundle.ts`, `domain/apply/terraformExecutor.ts`) and the runner entrypoint.
 
@@ -88,11 +88,11 @@ All three handlers read the request, build a full replacement row, and `transact
 ### CONC-3 — The entire auth/self-service lane writes the account row with blind full-row puts, clobbering concurrent admin mutations and undermining the `accountVersion` drift-guard doctrine
 
 - **Severity: high**
-- **Location:** `ccp/api/src/routes/auth.ts:116` (login-failure counter), `:138` (login-success reset + re-hash), `:201` (TOTP `lastUsedAt` stamp), `:243` (first-login enroll), `:289/:303` (recovery), `:373` (change-password), `:426-438` (reauth); `ccp/api/src/routes/account.ts:132` (device confirm), `:184` (device remove), `:230` (recovery-codes regenerate); `ccp/api/src/routes/admin.ts:826` (reset-totp), `:847` (revoke-sessions)
+- **Location:** `ccp/api/src/routes/auth.ts:116` (login-failure counter), `:138` (login-success reset + re-hash), `:201` (TOTP `lastUsedAt` stamp), `:243` (first-login enroll), `:289/:303` (recovery), `:373` (change-password), `:426-438` (reauth); `ccp/api/src/routes/account.ts:132` (device confirm), `:184` (device remove), `:230` (recovery-codes regenerate); `ccp/api/src/routes/admin.ts:1437` (reset-totp), `:1472` (revoke-sessions)
 
 Every one of these does `read account → await (often an argon2id verify/hash, i.e. a **deliberately slow ~50-200 ms yield window**) → store.put(full stale row)` with no condition. The store supports `ifEquals`; none of these use it. Consequences:
 
-- **An admin disable can be silently undone.** Admin PATCH commits `{status:'disabled', sessionVersion+1, accountVersion+1}` (guarded — `admin.ts:516`). A login attempt for that account that started just before (its account read at line 96 predates the disable; the argon2 verify at line 103 spans the admin's commit) then blind-puts the stale row at line 116/138 — `status:'active'`, old `sessionVersion`, old `accountVersion` all restored. Role grants/revocations are lost the same way (any in-flight TOTP stamp, reauth, device mutation, or recovery write for that user restores the pre-mutation `roles` map).
+- **An admin disable can be silently undone.** Admin PATCH commits `{status:'disabled', sessionVersion+1, accountVersion+1}` (guarded — `admin.ts:959`). A login attempt for that account that started just before (its account read at line 96 predates the disable; the argon2 verify at line 103 spans the admin's commit) then blind-puts the stale row at line 116/138 — `status:'active'`, old `sessionVersion`, old `accountVersion` all restored. Role grants/revocations are lost the same way (any in-flight TOTP stamp, reauth, device mutation, or recovery write for that user restores the pre-mutation `roles` map).
 - **The dual-control drift counter can be rewound.** `store/schema.ts:181-196` documents that *every* account mutation must bump `accountVersion` so a stale dual-control ack fails `STALE_PROPOSAL`. The blind puts restore the old counter value, so a pending proposal captured against the old state passes its guard again after an interleaved change — precisely the replay the counter exists to prevent. (The login-failure path additionally never bumps `accountVersion` at all.)
 - **The lockout counter undercounts under parallel attempts.** N concurrent wrong-password requests all read `failedAttempts: 0` during each other's argon2 verifies and all write `1` (`auth.ts:107-116`); the 5-attempt backoff threshold is reached far later than intended. Same for `/auth/reauth` failures (`auth.ts:420-427`) and recovery-code failures (`auth.ts:283-289`).
 - Self-service device add has a cap TOCTOU: two concurrent confirms both pass the `MAX_TOTP_DEVICES` check (`account.ts:121`) and one add is lost anyway (last-writer-wins on `totpDevices`).
@@ -169,9 +169,9 @@ The claim-first design intentionally never re-applies a claimed row ("possibly s
 ### CONC-11 — Registry writes that bump `version` without guarding it (trust-request upload, identity confirm) can clobber concurrent registry ops and rewind the dual-control version guard
 
 - **Severity: medium**
-- **Location:** `ccp/api/src/routes/projects.ts:1107-1121` (trust-request: full-row put, `version: project.version + 1`, no guard), `:1266-1275` (identity confirm: same pattern)
+- **Location:** `ccp/api/src/routes/projects.ts:1241-1255` (trust-request: full-row put, `version: project.version + 1`, no guard), `:1266-1275` (identity confirm: same pattern)
 
-Other `ProjectItem` writers use `guardAttr:'version'` (trust decision at `projects.ts:1193-1197`, activate/archive/unarchive in `projectData.ts:379-383,424-430,460-467`), so the project row *has* an OCC discipline — these two handlers bypass it with unconditional full-row puts built from a stale read. A trust-request upload racing an identity confirm loses one of the two writes entirely; worse, because both *reset* `version` to `stale+1`, they can rewind the counter to a value a pending dual-controlled proposal captured, letting a genuinely stale ack pass its `version` guard against different row content (the exact class the guard exists to stop).
+Other `ProjectItem` writers use `guardAttr:'version'` (trust decision at `projects.ts:1327-1331`, activate/archive/unarchive in `projectData.ts:379-383,424-430,460-467`), so the project row *has* an OCC discipline — these two handlers bypass it with unconditional full-row puts built from a stale read. A trust-request upload racing an identity confirm loses one of the two writes entirely; worse, because both *reset* `version` to `stale+1`, they can rewind the counter to a value a pending dual-controlled proposal captured, letting a genuinely stale ack pass its `version` guard against different row content (the exact class the guard exists to stop).
 
 **Recommendation:** convert both to `kind:'update'` with `ifEquals {attr:'version', value: project.version}` and only the touched attributes, retrying from a fresh read on a lost guard.
 
@@ -194,7 +194,7 @@ Two concurrent callers can both start settlement (acknowledged in the comment). 
 ### CONC-14 — Team CRUD writes bump `version` but never guard on it
 
 - **Severity: low**
-- **Location:** `ccp/api/src/routes/admin.ts:751` (rename put), `:772` (set-services put), `:863-879` (`stripFromOthers` puts over other teams)
+- **Location:** `ccp/api/src/routes/admin.ts:1318` (rename put), `:1358` (set-services put), `:1496-1518` (`stripFromOthers` puts over other teams)
 
 All team writes are unconditional full-row puts computed from a stale `queryGSI1` read. Two admins editing teams concurrently lose updates (rename vs. set-services on the same team; two set-services calls whose `stripFromOthers` sets were computed against each other's pre-images can leave a service slug owned by two teams — the single-ownership invariant the helper exists to maintain). Version numbers can duplicate. Blast radius is small (admin-only, low frequency), hence low.
 
@@ -203,7 +203,7 @@ All team writes are unconditional full-row puts computed from a stale `queryGSI1
 ### CONC-15 — `transactWithAudit` conflates a caller's domain guard failure with chain contention, producing dead error paths and mislabeled conflicts
 
 - **Severity: low**
-- **Location:** `ccp/api/src/domain/audit.ts:210-233`; concrete dead code at `ccp/api/src/routes/scanJobs.ts:451-453`; the pattern is acknowledged (and manually compensated) at `ccp/api/src/routes/instance.ts:123-131`
+- **Location:** `ccp/api/src/domain/audit.ts:210-233`; concrete dead code at `ccp/api/src/routes/scanJobs.ts:463-465`; the pattern is acknowledged (and manually compensated) at `ccp/api/src/routes/instance.ts:123-131`
 
 Because `transactWithAudit` retries any `ConditionError` once and then throws `ApiError('CHAIN_CONTENTION')`, a caller whose *own* `ifEquals` guard lost deterministically burns the retry and receives `CHAIN_CONTENTION` — never `ConditionError`. The scan-job status route's `catch (e instanceof ConditionError) → STATE_CONFLICT` therefore never fires; a real lost transition is reported to the worker as "the audit chain is busy; please retry" (`errors.ts:120-123`), inviting a pointless retry of a permanently-failed transition. `instance.ts` documents and works around the same seam by re-mapping `CHAIN_CONTENTION` to `INSTANCE_STALE`. The helper's docstring says guard-carrying callers "must NOT use this" — but scanJobs, settlement, and drift staging all do (each with local compensation of varying completeness).
 

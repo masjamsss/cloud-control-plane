@@ -1,6 +1,6 @@
 # Architecture & Design Coherence Audit
 
-**Audit date:** unknown-date
+**Audit date:** 2026-07-26
 **Dimension:** Architecture & design coherence (`architecture`)
 **Repository:** `cloud-control-plane` @ `3000920` ("Easy first import: paste a repo address and this system scans it (#2)")
 

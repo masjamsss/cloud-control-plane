@@ -1,6 +1,6 @@
 # CI/CD & Release Engineering Audit
 
-**Audit date:** unknown-date
+**Audit date:** 2026-07-26
 **Dimension:** ci-cd
 **Repository:** cloud-control-plane (self-service change-management control plane for Terraform-managed AWS estates)
 
@@ -68,7 +68,7 @@ The consequence is not hypothetical: running `python3 -m pytest` in `importer/ki
 
 ### CI-2 — PG-9 (gitleaks) is a silent no-op in CI: the pinned v8.18.4 has no `dir` subcommand, and the script converts the resulting error into PASS
 **Severity: high**
-**Location:** `.github/workflows/publish-gate.yml:34` (pin); `scripts/publish-gate.sh:762–777` (invocation + count logic)
+**Location:** `.github/workflows/publish-gate.yml:34` (pin); `scripts/publish-gate.sh:781–796` (invocation + count logic)
 
 `publish-gate.yml` installs gitleaks **v8.18.4**. `check_pg9` invokes it as `gitleaks dir "$stage" … --exit-code 0 --no-banner >/dev/null 2>&1` (`publish-gate.sh:762–763`). The `dir` subcommand was introduced in **v8.19.0** (release notes: "Deprecate `detect` and `protect`. Add `git`, `dir`, `stdin`"); v8.18.4 only has `detect`/`protect`. So in the exact environment the workflow constructs, gitleaks exits non-zero with an unknown-command error, all output is discarded by `>/dev/null 2>&1`, the JSON report file stays empty, `[[ -s "$report" ]]` is false, `count` stays 0, and line 777 records **PG-9 PASS 0** — indistinguishable from a genuine clean scan. The install step's `gitleaks version` check succeeds, so nothing in the log looks wrong, and the "not installed → SKIP with warning" path (line 739–743) never triggers because the binary *is* installed.
 
@@ -118,7 +118,7 @@ The surrounding evidence shows this is a scrub artifact rather than a design cho
 
 ### CI-6 — release-images publishes on any tag with no quality gate, mutable version stamping, and an unconditional `latest`
 **Severity: medium**
-**Location:** `.github/workflows/release-images.yml:21–29` (triggers), `:56–59` and `:89–92` (tag rules)
+**Location:** `.github/workflows/release-images.yml:38–46` (triggers), `:56–59` and `:89–92` (tag rules)
 
 The release workflow has no `needs`, no check-suite condition, and no branch/tag restriction beyond the `v*` pattern: pushing a tag at **any** commit — including one whose PR ran no test workflows because of path filtering (CI-3), or an entirely untested branch head — builds and publishes to GHCR immediately. Additional versioning defects:
 
@@ -143,7 +143,7 @@ The release workflow has no `needs`, no check-suite condition, and no branch/tag
 
 ### CI-8 — PG-5's secret heuristic misses the most common real-world shapes, and its designated backstop is dead in CI
 **Severity: medium**
-**Location:** `scripts/publish-gate.sh:608` (pattern), `:585–586` (backstop rationale)
+**Location:** `scripts/publish-gate.sh:627` (pattern), `:585–586` (backstop rationale)
 
 The PG-5 pattern is `(_TOKEN|_SECRET|_KEY|[Pp]assword)[[:space:]]*[:=][[:space:]]*"?[A-Za-z0-9+/=_-]{16,}`. Verified empirically against representative lines:
 
@@ -210,7 +210,7 @@ What ccp-smoke proves is real and valuable (see Strengths #7) but ends at: `/rea
 ## Minor observations
 
 - **PG-1 allowlist provenance:** `publish-gate.sh:437` allowlists two 12-digit account ids that are not from the documentation-reserved family (`276181064229`, `439286490199`) with no comment explaining what vendor-published ids they are. Each allowlist entry should carry its provenance, or a future maintainer cannot distinguish "AWS-published service account" from "someone allowlisted a leak".
-- **PG-6 exempts `package-lock.json` wholesale** (`publish-gate.sh:653`) — a pragmatic trade-off, but a real person's email in a lockfile `author` field would pass; worth a one-line comment acknowledging the accepted gap.
+- **PG-6 exempts `package-lock.json` wholesale** (`publish-gate.sh:672`) — a pragmatic trade-off, but a real person's email in a lockfile `author` field would pass; worth a one-line comment acknowledging the accepted gap.
 - **PG-7 is vacuous in default mode by construction** (same excludes list builds the scan set) — the script says so honestly at lines 682–685; fine, but it means the escapee check only has teeth in `--tree` mode, which no CI job runs (the assembled-tree rehearsal is manual).
 - **Publish-gate performance:** the per-file, per-pattern grep loop (`grep_scan`, lines 373–389) spawns ~15k+ processes; 69 s at 2,219 files. Linear in denylist length too — a private deployment with a long denylist could see multi-minute gates. A single `grep -r --include` pass per pattern (or `git grep`) would cut this by an order of magnitude.
 - **Bash version portability:** `publish-gate.sh` needs bash ≥ 4.4 (`mapfile`, `globstar`, empty-array expansion under `set -u`); macOS's system bash 3.2 cannot run it. A version guard at the top would convert confusing errors into an actionable message for private-side operators on laptops.

@@ -1,6 +1,6 @@
 # Frontend UI Robustness & Accessibility Audit — ccp/app
 
-Audit date: unknown-date
+Audit date: 2026-07-26
 Dimension: frontend-ui
 Auditor scope: `ccp/app/src` — routing & guards, error boundaries, loading/empty/edge states,
 the SchemaForm system, large-list handling, DiffView/FullBlockDiff, CommandPalette & keyboard
@@ -102,7 +102,7 @@ This is an unusually disciplined frontend. Concretely:
   `Notifications.tsx:99-113`, `DriftPage.tsx:335-346`)
 - **Description:** Every non-admin route loads via `void Promise.all([...]).then(...)` with no
   `.catch` and no error state. In api mode `httpApi.request` rejects on any network failure, 5xx
-  (`throw new Error(readError(...))` at `httpApi.ts:1070` etc.), or a zod/parse failure
+  (`throw new Error(readError(...))` at `httpApi.ts:1138` etc.), or a zod/parse failure
   (`parseManifests` throws from `api.ts:101` for a malformed vendored manifest). The rejection is
   swallowed as an unhandled promise rejection; `loading` stays `true` forever.
 - **Impact:** A transient backend blip, an expired session mid-navigation, or one malformed
@@ -147,19 +147,19 @@ This is an unusually disciplined frontend. Concretely:
 ### UI-3 — Primary/admin navigation is built from unscoped absolute paths: current-page indication (aria-current + active styling) never renders, and every nav click detours through a full unmount/redirect
 - **Severity:** high
 - **Location:** `ccp/app/src/components/AppShell.tsx:74-85` (nav array), `AppShell.css:75,152`
-  (dead selectors), `ccp/app/src/features/admin/AdminLayout.tsx:7-16` (admin tabs),
+  (dead selectors), `ccp/app/src/features/admin/AdminLayout.tsx:7-17` (admin tabs),
   `ccp/app/src/router.tsx:219,241`
 - **Description:** The whole shell lives under `/p/:projectId`, but every `NavLink` uses unscoped
   absolute `to` values (`/`, `/requests`, `/drift`, `/admin/users`, …). React Router computes
   `isActive` against the resolved target, so with the location always `/p/<id>/…` no NavLink is
   ever active: `.shell__link--active`, `.shell__navmenu-item[aria-current='page']`
-  (`AppShell.css:75,152`), and `.admin__tab--active` (`AdminLayout.tsx:42`) are permanently dead
+  (`AppShell.css:75,152`), and `.admin__tab--active` (`AdminLayout.tsx:44`) are permanently dead
   code, and `aria-current="page"` is never emitted anywhere in the top nav, mobile nav menu, or
   admin tab bar. Each click also navigates to the unscoped path, which matches the top-level `*`
   route, unmounts the entire `/p` tree (AppShell included), renders `LegacyRedirect`
   (`router.tsx:74-78, 241`), then remounts everything at the rewritten path — a skeleton flash and
   a full refetch of shell data (Notifications, palette) on every top-nav click. The admin index
-  redirect does the same double hop (`router.tsx:219` → `/admin/users` → `*` → rewritten).
+  redirect does the same double hop (`router.tsx:220` → `/admin/users` → `*` → rewritten).
 - **Impact:** Users get no "where am I" signal in any nav (a WCAG 2.4.8 / SC 1.3.1 regression the
   CSS clearly intends to provide), screen-reader users never hear "current page", and navigation
   is visibly heavier than it needs to be (unmount → redirect → remount).
@@ -271,7 +271,7 @@ This is an unusually disciplined frontend. Concretely:
 - **Severity:** medium
 - **Location:** `ccp/app/src/router.tsx:94-110,241`
 - **Description:** Only the `/p/:projectId` route carries `errorElement: <RouteError />`
-  (`router.tsx:114`). A throw during `LoginPage`, `FirstRunPage` (or its lazy-chunk load failure —
+  (`router.tsx:115`). A throw during `LoginPage`, `FirstRunPage` (or its lazy-chunk load failure —
   a stale deployment's 404'd chunk rejects the `lazy()` promise and propagates as a route error),
   or the `LegacyRedirect` render falls through to React Router's built-in "Unexpected Application
   Error" page — unstyled, off-brand, with a stack trace in dev.
@@ -302,7 +302,7 @@ This is an unusually disciplined frontend. Concretely:
 
 ### UI-11 — Nested repeated blocks skip their instance-count bounds
 - **Severity:** low
-- **Location:** `ccp/app/src/lib/catalog.ts:565-571` (vs. `lib/interpreter.ts:150-163`)
+- **Location:** `ccp/app/src/lib/catalog.ts:579-585` (vs. `lib/interpreter.ts:150-163`)
 - **Description:** Top-level repeated params validate `bounds.minItems/maxItems` in
   `validateParams`, but `repeatedInstanceErrors`' recursion for a *nested* repeated sub-field only
   checks per-instance sub-field validity — a nested block with `minItems: 2` and one row passes.

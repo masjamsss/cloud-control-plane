@@ -1,6 +1,6 @@
 # API Contracts, Schemas & Documentation Accuracy Audit
 
-**Dimension:** contracts-docs · **Audit date:** unknown-date
+**Dimension:** contracts-docs · **Audit date:** 2026-07-26
 
 ## Scope & method
 
@@ -77,7 +77,7 @@ class is *staleness against a fast-moving codebase*, not carelessness:
 
 ### DOC-1 · high · OpenAPI declares two `/catalog/*` endpoints that do not exist — and the parity test pins the phantoms
 
-**Location:** `ccp/api/openapi/ccp-api.yaml:526-529`, `ccp/api/src/index.ts:80-103`,
+**Location:** `ccp/api/openapi/ccp-api.yaml:532-535`, `ccp/api/src/index.ts:80-103`,
 `ccp/api/test/openapi.test.ts:17-33`
 
 `GET /catalog/manifests` and `GET /catalog/inventory` are declared in the YAML, but `createApp`
@@ -99,7 +99,7 @@ diff (enumerate Hono routes at test time and compare against parsed YAML paths i
 ### DOC-2 · high · Shipped routes absent from the OpenAPI spec; `POST /requests/:id/apply` is documented nowhere at all
 
 **Location:** `ccp/api/src/routes/requests.ts:834` (plan-summary), `:887` (apply),
-`ccp/api/src/routes/admin.ts:692` (audit/export), `ccp/api/src/index.ts:68-76` (healthz/readyz)
+`ccp/api/src/routes/admin.ts:1221` (audit/export), `ccp/api/src/index.ts:68-76` (healthz/readyz)
 
 Routes registered in code but missing from `ccp-api.yaml`'s `paths`:
 
@@ -124,7 +124,7 @@ add an apply row to API-SPEC.md's requests table and PERMISSIONS.md §2.
 ### DOC-3 · medium · OpenAPI `servers: [{url: /v2}]` does not match any deployed base path
 
 **Location:** `ccp/api/openapi/ccp-api.yaml:6`; `ccp/api/src/index.ts:80-103`;
-`ccp/app/src/lib/httpApi.ts:1049`; `ccp/docs/go-live.md:106-111`; `ccp/.env.example:23`
+`ccp/app/src/lib/httpApi.ts:1117`; `ccp/docs/go-live.md:106-111`; `ccp/.env.example:23`
 
 The YAML declares base `/v2`. The Hono app mounts everything at the root; the SPA client builds
 URLs as `${baseUrl}${path}` with paths like `/auth/login` and no `/v2` segment anywhere; and the
@@ -201,13 +201,13 @@ FUNDAMENTALS convention.
 
 ### DOC-6 · medium · API-SPEC.md states the opposite of current code on `PUT /projects/:id/identity` gating
 
-**Location:** `ccp/docs/API-SPEC.md:129` vs `ccp/api/src/routes/projects.ts:1261-1263`
+**Location:** `ccp/docs/API-SPEC.md:129` vs `ccp/api/src/routes/projects.ts:1395-1397`
 
 API-SPEC.md's identity row says: "Callable repeatedly to correct a mistake. **Not gated on project
 status or archived.**" Current code fails closed: `if (!isOnboardable(project)) return
 apiError(c, "STATE_CONFLICT")` — the route is now restricted to draft/pending-trust and refuses
 archived projects, exactly as the (updated) OpenAPI YAML describes at length
-(`ccp-api.yaml:876-904`: "GATED to draft/pending-trust, and refused for an archived project
+(`ccp-api.yaml:884-914`: "GATED to draft/pending-trust, and refused for an archived project
 (409 STATE_CONFLICT)"). The doc was measured at d781c25 (2026-07-17-era text with a 2026-07-25
 insertion) and the gate was added afterward; the two authoritative-looking documents now
 contradict each other, and the human-readable one is wrong.
@@ -438,7 +438,7 @@ run, but as shipped the doc invites readers to consult files that are not there.
 ### DOC-17 · low · The code-derived docs' line citations have drifted from HEAD
 
 **Location:** e.g. `ccp/docs/DOMAIN-MODEL.md:28` (ProjectItem "schema.ts:536-555" → actually
-`schema.ts:793`), `ccp/docs/API-SPEC.md:80` (plan-summary "requests.ts:786-828" → `:834`),
+`schema.ts:801`), `ccp/docs/API-SPEC.md:80` (plan-summary "requests.ts:786-828" → `:834`),
 `API-SPEC.md:111` (audit/export "admin.ts:687-690" → `:692`), `API-SPEC.md:30` (healthz
 "index.ts:52" → `:68`)
 

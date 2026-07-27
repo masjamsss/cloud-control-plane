@@ -1,6 +1,6 @@
 # Importer Kit & Schemadump Robustness Audit
 
-Audit date: unknown-date
+Audit date: 2026-07-26
 Dimension: `importer` — importer/kit (AWS), importer/kit-azure, tools/schemadump
 Auditor scope note: this is an engineering-quality audit (correctness, robustness, error handling, parity, test/CI discipline). Cybersecurity assessment is explicitly out of scope.
 
@@ -92,7 +92,14 @@ The two kits are, structurally, some of the most disciplined operational tooling
 
 ### IMP-7 — Azure template provider pin (4.14.0) contradicts the committed azurerm schemadump tag (v4.81.0) it claims to bind to
 
-- **Severity:** medium
+> **Status: the divergence is FIXED on `main` as of `661d247`; the recurrence guard is not.**
+> Re-verified while re-anchoring these reports. `661d247` (#7, "kit-azure pin matches its audited dump") moved both Azure pins to 4.81.0, which is the first branch of the recommendation below:
+> `templates/versions.tf:17` now reads `version = "4.81.0"` and `run-aztfexport.sh:26` now reads `PROVIDER_VERSION="${AZTFEXPORT_PROVIDER_VERSION:-4.81.0}"`.
+> All four copies now agree at 4.81.0 (`versions.tf`, `run-aztfexport.sh`, `tools/schemadump/gen.sh:45-46`, `forcenewShared.ts:26`), so the ForceNew-drift **impact described below no longer applies**.
+> The second branch of the recommendation — a cheap consistency check so the copies cannot diverge again — was **not** implemented; nothing compares the template pin to the committed dump filename. That part of this finding still stands.
+> The description below is preserved as the record of what was found at `3000920`; the line numbers in **Location** are as of that commit.
+
+- **Severity:** medium (downgraded to **low** on `main` — only the missing guard remains)
 - **Location:** `importer/kit-azure/templates/versions.tf:17` (`azurerm = 4.14.0`, comment: "bind to the azurerm schemadump/ForceNew truth at this tag"); `importer/kit-azure/run-aztfexport.sh:26` (`PROVIDER_VERSION 4.14.0`, "keep in lockstep with templates/versions.tf"); vs `tools/schemadump/azurerm-v4.81.0-schema.json` and `ccp/app/scripts/lib/forcenewShared.ts:27` (`azure: 'v4.81.0'`)
 - **Description:** The AWS side is coherent (templates, dump and gate all at 6.53.0). The Azure side scaffolds new roots and drives aztfexport at azurerm **4.14.0** while the only committed schemadump — and the app-side ForceNew pin — is **v4.81.0**. The versions.tf comment asserts a binding ("bumping it without a matching schemadump must fail closed") that is already broken in the committed state: there is no 4.14.0 dump, and no gate compares the template pin to any dump.
 - **Impact:** ForceNew verdicts computed from the 4.81.0 reflection may not describe the 4.14.0 provider an imported Azure root actually runs (67 minor releases of schema churn), and aztfexport generates bodies against 4.14.0 schemas — the exact silent-drift scenario the comment says is designed out.
