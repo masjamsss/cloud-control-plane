@@ -625,6 +625,9 @@ export function requestRoutes(): Hono<AppEnv> {
 
     const updated: RequestItem = {
       ...req,
+      // Bumped on every write so a concurrent writer's guard can detect that the row
+      // moved. `eventSeq` has been in the schema since the beginning and was never used.
+      eventSeq: (req.eventSeq ?? 0) + 1,
       approvals,
       approvalsRequired: required,
       reviewTier: tier, // persist the tighten-only effective tier
@@ -690,7 +693,12 @@ export function requestRoutes(): Hono<AppEnv> {
       const { writes: auditWrites } = recordIn(projectId, head, entry);
       const domain: TransactWrite[] = [
         { kind: 'put', item: { ...aKey, user: account.id, at: now }, ifNotExists: true },
-        { kind: 'put', item: updated },
+        // Guarded on the eventSeq this handler read. `updated` was computed from that
+        // read — it carries `approvals = [...req.approvals, mine]` — so writing it
+        // unconditionally overwrites any signature that landed in between, and the
+        // quorum ledger silently loses an approval (CONC-1). The guard turns that
+        // lost update into a refusal.
+        { kind: 'put', item: updated, ifEquals: { attr: 'eventSeq', value: req.eventSeq } },
       ];
       try {
         await store.transact([...domain, ...auditWrites]);
@@ -698,7 +706,13 @@ export function requestRoutes(): Hono<AppEnv> {
       } catch (e) {
         if (e instanceof ConditionError) {
           if (await store.get(aKey.PK, aKey.SK)) return apiError(c, 'ALREADY_APPROVED'); // lost the dedupe race
-          if (attempt === 0) continue; // chain contention → retry once
+          // Which condition failed? If the request row moved, `updated` is stale and
+          // retrying would write exactly the corruption the guard just prevented — the
+          // old code's `continue` did precisely that. Refuse instead; the client re-reads
+          // and re-submits against the state that actually landed.
+          const fresh = (await store.get(k.PK, k.SK)) as RequestItem | null;
+          if (!fresh || fresh.eventSeq !== req.eventSeq) return apiError(c, 'STATE_CONFLICT');
+          if (attempt === 0) continue; // chain contention only → retry once, still fresh
           throw new ApiError('CHAIN_CONTENTION');
         }
         throw e;

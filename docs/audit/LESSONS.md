@@ -110,3 +110,24 @@ a fix that had nothing to do with them, and would have looked closed by associat
 findings is not the count of fixes. Then check the grouping by reading the batch as a
 whole and asking whether one change really closes all of it — the four that did not belong
 were obvious the moment they were listed side by side with the five that did.
+
+### L-6 — A retry that reuses stale state is worse than no retry
+
+Findings: CONC-1
+
+The approve handler had two defects and only the first is obvious. The unconditional put
+let two concurrent approvals overwrite each other. But the handler also caught the
+`ConditionError` raised by *audit-chain contention* and did `continue` — retrying with the
+`updated` row it had computed before the conflict. So the retry that existed to make the
+handler more robust was the thing that wrote the corruption: it re-applied a pre-image
+that was, by then, known to be stale.
+
+A guard alone would not have been enough. It would have converted the race into a
+`ConditionError` — which the retry would have caught and turned straight back into the
+lost update.
+
+**Do differently:** a retry must re-read. If the retry loop's body does not start from a
+fresh read, the loop is not resilience, it is a way of persisting stale writes past the
+check that was meant to stop them. When distinguishing *which* condition failed is
+possible — here, re-reading the row and comparing the guarded attribute — refuse the case
+you cannot safely retry rather than retrying everything.

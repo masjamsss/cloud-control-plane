@@ -168,3 +168,46 @@ they are one fix; separate entries would imply five investigations.
 3. **No load test.** The event loop is proven to keep turning; that it keeps *serving
    requests* under a real 15-minute bundle is not covered, and needs the bench harness
    PR #6 introduces.
+
+## CONC-1
+
+*Concurrent approvals of the same request silently lose signatures (lost update via
+unguarded row put + stale retry).*
+
+- [x] **Defect reproduced first** — pinned as a test at the store seam, and the corruption
+      itself is now a test: two reviewers read the same pre-image, both write, and with an
+      unguarded put the ledger ends up holding **only the second signature**. Removing the
+      guard again makes three of the five cases fail with
+      `promise resolved "undefined" instead of rejecting`.
+- [x] **Cause, not symptom** — there were two defects, and the second is the subtler one.
+      The put was unconditional, *and* on `ConditionError` the handler did `continue`,
+      retrying with the `updated` row it had already computed from the stale read. That
+      retry wrote exactly the corruption a guard would have prevented. Both are fixed: the
+      put is guarded on the `eventSeq` the handler read, and a moved row now returns
+      `STATE_CONFLICT` instead of being retried with stale data. Chain contention — the
+      case the retry was actually for — still retries, now only when the request row is
+      confirmed unmoved.
+- [x] **Regression test** — `test/approveLostUpdate.test.ts`, 5 cases: the refusal, the
+      unguarded corruption pinned explicitly, fail-closed against a deleted row,
+      all-or-nothing across a multi-write batch, and `ifNotExists` still honoured.
+- [x] **Failure is loud** — a lost signature was previously invisible. It is now a refusal
+      the caller sees.
+- [x] **Evidence in the status line** — the store primitive plus the test path.
+- [x] **Lesson recorded** — L-6.
+
+**Verification:** 74 test files, 1187 tests pass (was 73 / 1182); typecheck clean.
+
+**Residue:**
+
+1. **A one-time window on rows written before this change.** The guard compares the
+   `eventSeq` that was read; on a legacy request row that value is `undefined` for both
+   concurrent readers, so both guards pass and one signature can still be lost — once.
+   After any approve, the row carries a number and the guard bites. Closing that fully
+   needs a migration that stamps `eventSeq` on every existing request row; **not done, and
+   not tracked by an existing finding.**
+2. **`ifEquals` on `put` is now available but only used here.** CONC-2, CONC-3, CONC-14 and
+   DATA-1 are the same read-modify-write race in other routes and remain **open** — they
+   now have the primitive they were missing, which is most of what made them hard.
+3. **Only the transactional `put` gained the guard.** `ConfigStore.put` (the standalone,
+   non-transactional one) still takes `ifNotExists` only. No caller needed it yet; the
+   asymmetry is worth removing when one does.

@@ -18,7 +18,15 @@ export class ConditionError extends Error {
 }
 
 export type TransactWrite =
-  | { kind: 'put'; item: Item; ifNotExists?: boolean }
+  /**
+   * `ifEquals` guards a whole-row put the same way it guards an update: the write lands
+   * only if the named attribute still holds the captured value. DynamoDB's transactional
+   * `Put` takes a ConditionExpression, so this is the seam being faithful rather than
+   * generous — without it, "read, compute a new row, write it back" had no way to say
+   * "…only if nobody moved it", and the read-modify-write races in CONC-1/2/3/14 and
+   * DATA-1 had no primitive to fix them with.
+   */
+  | { kind: 'put'; item: Item; ifNotExists?: boolean; ifEquals?: { attr: string; value: unknown } }
   | {
       kind: 'update';
       pk: string;
