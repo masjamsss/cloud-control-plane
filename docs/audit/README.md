@@ -17,6 +17,20 @@ review is a separate concern handled elsewhere.
 Each report states its own scope and method — which files were read in full versus
 grepped — so a reader can judge how much weight a given finding carries.
 
+## Tracking
+
+The reports state what was found. These three files track what happened next, and
+`scripts/findings-gate.sh` keeps all three honest in CI:
+
+| File | Holds | The gate enforces |
+|---|---|---|
+| [`FINDINGS.md`](FINDINGS.md) | every finding, one line, grouped by root cause | none may be dropped; status and topic must be valid; the open count may only fall |
+| [`FIXES.md`](FIXES.md) | the definition-of-done worked through, per closed finding | nothing may be marked `fixed` without an entry here |
+| [`LESSONS.md`](LESSONS.md) | what generalises beyond the line changed | every lesson must cite a real finding |
+
+Run `bash scripts/findings-gate.sh` any time; `--strict` fails while any finding is still
+open, and is the mode that must pass before this work is called finished.
+
 ## Anchoring
 
 - **Reviewed at:** `3000920` ("Easy first import: paste a repo address and this system scans it (#2)"), 2026-07-26.

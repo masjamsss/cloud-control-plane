@@ -127,6 +127,33 @@ for fid in sorted(entries):
 open_ids = sorted(f for f, k in entries.items() if k == "open")
 n_open = len(open_ids)
 
+# --- fix log ---------------------------------------------------------------
+# Marking a finding `fixed:` requires a worked-through entry in FIXES.md. Without this,
+# "fixed" is just a word someone typed into the ledger; with it, closing a finding means
+# stating how the definition of done was met — including where it was not.
+fixes_path = os.path.join(audit_dir, "FIXES.md")
+documented_fixes = set()
+if os.path.exists(fixes_path):
+    fence = False
+    for line in open(fixes_path, encoding="utf-8"):
+        if line.lstrip().startswith("```"):
+            fence = not fence
+            continue
+        if fence:
+            continue
+        h = re.match(r"^## ([A-Z]+-\d+[a-z]?)\s*$", line)
+        if h:
+            documented_fixes.add(h.group(1))
+for fid, kind in sorted(entries.items()):
+    if kind == "fixed" and fid not in documented_fixes:
+        errors.append(
+            f"FINDINGS.md: {fid} is marked fixed but has no '## {fid}' entry in "
+            "docs/audit/FIXES.md — a fix is not done until its checklist is filled in"
+        )
+for fid in sorted(documented_fixes):
+    if fid not in declared:
+        errors.append(f"FIXES.md: '## {fid}' is not a finding declared by any report")
+
 # --- lessons ledger --------------------------------------------------------
 # LESSONS.md is where a finding's generalisable lesson goes. It is checked here so it
 # cannot drift into unattributed folklore: every lesson must name at least one finding
@@ -171,7 +198,7 @@ except Exception:
 
 print(f"findings-gate: {len(declared)} findings declared · {len(entries)} tracked · {n_open} open"
       + (f" (baseline {baseline})" if baseline is not None else "")
-      + f" · {n_lessons} lesson(s)")
+      + f" · {len(documented_fixes)} fix log entr(ies) · {n_lessons} lesson(s)")
 
 if errors:
     for e in errors:
