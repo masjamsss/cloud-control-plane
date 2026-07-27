@@ -375,3 +375,79 @@ too: a team row written before this change has `version` undefined on both sides
 2. **No coverage of the FileStore path.** The tests use `MemoryStore`; `FileStore`
    inherits the same `put`, so the behaviour should be identical, but "should be" is not a
    test.
+
+## IMP-1
+
+*`importer/kit/normalize.py` `split`/`guard` crash under the repo-pinned python-hcl2
+(KeyError, not a refusal).*
+
+- [x] **Defect reproduced first** — installed the repo-pinned `python-hcl2==5.1.1` and ran
+      the suite: **7 failed, 99 passed**, matching the audit's numbers exactly. Six were
+      this defect. (Without hcl2 installed the suite fails differently — 16 failures, all
+      `REFUSE MISSING_DEP`, which is the kit behaving correctly. Worth knowing before
+      reading a red run as this bug.)
+- [x] **Cause, not symptom** — `hcl2.load(fh)` without `with_meta=True` omits
+      `__start_line__`/`__end_line__` on 5.1.1, so every read of them died with a raw
+      KeyError. The Azure kit was already fixed and carries a comment naming this exact
+      hazard; the fix was never back-ported. That is the divergence risk of
+      copied-not-shared kits, made real.
+- [x] **Regression test** — the six existing tests that were failing. They were always the
+      right tests; nothing ran them.
+- [x] **Failure is loud** — restores the kit's own contract (`exit 2` + a `REFUSE` line)
+      instead of a Python traceback.
+- [x] **Evidence in the status line** — the change plus the green suite.
+- [x] **Lesson recorded** — L-8.
+
+## IMP-2
+
+*`scripts/drift/sweep-ignore.json` is missing: the statediff sweep refuses out of the box.*
+
+- [x] **Defect reproduced first** — `statediff.py` defaults `--ignore` to that path, and
+      the file is absent, so the sweep refuses on a clean checkout.
+- [x] **Cause, not symptom** — the file was removed in the public split and the default was
+      left pointing at it. Now shipped with **generic** seeds only: AWS-applied tag keys
+      (`aws:autoscaling:groupName` and friends) and service-linked-role prefixes — the rows
+      every AWS estate needs. Each carries a `reason`, because an unexplained ignore is
+      indistinguishable from a forgotten one.
+- [x] **Regression test** — the existing `test_real_sweep_ignore_json_is_well_formed_and_seeded`,
+      which now passes for the first time.
+- [x] **Failure is loud** — unchanged; `statediff` still refuses `BAD_IGNORE` on a
+      malformed file.
+- [x] **Evidence in the status line** — the shipped file.
+- [x] **Lesson recorded** — L-8.
+
+**Note — a private identifier removed.** That test asserted the file contained
+`alarmtickettable`, a real bootstrap state bucket from the pre-split estate. It was the
+only place that name survived in the public tree, and PG-3 could not catch it because the
+denylist is empty in the public build. Recreating the file to satisfy the assertion would
+have re-introduced estate data the split deliberately removed, so the assertion was
+replaced with a structural one that a public repository can actually promise.
+
+## TEST-1
+
+*`importer/kit` test suite is red at HEAD: 7 of 106 tests fail.*
+
+- [x] **Defect reproduced first** — 7 failed, 99 passed on a clean checkout.
+- [x] **Cause, not symptom** — IMP-1 and IMP-2 above were the two causes; both are fixed,
+      and the suite is **106 passed, 0 failed**. But the *reason it stayed red* was that no
+      workflow ran it, so `.github/workflows/importer.yml` now runs both kits and
+      `tools/schemadump` — whose Go suite also ran nowhere, because `catalogctl.yml`'s path
+      filter covers only `tools/catalogctl/**`.
+- [x] **Regression test** — the suite itself, now gated.
+- [x] **Failure is loud** — a red kit now fails a PR instead of nobody noticing.
+- [x] **Evidence in the status line** — the green suite plus the workflow.
+- [x] **Lesson recorded** — L-8.
+
+**Both kits run in the same lane on purpose:** the defect that broke the AWS kit had already
+been found and fixed in the Azure one, and only a lane that runs both can catch that
+divergence next time. The workflow reads the python and python-hcl2 pins out of
+`scripts/gen-project-data.sh` rather than duplicating them, following the rule the
+`ccp-data` lane already established.
+
+**Verification:** `importer/kit` 106 pass · `importer/kit-azure` 48 pass ·
+`tools/schemadump` build/vet/test green. The pin-extraction step was run locally to confirm
+it yields `3.12` and `5.1.1`.
+
+**Residue:** CI-1 and TEST-2 are **not** closed by this. They are broader — TEST-2 notes
+`gate.sh` omits the Python suites too, and CI-1 covers the whole class. This lane is the
+largest piece of both, but neither is finished.

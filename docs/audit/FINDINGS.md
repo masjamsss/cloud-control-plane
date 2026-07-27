@@ -247,7 +247,7 @@ The same rule implemented in two places, free to drift.
 
 importer/kit, kit-azure and schemadump.
 
-- [ ] IMP-2 | high | importer | open | 08-importer-schemadump.md | `scripts/drift/sweep-ignore.json` is missing: the statediff sweep refuses out of the box
+- [x] IMP-2 | high | importer | fixed:scripts/drift/sweep-ignore.json shipped with generic seeds | 08-importer-schemadump.md | `scripts/drift/sweep-ignore.json` is missing: the statediff sweep refuses out of the box
 - [ ] IMP-4 | high | importer | open | 08-importer-schemadump.md | Azure capability ledger family classification is systematically wrong: multi-token `familyMap` keys are unreachable
 - [ ] IMP-6 | medium | importer | open | 08-importer-schemadump.md | statediff's managed-set match assumes Terraform state `id` equals the discovery id; false-positive findings for id-divergent types (concrete: `aws_volume_attachment`)
 - [x] IMP-7 | medium | importer | fixed:661d247 moved both Azure pins to 4.81.0; recurrence guard still missing | 08-importer-schemadump.md | Azure template provider pin (4.14.0) contradicts the committed azurerm schemadump tag (v4.81.0) it claims to bind to
@@ -262,7 +262,7 @@ importer/kit, kit-azure and schemadump.
 
 Red suites, silent skips, fixtures that pin the wrong premise.
 
-- [ ] TEST-1 | high | test-quality | open | 12-testing-quality.md | `importer/kit` test suite is red at HEAD: 7 of 106 tests fail
+- [x] TEST-1 | high | test-quality | fixed:importer/kit is green at HEAD (106 pass, was 7 failing) + .github/workflows/importer.yml | 12-testing-quality.md | `importer/kit` test suite is red at HEAD: 7 of 106 tests fail
 - [ ] CTL-11 | medium | test-quality | open | 07-catalogctl.md | Golden coverage runs against forked fixture manifests, not the shipped catalog; comment-bearing fixtures are absent
 - [ ] CTL-3 | medium | test-quality | open | 07-catalogctl.md | Shipped catalog op `waf-add-ip-set-entry` can never execute (exit 1 internal error); the corrected manifest exists only in test fixtures
 - [ ] TEST-3 | medium | test-quality | open | 12-testing-quality.md | `ccp/app/scripts/test_build_inventory.py` fails at HEAD (stale fixture premise)
@@ -351,7 +351,7 @@ The evidence chain: month walk, export, verification.
 
 The codemod, plan-check and drift-edit.
 
-- [ ] IMP-1 | high | catalogctl | open | 08-importer-schemadump.md | `importer/kit/normalize.py` `split`/`guard` crash under the repo-pinned python-hcl2 (KeyError, not a refusal)
+- [x] IMP-1 | high | catalogctl | fixed:with_meta=True back-ported from the azure kit; importer/kit suite 106 pass | 08-importer-schemadump.md | `importer/kit/normalize.py` `split`/`guard` crash under the repo-pinned python-hcl2 (KeyError, not a refusal)
 - [ ] CTL-2 | medium | catalogctl | open | 07-catalogctl.md | `moved_block` writes invalid or duplicate-resource HCL at exit 0: no identifier validation, no destination-collision check, no dangling-reference handling
 - [ ] IMP-5 | medium | catalogctl | open | 08-importer-schemadump.md | kit-azure `discover.sh` never clears stale page files: a re-run can resurrect deleted resources into the manifest
 - [ ] PERF-6 | medium | catalogctl | open | 11-performance-scalability.md | API mode re-downloads and re-parses the full inventory + manifest set on every route mount; the serve endpoints send no caching headers

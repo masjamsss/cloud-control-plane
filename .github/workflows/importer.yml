@@ -1,0 +1,65 @@
+name: importer
+# CI-1 / TEST-2 — the importer kits and tools/schemadump had test suites that ran in NO
+# workflow at all. Nothing was gating them, so nothing could see them go red: the AWS kit
+# was failing at HEAD with 7 broken tests, one of them asserting on a file the public split
+# had removed, and it stayed that way because no build ever reported it.
+#
+# The kits are copied-not-shared by design, so BOTH are run here: the defect that broke the
+# AWS kit had already been found and fixed in the Azure one, and only a lane that runs both
+# can catch that divergence next time.
+#
+# `tools/schemadump` is included because catalogctl.yml's path filter covers only
+# `tools/catalogctl/**`, which left schemadump's Go suite running nowhere either.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['importer/**', 'tools/schemadump/**', 'scripts/drift/**', '.github/workflows/importer.yml']
+  push:
+    branches: [main]
+    paths: ['importer/**', 'tools/schemadump/**', 'scripts/drift/**', '.github/workflows/importer.yml']
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the repo's own toolchain pins
+        id: pins
+        # The pins live in gen-project-data.sh and are read out of it rather than
+        # duplicated here — the same rule the ccp-data lane already follows, so this
+        # workflow cannot drift from the version the kits are actually supported on.
+        run: |
+          set -euo pipefail
+          series="$(grep -E '^PIN_PYTHON_SERIES=' scripts/gen-project-data.sh | cut -d'"' -f2)"
+          hcl2="$(grep -E '^PIN_PYTHON_HCL2=' scripts/gen-project-data.sh | cut -d'"' -f2)"
+          [ -n "$series" ] && [ -n "$hcl2" ] || { echo "::error::could not read the pins"; exit 1; }
+          echo "python=$series" >> "$GITHUB_OUTPUT"
+          echo "hcl2=$hcl2" >> "$GITHUB_OUTPUT"
+          echo "python $series · python-hcl2 $hcl2"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ steps.pins.outputs.python }}
+      - name: Install the pinned deps
+        run: pip install "python-hcl2==${{ steps.pins.outputs.hcl2 }}" pytest
+      - name: importer/kit
+        run: python3 -m pytest -q
+        working-directory: importer/kit
+      - name: importer/kit-azure
+        run: python3 -m pytest -q
+        working-directory: importer/kit-azure
+
+  schemadump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/schemadump/go.mod
+      - run: go build ./...
+        working-directory: tools/schemadump
+      - run: go vet ./...
+        working-directory: tools/schemadump
+      - run: go test ./...
+        working-directory: tools/schemadump

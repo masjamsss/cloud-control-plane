@@ -150,3 +150,23 @@ go, against the tree as it will be pushed. Here that is `npm run typecheck && np
 which is literally what `.github/workflows/ccp-api.yml` runs — the job exists and its steps
 are readable, so there is no excuse for approximating it. Running a subset and inferring
 the rest is how a green local tree pushes a red build.
+
+### L-8 — A fix that exists in one copy of a copied component is not fixed
+
+Findings: IMP-1, IMP-2, TEST-1
+
+`importer/kit` and `importer/kit-azure` are copied-not-shared by design, and the copy
+diverged in the worst possible direction: the Azure kit hit the python-hcl2 `with_meta`
+hazard, was fixed, and had a comment written explaining it. The AWS kit kept the bug for as
+long as the suite existed, because nothing ran the suite.
+
+Two failures compounding. A shared defect fixed in one copy leaves the other broken and
+looking maintained — the comment in the fixed copy is even evidence that someone understood
+the problem. And a suite that runs in no CI cannot report the difference, so the divergence
+is invisible from both sides.
+
+**Do differently:** when fixing a defect in one of several copies, grep the siblings for
+the same shape before closing it — the fix comment is the search term. And a component
+whose tests run nowhere is not tested, however many tests it has; wiring the lane is part
+of the fix, not follow-up. Here both kits now run in one lane, so the next divergence fails
+a build instead of waiting for an audit.
