@@ -261,43 +261,44 @@ which retries with the stale snapshot.*
 
 ## CONC-3
 
-*The entire auth/self-service lane writes the account row with blind full-row puts.*
-
-**PARTIAL — this finding stays `open`.** The headline scenario is closed; roughly a dozen
-other call sites are not. Recorded here so the remaining work starts from what exists.
+*The entire auth/self-service lane writes the account row with blind full-row puts,
+clobbering concurrent admin mutations.*
 
 - [x] **Defect reproduced first** — pinned as a test, including the corruption: with an
-      unguarded put, a login that read the row before an admin disable writes
+      unguarded put a login that read the row before an admin disable writes
       `status:'active'` and the old `sessionVersion` straight back. The disable is undone
       and revoked sessions become valid again.
-- [ ] **Cause, not symptom** — **not satisfied.** The missing primitive is now there
-      (`ifEquals` on the standalone `ConfigStore.put`, matching the transactional one), and
-      the two login writes use it. `account.ts` (device confirm, device remove,
-      recovery-code regenerate) and the remaining `auth.ts` sites — TOTP `lastUsedAt`,
-      first-login enrol, recovery, change-password, reauth — are still blind puts, and
-      each can undo a disable the same way.
-- [x] **Regression test** — `test/loginDisableRace.test.ts`, 4 cases. Two fail without the
+- [x] **Cause, not symptom** — every account-row write in the lane is now guarded on the
+      `accountVersion` it read, not just the login path. `auth.ts` (login failure, login
+      success, device-use stamp, first-device enrol, recovery-code redeem, change-password,
+      reauth failure counter, reauth success), `account.ts` (device confirm, device remove,
+      recovery-code regenerate) and `admin.ts` (totp-reset, sessions-revoke). A shared
+      `putAccountGuarded` helper does the guard and the bump in one place, so a new handler
+      cannot forget the bump the schema has always required.
+- [x] **Regression test** — `test/loginDisableRace.test.ts`, 4 cases; two fail without the
       guard with `promise resolved "undefined" instead of rejecting`.
-- [x] **Failure is loud** — on the success path a conflict now aborts the login. It returns
-      the same generic 401 as every other failure, deliberately: a distinguishable error
-      would leak that the account exists.
-- [x] **Evidence in the status line** — n/a while the finding stays open.
-- [ ] **Lesson recorded** — nothing generalises beyond L-6 yet.
+- [x] **Failure is loud** — security-bearing writes refuse on conflict. The login success
+      path returns the same generic 401 as every other failure, deliberately: a
+      distinguishable error would leak that the account exists.
+- [x] **Evidence in the status line** — the store primitive plus the test path.
+- [x] **Lesson recorded** — L-6 covers the shape; nothing further generalises.
 
-**What landed:**
+**What landed:** `ifEquals` on the standalone `ConfigStore.put` (this was CONC-1's recorded
+residue), failing closed against a missing item exactly as `transact` does; and the
+`accountVersion` bump that `store/schema.ts:181-196` has always required but the
+login-failure path never performed at all.
 
-1. `ifEquals` on the standalone `ConfigStore.put`, implemented in `MemoryStore` and
-   inherited by `FileStore`, failing closed against a missing item exactly as `transact`
-   already does. This was CONC-1's recorded residue.
-2. `auth.ts` login-failure and login-success now guard on the `accountVersion` they read
-   and bump it — the schema has documented since the beginning
-   (`store/schema.ts:181-196`) that every account mutation must bump it, and the
-   login-failure path never did at all.
-3. The two conflict behaviours differ on purpose: the lockout counter is best-effort, so a
-   conflict drops the counter bump (the attempt is still audited and still refused), while
-   the success path aborts the login, because the likeliest concurrent change is the
-   disable the write would undo.
+Two conflict behaviours, on purpose: best-effort counters (login failure, reauth failure)
+drop their update, because the attempt is still audited and still refused; everything
+security-bearing refuses.
 
-**Residue:** the ~13 unguarded sites above, and the same legacy-row window as CONC-1/2 —
-where `accountVersion` is `undefined` on both sides, the guard cannot bite until one write
-lands. That window has now been recorded three times and still has no finding of its own.
+**Verification:** 76 test files, 1194 tests pass; typecheck clean.
+
+**Residue:**
+
+1. **Session rows are not guarded** — `auth.ts:507`, `account.ts:117,161` write `SessionItem`
+   with blind puts. Out of this finding's scope, which is the account row, and not covered
+   by a finding of its own.
+2. **The legacy-row window, for the third time.** Where `accountVersion` is `undefined` on
+   both sides the guard cannot bite until one write lands. Recorded as residue on CONC-1,
+   CONC-2 and now here, and it still has no finding.

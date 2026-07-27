@@ -1318,7 +1318,9 @@ export function adminRoutes(
     await transactWithAudit(
       store,
       projectId,
-      [{ kind: "put", item: updated }],
+      // Guarded on the version this handler read: team CRUD bumps `version` but never
+      // guarded on it, so two concurrent edits lost one silently (CONC-14).
+      [{ kind: "put", item: updated, ifEquals: { attr: "version", value: team.version } }],
       {
         action: "team-rename",
         actor,
@@ -1437,7 +1439,9 @@ export function adminRoutes(
     await transactWithAudit(
       store,
       projectId,
-      [{ kind: "put", item: updated }],
+      // Guarded on the accountVersion this handler read (CONC-3): an unguarded full-row
+      // put here can be overwritten by, or overwrite, a concurrent self-service write.
+      [{ kind: "put", item: updated, ifEquals: { attr: "accountVersion", value: acc.accountVersion } }],
       {
         action: "totp-reset",
         actor,
@@ -1472,7 +1476,9 @@ export function adminRoutes(
     await transactWithAudit(
       store,
       projectId,
-      [{ kind: "put", item: updated }],
+      // Guarded on the accountVersion this handler read (CONC-3): an unguarded full-row
+      // put here can be overwritten by, or overwrite, a concurrent self-service write.
+      [{ kind: "put", item: updated, ifEquals: { attr: "accountVersion", value: acc.accountVersion } }],
       {
         action: "sessions-revoke",
         actor,
