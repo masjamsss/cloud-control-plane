@@ -225,7 +225,7 @@ Durability, rollback, schema validation on load, and store-seam fidelity against
 - [ ] DATA-14 | low | data-persistence | open | 03-data-integrity.md | Seam-fidelity gaps between MemoryStore and the promised DynamoDB semantics
 - [ ] DATA-15 | low | data-persistence | open | 03-data-integrity.md | Map key concatenation with a space separator is aliasable in principle; client-controlled bytes reach PKs unconstrained
 - [ ] DATA-16 | low | data-persistence | open | 03-data-integrity.md | No format/version marker in the snapshot file; migration rests entirely on convention
-- [ ] REM-1 | medium | data-persistence | open | 15-remediation.md | The optimistic-concurrency guards cannot bite on rows written before they existed
+- [x] REM-1 | medium | data-persistence | fixed:domain/versionStamp.ts marker-guarded boot one-shot; test/versionStamp.test.ts | 15-remediation.md | The optimistic-concurrency guards cannot bite on rows written before they existed
 
 ## duplication
 

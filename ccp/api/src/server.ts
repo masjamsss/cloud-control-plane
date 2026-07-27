@@ -10,6 +10,7 @@ import { ensureProjectDataRoot, resolveProjectDataRoot } from './domain/projectD
 import { bootstrap, seedInstanceIdentity } from '../scripts/bootstrap';
 import { executorKind, maybeStartSchedulerLoop, schedulerEnabled } from './domain/apply/loop';
 import { runSettlement, SettlementConfigError } from './domain/settlement';
+import { runVersionStamp } from './domain/versionStamp';
 
 export { resolveDataFile };
 
@@ -107,6 +108,21 @@ async function start(): Promise<void> {
   if (settlementResult.retroRegistered || settlementResult.accountsMaterialized > 0) {
     console.log(
       `ccp-api: settlement — retro-registered legacy project: ${settlementResult.retroRegistered}, accounts materialized: ${settlementResult.accountsMaterialized}`,
+    );
+  }
+
+  // REM-1 — stamp the optimistic-concurrency attributes onto rows that predate them.
+  // Runs AFTER settlement (which may materialize account rows this then stamps) and
+  // BEFORE serving, so no request can read a row mid-stamp. Idempotent via its own
+  // marker; a no-op on an already-stamped store and on a blank one.
+  //
+  // Until this has run, every ifEquals guard in the routes is inert against existing
+  // data: the attribute is `undefined` on both sides of a concurrent pair, so both
+  // writes pass. The guards protect new rows; this is what extends them to old ones.
+  const stamped = await runVersionStamp(store);
+  if (stamped && (stamped.requests || stamped.accounts || stamped.teams)) {
+    console.log(
+      `ccp-api: version-stamp — requests: ${stamped.requests}, accounts: ${stamped.accounts}, teams: ${stamped.teams}`,
     );
   }
 

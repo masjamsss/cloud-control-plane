@@ -330,3 +330,48 @@ replacement matched a team row among the account rows. Typecheck and
 but it arrived by accident rather than by intent — the same over-broad pattern match that
 mis-filed four findings under `blocking-io` earlier. REM-1's legacy-row window applies here
 too: a team row written before this change has `version` undefined on both sides.
+
+## REM-1
+
+*The optimistic-concurrency guards cannot bite on rows written before they existed.*
+
+- [x] **Defect reproduced first** — and the test keeps the reproduction rather than
+      describing it: on an unstamped row, two readers both capture `undefined`, both
+      guards pass, and the second write discards the first (`approvals` ends as
+      `['bob']`). The same sequence after stamping is refused and `['alice']` survives.
+- [x] **Cause, not symptom** — the guards were never wrong; they had nothing to compare
+      against on existing data. `domain/versionStamp.ts` stamps `eventSeq` on request
+      rows, `accountVersion` on account rows and `version` on team rows, so every guard
+      added for CONC-1/2/3/14 now applies to the data a running deployment actually has.
+- [x] **Regression test** — `test/versionStamp.test.ts`, 5 cases: the stamping itself,
+      value preservation, idempotence, the blank-store no-op, and the before/after lost
+      update.
+- [x] **Failure is loud** — the boot logs a per-kind tally when it stamps anything, so an
+      operator can see it happen once and never again.
+- [x] **Evidence in the status line** — the module plus the test path.
+- [x] **Lesson recorded** — nothing generalises beyond L-6; this is the other half of it.
+
+**Design, and why each choice:**
+
+1. **Marker written LAST**, mirroring the boot settlement's fail-closed ordering. A crash
+   midway leaves the marker absent and the next boot redoes the work — harmless, because
+   stamping only ever fills in a *missing* attribute.
+2. **Never overwrites a present value**, so it cannot roll a live counter backwards. A
+   test pins that with `accountVersion: 42`.
+3. **Unguarded writes, deliberately.** It runs at boot before serving, and it is the thing
+   creating the attribute the guards need — guarding it on the value it is about to write
+   would be circular.
+4. **Runs after settlement**, which can materialize account rows that then need stamping,
+   and before serving, so no request can read a row mid-stamp.
+
+**Verification:** 78 test files, 1202 tests pass (was 77 / 1197); typecheck clean.
+
+**Residue:**
+
+1. **A store whose project registry is incomplete is stamped incompletely.** Requests and
+   teams are found by walking `projectCollectionGsi()`; a project row missing from that
+   registry leaves its requests and teams unstamped, and the marker still gets written.
+   Settlement running first makes this unlikely, but nothing verifies it.
+2. **No coverage of the FileStore path.** The tests use `MemoryStore`; `FileStore`
+   inherits the same `put`, so the behaviour should be identical, but "should be" is not a
+   test.
