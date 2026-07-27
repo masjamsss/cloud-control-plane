@@ -919,7 +919,7 @@ export function requestRoutes(): Hono<AppEnv> {
     }
 
     // The bundle itself (gate → CAS commit → trigger). Never terraform apply here.
-    const outcome = runBundle(
+    const outcome = await runBundle(
       realSteps(cfg),
       JSON.stringify(bundleRequestPayload(req, projectId)),
       `ccp: apply request ${req.id} (${req.operationId} on ${req.targetAddress})\n\nApproved in the portal (ADR-0016 bundle); plan gated + digest-pinned.\nRequested-by: ${req.requester}; bundle-run-by: ${account.id}`,

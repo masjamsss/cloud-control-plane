@@ -37,7 +37,7 @@ function makeOrigin(): { bare: string; work: string } {
 }
 
 describe('bundleConfig — off by default (the load-bearing invariant)', () => {
-  it('unset ⇒ null; flag alone ⇒ null; fully configured ⇒ armed', () => {
+  it('unset ⇒ null; flag alone ⇒ null; fully configured ⇒ armed', async () => {
     expect(bundleConfig({})).toBeNull();
     expect(bundleConfig({ CCP_BUNDLE: '1' })).toBeNull();
     expect(bundleConfig({ CCP_BUNDLE: '1', CCP_GIT_REMOTE: 'r', CCP_BUNDLE_GATE_CMD: 'true' })).toBeNull();
@@ -60,24 +60,24 @@ describe('runBundle — sequential, stop-on-red, cleanup-always', () => {
     return { steps, calls };
   }
 
-  it('a red gate stops the bundle BEFORE any commit', () => {
+  it('a red gate stops the bundle BEFORE any commit', async () => {
     const { steps, calls } = fakes({ gate: { ok: false, detail: 'plan digest mismatch' } });
-    const out = runBundle(steps, '{}', 'msg');
+    const out = await runBundle(steps, '{}', 'msg');
     expect(out.ok).toBe(false);
     expect(calls).toEqual(['prepare', 'gate', 'cleanup']); // no commit, no trigger
     expect(out.steps.at(-1)).toMatchObject({ step: 'gate', ok: false });
   });
 
-  it('a rejected CAS push stops the bundle BEFORE the trigger', () => {
+  it('a rejected CAS push stops the bundle BEFORE the trigger', async () => {
     const { steps, calls } = fakes({ commit: { ok: false, detail: 'push rejected (branch moved)' } });
-    const out = runBundle(steps, '{}', 'msg');
+    const out = await runBundle(steps, '{}', 'msg');
     expect(out.ok).toBe(false);
     expect(calls).toEqual(['prepare', 'gate', 'commit', 'cleanup']);
   });
 
-  it('green end-to-end runs all steps in order and reports the landed sha', () => {
+  it('green end-to-end runs all steps in order and reports the landed sha', async () => {
     const { steps, calls } = fakes({});
-    const out = runBundle(steps, '{}', 'msg');
+    const out = await runBundle(steps, '{}', 'msg');
     expect(out.ok).toBe(true);
     expect(out.sha).toBe('b'.repeat(40));
     expect(calls).toEqual(['prepare', 'gate', 'commit', 'trigger', 'cleanup']);
@@ -85,10 +85,10 @@ describe('runBundle — sequential, stop-on-red, cleanup-always', () => {
 });
 
 describe('realSteps — the git workspace (local bare origin; no network)', () => {
-  it('green path: gate edit + evidence land on main as one commit', () => {
+  it('green path: gate edit + evidence land on main as one commit', async () => {
     const { bare } = makeOrigin();
     const steps = realSteps({ remote: bare, branch: 'main', gateCmd: 'echo gated-change > "$BUNDLE_CHECKOUT/changed.txt"', triggerCmd: 'true' });
-    const out = runBundle(steps, '{"id":"REQ-1"}', 'ccp: apply REQ-1');
+    const out = await runBundle(steps, '{"id":"REQ-1"}', 'ccp: apply REQ-1');
     expect(out.ok).toBe(true);
     // the bare's main advanced to the bundle commit, carrying edit + evidence
     const files = g(bare, 'ls-tree', '--name-only', 'main');
@@ -98,7 +98,7 @@ describe('realSteps — the git workspace (local bare origin; no network)', () =
     rmSync(join(bare, '..'), { recursive: true, force: true });
   });
 
-  it('CAS: a commit that lands mid-bundle REJECTS the push (nothing slips in between)', () => {
+  it('CAS: a commit that lands mid-bundle REJECTS the push (nothing slips in between)', async () => {
     const { bare, work } = makeOrigin();
     let raced = false;
     const inner = realSteps({ remote: bare, branch: 'main', gateCmd: 'echo x > "$BUNDLE_CHECKOUT/x.txt"', triggerCmd: 'true' });
@@ -114,7 +114,7 @@ describe('realSteps — the git workspace (local bare origin; no network)', () =
         return inner.gate(dir, reqPath);
       },
     };
-    const out = runBundle(steps, '{}', 'bundle');
+    const out = await runBundle(steps, '{}', 'bundle');
     expect(raced).toBe(true);
     expect(out.ok).toBe(false);
     const commitStep = out.steps.find((s) => s.step === 'commit')!;

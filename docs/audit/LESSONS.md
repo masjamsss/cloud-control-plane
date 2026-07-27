@@ -91,3 +91,22 @@ because it sets bootstrap on the very first `up` ever.
 relaxing it — and if it is load-bearing, change the sequence that walks into it. A comment
 explaining a guard is evidence someone already thought about the case you are about to
 re-open. Here both installers now decide before anything starts, and the guard is untouched.
+
+### L-5 — Five findings can be one bug; group by cause before estimating
+
+Findings: API-1, CONC-5, ERR-1, OPS-3, PERF-2
+
+Five reports — API correctness, concurrency, error handling, reliability, performance —
+each independently found the armed lanes freezing the API, and each wrote it up in its own
+vocabulary. Read as a list of 210, that is five items of work. Read by cause, it is one
+change to one helper, and the five close together.
+
+The reverse also bit, in the same sitting: the keyword rule that grouped them matched the
+word "freeze" and swept in four findings about an *apply freeze* — a policy, not the event
+loop — and a JSON-pass count. Four findings sat under `blocking-io` claiming to be part of
+a fix that had nothing to do with them, and would have looked closed by association.
+
+**Do differently:** group by root cause before estimating effort, because the count of
+findings is not the count of fixes. Then check the grouping by reading the batch as a
+whole and asking whether one change really closes all of it — the four that did not belong
+were obvious the moment they were listed side by side with the five that did.

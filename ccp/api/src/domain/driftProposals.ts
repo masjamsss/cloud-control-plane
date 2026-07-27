@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { execCapture } from './exec';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
@@ -758,11 +758,14 @@ export interface DriftGenStepResult {
  * use fakes and a local fixture checkout, no network. */
 export interface DriftGenSteps {
   /** Clone the branch into a scratch dir (mirrors the bundle's `prepare()`). */
-  prepare(): { dir: string } | { error: string };
+  prepare(): { dir: string } | { error: string } | Promise<{ dir: string } | { error: string }>;
   /** Run the operator's CCP_DRIFT_GEN_CMD with env DRIFT_CHECKOUT=dir,
    * DRIFT_ENVELOPE=envelopePath, DRIFT_OUT=<a path this picks>; ok ⇒ the
    * `proposals.json` TEXT read back from DRIFT_OUT. */
-  generate(dir: string, envelopePath: string): DriftGenStepResult & { out?: string };
+  generate(
+    dir: string,
+    envelopePath: string,
+  ): (DriftGenStepResult & { out?: string }) | Promise<DriftGenStepResult & { out?: string }>;
   cleanup(dir: string): void;
 }
 
@@ -780,13 +783,16 @@ export interface DriftGenRunOutcome {
  * {@link ProposalsDocSchema} — a malformed/non-JSON generator output is a
  * refusal, never a crash.
  */
-export function runDriftGen(steps: DriftGenSteps, envelopeText: string): DriftGenRunOutcome {
-  const prep = steps.prepare();
+export async function runDriftGen(
+  steps: DriftGenSteps,
+  envelopeText: string,
+): Promise<DriftGenRunOutcome> {
+  const prep = await steps.prepare();
   if ('error' in prep) return { ok: false, detail: prep.error };
   try {
     const envPath = join(prep.dir, '.drift-envelope.json');
     writeFileSync(envPath, envelopeText, 'utf8');
-    const gen = steps.generate(prep.dir, envPath);
+    const gen = await steps.generate(prep.dir, envPath);
     if (!gen.ok || gen.out === undefined) return { ok: false, detail: gen.detail || 'generator produced no output' };
     let parsedJson: unknown;
     try {
@@ -798,7 +804,7 @@ export function runDriftGen(steps: DriftGenSteps, envelopeText: string): DriftGe
     if (!parsed.success) return { ok: false, detail: 'generator output does not match the ccp.drift-proposals/v1 shape' };
     return { ok: true, detail: gen.detail || 'generated', doc: parsed.data };
   } finally {
-    steps.cleanup(prep.dir);
+    await steps.cleanup(prep.dir);
   }
 }
 
@@ -809,28 +815,27 @@ const tail = (s: string, n = 400): string => (s.length > n ? `…${s.slice(-n)}`
 /** Production steps: a shallow git clone + the operator's shell command. */
 export function realDriftGenSteps(cfg: DriftGenConfig): DriftGenSteps {
   return {
-    prepare() {
+    async prepare() {
       const dir = mkdtempSync(join(tmpdir(), 'ccp-driftgen-'));
-      const clone = spawnSync('git', ['clone', '--depth', '1', '--branch', cfg.branch, cfg.remote, dir], { encoding: 'utf8', timeout: 5 * 60_000 });
+      const clone = await execCapture('git', ['clone', '--depth', '1', '--branch', cfg.branch, cfg.remote, dir], { timeoutMs: 5 * 60_000 });
       if (clone.status !== 0) {
         rmSync(dir, { recursive: true, force: true });
-        return { error: `clone failed: ${tail(`${clone.stdout ?? ''}${clone.stderr ?? ''}`.trim())}` };
+        return { error: `clone failed: ${tail(clone.out.trim())}` };
       }
       return { dir };
     },
-    generate(dir, envelopePath) {
+    async generate(dir, envelopePath) {
       // A SIBLING of the scratch checkout (never inside it — keeps a stray
       // untracked file out of $DRIFT_CHECKOUT's git tree), cleaned up here
       // regardless of outcome; `cleanup(dir)` only removes `dir` itself.
       const out = `${dir}-out.json`;
       try {
-        const r = spawnSync('bash', ['-lc', cfg.genCmd], {
+        const r = await execCapture('bash', ['-lc', cfg.genCmd], {
           cwd: dir,
           env: { ...process.env, DRIFT_CHECKOUT: dir, DRIFT_ENVELOPE: envelopePath, DRIFT_OUT: out },
-          encoding: 'utf8',
-          timeout: 10 * 60_000,
+          timeoutMs: 10 * 60_000,
         });
-        const detail = tail(`${r.stdout ?? ''}${r.stderr ?? ''}`.trim());
+        const detail = tail(r.out.trim());
         if (r.status !== 0) return { ok: false, detail: detail || `generator exited ${r.status}` };
         try {
           return { ok: true, detail: detail || 'generator green', out: readFileSync(out, 'utf8') };
@@ -892,7 +897,7 @@ export async function generateDriftProposalsOnce(deps: DriftGenDeps, projectId: 
       await auditGenFailure(store, projectId, reportVersion, detail);
       return { ok: false, detail };
     }
-    const outcome = runDriftGen(steps, rawText);
+    const outcome = await runDriftGen(steps, rawText);
     if (!outcome.ok || !outcome.doc) {
       await auditGenFailure(store, projectId, reportVersion, outcome.detail);
       return { ok: false, detail: outcome.detail };

@@ -1,7 +1,7 @@
-import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execCapture } from './exec';
 
 /**
  * ADR-0016 — the approval-to-apply bundle: local gate → direct commit to `main`
@@ -58,15 +58,23 @@ export interface StepResult {
   detail: string;
 }
 
+/**
+ * Either a value or a promise of it. The real steps are async (they shell out without
+ * blocking the event loop — see domain/exec.ts); the test fakes are plain synchronous
+ * objects. `runBundle` awaits every step, and awaiting a non-promise is a no-op, so both
+ * satisfy this interface without the fakes having to pretend to be async.
+ */
+type Await<T> = T | Promise<T>;
+
 /** The three effects + workspace lifecycle, injectable for tests. */
 export interface BundleSteps {
   /** Clone the branch; returns the checkout dir + the SHA the gate will run on. */
-  prepare(): { dir: string; baseSha: string } | { error: string };
-  gate(dir: string, requestJsonPath: string): StepResult;
+  prepare(): Await<{ dir: string; baseSha: string } | { error: string }>;
+  gate(dir: string, requestJsonPath: string): Await<StepResult>;
   /** Commit whatever the gate changed and CAS-push (ff from baseSha only). */
-  commit(dir: string, baseSha: string, message: string): StepResult & { sha?: string };
-  trigger(sha: string): StepResult;
-  cleanup(dir: string): void;
+  commit(dir: string, baseSha: string, message: string): Await<StepResult & { sha?: string }>;
+  trigger(sha: string): Await<StepResult>;
+  cleanup(dir: string): Await<void>;
 }
 
 export interface BundleOutcome {
@@ -78,9 +86,13 @@ export interface BundleOutcome {
 }
 
 /** Sequential, stop-on-red, cleanup-always. Pure over the injected steps. */
-export function runBundle(steps: BundleSteps, requestJson: string, message: string): BundleOutcome {
+export async function runBundle(
+  steps: BundleSteps,
+  requestJson: string,
+  message: string,
+): Promise<BundleOutcome> {
   const log: BundleOutcome['steps'] = [];
-  const prep = steps.prepare();
+  const prep = await steps.prepare();
   if ('error' in prep) {
     log.push({ step: 'prepare', ok: false, detail: prep.error });
     return { ok: false, steps: log };
@@ -89,19 +101,19 @@ export function runBundle(steps: BundleSteps, requestJson: string, message: stri
   try {
     const reqPath = join(prep.dir, '.bundle-request.json');
     writeFileSync(reqPath, requestJson);
-    const gate = steps.gate(prep.dir, reqPath);
+    const gate = await steps.gate(prep.dir, reqPath);
     log.push({ step: 'gate', ok: gate.ok, detail: gate.detail });
     if (!gate.ok) return { ok: false, steps: log };
 
-    const commit = steps.commit(prep.dir, prep.baseSha, message);
+    const commit = await steps.commit(prep.dir, prep.baseSha, message);
     log.push({ step: 'commit', ok: commit.ok, detail: commit.detail });
     if (!commit.ok || !commit.sha) return { ok: false, steps: log };
 
-    const trig = steps.trigger(commit.sha);
+    const trig = await steps.trigger(commit.sha);
     log.push({ step: 'trigger', ok: trig.ok, detail: trig.detail });
     return { ok: trig.ok, steps: log, sha: commit.sha };
   } finally {
-    steps.cleanup(prep.dir);
+    await steps.cleanup(prep.dir);
   }
 }
 
@@ -109,53 +121,56 @@ export function runBundle(steps: BundleSteps, requestJson: string, message: stri
 
 const tail = (s: string, n = 400): string => (s.length > n ? `…${s.slice(-n)}` : s);
 
-function sh(cmd: string, cwd: string, extraEnv: Record<string, string>): { status: number; out: string } {
-  const r = spawnSync('bash', ['-lc', cmd], {
+async function sh(
+  cmd: string,
+  cwd: string,
+  extraEnv: Record<string, string>,
+): Promise<{ status: number; out: string }> {
+  const r = await execCapture('bash', ['-lc', cmd], {
     cwd,
     env: { ...process.env, ...extraEnv },
-    encoding: 'utf8',
-    timeout: 15 * 60_000,
+    timeoutMs: 15 * 60_000,
   });
-  return { status: r.status ?? 1, out: tail(`${r.stdout ?? ''}${r.stderr ?? ''}`.trim()) };
+  return { status: r.status, out: tail(r.out.trim()) };
 }
 
-function git(args: string[], cwd: string): { status: number; out: string } {
-  const r = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 5 * 60_000 });
-  return { status: r.status ?? 1, out: tail(`${r.stdout ?? ''}${r.stderr ?? ''}`.trim()) };
+async function git(args: string[], cwd: string): Promise<{ status: number; out: string }> {
+  const r = await execCapture('git', args, { cwd, timeoutMs: 5 * 60_000 });
+  return { status: r.status, out: tail(r.out.trim()) };
 }
 
 /** Production steps: git workspace (CAS push, never force) + operator commands. */
 export function realSteps(cfg: BundleConfig): BundleSteps {
   return {
-    prepare() {
+    async prepare() {
       const dir = mkdtempSync(join(tmpdir(), 'ccp-bundle-'));
-      const clone = git(['clone', '--depth', '1', '--branch', cfg.branch, cfg.remote, dir], tmpdir());
+      const clone = await git(['clone', '--depth', '1', '--branch', cfg.branch, cfg.remote, dir], tmpdir());
       if (clone.status !== 0) {
         rmSync(dir, { recursive: true, force: true });
         return { error: `clone failed: ${clone.out}` };
       }
-      const head = git(['rev-parse', 'HEAD'], dir);
+      const head = await git(['rev-parse', 'HEAD'], dir);
       if (head.status !== 0) return { error: `rev-parse failed: ${head.out}` };
       return { dir, baseSha: head.out.trim() };
     },
-    gate(dir, requestJsonPath) {
-      const r = sh(cfg.gateCmd, dir, { BUNDLE_CHECKOUT: dir, BUNDLE_REQUEST: requestJsonPath });
+    async gate(dir, requestJsonPath) {
+      const r = await sh(cfg.gateCmd, dir, { BUNDLE_CHECKOUT: dir, BUNDLE_REQUEST: requestJsonPath });
       return { ok: r.status === 0, detail: r.out || (r.status === 0 ? 'gate green' : `gate exit ${r.status}`) };
     },
-    commit(dir, baseSha, message) {
+    async commit(dir, baseSha, message) {
       // The request-evidence file rides the same commit as the gated edit.
-      git(['add', '-A'], dir);
-      const c = git(['-c', 'user.name=ccp-bundle', '-c', 'user.email=ccp-bundle@localhost', 'commit', '-m', message], dir);
+      await git(['add', '-A'], dir);
+      const c = await git(['-c', 'user.name=ccp-bundle', '-c', 'user.email=ccp-bundle@localhost', 'commit', '-m', message], dir);
       if (c.status !== 0) return { ok: false, detail: `commit failed (gate left no change?): ${c.out}` };
-      const sha = git(['rev-parse', 'HEAD'], dir).out.trim();
+      const sha = (await git(['rev-parse', 'HEAD'], dir)).out.trim();
       // CAS: a plain ff push from a clone of baseSha — the remote rejects it if the
       // branch moved (someone landed in the middle). Never --force anything.
-      const p = git(['push', 'origin', `HEAD:refs/heads/${cfg.branch}`], dir);
+      const p = await git(['push', 'origin', `HEAD:refs/heads/${cfg.branch}`], dir);
       if (p.status !== 0) return { ok: false, detail: `push rejected (branch moved past ${baseSha.slice(0, 9)}? re-run to re-gate): ${p.out}` };
       return { ok: true, sha, detail: `landed ${sha.slice(0, 9)} on ${cfg.branch}` };
     },
-    trigger(sha) {
-      const r = sh(cfg.triggerCmd, tmpdir(), { BUNDLE_SHA: sha });
+    async trigger(sha) {
+      const r = await sh(cfg.triggerCmd, tmpdir(), { BUNDLE_SHA: sha });
       return { ok: r.status === 0, detail: r.out || (r.status === 0 ? 'gate approval fired' : `trigger exit ${r.status}`) };
     },
     cleanup(dir) {

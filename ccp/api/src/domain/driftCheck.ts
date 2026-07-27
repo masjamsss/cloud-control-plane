@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { execCapture } from './exec';
 
 /**
  * "Start drift check" (owner refinement 4; spec addendum A7; plan §2-B1) —
@@ -48,13 +48,12 @@ const tail = (s: string, n = 400): string => (s.length > n ? `…${s.slice(-n)}`
 /** Production steps: the operator's shell command, env `CCP_DRIFT_PROJECT`. */
 export function realDriftCheckSteps(cfg: DriftCheckConfig): DriftCheckSteps {
   return {
-    trigger(projectId) {
-      const r = spawnSync('bash', ['-lc', cfg.cmd], {
+    async trigger(projectId) {
+      const r = await execCapture('bash', ['-lc', cfg.cmd], {
         env: { ...process.env, CCP_DRIFT_PROJECT: projectId },
-        encoding: 'utf8',
-        timeout: 5 * 60_000,
+        timeoutMs: 5 * 60_000,
       });
-      const detail = tail(`${r.stdout ?? ''}${r.stderr ?? ''}`.trim());
+      const detail = tail(r.out.trim());
       return { ok: r.status === 0, detail: detail || (r.status === 0 ? 'triggered' : `trigger exited ${r.status}`) };
     },
   };

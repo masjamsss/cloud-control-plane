@@ -123,3 +123,48 @@ the script converts the failure into a pass.*
    decision.** Two copies of one rule, free to drift — the exact shape of the `duplication`
    topic. Acceptable for two call sites in shell; worth folding into a shared helper if a
    third appears.
+
+## API-1
+## CONC-5
+## ERR-1
+## OPS-3
+## PERF-2
+
+*Five reports describing one behaviour: the armed lanes shelled out with `spawnSync`,
+freezing the single-threaded API for as long as the child ran.* Closed together because
+they are one fix; separate entries would imply five investigations.
+
+- [x] **Defect reproduced first** — pinned as a failing test rather than argued. With a
+      `spawnSync` implementation behind the same interface, a 10 ms interval fires
+      **exactly 0 times** during a 300 ms child: `expected 0 to be greater than 5`. The
+      loop was not slow, it was stopped.
+- [x] **Cause, not symptom** — all six call sites across `bundle.ts`, `driftProposals.ts`
+      and `driftCheck.ts` now go through one `domain/exec.ts` helper that awaits a real
+      `spawn`. No `spawnSync` remains in `ccp/api/src`. Fixing them individually would
+      have left the next shell-out free to reintroduce it.
+- [x] **Regression test** — `test/execNonBlocking.test.ts`, 7 cases. The first asserts the
+      event loop keeps turning and **fails against a `spawnSync` implementation**,
+      verified by swapping one in. The rest pin the contract the call sites rely on:
+      non-zero exit as a status, timeout kills and resolves, missing binary does not
+      reject, cwd/env pass through, and no implicit shell.
+- [x] **Failure is loud** — deliberately unchanged in shape. `execCapture` never rejects,
+      because every call site already treated "did not exit 0" as the failure and records
+      the reason as audit evidence; a rejection would turn an operator's failed command
+      into an unhandled rejection on the apply path.
+- [x] **Evidence in the status line** — `domain/exec.ts` plus the test path.
+- [x] **Lesson recorded** — L-5.
+
+**Verification:** 73 test files, 1182 tests pass (was 72 / 1175), typecheck clean.
+
+**Residue:**
+
+1. **The fix removes the freeze, not the serialisation.** Two applies still cannot run
+   concurrently for other reasons, and this changes nothing about that — it only stops an
+   in-flight child from blocking *unrelated* traffic, `/readyz` included.
+2. **The interfaces now accept `T | Promise<T>`.** That was chosen so the existing
+   synchronous test fakes keep working unchanged — `await` on a non-promise is a no-op —
+   which kept the blast radius to one test file. The cost is that the type no longer
+   forces a step to be async. Acceptable while the only sync implementations are fakes.
+3. **No load test.** The event loop is proven to keep turning; that it keeps *serving
+   requests* under a real 15-minute bundle is not covered, and needs the bench harness
+   PR #6 introduces.

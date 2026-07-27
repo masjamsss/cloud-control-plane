@@ -275,15 +275,15 @@ Red suites, silent skips, fixtures that pin the wrong premise.
 
 `spawnSync` on the serving thread. One root cause, many symptoms.
 
-- [ ] API-1 | high | blocking-io | open | 02-api-correctness.md | Synchronous child-process execution freezes the whole API for minutes at a time
-- [ ] CONC-5 | high | blocking-io | open | 04-concurrency.md | `POST /requests/:id/apply` runs the entire bundle with `spawnSync`, freezing the whole API (health checks included) for up to tens of minutes
-- [ ] ERR-1 | high | blocking-io | open | 09-error-handling.md | Synchronous child processes block the entire API event loop for minutes
-- [ ] OPS-3 | high | blocking-io | open | 10-reliability-operations.md | Armed-lane commands run `spawnSync` on the event loop: the whole API freezes for up to 15 minutes and health checks flap
-- [ ] PERF-2 | high | blocking-io | open | 11-performance-scalability.md | `spawnSync` on the serving thread: the API freezes for up to 10-15 minutes during bundle/drift work
-- [ ] API-8 | medium | blocking-io | open | 02-api-correctness.md | Freeze-held `kind:'now'` requests dead-end in AWAITING_DEPLOY_APPROVAL after the freeze lifts
-- [ ] CONC-8 | medium | blocking-io | open | 04-concurrency.md | Every authenticated request triggers a full-store snapshot write; snapshot serialization is synchronous O(store) on the event loop
-- [ ] FE-6 | medium | blocking-io | open | 05-frontend-flows.md | Api-mode submit gates read the advisory localStorage settings, not the server's — the freeze preview is dead and a stale local freeze silently blocks valid submits
-- [ ] PERF-12 | medium | blocking-io | open | 11-performance-scalability.md | Upload ingest does 4+ full canonical-JSON passes over the 16 MiB bundle synchronously on the event loop
+- [x] API-1 | high | blocking-io | fixed:domain/exec.ts replaces spawnSync with an awaited spawn; test/execNonBlocking.test.ts | 02-api-correctness.md | Synchronous child-process execution freezes the whole API for minutes at a time
+- [x] CONC-5 | high | blocking-io | fixed:domain/exec.ts replaces spawnSync with an awaited spawn; test/execNonBlocking.test.ts | 04-concurrency.md | `POST /requests/:id/apply` runs the entire bundle with `spawnSync`, freezing the whole API (health checks included) for up to tens of minutes
+- [x] ERR-1 | high | blocking-io | fixed:domain/exec.ts replaces spawnSync with an awaited spawn; test/execNonBlocking.test.ts | 09-error-handling.md | Synchronous child processes block the entire API event loop for minutes
+- [x] OPS-3 | high | blocking-io | fixed:domain/exec.ts replaces spawnSync with an awaited spawn; test/execNonBlocking.test.ts | 10-reliability-operations.md | Armed-lane commands run `spawnSync` on the event loop: the whole API freezes for up to 15 minutes and health checks flap
+- [x] PERF-2 | high | blocking-io | fixed:domain/exec.ts replaces spawnSync with an awaited spawn; test/execNonBlocking.test.ts | 11-performance-scalability.md | `spawnSync` on the serving thread: the API freezes for up to 10-15 minutes during bundle/drift work
+- [ ] API-8 | medium | stuck-state | open | 02-api-correctness.md | Freeze-held `kind:'now'` requests dead-end in AWAITING_DEPLOY_APPROVAL after the freeze lifts
+- [ ] CONC-8 | medium | data-persistence | open | 04-concurrency.md | Every authenticated request triggers a full-store snapshot write; snapshot serialization is synchronous O(store) on the event loop
+- [ ] FE-6 | medium | duplication | open | 05-frontend-flows.md | Api-mode submit gates read the advisory localStorage settings, not the server's — the freeze preview is dead and a stale local freeze silently blocks valid submits
+- [ ] PERF-12 | medium | scale-and-paging | open | 11-performance-scalability.md | Upload ingest does 4+ full canonical-JSON passes over the 16 MiB bundle synchronously on the event loop
 
 ## fail-open
 
