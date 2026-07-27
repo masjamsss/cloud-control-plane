@@ -58,8 +58,15 @@ for f in sorted(glob.glob(os.path.join(audit_dir, "*.md"))):
             declared[h.group(1)] = base
 
 # --- the ledger ------------------------------------------------------------
+topics_path = os.path.join(os.path.dirname(os.path.dirname(ledger_path)), "..", "scripts", "findings-topics.txt")
+topics_path = os.path.normpath(topics_path)
+try:
+    valid_topics = {t.strip() for t in open(topics_path) if t.strip()}
+except Exception:
+    valid_topics = set()
+
 LINE = re.compile(
-    r"^- \[(?P<box>[ xX])\] (?P<id>[A-Z]+-\d+[a-z]?) \| (?P<sev>%s) \| (?P<status>[^|]+?) \| (?P<report>[^|]+?) \| (?P<title>.*)$"
+    r"^- \[(?P<box>[ xX])\] (?P<id>[A-Z]+-\d+[a-z]?) \| (?P<sev>%s) \| (?P<topic>[^|]+?) \| (?P<status>[^|]+?) \| (?P<report>[^|]+?) \| (?P<title>.*)$"
     % SEV
 )
 errors, entries = [], {}
@@ -79,6 +86,14 @@ for n, line in enumerate(open(ledger_path, encoding="utf-8"), 1):
     d = m.groupdict()
     if d["id"] in entries:
         errors.append(f"{ledger_path}:{n}: duplicate entry for {d['id']}")
+    topic = d["topic"].strip()
+    if not valid_topics:
+        errors.append(f"findings-gate: cannot read topic list at {topics_path}")
+    elif topic not in valid_topics:
+        errors.append(
+            f"{ledger_path}:{n}: {d['id']}: unknown topic '{topic}' "
+            f"(add it to scripts/findings-topics.txt if it is genuinely new)"
+        )
     status = d["status"].strip()
     kind = status.split(":", 1)[0]
     detail = status.split(":", 1)[1].strip() if ":" in status else ""

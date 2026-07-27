@@ -14,10 +14,10 @@ name: findings
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['docs/audit/**', 'scripts/findings-gate.sh', 'scripts/findings-baseline.txt', '.github/workflows/findings.yml']
+    paths: ['docs/audit/**', 'scripts/findings-gate.sh', 'scripts/findings-baseline.txt', 'scripts/findings-topics.txt', '.github/workflows/findings.yml']
   push:
     branches: [main]
-    paths: ['docs/audit/**', 'scripts/findings-gate.sh', 'scripts/findings-baseline.txt', '.github/workflows/findings.yml']
+    paths: ['docs/audit/**', 'scripts/findings-gate.sh', 'scripts/findings-baseline.txt', 'scripts/findings-topics.txt', '.github/workflows/findings.yml']
 permissions:
   contents: read
 
