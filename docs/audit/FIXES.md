@@ -211,3 +211,46 @@ unguarded row put + stale retry).*
 3. **Only the transactional `put` gained the guard.** `ConfigStore.put` (the standalone,
    non-transactional one) still takes `ifNotExists` only. No caller needed it yet; the
    asymmetry is worth removing when one does.
+
+## CONC-2
+
+*Reject, link-pr and plan-summary use unguarded full-row puts through `transactWithAudit`,
+which retries with the stale snapshot.*
+
+- [x] **Defect reproduced first** — the shape is CONC-1's, one layer up: all three handlers
+      read the request, built a full replacement row, and wrote it with no row condition,
+      while the shared helper replayed those same writes on its retry. The retry fires on
+      audit-chain contention, which **any** concurrent write to the same project can
+      trigger — not even the same request.
+- [x] **Cause, not symptom** — the three call sites now carry `ifEquals` on the `eventSeq`
+      they read, and every handler that builds a replacement row bumps it. Separately,
+      `transactWithAudit` no longer replays when a domain write carries a value guard; it
+      refuses with `STATE_CONFLICT`. Unguarded `ifNotExists`-on-a-fresh-key writes still
+      retry, which is what the helper was built for and is safe to replay.
+- [x] **Regression test** — `test/transactWithAuditReplay.test.ts`, 3 cases.
+      **Honest limit, found while verifying:** only the error-code case actually
+      discriminates. Once the callers are guarded, a replay re-attempts the same guarded
+      write and fails again, so the row is protected either way. The helper change is
+      therefore *defence in depth and better semantics* — telling a caller
+      `CHAIN_CONTENTION` when its read was stale invites a blind retry of the same stale
+      row — not the primary fix. The guards on the three call sites are.
+- [x] **Failure is loud** — a discarded write was previously invisible; it is now a refusal
+      naming the conflict.
+- [x] **Evidence in the status line** — call sites, helper, and the test path.
+- [x] **Lesson recorded** — covered by L-6, which this finding is the second instance of.
+
+**Verification:** 75 test files, 1190 tests pass (was 74 / 1187); typecheck clean.
+
+**Residue:**
+
+1. **The same legacy-row window as CONC-1.** On request rows written before this change
+   `eventSeq` is `undefined` for both readers, so the first pair of concurrent writes can
+   still lose one. A migration stamping the field would close it; still not done, still not
+   tracked by a finding.
+2. **`transactWithAudit` cannot tell which condition failed** — it infers from whether the
+   caller passed a value guard at all. A caller mixing a guarded and an unguarded domain
+   write gets the conservative answer (refuse). Correct, but coarser than DynamoDB's
+   per-item cancellation reasons, which the real table would expose.
+3. **The scheduler's `APPLYING` claim** is named in the finding as collateral. It is not
+   separately verified here; the guards make the claim harder to clobber, but nothing pins
+   that behaviour yet.

@@ -215,6 +215,7 @@ export async function transactWithAudit(
   opts?: RecordOpts,
 ): Promise<{ id: string; hash: string }> {
   const hKey = chainHead(projectId);
+  const guarded = domainWrites.some((w) => 'ifEquals' in w && w.ifEquals !== undefined);
   for (let attempt = 0; attempt < 2; attempt++) {
     const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
     const { writes, newHash, id } = recordIn(projectId, head, entry, opts);
@@ -223,6 +224,18 @@ export async function transactWithAudit(
       return { id, hash: newHash };
     } catch (e) {
       if (e instanceof ConditionError) {
+        // Only chain contention is safe to replay. `domainWrites` was computed by the
+        // caller from a read it did BEFORE this call, so if one of its own `ifEquals`
+        // guards is what failed, the row moved and these writes are stale — replaying
+        // them verbatim writes exactly the lost update the guard just prevented (CONC-1
+        // showed the same retry doing exactly that in the approve handler). We cannot
+        // tell which condition failed, so when the caller carries a value guard we do not
+        // guess: refuse and let it re-read.
+        //
+        // `ifNotExists` on a fresh key is different and still retries — that is what this
+        // helper was built for, and if the key now exists it is a genuine duplicate that
+        // the second attempt reports correctly.
+        if (guarded) throw new ApiError('STATE_CONFLICT');
         if (attempt === 0) continue;
         throw new ApiError('CHAIN_CONTENTION');
       }

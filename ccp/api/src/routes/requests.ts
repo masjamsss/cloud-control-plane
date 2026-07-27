@@ -741,6 +741,8 @@ export function requestRoutes(): Hono<AppEnv> {
     const reason = parsed.data.reason?.trim();
     const updated: RequestItem = {
       ...req,
+      // Bumped on every write so a concurrent writer's guard sees the row moved (CONC-2).
+      eventSeq: (req.eventSeq ?? 0) + 1,
       status: 'REJECTED',
       updatedAt: now,
       events: [
@@ -757,7 +759,15 @@ export function requestRoutes(): Hono<AppEnv> {
       before: { status: req.status },
       after: { status: 'REJECTED' },
     };
-    await transactWithAudit(store, projectId, [{ kind: 'put', item: updated }], entry);
+    await transactWithAudit(
+      store,
+      projectId,
+      // Guarded on the eventSeq this handler read: the row is a full replacement computed
+      // from that read, so an unguarded put silently discards anything that landed in
+      // between (CONC-2).
+      [{ kind: 'put', item: updated, ifEquals: { attr: 'eventSeq', value: req.eventSeq } }],
+      entry,
+    );
     return c.json(toChangeRequest(updated, projectId));
   });
 
@@ -797,6 +807,8 @@ export function requestRoutes(): Hono<AppEnv> {
     const now = nowIso();
     const updated: RequestItem = {
       ...req,
+      // Bumped on every write so a concurrent writer's guard sees the row moved (CONC-2).
+      eventSeq: (req.eventSeq ?? 0) + 1,
       prUrl: parsed.data.prUrl,
       updatedAt: now,
       events: [
@@ -823,7 +835,15 @@ export function requestRoutes(): Hono<AppEnv> {
       before: { prNumber: req.prNumber, prUrl: req.prUrl },
       after: { prNumber: updated.prNumber, prUrl: updated.prUrl },
     };
-    await transactWithAudit(store, projectId, [{ kind: 'put', item: updated }], entry);
+    await transactWithAudit(
+      store,
+      projectId,
+      // Guarded on the eventSeq this handler read: the row is a full replacement computed
+      // from that read, so an unguarded put silently discards anything that landed in
+      // between (CONC-2).
+      [{ kind: 'put', item: updated, ifEquals: { attr: 'eventSeq', value: req.eventSeq } }],
+      entry,
+    );
     return c.json(toChangeRequest(updated, projectId));
   });
 
@@ -861,6 +881,8 @@ export function requestRoutes(): Hono<AppEnv> {
     const now = nowIso();
     const updated: RequestItem = {
       ...req,
+      // Bumped on every write so a concurrent writer's guard sees the row moved (CONC-2).
+      eventSeq: (req.eventSeq ?? 0) + 1,
       planSummary: summary,
       updatedAt: now,
       events: [
@@ -885,7 +907,15 @@ export function requestRoutes(): Hono<AppEnv> {
       before: { counts: req.planSummary?.counts },
       after: { counts: summary.counts },
     };
-    await transactWithAudit(store, projectId, [{ kind: 'put', item: updated }], entry);
+    await transactWithAudit(
+      store,
+      projectId,
+      // Guarded on the eventSeq this handler read: the row is a full replacement computed
+      // from that read, so an unguarded put silently discards anything that landed in
+      // between (CONC-2).
+      [{ kind: 'put', item: updated, ifEquals: { attr: 'eventSeq', value: req.eventSeq } }],
+      entry,
+    );
     return c.json(toChangeRequest(updated, projectId));
   });
 
