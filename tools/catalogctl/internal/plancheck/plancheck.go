@@ -247,6 +247,12 @@ func Check(plan Plan, op manifests.Op, req *request.Request) (violations []Viola
 	// it runs independently of and does not alter the AWS R7 path above.
 	violations = append(violations, checkPublicIngressAzure(op, plan)...)
 
+	// R7-google — no-public-ingress-google (publicingress_google.go): the google twin
+	// of R7 for a NON-engineer_only op — never INTRODUCE a public source range on an
+	// ingress-allow google_compute_firewall (ADR-0034 lane G1). Additive: it runs
+	// independently of and does not alter the AWS or azurerm paths above.
+	violations = append(violations, checkPublicIngressGoogle(op, plan)...)
+
 	return violations, info
 }
 

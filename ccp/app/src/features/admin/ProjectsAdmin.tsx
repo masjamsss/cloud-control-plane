@@ -367,13 +367,16 @@ export function ProjectsAdmin(): JSX.Element {
     repoName: '',
     // Which cloud — absence would mean aws, but the form is explicit so the
     // identity fields below can switch (aws: accountId/region · azure:
-    // subscription/tenant/location). Default 'aws' keeps the aws path unchanged.
-    provider: 'aws' as 'aws' | 'azure',
+    // subscription/tenant/location · gcp: project id/region). Default 'aws'
+    // keeps the aws path unchanged.
+    provider: 'aws' as 'aws' | 'azure' | 'gcp',
     accountId: '',
     region: '',
     subscriptionId: '',
     tenantId: '',
     location: '',
+    gcpProjectId: '',
+    gcpRegion: '',
   });
   // Step 2 — which method tab is showing, the two scan artifacts (filled by
   // the file picker, or pasted, for the "Run locally" tab), and the one-time
@@ -561,7 +564,14 @@ export function ProjectsAdmin(): JSX.Element {
                 tenantId: form.tenantId.trim(),
                 location: form.location.trim(),
               }
-            : { ...base, accountId: form.accountId.trim(), region: form.region.trim() },
+            : form.provider === 'gcp'
+              ? {
+                  ...base,
+                  provider: 'gcp',
+                  gcpProjectId: form.gcpProjectId.trim(),
+                  gcpRegion: form.gcpRegion.trim(),
+                }
+              : { ...base, accountId: form.accountId.trim(), region: form.region.trim() },
       );
       await refresh(created.id);
       setForm({
@@ -581,6 +591,8 @@ export function ProjectsAdmin(): JSX.Element {
         subscriptionId: '',
         tenantId: '',
         location: '',
+        gcpProjectId: '',
+        gcpRegion: '',
       });
       return {
         kind: 'ok',
@@ -921,7 +933,7 @@ export function ProjectsAdmin(): JSX.Element {
         <ol className="projadmin__how">
           <li>
             Add the project — name, where the code lives, and the cloud identity: an AWS account and
-            region, or an Azure subscription, tenant and location.
+            region, an Azure subscription, tenant and location, or a GCP project and region.
           </li>
           <li>
             Scan the repository — the repo&apos;s own CI can run the one-shot first scan and send it
@@ -1190,7 +1202,7 @@ export function ProjectsAdmin(): JSX.Element {
                     role="radiogroup"
                     aria-labelledby="projadmin-cloud-label"
                   >
-                    {(['aws', 'azure'] as const).map((cloud) => (
+                    {(['aws', 'azure', 'gcp'] as const).map((cloud) => (
                       <label
                         key={cloud}
                         className={`projadmin__hostopt${form.provider === cloud ? ' projadmin__hostopt--on' : ''}`}
@@ -1202,7 +1214,7 @@ export function ProjectsAdmin(): JSX.Element {
                           checked={form.provider === cloud}
                           onChange={() => setForm({ ...form, provider: cloud })}
                         />
-                        <span>{cloud === 'aws' ? 'AWS' : 'Azure'}</span>
+                        <span>{cloud === 'aws' ? 'AWS' : cloud === 'azure' ? 'Azure' : 'GCP'}</span>
                       </label>
                     ))}
                   </div>
@@ -1318,7 +1330,7 @@ export function ProjectsAdmin(): JSX.Element {
                         </p>
                       </div>
                     </>
-                  ) : (
+                  ) : form.provider === 'azure' ? (
                     <>
                       <div className="projadmin__field">
                         <label className="projadmin__label" htmlFor="proj-subscription">
@@ -1362,6 +1374,41 @@ export function ProjectsAdmin(): JSX.Element {
                         />
                         <p className="projadmin__hint">
                           A standard Azure location — anything else is refused.
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="projadmin__field">
+                        <label className="projadmin__label" htmlFor="proj-gcp-project">
+                          GCP project id
+                        </label>
+                        <input
+                          id="proj-gcp-project"
+                          className="projadmin__input"
+                          value={form.gcpProjectId}
+                          onChange={(e) => setForm({ ...form, gcpProjectId: e.target.value })}
+                          placeholder="example-prod-app"
+                          spellCheck={false}
+                        />
+                        <p className="projadmin__hint">
+                          6–30 lowercase letters, digits, or hyphens, starting with a letter.
+                        </p>
+                      </div>
+                      <div className="projadmin__field">
+                        <label className="projadmin__label" htmlFor="proj-gcp-region">
+                          GCP region
+                        </label>
+                        <input
+                          id="proj-gcp-region"
+                          className="projadmin__input"
+                          value={form.gcpRegion}
+                          onChange={(e) => setForm({ ...form, gcpRegion: e.target.value })}
+                          placeholder="us-central1"
+                          spellCheck={false}
+                        />
+                        <p className="projadmin__hint">
+                          A standard region code (never a zone) — anything else is refused.
                         </p>
                       </div>
                     </>

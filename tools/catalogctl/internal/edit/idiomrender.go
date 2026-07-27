@@ -94,9 +94,18 @@ func preventDestroy() bodyNode {
 	}}
 }
 
-// preventDestroyTypes / pabAttrs mirror the TS sets exactly.
+// preventDestroyTypes / pabAttrs mirror the TS sets exactly
+// (hclSkeleton.ts PREVENT_DESTROY_TYPES / PAB_ATTRS). This set had silently
+// drifted — the TS side carried the four azurerm by-analogy twins while this
+// side had only the aws three, so the portal's reviewed draft showed a
+// lifecycle guard the codemod did not write (ADR-0034 census). Re-mirrored,
+// and extended with the google by-analogy twins in the same lockstep edit.
 var preventDestroyTypes = map[string]bool{
 	"aws_instance": true, "aws_ebs_volume": true, "aws_db_instance": true,
+	"azurerm_linux_virtual_machine": true, "azurerm_windows_virtual_machine": true,
+	"azurerm_managed_disk": true, "azurerm_resource_group": true,
+	"google_compute_instance": true, "google_compute_disk": true,
+	"google_sql_database_instance": true, "google_project": true,
 }
 
 var pabAttrs = map[string]bool{

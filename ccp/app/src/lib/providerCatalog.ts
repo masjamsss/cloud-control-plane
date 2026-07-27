@@ -48,10 +48,17 @@ const indexCache: Partial<Record<CloudProvider, CatalogIndex>> = {};
 
 /** The catalog index (every service + its resource types) for a provider — aws
  * (default) or azure. One lazy chunk per provider: an aws project never pulls
- * the azure index and vice versa. */
+ * the azure index and vice versa. GCP has no generated catalog tree yet
+ * (0034 lane G3/G4): a gcp project gets an explicit EMPTY index — zero
+ * provisionable services, fail closed — never another provider's catalog. */
 export async function loadProviderIndex(provider: CloudProvider = 'aws'): Promise<CatalogIndex> {
   const cached = indexCache[provider];
   if (cached) return cached;
+  if (provider === 'gcp') {
+    const empty: CatalogIndex = { provider: 'gcp', providerVersion: '', services: [] };
+    indexCache[provider] = empty;
+    return empty;
+  }
   const mod =
     provider === 'azure'
       ? await import('@/data/provider-catalog-azure/index.json')
@@ -82,6 +89,7 @@ export async function loadServiceChunk(
   const key = `${provider}:${slug}`;
   const cached = chunkCache.get(key);
   if (cached) return cached;
+  if (provider === 'gcp') return null; // no gcp catalog tree yet (0034 lane G3/G4) — fail closed
   const glob = provider === 'azure' ? AZURE_CHUNKS : AWS_CHUNKS;
   const path =
     provider === 'azure'

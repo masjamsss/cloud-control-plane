@@ -55,6 +55,12 @@ const MAP_PATH = join(APP, 'src/data/forcenew-map.json');
 const ADJ_PATH = join(APP, 'src/data/forcenew-adjudications.json');
 const AZURE_MAP_PATH = join(APP, 'src/data/forcenew-map-azure.json');
 const AZURE_ADJ_PATH = join(APP, 'src/data/forcenew-adjudications-azure.json');
+// No gcp map/adjudications file exists yet (ADR-0034 lane G2). loadMap
+// collapses an absent file to {} — every gcp op would be unresolved, fail
+// closed — and the map-presence gate hard-FAILs the build the moment a gcp
+// op enters scope without the file, exactly the azure discipline.
+const GCP_MAP_PATH = join(APP, 'src/data/forcenew-map-gcp.json');
+const GCP_ADJ_PATH = join(APP, 'src/data/forcenew-adjudications-gcp.json');
 
 interface GateOp extends OpLike {
   id: string;
@@ -205,7 +211,7 @@ export function evaluateOpsByProvider(
   maps: Record<CloudProvider, Record<string, MapEntry>>,
   adjudications: Record<CloudProvider, Record<string, Adjudication>>,
 ): GateResult {
-  const providers: CloudProvider[] = ['aws', 'azure'];
+  const providers: CloudProvider[] = ['aws', 'azure', 'gcp'];
   return providers.reduce((acc, provider) => {
     const providerOps = ops.filter((op) => providerOfType(op.target.resourceType) === provider);
     return combineGateResults(
@@ -247,7 +253,7 @@ export function evaluateMapPresence(
   ops: GateOp[],
   presence: Record<CloudProvider, MapPresence>,
 ): string[] {
-  const providers: CloudProvider[] = ['aws', 'azure'];
+  const providers: CloudProvider[] = ['aws', 'azure', 'gcp'];
   const fails: string[] = [];
   for (const provider of providers) {
     const { fileExisted, path } = presence[provider];
@@ -537,13 +543,16 @@ function main(): void {
   }
   const awsMap = loadMap(MAP_PATH);
   const azureMap = loadMap(AZURE_MAP_PATH);
+  const gcpMap = loadMap(GCP_MAP_PATH);
   const maps: Record<CloudProvider, Record<string, MapEntry>> = {
     aws: awsMap.table,
     azure: azureMap.table,
+    gcp: gcpMap.table,
   };
   const adjudications: Record<CloudProvider, Record<string, Adjudication>> = {
     aws: loadAdjudications(ADJ_PATH),
     azure: loadAdjudications(AZURE_ADJ_PATH),
+    gcp: loadAdjudications(GCP_ADJ_PATH),
   };
 
   const res = evaluateOpsByProvider(ops, maps, adjudications);
@@ -558,6 +567,7 @@ function main(): void {
   const mapPresenceFails = evaluateMapPresence(ops, {
     aws: { fileExisted: awsMap.fileExisted, path: MAP_PATH },
     azure: { fileExisted: azureMap.fileExisted, path: AZURE_MAP_PATH },
+    gcp: { fileExisted: gcpMap.fileExisted, path: GCP_MAP_PATH },
   });
   for (const f of mapPresenceFails) console.error(f);
   console.log(

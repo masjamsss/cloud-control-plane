@@ -91,11 +91,13 @@ export function tfLocalName(raw: unknown): string {
   return /^[0-9]/.test(cleaned) ? `r_${cleaned}` : cleaned;
 }
 
-/** Resource-address shape (`aws_subnet.app_a` / `azurerm_resource_group.main`)
- * — the ONLY value form that may render as a reference expression. Mirrors
- * the Go twin (tools/catalogctl/internal/idioms/idioms.go AddressShapeRe),
- * widened identically for the azure seam (0039 S1) — behavior-inert for aws. */
-const ADDRESS_SHAPE = /^(?:aws|azurerm)_[a-z0-9_]+\.[A-Za-z_][A-Za-z0-9_-]*$/;
+/** Resource-address shape (`aws_subnet.app_a` / `azurerm_resource_group.main`
+ * / `google_compute_network.main`) — the ONLY value form that may render as a
+ * reference expression. Mirrors the Go twin
+ * (tools/catalogctl/internal/idioms/idioms.go AddressShapeRe), widened
+ * identically for the azure seam (0039 S1) and the gcp seam (0034 G1) —
+ * behavior-inert for aws. */
+const ADDRESS_SHAPE = /^(?:aws|azurerm|google)_[a-z0-9_]+\.[A-Za-z_][A-Za-z0-9_-]*$/;
 /** refAttr / attribute-identifier shape (manifest-authored, still checked). */
 const IDENT_SHAPE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** A map key renders bare when identifier-shaped, quoted otherwise. */
@@ -449,6 +451,15 @@ const PREVENT_DESTROY_TYPES = new Set([
   'azurerm_windows_virtual_machine',
   'azurerm_managed_disk',
   'azurerm_resource_group',
+  // The google_ entries are the GCP twins, applied by the same BY-ANALOGY rule
+  // (0034 G1) — and google_project like azurerm_resource_group: the
+  // containing scope whose destroy is always catastrophic. MUST stay mirrored
+  // with the Go set (idiomrender.go preventDestroyTypes) — the two had
+  // silently drifted once already (0034 census).
+  'google_compute_instance',
+  'google_compute_disk',
+  'google_sql_database_instance',
+  'google_project',
 ]);
 
 /** The S3 public-access-block attribute set the estate pins 4×true. */

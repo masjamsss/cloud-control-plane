@@ -23,7 +23,7 @@ set -uo pipefail
 
 AZTFEXPORT_BIN="${AZTFEXPORT_BIN:-aztfexport}"
 # keep in lockstep with templates/versions.tf (the exact azurerm pin)
-PROVIDER_VERSION="${AZTFEXPORT_PROVIDER_VERSION:-4.14.0}"
+PROVIDER_VERSION="${AZTFEXPORT_PROVIDER_VERSION:-4.81.0}"
 MODE="" OUT_DIR="" SCOPE_KIND="" SCOPE="" PROVIDER="azurerm"
 
 usage() { grep '^#' "$0" | sed 's/^# \{0,1\}//'; }

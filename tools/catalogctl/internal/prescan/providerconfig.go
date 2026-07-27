@@ -28,11 +28,12 @@ import (
 //   - This is a PROPOSAL for a human to confirm (PUT /projects/:id/identity,
 //     ccp/api/src/routes/projects.ts) — never an authoritative fact and never a
 //     product constant (repo hard rule: estate specifics are operator data).
-//   - Only the two recognized cloud providers (aws / azurerm) are reported —
-//     this census is about CLOUD IDENTITY, not a full provider inventory
-//     (ProviderPins already covers every provider's version pin, findings-
-//     independent, the same "report data regardless of verdict" precedent this
-//     file follows for a provider whose registry source is off-allowlist).
+//   - Only the three recognized cloud providers (aws / azurerm / google,
+//     ADR-0034 G1) are reported — this census is about CLOUD IDENTITY, not a
+//     full provider inventory (ProviderPins already covers every provider's
+//     version pin, findings-independent, the same "report data regardless of
+//     verdict" precedent this file follows for a provider whose registry
+//     source is off-allowlist).
 
 // LiteralValue is one static string literal found in the repo's Terraform,
 // with file:line provenance so the UI can show exactly where it came from
@@ -48,7 +49,7 @@ type LiteralValue struct {
 // the package-level fail-closed rules above. Never a verdict input.
 type ProviderConfig struct {
 	// Providers are the recognized cloud provider type(s) found via
-	// required_providers and/or `provider` blocks (aws / azurerm only).
+	// required_providers and/or `provider` blocks (aws / azurerm / google only).
 	Providers []LiteralValue `json:"providers,omitempty"`
 
 	AWSRegion            *LiteralValue  `json:"awsRegion,omitempty"`
@@ -57,6 +58,13 @@ type ProviderConfig struct {
 	AzureLocation       *LiteralValue `json:"azureLocation,omitempty"`
 	AzureSubscriptionID *LiteralValue `json:"azureSubscriptionId,omitempty"`
 	AzureTenantID       *LiteralValue `json:"azureTenantId,omitempty"`
+
+	// GCP identity (ADR-0034 G1). The provider block's `project` attribute is
+	// reported as gcpProjectId — "project" alone would collide with the control
+	// plane's own project ids everywhere downstream.
+	GCPProjectID *LiteralValue `json:"gcpProjectId,omitempty"`
+	GCPRegion    *LiteralValue `json:"gcpRegion,omitempty"`
+	GCPZone      *LiteralValue `json:"gcpZone,omitempty"`
 }
 
 // isEmpty reports whether pc carries nothing worth reporting. The caller uses
@@ -69,7 +77,8 @@ func (pc *ProviderConfig) isEmpty() bool {
 	return pc == nil ||
 		(len(pc.Providers) == 0 &&
 			pc.AWSRegion == nil && len(pc.AWSAllowedAccountIDs) == 0 &&
-			pc.AzureLocation == nil && pc.AzureSubscriptionID == nil && pc.AzureTenantID == nil)
+			pc.AzureLocation == nil && pc.AzureSubscriptionID == nil && pc.AzureTenantID == nil &&
+			pc.GCPProjectID == nil && pc.GCPRegion == nil && pc.GCPZone == nil)
 }
 
 // identityCandidates accumulates every static-literal identity mention found
@@ -85,6 +94,9 @@ type identityCandidates struct {
 	azureLocation        []scalarCandidate
 	azureSubscriptionID  []scalarCandidate
 	azureTenantID        []scalarCandidate
+	gcpProjectID         []scalarCandidate
+	gcpRegion            []scalarCandidate
+	gcpZone              []scalarCandidate
 }
 
 // scalarCandidate/listCandidate pair a found value with whether it came from
@@ -152,6 +164,9 @@ func (c *identityCandidates) resolve() *ProviderConfig {
 		AzureLocation:        pickScalar(c.azureLocation),
 		AzureSubscriptionID:  pickScalar(c.azureSubscriptionID),
 		AzureTenantID:        pickScalar(c.azureTenantID),
+		GCPProjectID:         pickScalar(c.gcpProjectID),
+		GCPRegion:            pickScalar(c.gcpRegion),
+		GCPZone:              pickScalar(c.gcpZone),
 	}
 	// Deterministic output order regardless of internal walk-order nuances
 	// (JSON-body key ordering in particular is not a guarantee this package
@@ -173,16 +188,16 @@ func (c *identityCandidates) resolve() *ProviderConfig {
 }
 
 // recordProviderBlock extracts the static-literal identity fields from ONE
-// `provider "aws" {…}` / `provider "azurerm" {…}` block for the providerConfig
-// census. Never a Finding, never verdict-relevant. Any other provider's block
-// (random, null, tls, …) is silently ignored — this census is about cloud
-// identity, not a full provider inventory.
+// `provider "aws" {…}` / `provider "azurerm" {…}` / `provider "google" {…}`
+// block for the providerConfig census. Never a Finding, never verdict-relevant.
+// Any other provider's block (random, null, tls, …) is silently ignored — this
+// census is about cloud identity, not a full provider inventory.
 func recordProviderBlock(b *hcl.Block, file string, candidates *identityCandidates) {
 	if len(b.Labels) == 0 {
 		return
 	}
 	typ := b.Labels[0]
-	if typ != "aws" && typ != "azurerm" {
+	if _, ok := recognizedProviderType(typ); !ok {
 		return
 	}
 	candidates.addProvider(typ, file, b.DefRange.Start.Line)
@@ -223,11 +238,27 @@ func recordProviderBlock(b *hcl.Block, file string, candidates *identityCandidat
 				candidates.azureTenantID = append(candidates.azureTenantID, scalarCandidate{lv, aliased})
 			}
 		}
+	case "google":
+		if a, ok := attrs["project"]; ok {
+			if lv, ok := literalOf(a.Expr, file); ok {
+				candidates.gcpProjectID = append(candidates.gcpProjectID, scalarCandidate{lv, aliased})
+			}
+		}
+		if a, ok := attrs["region"]; ok {
+			if lv, ok := literalOf(a.Expr, file); ok {
+				candidates.gcpRegion = append(candidates.gcpRegion, scalarCandidate{lv, aliased})
+			}
+		}
+		if a, ok := attrs["zone"]; ok {
+			if lv, ok := literalOf(a.Expr, file); ok {
+				candidates.gcpZone = append(candidates.gcpZone, scalarCandidate{lv, aliased})
+			}
+		}
 	}
 }
 
 // recordRequiredProvidersIdentity walks a terraform{} block's required_providers
-// purely to detect a RECOGNIZED cloud provider TYPE (aws/azurerm) for the
+// purely to detect a RECOGNIZED cloud provider TYPE (aws/azurerm/google) for the
 // providerConfig census. Deliberately a SEPARATE walk from scanRequiredProviders
 // (prescan.go — verdict-relevant: PROVIDER_SOURCE/NONSTATIC_SOURCE findings):
 // this function never adds a Finding and never influences the verdict, so a
@@ -256,8 +287,8 @@ func recordRequiredProvidersIdentity(candidates *identityCandidates, terraformBo
 	}
 }
 
-// providerTypeOf resolves the recognized cloud provider TYPE ("aws" or
-// "azurerm") for one required_providers entry, fail-closed: any non-static
+// providerTypeOf resolves the recognized cloud provider TYPE ("aws",
+// "azurerm" or "google") for one required_providers entry, fail-closed: any non-static
 // piece (source/version referencing a variable/local) yields ("", false) —
 // the same Variables()/staticString all-or-nothing check scanRequiredProviders
 // uses, duplicated here deliberately (see recordRequiredProvidersIdentity)
@@ -297,7 +328,7 @@ func lastSourceSegment(source string) string {
 
 func recognizedProviderType(name string) (string, bool) {
 	switch name {
-	case "aws", "azurerm":
+	case "aws", "azurerm", "google":
 		return name, true
 	default:
 		return "", false

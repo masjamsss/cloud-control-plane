@@ -107,8 +107,14 @@ func (idx *nestedBlockIndex) nestedBlocksAt(rt string, path []string) (map[strin
 // every tag op.
 func guardKnownBlock(op manifests.Op, idx *nestedBlockIndex) (string, string) {
 	block := op.Target.Block
-	if block == "" || !manifests.IsValidBlockIdent(block) || strings.HasPrefix(block, "aws_") {
-		return "", "" // owned by guardAppendTarget's MISSING_/MALFORMED_/RESOURCE_TYPE_AS_BLOCK
+	if block == "" || !manifests.IsValidBlockIdent(block) || IsProviderResourceType(block) {
+		// Owned by guardAppendTarget's MISSING_/MALFORMED_/RESOURCE_TYPE_AS_BLOCK.
+		// The deferral predicate is IsProviderResourceType — the SAME predicate
+		// guardBlockTarget refuses with — so a provider-resource-named block gets
+		// RESOURCE_TYPE_AS_BLOCK regardless of whether a schema dump is present
+		// (it used to be an aws_-only prefix check, which let an azurerm_-named
+		// block draw UNKNOWN_BLOCK_TYPE here whenever the schema could answer).
+		return "", ""
 	}
 	names, ok := idx.nestedBlocksAt(op.Target.ResourceType, op.Target.Path)
 	if !ok {
@@ -239,6 +245,9 @@ func loadNestedBlockIndex(path string) (*nestedBlockIndex, error) {
 // discovery working across a provider-version bump with no code edit.
 func discoverSchemaPath(resourceType string, startDirs ...string) string {
 	prefix := SchemaDumpPrefix(resourceType)
+	if prefix == "" {
+		return "" // no recognized provider — no dump family to discover (fail open downstream)
+	}
 	seen := map[string]bool{}
 	for _, start := range startDirs {
 		if start == "" {
@@ -278,11 +287,12 @@ func discoverSchemaPath(resourceType string, startDirs ...string) string {
 // or a discovered dump fails to parse (a corrupt committed dump is caught by
 // schemadump's own tests, not an operator's edit) — it returns a nil index with no
 // error, and guardKnownBlock fails open. The executor still ships its existing
-// structural guards; it simply cannot add the schema layer. This is the correct
-// posture for azurerm today (no azurerm schemadump exists yet — Lane F): every
-// azurerm append/create fails open here, unguarded by the schema layer, until F1's
-// dump lands; ForceNew (a separate Lane F gate) is the fail-closed layer that
-// actually blocks unsafe azurerm ops in the meantime.
+// structural guards; it simply cannot add the schema layer. The full azurerm
+// dump (azurerm-v4.81.0-schema.json) is committed and discovered, so azurerm is
+// schema-guarded the same as aws. This fail-open posture now applies to google
+// (no google schemadump exists yet — ADR-0034 lane G2): every google append/
+// create fails open here until G2's dump lands; ForceNew (verify-manifest-safety,
+// per provider) is the fail-closed layer that blocks unsafe ops in the meantime.
 func resolveSchemaIndex(flagPath, envDir, resourceType string) (*nestedBlockIndex, error) {
 	if flagPath != "" {
 		return loadNestedBlockIndex(flagPath)
