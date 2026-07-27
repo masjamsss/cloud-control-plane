@@ -29,10 +29,10 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import subprocess
 import sys
 
 LINK = re.compile(r'\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)')
-SKIP_DIRS = {'.git', 'node_modules', 'dist', 'build', '.venv', '__pycache__', 'work'}
 EXTERNAL = re.compile(r'^(https?:|mailto:|tel:|#|<)')
 
 # The audit ledger is integrated centrally and cites paths that intentionally do not
@@ -49,34 +49,54 @@ def repo_root() -> str:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def tracked_markdown(root: str) -> list[str]:
+    """Repo-relative paths of every TRACKED .md file.
+
+    `git ls-files`, not `os.walk`: the corpus this gate owns is the corpus the repo
+    ships, and those are not the same set. A filesystem walk also descends into
+    working trees, vendored checkouts and scratch copies that happen to sit under the
+    root — each of which carries its OWN copy of every doc, at whatever revision it was
+    cut from. Those copies then report as breakage in a tree that is perfectly fine,
+    which is a false failure, and a gate that cries wolf gets switched off.
+
+    A failure here is fatal rather than a fall-back to walking: a link checker that
+    cannot enumerate its corpus has not found a clean tree, it has not run (L-1).
+    """
+    try:
+        out = subprocess.run(
+            ['git', '-C', root, 'ls-files', '-z', '*.md'],
+            capture_output=True, check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(f'FAIL: could not enumerate tracked markdown via git: {e}', file=sys.stderr)
+        raise SystemExit(2)
+    return sorted(p for p in out.decode('utf-8').split('\0') if p)
+
+
 def scan(root: str) -> tuple[int, list[tuple[str, int, str]]]:
     checked = 0
     broken: list[tuple[str, int, str]] = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-        for filename in sorted(filenames):
-            if not filename.endswith('.md'):
+    for rel in tracked_markdown(root):
+        if rel.startswith(EXCLUDE_PREFIXES):
+            continue
+        path = os.path.join(root, rel)
+        try:
+            text = open(path, encoding='utf-8').read()
+        except (OSError, UnicodeDecodeError):
+            continue
+        dirpath = os.path.dirname(path)
+        for match in LINK.finditer(text):
+            target = match.group(1)
+            if EXTERNAL.match(target):
                 continue
-            path = os.path.join(dirpath, filename)
-            rel = os.path.relpath(path, root)
-            if rel.startswith(EXCLUDE_PREFIXES):
+            path_part = target.split('#')[0]
+            if not path_part:
                 continue
-            try:
-                text = open(path, encoding='utf-8').read()
-            except (OSError, UnicodeDecodeError):
-                continue
-            for match in LINK.finditer(text):
-                target = match.group(1)
-                if EXTERNAL.match(target):
-                    continue
-                path_part = target.split('#')[0]
-                if not path_part:
-                    continue
-                checked += 1
-                resolved = os.path.normpath(os.path.join(dirpath, path_part))
-                if not os.path.exists(resolved):
-                    line = text[: match.start()].count('\n') + 1
-                    broken.append((rel, line, target))
+            checked += 1
+            resolved = os.path.normpath(os.path.join(dirpath, path_part))
+            if not os.path.exists(resolved):
+                line = text[: match.start()].count('\n') + 1
+                broken.append((rel, line, target))
     return checked, sorted(broken)
 
 

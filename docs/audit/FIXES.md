@@ -648,3 +648,118 @@ wedges that project's onboarding.*
 **Residue:** settling is read-driven, so a project nobody looks at keeps its stale row until
 someone does. That is acceptable — an unobserved wedge blocks nothing — but it does mean the
 audit trail dates the expiry from the read, not from the worker's death.
+
+## DOC-1
+
+*OpenAPI declares two `/catalog/*` endpoints that do not exist — and the parity test pins
+the phantoms.*
+
+- [x] **Defect reproduced first** — `/catalog/manifests` and `/catalog/inventory` were
+      declared under `paths:`; neither appears in the assembled app's Hono route table. A
+      client generated from the contract would call both and get 404. The existing
+      `openapi.test.ts` asserted their **presence**, so the test was holding the drift in
+      place rather than reporting it.
+- [x] **Cause, not symptom** — the contract and the route table had no mechanical relation
+      to each other; agreement was maintained by hand and by a test written to match
+      whatever the file said. Both phantoms deleted, and parity is now **derived**:
+      `servedOperations()` enumerates the live route table, `declaredOperations()` extracts
+      the contract's paths, and the suite diffs them **both ways**.
+- [x] **Regression test** — `test/openapi.test.ts`, two directional tests plus an
+      extractor-liveness test (below). Confirmed to fail against the unfixed contract.
+- [x] **Failure is loud** — the assertions name the consequence: "a generated client would
+      404" and "the contract understates the mutation surface".
+- [x] **Evidence in the status line** — `cdc5f2c`.
+- [x] **Lesson recorded** — folded into L-10, whose failure mode this fix had to design
+      around: both extractors are text-based, so a renamed file or reformatted YAML block
+      would make **both** diffs come out empty and read as perfect parity. The suite
+      therefore asserts each extractor still finds a known-present operation before the
+      diffs are believed. A parity test that cannot tell "identical" from "found nothing"
+      is L-10 with a green tick.
+
+## DOC-2
+
+*Shipped routes absent from the OpenAPI spec; `POST /requests/:id/apply` is documented
+nowhere at all.*
+
+- [x] **Defect reproduced first** — the reverse diff of DOC-1's: routes the API serves and
+      the contract never mentioned, including `/healthz`, `/readyz`,
+      `POST /requests/{id}/plan-summary`, the `/admin/deployment` pair, `/admin/audit/export`
+      and — most seriously — `POST /requests/{id}/apply`, the approval-to-apply bundle and
+      the most privileged verb on the requests surface.
+- [x] **Cause, not symptom** — same missing mechanical relation as DOC-1, and fixed by the
+      same derived-parity test rather than by a one-time transcription. The apply bundle is
+      now described in full: its status precondition, its error codes and its
+      `BundleOutcome` shape, each asserted by test rather than merely written down.
+- [x] **Regression test** — `test/openapi.test.ts`. Confirmed to fail against the unfixed
+      contract.
+- [x] **Failure is loud** — plus a new guard one level up: `.github/workflows/ccp-api.yml`
+      now **parses** the contract as YAML before running the tests that assume it is
+      well-formed. The suite only ever read the file as text, so a syntactically invalid
+      contract passed every check — which happened during this work, from an unquoted `>=`
+      inside a flow mapping.
+- [x] **Evidence in the status line** — `cdc5f2c`.
+- [x] **Lesson recorded** — L-10 (shared with DOC-1).
+
+**Also closed here, from DOC-4's residue:** `BAD_CREDENTIALS` and `DUPLICATE_TEAM` are now
+genuinely declared, and the contract states the no-enumeration rule outright — one code and
+one reason for an unknown username *and* for a wrong password — rather than the docs merely
+claiming the spec pinned it.
+
+**Deliberately not done:** `ENGINEER_REVIEW_REQUIRED` was **not** added. It is defined in
+`errors.ts` and emitted by nothing (the engineer-tier gate returns `WRONG_APPROVAL_LEVEL`),
+so declaring it would document a response the API cannot return — DOC-1's phantom-endpoint
+defect pointed the other way. **The code is the wrong side here, not the spec:** the entry
+is dead and should either be emitted or removed. `openapi.test.ts` asserts its continued
+absence, so adding it to the contract forces that decision instead of papering over it.
+
+**Residue:** **DOC-11** stays open. `ChangeRequest.planSummary` is still typed `string`
+while the API stores and serves a structured object. The new `PlanSummary` schema — added
+for the `plan-summary` route — carries a note saying exactly that, positioned where a reader
+comparing the two will hit it.
+
+## DOC-3
+
+*OpenAPI `servers: [{url: /v2}]` does not match any deployed base path.*
+
+- [x] **Defect reproduced first** — nothing in the repo serves `/v2`: not the api, not the
+      compose files, not the reverse proxy. A client generated against the contract would
+      prefix every request with a path that does not exist.
+- [x] **Cause, not symptom** — replaced with the two base paths this repo actually deploys:
+      `/` (the api directly) and `/api` (behind the bundled proxy), each verified against the
+      routing config rather than assumed.
+- [x] **Regression test** — `test/openapi.test.ts` asserts both are present and that `/v2`
+      is not. Confirmed to fail against the unfixed contract.
+- [x] **Failure is loud** — n/a; a contract value, not a runtime path.
+- [x] **Evidence in the status line** — `cdc5f2c`.
+- [x] **Lesson recorded** — no separate lesson; this is the same never-verified-against-reality
+      class as DOC-1/DOC-2 and is covered by L-10.
+
+## DOC-5
+
+*~100 broken relative markdown links across the published tree.*
+
+- [x] **Defect reproduced first** — a mechanical scan found **122** relative links resolving
+      to nothing, out of 306: private ADRs that were never published, runbooks promised and
+      never written, and citations pointing into a planning archive this repo does not ship.
+      The public split is what created most of them — the links were valid in the private
+      tree they were written in.
+- [x] **Cause, not symptom** — the links themselves are the symptom; the cause is that
+      **nothing was looking**. Every broken link was fixed (re-pointed where a published
+      equivalent exists — e.g. ADR-0021 → its public summary ADR-0030 — and the claim
+      rewritten where nothing published backs it, rather than left pointing at a plausible
+      filename). `scripts/docs-link-check.py` plus the `docs-links` workflow are the watcher
+      that keeps it true.
+- [x] **Regression test** — the checker is the test: it runs on every markdown change and
+      resolves every relative link against the checkout, with no network calls. It also
+      asserts a **floor on links found**, so a scan that silently checked nothing fails
+      instead of reporting a clean tree — L-1, applied before it could bite. Its own file
+      and workflow are in the path filter, because a checker whose edits are not gated can
+      be quietly defanged.
+- [x] **Failure is loud** — the job names each broken link with its source file and line.
+- [x] **Evidence in the status line** — `cdc5f2c`.
+- [x] **Lesson recorded** — L-1 applied rather than a new lesson; the floor assertion exists
+      precisely because of it.
+
+**Residue:** absolute and external URLs are **not** checked — that needs network calls, which
+would make the gate flaky and dependent on third-party uptime. Only relative links, which are
+the ones the split broke and the ones the repo controls.

@@ -111,14 +111,14 @@ Unguarded full-row writes and lost updates. Largely one root cause — the store
 
 OpenAPI vs reality, and docs citing things that do not exist.
 
-- [ ] DOC-1 | high | contracts-docs | open | 14-contracts-docs.md | OpenAPI declares two `/catalog/*` endpoints that do not exist — and the parity test pins the phantoms
-- [ ] DOC-2 | high | contracts-docs | open | 14-contracts-docs.md | Shipped routes absent from the OpenAPI spec; `POST /requests/:id/apply` is documented nowhere at all
+- [x] DOC-1 | high | contracts-docs | fixed:cdc5f2c | 14-contracts-docs.md | OpenAPI declares two `/catalog/*` endpoints that do not exist — and the parity test pins the phantoms
+- [x] DOC-2 | high | contracts-docs | fixed:cdc5f2c | 14-contracts-docs.md | Shipped routes absent from the OpenAPI spec; `POST /requests/:id/apply` is documented nowhere at all
 - [ ] ARCH-6 | medium | contracts-docs | open | 01-architecture.md | The backend depends on frontend-package internals; the shared-contract layer is a path alias plus a hand-synced copy
 - [ ] DOC-10 | medium | contracts-docs | open | 14-contracts-docs.md | ERROR-STATES.md's "every error code the API can return" is missing 8 taxonomy codes and 6 inline literals
 - [ ] DOC-11 | medium | contracts-docs | open | 14-contracts-docs.md | OpenAPI types `ChangeRequest.planSummary` as a string; the API stores and serves a structured object
 - [ ] DOC-12 | medium | contracts-docs | open | 14-contracts-docs.md | DOMAIN-MODEL.md's entity catalog is missing a third of the store's item types
 - [x] DOC-4 | medium | contracts-docs | fixed:errors.ts cites the real contract; ERROR-STATES.md's grep-a-missing-file analysis re-measured and corrected | 14-contracts-docs.md | Multiple docs and a code header cite `ccp/docs/specs/ccp-api.md`, which does not exist in this repo
-- [ ] DOC-5 | medium | contracts-docs | open | 14-contracts-docs.md | ~100 broken relative markdown links across the published tree
+- [x] DOC-5 | medium | contracts-docs | fixed:cdc5f2c | 14-contracts-docs.md | ~100 broken relative markdown links across the published tree
 - [ ] DOC-6 | medium | contracts-docs | open | 14-contracts-docs.md | API-SPEC.md states the opposite of current code on `PUT /projects/:id/identity` gating
 - [ ] DOC-7 | medium | contracts-docs | open | 14-contracts-docs.md | App `DriftProposal` type does not match the wire: `importPayload` has a different shape, and top-level `arn`/`tfType` are mock-only
 - [ ] DOC-8 | medium | contracts-docs | open | 14-contracts-docs.md | catalogctl README makes two explicit completeness claims that are false
@@ -320,7 +320,7 @@ Bootstrap, install, migration, compose and overlays.
 - [ ] OPS-5 | high | install-ops | open | 10-reliability-operations.md | `migrate-data.sh`'s post-cutover byte-identical check is tripped by the new code's own boot writes: legacy migrations auto-roll back
 - [ ] CI-5 | medium | install-ops | open | 13-ci-cd.md | Whether the api's live parity/integration suites run in CI depends on unpinned runner-preinstalled toolchains; nothing asserts they ran
 - [ ] CI-7 | medium | install-ops | open | 13-ci-cd.md | The Docker build path (the documented production install) is never exercised by CI; images are first built at release time
-- [ ] DOC-3 | medium | install-ops | open | 14-contracts-docs.md | OpenAPI `servers: [{url: /v2}]` does not match any deployed base path
+- [x] DOC-3 | medium | install-ops | fixed:cdc5f2c | 14-contracts-docs.md | OpenAPI `servers: [{url: /v2}]` does not match any deployed base path
 - [ ] OPS-13 | low | install-ops | open | 10-reliability-operations.md | `doctor.sh` reports an unhealthy container as OK
 - [ ] OPS-15 | low | install-ops | open | 10-reliability-operations.md | GitHub App key directory is not prepared or checked by any tooling
 
