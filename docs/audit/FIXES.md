@@ -763,3 +763,118 @@ comparing the two will hit it.
 **Residue:** absolute and external URLs are **not** checked — that needs network calls, which
 would make the gate flaky and dependent on third-party uptime. Only relative links, which are
 the ones the split broke and the ones the repo controls.
+
+## FE-1
+
+*Mutation calls have no rejection path — a network failure strands the acting control in
+a permanent busy state.*
+
+- [x] **Defect reproduced first** — every mutating screen wrote
+      `setBusy(true); const r = await api.thing(); …; setBusy(false)` with the reset only
+      on the success path. `test/asyncFlows.test.ts` drives each extracted flow with a
+      client that rejects; against the unfixed code the rejection escapes and the reset
+      never runs. On `ApprovalsQueue` that leaves a card's Approve **and** Reject disabled
+      — a change nobody can move — and on `RequestForm` the only escape is a reload, which
+      **discards the entire drafted request**.
+- [x] **Cause, not symptom** — the api clients map non-2xx **responses** onto
+      `{ok:false, reason}`, so call sites were written as if failure were always a value.
+      A rejected `fetch` (dropped link, DNS failure, proxy 502, an api restart mid-deploy)
+      is a **rejection**, and there was no path for it anywhere. `lib/asyncGuard.ts` is the
+      one place that conversion happens, and its contract is deliberately narrow:
+      `attempt` **never rejects**, so a caller that awaits it is *structurally incapable*
+      of stranding its own state. That is stronger than asking every future call site to
+      remember a `.catch`. It wraps the **call**, not the promise, so a seam that throws
+      synchronously is caught too — a call-site `.catch` misses that entirely.
+- [x] **Regression test** — `test/asyncGuard.test.ts` (11) and `test/asyncFlows.test.ts`
+      (13), plus 2 in `test/advisoryGate.test.ts`. Two negative tests confirmed: dropping
+      the `TypeError` arm fails 8, and wrapping the promise instead of the call fails
+      exactly the synchronous-throw test. The failure paths were extracted into React-free
+      `*Flow.ts` modules first — this repo has no jsdom, so an async rule that lives inside
+      a component cannot be tested at all.
+- [x] **Failure is loud** — the reason goes into the same slot the server's own refusals
+      already render, and `UNREACHABLE` stays a **distinct code** from `FORBIDDEN`: a
+      refusal is final and needs a different draft, an unreachable server needs the same
+      draft sent again. A test pins that, since collapsing them is an easy and invisible
+      simplification.
+- [x] **Evidence in the status line** — `b5b703b`.
+- [x] **Lesson recorded** — L-12.
+
+## FE-2
+
+*Initial page loads have no error state — any failed fetch leaves an eternal "Loading…"
+with no retry.*
+
+- [x] **Defect reproduced first** — the same shape one level up: `void Promise.all([…]).then(success)`
+      with `loading` cleared only inside the success branch. One 401 after an idle-expired
+      session left the requester's primary screen on "Loading…" for ever, with an unhandled
+      rejection and no way back.
+- [x] **Cause, not symptom** — the same missing conversion as FE-1, plus a missing
+      **component**: the admin screens had an error banner, but nothing anywhere had a
+      **retry**, which is what turns a transient blip into a non-event rather than a page
+      reload. `components/LoadError.tsx` is that one rendered dead-end, with
+      `role="alert"` because it replaces the content the user came for.
+- [x] **Regression test** — as FE-1. The page-loader behaviour is asserted through the
+      extracted `myRequestsFlow`, including that **any** of its three calls failing fails
+      the whole load rather than rendering a half-page.
+- [x] **Failure is loud** — every remaining sentinel was audited, which is where the
+      subtlest case turned up: `useServerInfo` left `loading: true` for the tab's lifetime
+      on a rejected `serverInfo()`, so every gated admin control sat in its advisory
+      stand-in permanently — **indistinguishable from "still resolving"**, so nothing said
+      why. `UNRESOLVED_SERVER_INFO_STATE` clears the flag while serving no flow; a test
+      asserts every gate still refuses, because the tempting fix is to clear `loading`
+      toward a permissive default.
+- [x] **Evidence in the status line** — `b5b703b`.
+- [x] **Lesson recorded** — L-12.
+
+**Coverage is the claim here, not a sample.** Both findings assert a property — *no screen
+can strand itself* — and one unguarded call site falsifies it for the whole SPA. Eight
+sites were left behind by the first pass and closed in the second; `grep` for an unguarded
+`void api.` under `ccp/app/src` now returns nothing.
+
+**Residue:** enrichment call sites (BeyondCatalogForm's manifests and provider index,
+ProvisionService's "request again" prefill, AllowlistAdmin's manifests, CommandPalette's
+groups) deliberately **degrade to absent** rather than showing an error. That is right for
+a surface with no error slot whose screen works without the data — but it is now a decision
+recorded at each site, not an unhandled rejection.
+
+## FE-4
+
+*ApprovalsQueue's stale-response guard is dead code — overlapping project-switch fetches
+can commit the wrong project's queue.*
+
+- [x] **Defect reproduced first** — the loader wrote state **directly** and then checked
+      the liveness flag in an empty continuation, so the guard ran after every write it was
+      supposed to prevent. Two overlapping switches could commit project A's queue while
+      project B is on screen — approvals attributed to the wrong estate.
+- [x] **Cause, not symptom** — the loader now **fetches only** and commits nothing; the
+      effect owns every `setState` behind its own check. Moving the writes is what makes
+      the guard able to guard, rather than adding a second check to the same broken shape.
+- [x] **Regression test** — **not satisfied.** The commit ordering is a property of the
+      component's effect, and this repo has no jsdom, so it cannot be driven without
+      mounting. The extracted `approvalsFlow` is tested; the ordering is not.
+- [x] **Failure is loud** — n/a; the fix is the absence of a wrong write.
+- [x] **Evidence in the status line** — `b5b703b`.
+- [x] **Lesson recorded** — L-12 covers the shape (a guard that runs after the thing it
+      guards).
+
+**Residue:** the untested ordering above. Closing it properly needs either jsdom in this
+repo or the commit decision extracted into a pure function, and the second is the better
+shape — noted rather than done.
+
+## FE-15
+
+*Notifications bell and CommandPalette swallow rejections silently.*
+
+- [x] **Defect reproduced first** — both fetch on an ambient surface with no page-level
+      error slot, and both were bare `.then`s. The bell's failure was the dishonest one: it
+      left whatever the panel last had on screen **as if it were current**.
+- [x] **Cause, not symptom** — the bell now says it could not refresh rather than
+      presenting stale data as fresh. CommandPalette degrades a failed group to *absent*,
+      which is correct for a palette, but no longer as an unhandled rejection.
+- [x] **Regression test** — **not satisfied**, same reason as FE-4: both are component
+      state with no extractable decision. Marked closed on the strength of the behaviour
+      change being visible and reviewed, with this gap stated rather than glossed.
+- [x] **Failure is loud** — that is precisely the fix for the bell: stale-presented-as-fresh
+      became an explicit "could not refresh".
+- [x] **Evidence in the status line** — `b5b703b`.
+- [x] **Lesson recorded** — L-12.

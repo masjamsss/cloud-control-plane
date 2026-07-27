@@ -148,7 +148,7 @@ Failures that produce no signal — swallowed rejections, best-effort compensati
 - [ ] CTL-8 | low | silent-failure | open | 07-catalogctl.md | `atomicWrite` silently changes edited-file permissions to 0600 and skips fsync
 - [ ] ERR-14 | low | silent-failure | open | 09-error-handling.md | Drift-upload compensation is non-transactional best-effort
 - [ ] ERR-16 | low | silent-failure | open | 09-error-handling.md | The ccp-data CI lane goes green when the control plane is unreachable
-- [ ] FE-15 | low | silent-failure | open | 05-frontend-flows.md | Notifications bell and CommandPalette swallow rejections silently
+- [x] FE-15 | low | silent-failure | fixed:b5b703b | 05-frontend-flows.md | Notifications bell and CommandPalette swallow rejections silently
 - [ ] IMP-12 | low | silent-failure | open | 08-importer-schemadump.md | `normalize.py split` silently drops non-`resource` top-level blocks
 - [ ] IMP-15 | low | silent-failure | open | 08-importer-schemadump.md | Coverage-sweep family granularity marks undiscoverable resources as "covered" (documented, but with a concrete silent case)
 - [ ] UI-12 | low | silent-failure | open | 06-frontend-ui-robustness.md | Configure ⇄ Review step transitions never move focus, and the Suspense skeleton is silent for assistive tech
@@ -186,7 +186,7 @@ Roles, sessions, TOTP, dual control, quorum and idempotency.
 - [ ] ARCH-4 | medium | authz-identity | open | 01-architecture.md | No mutual exclusion between the two apply lanes; both act on `AWAITING_DEPLOY_APPROVAL`
 - [ ] DATA-11 | medium | authz-identity | open | 03-data-integrity.md | v1 migration writes rows that violate the store schemas, including an `id`≠`username` shape that breaks session resolution
 - [ ] DATA-7 | medium | authz-identity | open | 03-data-integrity.md | The 72-hour dual-control expiry is unenforced: `sweepExpired` is dead code and `ackPending` never checks `expiresAt`
-- [ ] FE-4 | medium | authz-identity | open | 05-frontend-flows.md | ApprovalsQueue's stale-response guard is dead code — overlapping project-switch fetches can commit the wrong project's queue
+- [x] FE-4 | medium | authz-identity | fixed:b5b703b | 05-frontend-flows.md | ApprovalsQueue's stale-response guard is dead code — overlapping project-switch fetches can commit the wrong project's queue
 - [ ] FE-7 | medium | authz-identity | open | 05-frontend-flows.md | PendingChangesBanner count goes stale after any dual-control activity — and the mock branch reads an unsubscribed store
 - [ ] FE-9 | medium | authz-identity | open | 05-frontend-flows.md | apiSession role resolution falls back to another scope's role when the user has no binding on the active project
 - [ ] CTL-9 | low | authz-identity | open | 07-catalogctl.md | `pr-prepare`'s UNAPPROVED gate accepts any non-empty approvals list without checking `decision`
@@ -304,8 +304,8 @@ Guards that pass when they should refuse.
 
 Missing error and retry paths; permanent loading states.
 
-- [ ] FE-1 | high | frontend-ux | open | 05-frontend-flows.md | Mutation calls have no rejection path — a network failure strands the acting control in a permanent busy state
-- [ ] FE-2 | high | frontend-ux | open | 05-frontend-flows.md | Initial page loads have no error state — any failed fetch leaves an eternal "Loading…" with no retry
+- [x] FE-1 | high | frontend-ux | fixed:b5b703b | 05-frontend-flows.md | Mutation calls have no rejection path — a network failure strands the acting control in a permanent busy state
+- [x] FE-2 | high | frontend-ux | fixed:b5b703b | 05-frontend-flows.md | Initial page loads have no error state — any failed fetch leaves an eternal "Loading…" with no retry
 - [ ] UI-1 | high | frontend-ux | open | 06-frontend-ui-robustness.md | Non-admin data pages have no fetch-error path: any API failure leaves a permanent "Loading…" with no message or retry
 - [ ] ERR-9 | medium | frontend-ux | open | 09-error-handling.md | GitHub App credential fetches have no timeout, and any failure terminally fails the scan job with no retry
 - [ ] UI-9 | medium | frontend-ux | open | 06-frontend-ui-robustness.md | `/login`, `/onboarding`, and the LegacyRedirect route have no errorElement: a render error there shows React Router's raw default error screen

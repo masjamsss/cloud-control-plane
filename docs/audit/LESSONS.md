@@ -247,3 +247,42 @@ into a state that could not be left, for a condition (**no pin-writer is deploye
 was true of every row in the system. Refusing to act and destroying the thing you refused
 to act on are different refusals. Where the safe answer is "not now", **hold** the row
 where it is and say so in the timeline; save the terminal state for evidence of damage.
+
+### L-12 — Where a failure has no representation, it has no handling
+
+Findings: FE-1, FE-2, FE-4, FE-15
+
+Thirty-odd call sites across the SPA had no rejection path, and not one of them was an
+oversight in the usual sense. The api clients map non-2xx **responses** onto
+`{ok:false, reason}` — so the type a call site sees says failure is a *value*, and every
+author who read that type wrote code that was correct for every failure the type could
+express. A rejected `fetch` is not one of them. It is a rejection, and the type never
+mentioned it, so nobody handled it. The result was uniform: the busy flag stayed set, the
+loading flag stayed set, and the only recovery was a reload — which on a half-filled
+request form destroys the draft.
+
+Fixing them one by one would have restored the same fragility with more code. The fix that
+holds is a seam whose contract makes the mistake unrepresentable: `attempt` **never
+rejects**, so a caller that awaits it *cannot* strand its own state. That is a much
+stronger guarantee than thirty correct `.catch` blocks, because it also covers the
+thirty-first call site nobody has written yet. Two details earned their keep: it wraps the
+**call** rather than the promise, so a seam that throws synchronously is caught (a
+call-site `.catch` misses that entirely); and "unreachable" stays a **distinct** code from
+"refused", because they mean opposite things to a user — a refusal needs a different
+draft, an unreachable server needs the same one sent again.
+
+**Do differently:** when a failure mode has no place in the types, expect it to have no
+handling anywhere, and fix it by giving it a representation rather than by auditing call
+sites. Then check coverage, because these findings assert a *property* — no screen can
+strand itself — and a property is falsified by one exception. The first pass here closed
+the flagship screens and left eight sites behind, which is worth very little: the SPA
+still had eight ways to hang. `grep` for the unguarded shape until it returns nothing.
+
+Two related tells, both from the same sweep. **FE-4 was a guard that ran after the thing
+it guarded** — the loader wrote state directly, then checked its liveness flag in an empty
+continuation. It read like protection at a glance, which is why it survived; the fix was
+to move the writes, not to add a second check. And the quietest bug of the group was
+`useServerInfo` leaving `loading: true` for the tab's lifetime, because **a permanently
+pending state is indistinguishable from a slow one**. Nothing looked broken. When clearing
+such a flag, clear it toward the *refusing* default, never the permissive one — the whole
+hazard is that "we never got an answer" and "everything is allowed" are one edit apart.
