@@ -211,8 +211,14 @@ export function ProvisionService(): JSX.Element {
   useEffect(() => {
     if (!from || !op) return;
     let alive = true;
-    void api.getRequest(from).then((request) => {
-      if (!alive || !request) return;
+    // FE-1/FE-2: this is OPTIONAL prefill — the form is fully usable without it,
+    // so a failed read leaves the fields blank rather than blocking the screen.
+    // What it must not do is reject unhandled, which is what the bare `.then`
+    // did on every dropped connection.
+    void attempt(() => api.getRequest(from)).then((outcome) => {
+      if (!alive || !outcome.ok) return;
+      const request = outcome.value;
+      if (!request) return;
       if (provisionResourceType(request.operationId) !== op.target.resourceType) return;
       const seed: Record<string, unknown> = {};
       for (const p of op.params) {
