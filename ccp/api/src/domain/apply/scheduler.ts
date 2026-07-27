@@ -31,6 +31,20 @@ import { nullNotifier, type NotificationKind, type Notifier } from './notify';
  * worker loses the claim and reports `skipped-moved` without applying. The loop
  * (`./loop.ts`) additionally refuses to start a new tick while the previous one is still
  * in flight. Off by default: no loop runs unless `CCP_SCHEDULER=1`.
+ *
+ * NO STATE THIS MODULE WRITES IS A DEAD END (API-2/API-3). That is a property, not a
+ * coincidence, and it has three parts:
+ *
+ *  - `APPLYING` is LEASED, not owned forever. The claim stamps `applyClaimedAt`, and a
+ *    claim past {@link APPLY_LEASE_MS} is halted by a later tick — automatically, with no
+ *    operator verb to remember. The single-apply guarantee is unaffected: the sweep never
+ *    re-applies, it only releases.
+ *  - `HALTED_DRIFT`/`HALTED_APPLY_FAILED` are reachable by `POST /requests/:id/cancel`
+ *    (`routes/requests.ts#CANCELLABLE_STATUSES`). They still demand a human — that is the
+ *    point of a halt — but the human now has a verb.
+ *  - A request with NO plan pin is HELD in `AWAITING_DEPLOY_APPROVAL`, never halted. See
+ *    {@link PinState}: an absent pin is a deployment without a pin-writer, and destroying
+ *    the request over it is not a safety property, it is data loss.
  */
 
 /** Every audit entry this module writes is attributed to the server-side worker. */
@@ -43,19 +57,53 @@ const AWAITING = 'AWAITING_DEPLOY_APPROVAL';
 /**
  * Held statuses (clearly-named, tighten-only). A halted request LEAVES the auto-apply-
  * eligible state and demands a human — strictly MORE restrictive, never a weakening:
- *  - HALTED_DRIFT: the reviewed change can no longer be trusted (missing/corrupt pin,
- *    quorum shortfall, or a re-plan that drifted) → route to a FRESH plan/review.
- *  - HALTED_APPLY_FAILED: the apply itself failed after one retry → a human is alerted.
+ *  - HALTED_DRIFT: the reviewed change can no longer be trusted (CORRUPT pin, quorum
+ *    shortfall, or a re-plan that drifted) → route to a FRESH plan/review. A pin that was
+ *    never written is NOT this case — see {@link PinState}.
+ *  - HALTED_APPLY_FAILED: the apply itself failed after one retry, or its claim lease
+ *    expired with the worker gone → a human is alerted.
+ *
+ * Both are exited by CANCEL, and deliberately only by cancel: re-windowing a halted row
+ * would re-arm the exact plan the halt refused. The way forward from a halt is a fresh
+ * request through the humans.
  */
 export const HALTED_DRIFT = 'HALTED_DRIFT';
 export const HALTED_APPLY_FAILED = 'HALTED_APPLY_FAILED';
 
-export type HaltReason = 'NO_PINNED_PLAN' | 'QUORUM_LOST' | 'DRIFT' | 'APPLY_FAILED';
+export type HaltReason = 'NO_PINNED_PLAN' | 'QUORUM_LOST' | 'DRIFT' | 'APPLY_FAILED' | 'APPLY_LEASE_EXPIRED';
 
 export interface ApplyOutcome {
   requestId: string;
-  result: 'applied' | 'halted' | 'skipped-frozen' | 'skipped-moved';
+  result: 'applied' | 'halted' | 'skipped-frozen' | 'skipped-moved' | 'held-no-plan';
   haltReason?: HaltReason;
+}
+
+/**
+ * How long a worker may own an `APPLYING` claim before the scheduler treats it as dead
+ * (API-2). The claim is stamped with `applyClaimedAt` and NOTHING else ever writes an
+ * `APPLYING` row, so before this existed a worker that died between the claim and the
+ * outcome write left the request in `APPLYING` FOREVER: not cancellable, not
+ * re-windowable, not re-appliable, and not even visible to a later tick (which
+ * short-circuits every `APPLYING` row as `skipped-moved`).
+ *
+ * Deliberately far longer than any single apply — the bundle's own longest step timeout
+ * is 15 minutes and `loop.ts` refuses to overlap ticks — so a LIVE worker is never
+ * robbed of a claim it is still working. An hour of no progress on a single-process
+ * server means the process died, not that the apply is slow.
+ */
+export const APPLY_LEASE_MS = 60 * 60_000;
+
+/**
+ * Has this `APPLYING` row's claim outlived its lease as of `now`? `applyClaimedAt` is
+ * stamped by the claim; `updatedAt` is the fallback for a row claimed by a build that
+ * predates the stamp (the claim has always written `updatedAt`), so rows ALREADY wedged
+ * when this shipped recover too. A non-finite timestamp counts as expired: a row that
+ * cannot be aged is one nothing can ever release, which is the exact wedge being fixed.
+ */
+export function applyClaimExpired(req: Pick<RequestItem, 'applyClaimedAt' | 'updatedAt'>, now: number): boolean {
+  const claimedMs = Date.parse(req.applyClaimedAt ?? req.updatedAt);
+  if (!Number.isFinite(claimedMs)) return true;
+  return now - claimedMs >= APPLY_LEASE_MS;
 }
 
 export interface RunOptions {
@@ -71,24 +119,53 @@ export interface RunOptions {
 /* ── pure predicates ─────────────────────────────────────────────────────────── */
 
 /**
+ * The three states a request's plan pin can be in, which are NOT interchangeable
+ * (API-3):
+ *
+ *  - `intact`   — both fields present and `sha256(pinnedDiff) === planDigest`.
+ *  - `corrupt`  — a pin EXISTS but does not hold up: only one of the pair is present,
+ *                 or the digest does not match its diff. That is tamper/damage
+ *                 evidence and must HALT.
+ *  - `absent`   — neither field was ever written. Today that is EVERY request: the
+ *                 schema's own comment says the pin is "written at approval time by a
+ *                 LATER step" and no such step exists yet, so an absent pin means the
+ *                 pin-writer is not deployed — an operator misconfiguration, not a
+ *                 corrupted change. Halting on it destroyed every scheduled request the
+ *                 moment `CCP_SCHEDULER=1` was set.
+ *
+ * Collapsing `absent` into `corrupt` is what made arming the documented feature
+ * destructive; keeping them apart is what lets the scheduler HOLD instead of HALT.
+ */
+export type PinState = 'intact' | 'corrupt' | 'absent';
+
+export function pinStateOf(req: Pick<RequestItem, 'pinnedDiff' | 'planDigest'>): PinState {
+  const diff = typeof req.pinnedDiff === 'string' && req.pinnedDiff.length > 0 ? req.pinnedDiff : undefined;
+  const digest = typeof req.planDigest === 'string' && req.planDigest.length > 0 ? req.planDigest : undefined;
+  if (diff === undefined && digest === undefined) return 'absent';
+  if (diff === undefined || digest === undefined) return 'corrupt';
+  return digestOf(diff) === digest ? 'intact' : 'corrupt';
+}
+
+/**
  * Is the request's pinned reviewed plan present AND intact? Requires BOTH `pinnedDiff`
  * and `planDigest` to be NON-EMPTY strings, and the digest to be self-consistent with
  * the diff — a corrupt/tampered pin (digest ≠ sha256(diff)) or an empty pin is NOT
  * intact, so it can never reach `apply`. (Finding 3: empty `pinnedDiff` is rejected too.)
  */
 export function isPinIntact(req: Pick<RequestItem, 'pinnedDiff' | 'planDigest'>): boolean {
-  return (
-    typeof req.pinnedDiff === 'string' &&
-    req.pinnedDiff.length > 0 &&
-    typeof req.planDigest === 'string' &&
-    req.planDigest.length > 0 &&
-    digestOf(req.pinnedDiff) === req.planDigest
-  );
+  return pinStateOf(req) === 'intact';
 }
 
-/** Windowed + currently open per the authoritative windowcheck port (`at <= now < endAt`). */
-function windowOpen(req: Pick<RequestItem, 'schedule'>, now: number): boolean {
-  return req.schedule.kind === 'window' && evaluateTime(req.schedule, undefined, now).verdict === 'IN_WINDOW';
+/**
+ * Windowed + currently open per the authoritative windowcheck port (`at <= now < endAt`)
+ * AND past any cooling-off the row carries. `earliestApplyAt` used to be passed as
+ * `undefined` here (API-7), so the compensating-control delay that every human-facing
+ * read composes through `applyGate` was invisible to the ONE lane that applies without a
+ * human present. `evaluateTime` already handles it — the verdict is `BEFORE_WINDOW`, not
+ * `IN_WINDOW`, while cooling.
+ */
+function windowOpen(req: Pick<RequestItem, 'schedule' | 'earliestApplyAt'>, now: number): boolean {
+  return req.schedule.kind === 'window' && evaluateTime(req.schedule, req.earliestApplyAt, now).verdict === 'IN_WINDOW';
 }
 
 /**
@@ -96,7 +173,7 @@ function windowOpen(req: Pick<RequestItem, 'schedule'>, now: number): boolean {
  * request in AWAITING_DEPLOY_APPROVAL whose window is currently open. An APPLYING row is
  * NOT claimable (it is already owned) — `runDueApplies` handles those separately.
  */
-export function isDue(req: Pick<RequestItem, 'status' | 'schedule'>, now: number): boolean {
+export function isDue(req: Pick<RequestItem, 'status' | 'schedule' | 'earliestApplyAt'>, now: number): boolean {
   return req.status === AWAITING && windowOpen(req, now);
 }
 
@@ -139,6 +216,13 @@ const HALT_SPECS: Record<HaltReason, HaltSpec> = {
     notifyKind: 'apply-failed',
     message: 'Apply failed after one retry — halted; a human has been alerted',
   },
+  APPLY_LEASE_EXPIRED: {
+    status: HALTED_APPLY_FAILED,
+    action: 'scheduler-apply-lease-expired',
+    eventType: 'apply_failed',
+    notifyKind: 'apply-lease-expired',
+    message: 'The worker that claimed this apply never reported back — claim lease expired; a human must confirm what landed',
+  },
 };
 
 /* ── the scheduler core ──────────────────────────────────────────────────────── */
@@ -159,12 +243,39 @@ export async function runDueApplies(
   const notifier = opts.notifier ?? nullNotifier;
 
   const all = (await store.queryGSI1(requestCollectionGsi(projectId))) as RequestItem[];
-  // The due set is windowed + in-window requests that are either CLAIMABLE
-  // (AWAITING_DEPLOY_APPROVAL) OR already APPLYING. An APPLYING row is included ONLY so
-  // an overlapping worker deterministically reports `skipped-moved` (it is already
-  // claimed — see the claim guard in `processOne`) instead of silently ignoring it.
-  const due = all.filter((r) => windowOpen(r, now) && (r.status === AWAITING || r.status === APPLYING));
-  if (due.length === 0) return []; // nothing due → no work, no audit (avoids per-tick spam)
+
+  // CLAIMED ROWS ARE SWEPT INDEPENDENTLY OF THE WINDOW (API-2). A worker that dies
+  // mid-apply strands the row in `APPLYING`, and by the time anyone notices its window
+  // has usually closed — so a window-filtered sweep would never look at exactly the rows
+  // that are stuck. Every `APPLYING` row in the project is considered here, whatever its
+  // schedule says.
+  const claimed = all.filter((r) => r.status === APPLYING);
+
+  // The due set is windowed + in-window requests that are CLAIMABLE
+  // (AWAITING_DEPLOY_APPROVAL).
+  const due = all.filter((r) => r.status === AWAITING && windowOpen(r, now));
+
+  const outcomes: ApplyOutcome[] = [];
+
+  // LEASE SWEEP — runs BEFORE the freeze check and independently of it. It applies
+  // nothing; it only releases rows whose owner is gone. A frozen deployment that still
+  // accumulated unreleasable `APPLYING` rows would be the same permanent wedge with an
+  // extra step, so the freeze must not gate the cleanup.
+  for (const req of claimed) {
+    if (!applyClaimExpired(req, now)) {
+      // Owned by a (still-running) worker — NEVER re-apply. The claim's `ifEquals` guard
+      // would reject a re-claim anyway; short-circuiting here avoids a wasted re-plan.
+      outcomes.push({ requestId: req.id, result: 'skipped-moved' });
+      continue;
+    }
+    // The lease is up. HALT rather than re-claim: the dead worker may have applied
+    // some, all, or none of the change, and re-running an apply over a half-applied
+    // change is the one outcome worse than stopping. `HALTED_APPLY_FAILED` is now an
+    // exit, not a dead end — cancel accepts it (routes/requests.ts).
+    outcomes.push(await halt(store, projectId, req, 'APPLY_LEASE_EXPIRED', APPLYING, nowIsoStr, opts));
+  }
+
+  if (due.length === 0) return outcomes; // nothing due → no work, no audit (avoids per-tick spam)
 
   // FREEZE — before ANY apply. Either the env master switch or the project change-freeze
   // halts every auto-apply instantly; we record ONE audited no-op (not per-request, to
@@ -188,21 +299,14 @@ export async function runDueApplies(
     for (const r of due) {
       await notifier.notify({ kind: 'frozen', projectId, requestId: r.id, message: 'auto-apply frozen — held, not applied', at: nowIsoStr });
     }
-    return due.map((r) => ({ requestId: r.id, result: 'skipped-frozen' }));
+    for (const r of due) outcomes.push({ requestId: r.id, result: 'skipped-frozen' });
+    return outcomes;
   }
 
   // Sequential (not Promise.all): concurrent transacts against the SAME per-project
   // chain head would only self-contend — the exact reasoning `routes/requests.ts`'s
   // list-settle loop documents.
-  const outcomes: ApplyOutcome[] = [];
   for (const req of due) {
-    if (req.status === APPLYING) {
-      // Already claimed by a (possibly still-running or crashed) worker — NEVER re-apply.
-      // The claim's `ifEquals` guard would reject a re-claim anyway; short-circuiting
-      // here avoids a wasted re-plan for a row we can't touch.
-      outcomes.push({ requestId: req.id, result: 'skipped-moved' });
-      continue;
-    }
     outcomes.push(await processOne(store, projectId, now, req, executor, opts));
   }
   return outcomes;
@@ -221,8 +325,12 @@ async function processOne(
 
   // READ-ONLY GUARDS (on the snapshot) — halt from AWAITING_DEPLOY_APPROVAL, never claim.
   //
-  // GUARD 1 — pinned plan present & intact. Absent/corrupt → HALT, never apply.
-  if (!isPinIntact(req)) return halt(store, projectId, req, 'NO_PINNED_PLAN', AWAITING, nowIsoStr, opts);
+  // GUARD 1 — pinned plan present & intact. A CORRUPT pin halts (tamper/damage
+  // evidence); an ABSENT pin HOLDS the request exactly where it is (API-3). Neither
+  // ever applies.
+  const pin = pinStateOf(req);
+  if (pin === 'corrupt') return halt(store, projectId, req, 'NO_PINNED_PLAN', AWAITING, nowIsoStr, opts);
+  if (pin === 'absent') return holdNoPlan(store, projectId, req, nowIsoStr, opts);
 
   // GUARD 2 — defense-in-depth: still fully approved. AWAITING_DEPLOY_APPROVAL already
   // implies a completed ladder, but never apply a request short of its own quorum.
@@ -240,6 +348,9 @@ async function processOne(
   // overlapping worker loses the claim, reports `skipped-moved`, and does NOT apply.
   // Label honestly per executor: '[dry-run]' means no terraform ran; '[terraform]'
   // means the real executor is about to enact the approved planfile.
+  // The claim is stamped with `applyClaimedAt` so a LATER tick can tell a live claim
+  // from a dead one (API-2). Without it, `APPLYING` carried no age and the row could
+  // only ever be read as "owned by someone", forever.
   const kindTag = executor.kind !== undefined ? ` [${executor.kind}]` : '';
   const startEvent = { at: nowIsoStr, type: 'apply_started', label: `Auto-apply started${kindTag} — claimed for apply`, actor: SCHEDULER_ACTOR };
   const startEntry: AuditEntryInput = {
@@ -251,7 +362,7 @@ async function processOne(
     before: { status: req.status },
     after: { status: APPLYING },
   };
-  const claim = await writeStatusWithAudit(store, projectId, req, APPLYING, {}, startEvent, startEntry, AWAITING, nowIsoStr, opts.idFn);
+  const claim = await writeStatusWithAudit(store, projectId, req, APPLYING, { applyClaimedAt: nowIsoStr }, startEvent, startEntry, AWAITING, nowIsoStr, opts.idFn);
   if (!claim.committed || !claim.fresh) return { requestId: req.id, result: 'skipped-moved' }; // lost the claim
   const claimed = claim.fresh; // status APPLYING, owned by THIS worker
   await notifier.notify({ kind: 'apply-started', projectId, requestId: req.id, message: `auto-apply attempt for ${req.targetAddress}`, at: nowIsoStr });
@@ -306,6 +417,46 @@ async function tryApply(executor: ApplyExecutor, req: RequestItem): Promise<Appl
   } catch (e) {
     return { ok: false, detail: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/** The one-time timeline event a held-for-no-pin request carries. */
+export const HELD_NO_PLAN_EVENT = 'apply_held_no_plan';
+
+/**
+ * HOLD (API-3) — a request whose plan pin was never written stays exactly where it is:
+ * `AWAITING_DEPLOY_APPROVAL`, still cancellable, still re-windowable, still bundle-
+ * eligible. It is NOT halted, because nothing about the change is wrong; the deployment
+ * simply has no pin-writer.
+ *
+ * The hold is recorded ONCE per request — an audited timeline event the requester and
+ * the operator both see — and every later tick recognises that marker and writes
+ * nothing. That is the whole reason this is not a silent skip (which would be its own
+ * finding: an operator arms the documented feature, nothing happens, and no evidence
+ * anywhere says why) and not a per-tick audit entry either (a minute-by-minute forever
+ * loop against the per-project chain head).
+ */
+async function holdNoPlan(store: ConfigStore, projectId: string, req: RequestItem, nowIsoStr: string, opts: RunOptions): Promise<ApplyOutcome> {
+  if (req.events.some((e) => e.type === HELD_NO_PLAN_EVENT)) {
+    return { requestId: req.id, result: 'held-no-plan' }; // already recorded — no write, no audit
+  }
+  const message = 'No reviewed plan is pinned on this request — auto-apply is holding it, not applying and not halting';
+  const event = { at: nowIsoStr, type: HELD_NO_PLAN_EVENT, label: message, actor: SCHEDULER_ACTOR };
+  const entry: AuditEntryInput = {
+    action: 'scheduler-hold-noplan',
+    actor: SCHEDULER_ACTOR,
+    targetType: 'request',
+    targetId: req.id,
+    requestId: req.id,
+    before: { status: req.status },
+    after: { status: AWAITING, held: 'NO_PINNED_PLAN' },
+  };
+  // Same status in and out: the write appends the event and nothing else, guarded on the
+  // status this tick read so a concurrent cancel/rewindow/settle is never clobbered.
+  const { committed } = await writeStatusWithAudit(store, projectId, req, AWAITING, {}, event, entry, AWAITING, nowIsoStr, opts.idFn);
+  if (!committed) return { requestId: req.id, result: 'skipped-moved' };
+  const notifier = opts.notifier ?? nullNotifier;
+  await notifier.notify({ kind: 'held-no-plan', projectId, requestId: req.id, message, at: nowIsoStr });
+  return { requestId: req.id, result: 'held-no-plan' };
 }
 
 async function halt(store: ConfigStore, projectId: string, req: RequestItem, reason: HaltReason, fromStatus: string, nowIsoStr: string, opts: RunOptions): Promise<ApplyOutcome> {

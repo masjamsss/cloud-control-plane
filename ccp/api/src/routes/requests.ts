@@ -118,7 +118,25 @@ const OPEN_STATUSES = new Set(['AWAITING_CODE_REVIEW', 'NEEDS_ENGINEER']);
  * AS-MERGED, the check was a single hardcoded `!== 'APPROVED_COOLING'`, not
  * yet a Set — this is that promised one-line-per-status widening, made real).
  */
-const CANCELLABLE_STATUSES = new Set(['APPROVED_COOLING', 'AWAITING_DEPLOY_APPROVAL', 'WINDOW_EXPIRED']);
+const CANCELLABLE_STATUSES = new Set([
+  'APPROVED_COOLING',
+  'AWAITING_DEPLOY_APPROVAL',
+  'WINDOW_EXPIRED',
+  // The scheduler's halt statuses (API-2). Before this, nothing in the API could move a
+  // request out of `HALTED_DRIFT`/`HALTED_APPLY_FAILED`: approve/reject refuse them,
+  // rewindow refuses them, the bundle refuses them, and the scheduler itself only ever
+  // writes them. A halted change was unreachable by every verb the product ships, and
+  // the only remedy was editing the store JSON by hand.
+  //
+  // Cancel is the RIGHT exit and deliberately the only one. A halt means the reviewed
+  // plan can no longer be trusted (drift/corrupt pin/quorum shortfall) or that an apply
+  // may have half-landed — the halt messages already say "routed to a fresh
+  // plan/review". Re-windowing such a row straight back into auto-apply eligibility
+  // would re-arm exactly the plan the halt refused, so rewindow is NOT widened; the
+  // path out of a halt is cancel + resubmit, through the humans.
+  'HALTED_DRIFT',
+  'HALTED_APPLY_FAILED',
+]);
 /**
  * Statuses POST /:id/link-pr refuses: a terminally-refused request
  * has no fulfilling PR to point at. Everything else may gain (or correct) its
@@ -652,7 +670,13 @@ export function requestRoutes(): Hono<AppEnv> {
       // closed before quorum completed is a doomed wait — surfaced NOW, not after a
       // silent stall. With no cooling-off ever stamped, this only fires for a window
       // already wholly past (a slow quorum completing after close).
-      const infeasible = isWindowInfeasible(req.schedule, undefined, nowMs());
+      //
+      // `req.earliestApplyAt` is passed, not `undefined` (API-7): rewindow feeds this
+      // same predicate the row's cooling-off, and a row whose cooling cannot elapse
+      // before its window closes is exactly as doomed at quorum-met as it is at
+      // rewindow. Feeding one call site the field and the other `undefined` meant the
+      // same question got two answers.
+      const infeasible = isWindowInfeasible(req.schedule, req.earliestApplyAt, nowMs());
       // Freeze vetoes the quorum-met APPLIED stamp (0024 §2.2/§2.6.1): no request may
       // RECORD an apply during a freeze. Approving itself stays allowed (paperwork, not
       // applies); only THIS status decision is gated.
