@@ -50,7 +50,9 @@ SEV = r"critical|high|medium|low"
 declared = {}
 for f in sorted(glob.glob(os.path.join(audit_dir, "*.md"))):
     base = os.path.basename(f)
-    if base in ("README.md", "FINDINGS.md"):
+    # FINDINGS.md and LESSONS.md are the tracking files, not reports. LESSONS.md in
+    # particular numbers its entries `L-1`, which matches the finding-id shape.
+    if base in ("README.md", "FINDINGS.md", "LESSONS.md"):
         continue
     for line in open(f, encoding="utf-8"):
         h = re.match(r"^###\s+([A-Z]+-\d+[a-z]?)\s*(.*)$", line)
@@ -65,6 +67,7 @@ try:
 except Exception:
     valid_topics = set()
 
+ENTRY_PREFIX = re.compile(r"^- \[[ xX]\] [A-Z]+-\d+[a-z]? \|")
 LINE = re.compile(
     r"^- \[(?P<box>[ xX])\] (?P<id>[A-Z]+-\d+[a-z]?) \| (?P<sev>%s) \| (?P<topic>[^|]+?) \| (?P<status>[^|]+?) \| (?P<report>[^|]+?) \| (?P<title>.*)$"
     % SEV
@@ -77,7 +80,10 @@ for n, line in enumerate(open(ledger_path, encoding="utf-8"), 1):
     if line.lstrip().startswith("```"):
         in_fence = not in_fence
         continue
-    if in_fence or not line.startswith("- ["):
+    # An entry is a checkbox line whose first field is a finding id followed by `|`.
+    # The header's "definition of done" is also a checkbox list, and is prose — matching
+    # on the id-and-pipe prefix keeps the two apart without depending on line position.
+    if in_fence or not ENTRY_PREFIX.match(line):
         continue
     m = LINE.match(line.rstrip("\n"))
     if not m:
@@ -121,6 +127,42 @@ for fid in sorted(entries):
 open_ids = sorted(f for f, k in entries.items() if k == "open")
 n_open = len(open_ids)
 
+# --- lessons ledger --------------------------------------------------------
+# LESSONS.md is where a finding's generalisable lesson goes. It is checked here so it
+# cannot drift into unattributed folklore: every lesson must name at least one finding
+# that actually exists, and every heading must carry a Findings: line.
+lessons_path = os.path.join(audit_dir, "LESSONS.md")
+n_lessons = 0
+if os.path.exists(lessons_path):
+    lines = open(lessons_path, encoding="utf-8").read().split("\n")
+    fence, current = False, None
+    for i, line in enumerate(lines, 1):
+        if line.lstrip().startswith("```"):
+            fence = not fence
+            continue
+        if fence:
+            continue
+        h = re.match(r"^### (L-\d+)\s+—\s+(.+)$", line)
+        if h:
+            if current:
+                errors.append(f"{lessons_path}: lesson {current} has no 'Findings:' line")
+            current = h.group(1)
+            n_lessons += 1
+            continue
+        if current and line.startswith("Findings:"):
+            refs = [r.strip() for r in line[len("Findings:"):].split(",") if r.strip()]
+            if not refs:
+                errors.append(f"{lessons_path}:{i}: {current}: 'Findings:' line names no finding")
+            for r in refs:
+                if r not in declared:
+                    errors.append(
+                        f"{lessons_path}:{i}: {current} references '{r}', which is not a finding "
+                        "declared by any report"
+                    )
+            current = None
+    if current:
+        errors.append(f"{lessons_path}: lesson {current} has no 'Findings:' line")
+
 try:
     baseline = int(open(baseline_path).read().strip())
 except Exception:
@@ -128,7 +170,8 @@ except Exception:
     errors.append(f"findings-gate: cannot read baseline at {baseline_path}")
 
 print(f"findings-gate: {len(declared)} findings declared · {len(entries)} tracked · {n_open} open"
-      + (f" (baseline {baseline})" if baseline is not None else ""))
+      + (f" (baseline {baseline})" if baseline is not None else "")
+      + f" · {n_lessons} lesson(s)")
 
 if errors:
     for e in errors:

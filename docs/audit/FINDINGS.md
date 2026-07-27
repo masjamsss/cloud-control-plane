@@ -4,6 +4,28 @@ Single source of truth for every finding in `docs/audit/`. **Machine-verified by
 
 Grouped by **root-cause topic**, not by report, because the reports slice the same causes several ways: `spawnSync` on the serving thread produces findings in five different reports, and the missing `ifEquals` guard produces findings in three. Fixing by topic closes them in batches; fixing by report re-derives the same cause repeatedly.
 
+## Definition of done — every fix must satisfy all of these
+
+A finding is not `fixed` because the code changed. It is `fixed` when a reader six
+months from now can confirm it without re-deriving the problem. Before flipping a line
+to `fixed:`, all six must hold:
+
+- [ ] **The defect is reproduced first.** You saw it fail, not just reasoned that it would.
+- [ ] **The fix addresses the cause, not the symptom.** If the same class can recur through
+      another path, say so in the ledger or open a new finding for it.
+- [ ] **A regression test pins it**, and that test fails against the unfixed code. An
+      untested fix is a claim, not a result.
+- [ ] **The failure mode is loud.** A check that cannot run must never be
+      indistinguishable from a check that passed — that is CI-2's whole lesson.
+- [ ] **Evidence is in the status line**: a commit sha, PR ref, or test name. `fixed:` with
+      no evidence is rejected by the gate.
+- [ ] **A lesson is recorded in [`LESSONS.md`](LESSONS.md)** if the finding taught something
+      that generalises beyond the one line changed.
+
+Partial fixes are honest and welcome — but they stay `open`, with the residue described,
+rather than being rounded up to `fixed`. IMP-7 is the worked example: its divergence is
+gone, its recurrence guard is not, so the entry records both.
+
 ## Line grammar (the gate parses this — keep the format)
 
 ```
@@ -21,7 +43,7 @@ Grouped by **root-cause topic**, not by report, because the reports slice the sa
 
 Anything other than `open` must have the checkbox ticked (`[x]`). The gate enforces that.
 
-Valid topics live in `scripts/findings-topics.txt`; the gate rejects any other value, so a typo cannot invent a topic.
+Valid topics live in `scripts/findings-topics.txt`; the gate rejects any other value, so a typo cannot invent a topic nobody tracks.
 
 ## Status
 
@@ -38,9 +60,9 @@ The gate has two modes. The default **ratchets**: it fails if a finding loses it
 | [`silent-failure`](#silent-failure) | 17 |  | 2 |
 | [`stuck-state`](#stuck-state) | 17 |  | 7 |
 | [`authz-identity`](#authz-identity) | 13 |  | 3 |
-| [`duplication`](#duplication) | 11 |  |  |
+| [`ci-not-wired`](#ci-not-wired) | 12 |  | 6 |
 | [`data-persistence`](#data-persistence) | 11 | 1 | 1 |
-| [`ci-not-wired`](#ci-not-wired) | 11 |  | 5 |
+| [`duplication`](#duplication) | 11 |  |  |
 | [`importer`](#importer) | 10 |  | 2 |
 | [`test-quality`](#test-quality) | 10 |  | 1 |
 | [`blocking-io`](#blocking-io) | 9 |  | 5 |
@@ -49,13 +71,13 @@ The gate has two modes. The default **ratchets**: it fails if a finding loses it
 | [`install-ops`](#install-ops) | 7 | 1 | 1 |
 | [`scale-and-paging`](#scale-and-paging) | 7 |  | 2 |
 | [`audit-chain`](#audit-chain) | 6 |  | 2 |
-| [`resource-leak`](#resource-leak) | 4 |  | 1 |
-| [`frontend-a11y`](#frontend-a11y) | 4 |  | 1 |
 | [`catalogctl`](#catalogctl) | 4 |  | 1 |
+| [`frontend-a11y`](#frontend-a11y) | 4 |  | 1 |
 | [`observability`](#observability) | 4 |  | 1 |
-| [`frontend-nav`](#frontend-nav) | 3 |  |  |
-| [`scheduler`](#scheduler) | 3 |  | 1 |
 | [`frontend-form`](#frontend-form) | 3 |  |  |
+| [`frontend-nav`](#frontend-nav) | 3 |  |  |
+| [`resource-leak`](#resource-leak) | 3 |  |  |
+| [`scheduler`](#scheduler) | 3 |  | 1 |
 
 ## concurrency
 
@@ -170,21 +192,22 @@ Roles, sessions, TOTP, dual control, quorum and idempotency.
 - [ ] DOC-14 | low | authz-identity | open | 14-contracts-docs.md | PERMISSIONS.md §9 cites a "§2 apply row" that does not exist
 - [ ] FE-12 | low | authz-identity | open | 05-frontend-flows.md | After a partial approval, the queue keeps a card the server's pending scope would drop
 
-## duplication
+## ci-not-wired
 
-The same rule implemented in two places, free to drift.
+Checks that exist but run nowhere, or run and prove nothing.
 
-- [ ] ARCH-5 | medium | duplication | open | 01-architecture.md | Two sources of truth for the catalog: the server validates against the image-baked catalog, the SPA renders the per-project uploaded one
-- [ ] ARCH-7 | medium | duplication | open | 01-architecture.md | The request-status vocabulary is an unowned, drifted contract
-- [ ] ARCH-8 | medium | duplication | open | 01-architecture.md | The governance domain is implemented twice (server + browser mock) with acknowledged behavioral divergence
-- [ ] DOC-13 | medium | duplication | open | 14-contracts-docs.md | Request-status vocabulary is three-way inconsistent (SPA union vs server writes vs YAML prose)
-- [ ] ARCH-11 | low | duplication | open | 01-architecture.md | Arming-flag sprawl with no whole-config validation
-- [ ] ARCH-13 | low | duplication | open | 01-architecture.md | Project-id grammar duplicated inline despite a declared single home
-- [ ] ARCH-16 | low | duplication | open | 01-architecture.md | Vestigial code and stale references
-- [ ] CTL-10 | low | duplication | open | 07-catalogctl.md | Duplicated literal-object token-walkers (edit vs driftpropose) have already diverged in behavior
-- [ ] FE-11 | low | duplication | open | 05-frontend-flows.md | `WINDOW_EXPIRED` is missing from both status-filter vocabularies
-- [ ] OPS-14 | low | duplication | open | 10-reliability-operations.md | Stale references to a nonexistent `.github/workflows/terraform.yml` anchor the Terraform pin
-- [ ] UI-10 | low | duplication | open | 06-frontend-ui-robustness.md | Request-status copy has four competing sources; raw enum text can reach the UI
+- [ ] CI-1 | high | ci-not-wired | open | 13-ci-cd.md | Two components' test suites run in no CI at all, and one of them is currently failing
+- [x] CI-2 | high | ci-not-wired | fixed:pin >=v8.19.0 for `gitleaks dir` + PG-9 now hard-fails on a failed invocation | 13-ci-cd.md | PG-9 (gitleaks) is a silent no-op in CI: the pinned v8.18.4 has no `dir` subcommand, and the script converts the resulting error into PASS
+- [ ] CI-3 | high | ci-not-wired | open | 13-ci-cd.md | Path filters skip validation for cross-component dependencies: app-lib, catalogctl parity, the canonical redaction rules, and the gate scripts themselves
+- [ ] CI-4 | high | ci-not-wired | open | 13-ci-cd.md | The product's core "CI applies" pipeline is not shipped: nothing invokes plancheck-gate.sh or apply-window-gate.sh, and docs/scripts reference a workflow that no longer exists
+- [ ] IMP-3 | high | ci-not-wired | open | 08-importer-schemadump.md | No CI executes any importer test suite; two shipped regressions prove the gap
+- [ ] TEST-2 | high | ci-not-wired | open | 12-testing-quality.md | No CI lane executes any Python test suite; `gate.sh` omits them too
+- [ ] CI-8 | medium | ci-not-wired | open | 13-ci-cd.md | PG-5's secret heuristic misses the most common real-world shapes, and its designated backstop is dead in CI
+- [ ] OPS-9 | medium | ci-not-wired | open | 10-reliability-operations.md | The documented CI-runner cutover only routes 2 of 8 workflows
+- [ ] CI-10 | low | ci-not-wired | open | 13-ci-cd.md | Push-trigger path filters omit the workflow file itself on ccp-api and ccp-smoke
+- [ ] CI-11 | low | ci-not-wired | open | 13-ci-cd.md | Stale toolchain claims: gate.sh advertises checks CI does not run
+- [ ] CI-12 | low | ci-not-wired | open | 13-ci-cd.md | Inconsistent action pinning, with a comment that contradicts the file it sits in; setup-go caching is configured to a nonexistent root go.sum
+- [ ] CI-13 | low | ci-not-wired | open | 13-ci-cd.md | The smoke proves boot + serve, not the system's function; PR runs of it are triggered by any `ccp/**` docs change
 
 ## data-persistence
 
@@ -202,21 +225,21 @@ Durability, rollback, schema validation on load, and store-seam fidelity against
 - [ ] DATA-15 | low | data-persistence | open | 03-data-integrity.md | Map key concatenation with a space separator is aliasable in principle; client-controlled bytes reach PKs unconstrained
 - [ ] DATA-16 | low | data-persistence | open | 03-data-integrity.md | No format/version marker in the snapshot file; migration rests entirely on convention
 
-## ci-not-wired
+## duplication
 
-Checks that exist but run nowhere, or run and prove nothing.
+The same rule implemented in two places, free to drift.
 
-- [ ] CI-1 | high | ci-not-wired | open | 13-ci-cd.md | Two components' test suites run in no CI at all, and one of them is currently failing
-- [ ] CI-3 | high | ci-not-wired | open | 13-ci-cd.md | Path filters skip validation for cross-component dependencies: app-lib, catalogctl parity, the canonical redaction rules, and the gate scripts themselves
-- [ ] CI-4 | high | ci-not-wired | open | 13-ci-cd.md | The product's core "CI applies" pipeline is not shipped: nothing invokes plancheck-gate.sh or apply-window-gate.sh, and docs/scripts reference a workflow that no longer exists
-- [ ] IMP-3 | high | ci-not-wired | open | 08-importer-schemadump.md | No CI executes any importer test suite; two shipped regressions prove the gap
-- [ ] TEST-2 | high | ci-not-wired | open | 12-testing-quality.md | No CI lane executes any Python test suite; `gate.sh` omits them too
-- [ ] CI-8 | medium | ci-not-wired | open | 13-ci-cd.md | PG-5's secret heuristic misses the most common real-world shapes, and its designated backstop is dead in CI
-- [ ] OPS-9 | medium | ci-not-wired | open | 10-reliability-operations.md | The documented CI-runner cutover only routes 2 of 8 workflows
-- [ ] CI-10 | low | ci-not-wired | open | 13-ci-cd.md | Push-trigger path filters omit the workflow file itself on ccp-api and ccp-smoke
-- [ ] CI-11 | low | ci-not-wired | open | 13-ci-cd.md | Stale toolchain claims: gate.sh advertises checks CI does not run
-- [ ] CI-12 | low | ci-not-wired | open | 13-ci-cd.md | Inconsistent action pinning, with a comment that contradicts the file it sits in; setup-go caching is configured to a nonexistent root go.sum
-- [ ] CI-13 | low | ci-not-wired | open | 13-ci-cd.md | The smoke proves boot + serve, not the system's function; PR runs of it are triggered by any `ccp/**` docs change
+- [ ] ARCH-5 | medium | duplication | open | 01-architecture.md | Two sources of truth for the catalog: the server validates against the image-baked catalog, the SPA renders the per-project uploaded one
+- [ ] ARCH-7 | medium | duplication | open | 01-architecture.md | The request-status vocabulary is an unowned, drifted contract
+- [ ] ARCH-8 | medium | duplication | open | 01-architecture.md | The governance domain is implemented twice (server + browser mock) with acknowledged behavioral divergence
+- [ ] DOC-13 | medium | duplication | open | 14-contracts-docs.md | Request-status vocabulary is three-way inconsistent (SPA union vs server writes vs YAML prose)
+- [ ] ARCH-11 | low | duplication | open | 01-architecture.md | Arming-flag sprawl with no whole-config validation
+- [ ] ARCH-13 | low | duplication | open | 01-architecture.md | Project-id grammar duplicated inline despite a declared single home
+- [ ] ARCH-16 | low | duplication | open | 01-architecture.md | Vestigial code and stale references
+- [ ] CTL-10 | low | duplication | open | 07-catalogctl.md | Duplicated literal-object token-walkers (edit vs driftpropose) have already diverged in behavior
+- [ ] FE-11 | low | duplication | open | 05-frontend-flows.md | `WINDOW_EXPIRED` is missing from both status-filter vocabularies
+- [ ] OPS-14 | low | duplication | open | 10-reliability-operations.md | Stale references to a nonexistent `.github/workflows/terraform.yml` anchor the Terraform pin
+- [ ] UI-10 | low | duplication | open | 06-frontend-ui-robustness.md | Request-status copy has four competing sources; raw enum text can reach the UI
 
 ## importer
 
@@ -322,14 +345,14 @@ The evidence chain: month walk, export, verification.
 - [ ] PERF-7 | medium | audit-chain | open | 11-performance-scalability.md | Nothing in the store is ever purged: sessions, idempotency markers, and the audit chain grow forever (and every byte is re-serialized per request)
 - [ ] DATA-17 | low | audit-chain | open | 03-data-integrity.md | Calendar-dependent test: the FileStore audit-durability test hardcodes month `202607`
 
-## resource-leak
+## catalogctl
 
-Workspaces, temp files and unbounded resources.
+The codemod, plan-check and drift-edit.
 
-- [ ] CI-2 | high | resource-leak | open | 13-ci-cd.md | PG-9 (gitleaks) is a silent no-op in CI: the pinned v8.18.4 has no `dir` subcommand, and the script converts the resulting error into PASS
-- [ ] API-16 | low | resource-leak | open | 02-api-correctness.md | Bundle workspace leaks and unchecked git steps
-- [ ] DATA-13 | low | resource-leak | open | 03-data-integrity.md | Failed atomic writes leak temp files in the store path
-- [ ] ERR-13 | low | resource-leak | open | 09-error-handling.md | `prepare()` leaks the cloned workspace when `rev-parse` fails
+- [ ] IMP-1 | high | catalogctl | open | 08-importer-schemadump.md | `importer/kit/normalize.py` `split`/`guard` crash under the repo-pinned python-hcl2 (KeyError, not a refusal)
+- [ ] CTL-2 | medium | catalogctl | open | 07-catalogctl.md | `moved_block` writes invalid or duplicate-resource HCL at exit 0: no identifier validation, no destination-collision check, no dangling-reference handling
+- [ ] IMP-5 | medium | catalogctl | open | 08-importer-schemadump.md | kit-azure `discover.sh` never clears stale page files: a re-run can resurrect deleted resources into the manifest
+- [ ] PERF-6 | medium | catalogctl | open | 11-performance-scalability.md | API mode re-downloads and re-parses the full inventory + manifest set on every route mount; the serve endpoints send no caching headers
 
 ## frontend-a11y
 
@@ -340,15 +363,6 @@ Focus management, dialog semantics, duplicate DOM ids.
 - [ ] UI-6 | medium | frontend-a11y | open | 06-frontend-ui-robustness.md | Hand-rolled drift drawers are dialogs in name only: no aria-modal, no focus move, no focus trap, no Escape
 - [ ] UI-7 | medium | frontend-a11y | open | 06-frontend-ui-robustness.md | ErrorSummary links are dead anchors for radio-group and repeated-block fields
 
-## catalogctl
-
-The codemod, plan-check and drift-edit.
-
-- [ ] IMP-1 | high | catalogctl | open | 08-importer-schemadump.md | `importer/kit/normalize.py` `split`/`guard` crash under the repo-pinned python-hcl2 (KeyError, not a refusal)
-- [ ] CTL-2 | medium | catalogctl | open | 07-catalogctl.md | `moved_block` writes invalid or duplicate-resource HCL at exit 0: no identifier validation, no destination-collision check, no dangling-reference handling
-- [ ] IMP-5 | medium | catalogctl | open | 08-importer-schemadump.md | kit-azure `discover.sh` never clears stale page files: a re-run can resurrect deleted resources into the manifest
-- [ ] PERF-6 | medium | catalogctl | open | 11-performance-scalability.md | API mode re-downloads and re-parses the full inventory + manifest set on every route mount; the serve endpoints send no caching headers
-
 ## observability
 
 No request logging, no request ids, missing healthchecks.
@@ -358,6 +372,14 @@ No request logging, no request ids, missing healthchecks.
 - [ ] OPS-10 | medium | observability | open | 10-reliability-operations.md | No log rotation and no resource limits on any service
 - [ ] OPS-7 | medium | observability | open | 10-reliability-operations.md | No HTTP request logging and no request IDs anywhere in the api
 
+## frontend-form
+
+SchemaForm, repeated blocks and pickers.
+
+- [ ] UI-11 | low | frontend-form | open | 06-frontend-ui-robustness.md | Nested repeated blocks skip their instance-count bounds
+- [ ] UI-13 | low | frontend-form | open | 06-frontend-ui-robustness.md | RepeatedBlockField keys instances and touched-state by array index: state misattributes after a mid-list removal
+- [ ] UI-14 | low | frontend-form | open | 06-frontend-ui-robustness.md | InventoryPicker: an optional single-select can never be cleared
+
 ## frontend-nav
 
 Routing, redirects and current-page indication.
@@ -366,6 +388,14 @@ Routing, redirects and current-page indication.
 - [ ] ARCH-12 | low | frontend-nav | open | 01-architecture.md | `catalogctl` README's "complete, no more, no fewer" subcommand table omits a third of the subcommands
 - [ ] FE-13 | low | frontend-nav | open | 05-frontend-flows.md | RequestDetail sub-panels hold un-keyed local state across request-id navigation
 
+## resource-leak
+
+Workspaces, temp files and unbounded resources.
+
+- [ ] API-16 | low | resource-leak | open | 02-api-correctness.md | Bundle workspace leaks and unchecked git steps
+- [ ] DATA-13 | low | resource-leak | open | 03-data-integrity.md | Failed atomic writes leak temp files in the store path
+- [ ] ERR-13 | low | resource-leak | open | 09-error-handling.md | `prepare()` leaks the cloned workspace when `rev-parse` fails
+
 ## scheduler
 
 The apply scheduler and cooling windows.
@@ -373,11 +403,3 @@ The apply scheduler and cooling windows.
 - [ ] API-3 | high | scheduler | open | 02-api-correctness.md | Arming the scheduler halts every scheduled request: nothing ever writes the plan pin it requires
 - [ ] API-7 | medium | scheduler | open | 02-api-correctness.md | Scheduler ignores `earliestApplyAt`: a still-cooling request auto-applies the moment its window opens
 - [ ] PERF-14 | low | scheduler | open | 11-performance-scalability.md | Scheduler tick re-scans every project's full request collection every minute
-
-## frontend-form
-
-SchemaForm, repeated blocks and pickers.
-
-- [ ] UI-11 | low | frontend-form | open | 06-frontend-ui-robustness.md | Nested repeated blocks skip their instance-count bounds
-- [ ] UI-13 | low | frontend-form | open | 06-frontend-ui-robustness.md | RepeatedBlockField keys instances and touched-state by array index: state misattributes after a mid-list removal
-- [ ] UI-14 | low | frontend-form | open | 06-frontend-ui-robustness.md | InventoryPicker: an optional single-select can never be cleared
