@@ -265,7 +265,7 @@ Red suites, silent skips, fixtures that pin the wrong premise.
 - [x] TEST-1 | high | test-quality | fixed:importer/kit is green at HEAD (106 pass, was 7 failing) + .github/workflows/importer.yml | 12-testing-quality.md | `importer/kit` test suite is red at HEAD: 7 of 106 tests fail
 - [ ] CTL-11 | medium | test-quality | open | 07-catalogctl.md | Golden coverage runs against forked fixture manifests, not the shipped catalog; comment-bearing fixtures are absent
 - [ ] CTL-3 | medium | test-quality | open | 07-catalogctl.md | Shipped catalog op `waf-add-ip-set-entry` can never execute (exit 1 internal error); the corrected manifest exists only in test fixtures
-- [ ] TEST-3 | medium | test-quality | open | 12-testing-quality.md | `ccp/app/scripts/test_build_inventory.py` fails at HEAD (stale fixture premise)
+- [x] TEST-3 | medium | test-quality | fixed:synthetic unmanaged type in the fixture + suite wired into .github/workflows/importer.yml | 12-testing-quality.md | `ccp/app/scripts/test_build_inventory.py` fails at HEAD (stale fixture premise)
 - [ ] TEST-5 | medium | test-quality | open | 12-testing-quality.md | No code-coverage measurement anywhere; `coverage.test.ts` is not code coverage
 - [ ] CTL-7 | low | test-quality | open | 07-catalogctl.md | plancheck's `inventoryAddr` does not skip `role:"reference"` inventory params, diverging from the executor's `targetAddress`
 - [ ] FE-10 | low | test-quality | open | 05-frontend-flows.md | Mock `rejectRequest` skips the status guard the real API enforces

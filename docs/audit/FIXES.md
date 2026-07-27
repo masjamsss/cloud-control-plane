@@ -451,3 +451,31 @@ it yields `3.12` and `5.1.1`.
 **Residue:** CI-1 and TEST-2 are **not** closed by this. They are broader — TEST-2 notes
 `gate.sh` omits the Python suites too, and CI-1 covers the whole class. This lane is the
 largest piece of both, but neither is finished.
+
+## TEST-3
+
+*`ccp/app/scripts/test_build_inventory.py` fails at HEAD (stale fixture premise).*
+
+- [x] **Defect reproduced first** — 1 failed, 29 passed. The test writes an `aws_sqs_queue`
+      and asserts the inventory is empty, but the run produces the SQS row.
+- [x] **Cause, not symptom** — the code is right and the test's *premise* went stale: the
+      catalog grew to cover SQS, so the "unmanaged" fixture stopped being unmanaged. The
+      property under test — unmanaged types are filtered out — is real and worth keeping,
+      so the fix is a better fixture, not a deleted test.
+      **The fixture now uses a synthetic type** (`aws_ccp_nonexistent_thing`) rather than
+      another obscure real one. The catalog covers 864 resource types and grows; any real
+      type picked here is a future false failure by the same mechanism that produced this
+      one. A type no provider will ever ship cannot be overtaken.
+- [x] **Regression test** — the existing test, now green and no longer time-bombed.
+- [x] **Failure is loud** — n/a; no runtime behaviour changed.
+- [x] **Evidence in the status line** — the fixture change plus the CI lane.
+- [x] **Lesson recorded** — L-9.
+- [x] **…and the reason it stayed red**: this suite ran in no workflow either. It is now a
+      step in `importer.yml`'s python job — not the importer, but the same gap, and keeping
+      every unrun Python suite in one lane is what stops the next one hiding.
+
+**Verification:** 30 passed (was 1 failed / 29 passed).
+
+**Residue:** the lane is named `importer` and now runs an app suite. Accurate enough today
+and the step is commented, but if a third unrelated Python suite joins, the workflow should
+be renamed rather than accreting.

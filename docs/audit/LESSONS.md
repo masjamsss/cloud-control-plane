@@ -170,3 +170,23 @@ the same shape before closing it — the fix comment is the search term. And a c
 whose tests run nowhere is not tested, however many tests it has; wiring the lane is part
 of the fix, not follow-up. Here both kits now run in one lane, so the next divergence fails
 a build instead of waiting for an audit.
+
+### L-9 — A fixture that names a real thing has an expiry date
+
+Findings: TEST-3
+
+`test_unmanaged_resource_type_is_excluded` asserted that an `aws_sqs_queue` does not appear
+in the inventory, because no manifest covered SQS. That was true when written. The catalog
+now covers 864 resource types, SQS among them, and the test went red — not because the
+behaviour regressed, but because the world moved under the fixture.
+
+The tempting fix is to pick a more obscure real type. That just resets the timer: the
+catalog grows, and the next person gets the same false failure with less context to
+diagnose it.
+
+**Do differently:** when a test needs an example of a category ("a type nothing covers", "a
+region we do not support", "an unknown status"), prefer a value that is synthetic by
+construction over one that is merely rare today. A real value asserts a fact about the
+world that the test does not control; a synthetic one asserts only the behaviour under
+test. Where a real value is genuinely required, derive it at runtime from the same source
+of truth the code uses, so it cannot drift.
