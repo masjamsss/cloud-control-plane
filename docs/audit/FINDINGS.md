@@ -105,6 +105,7 @@ Unguarded full-row writes and lost updates. Largely one root cause — the store
 - [ ] CONC-13 | low | concurrency | open | 04-concurrency.md | Concurrent first-boot settlement can escape its own race handling and 500 early requests
 - [ ] CONC-14 | low | concurrency | open | 04-concurrency.md | Team CRUD writes bump `version` but never guard on it
 - [ ] CONC-15 | low | concurrency | open | 04-concurrency.md | `transactWithAudit` conflates a caller's domain guard failure with chain contention, producing dead error paths and mislabeled conflicts
+- [ ] REM-2 | low | concurrency | open | 15-remediation.md | Session rows are still written with blind full-row puts
 
 ## contracts-docs
 
@@ -224,6 +225,7 @@ Durability, rollback, schema validation on load, and store-seam fidelity against
 - [ ] DATA-14 | low | data-persistence | open | 03-data-integrity.md | Seam-fidelity gaps between MemoryStore and the promised DynamoDB semantics
 - [ ] DATA-15 | low | data-persistence | open | 03-data-integrity.md | Map key concatenation with a space separator is aliasable in principle; client-controlled bytes reach PKs unconstrained
 - [ ] DATA-16 | low | data-persistence | open | 03-data-integrity.md | No format/version marker in the snapshot file; migration rests entirely on convention
+- [ ] REM-1 | medium | data-persistence | open | 15-remediation.md | The optimistic-concurrency guards cannot bite on rows written before they existed
 
 ## duplication
 
