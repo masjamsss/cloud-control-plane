@@ -162,7 +162,12 @@ func TestCheckPublicIngressGoogle(t *testing.T) {
 			name: "no ranges but source_service_accounts present suppresses the default ⇒ clean",
 			op:   fwOp("l1_with_guardrails"),
 			plan: planOf(sgChange("google_compute_firewall.sa", []string{"create"},
-				nil, withSources(fwRule("INGRESS", true), "source_service_accounts", "svc@p.iam.gserviceaccount.com"))),
+				// Address is deliberately RFC 2606 (.example): sourceRangesGoogle only
+				// asks whether this list is non-empty (publicingress_google.go — it
+				// never parses the value), so the reserved domain keeps the fixture
+				// legible as a service-account principal while leaving the tree with
+				// no person-shaped address for the publish gate's PG-6 to flag.
+				nil, withSources(fwRule("INGRESS", true), "source_service_accounts", "svc@p.iam.gserviceaccount.example"))),
 			wantVuln: 0,
 		},
 		{
