@@ -3,6 +3,7 @@ import type { JSX } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Inventory, ManifestOperation, Schedule, ServiceManifest } from '@/types';
 import { api } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
 import { isChangeFrozen, isOpDisabled, useSettings } from '@/lib/settings';
 import { getOperation, validateParams } from '@/lib/interpreter';
@@ -20,6 +21,8 @@ import { RiskBadge } from '@/components/ui/RiskBadge';
 import { MacdTag } from '@/components/ui/MacdTag';
 import { AccessBadge } from '@/components/ui/AccessBadge';
 import { resolveRisk } from '@/lib/riskOverrides';
+import { LoadError } from '@/components/LoadError';
+import { submitChangeSetVia } from './submitFlow';
 import './request.css';
 
 const MIN_JUSTIFICATION = 10;
@@ -133,12 +136,12 @@ export function BulkRequestFormView({
     });
     if (targetParam) delete active[targetParam.name];
     const draft = bulkToChangeSet(op, targets, active, justification.trim(), schedule);
-    void api.submitChangeSet(draft).then((result) => {
-      if (result.ok) navigate('/requests/' + result.request.id);
-      else {
-        setSubmitting(false);
-        setBlocked(result.reason);
-      }
+    // Never rejects (FE-1): a dropped connection used to leave `submitting`
+    // true and the Submit button reading "Submitting…" until a reload.
+    void submitChangeSetVia(api, (path) => navigate(path), draft).then((result) => {
+      if (result.ok) return; // already navigated
+      setSubmitting(false);
+      setBlocked(result.reason);
     });
   };
 
@@ -267,12 +270,22 @@ export function BulkRequestForm(): JSX.Element {
   const [manifests, setManifests] = useState<ServiceManifest[]>([]);
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const projectId = useActiveProjectId();
 
   useEffect(() => {
     let alive = true;
-    void Promise.all([api.listManifests(), api.getInventory()]).then(([m, inv]) => {
+    setLoadError(null);
+    // FE-2/UI-1 — see MyRequests: a rejected fetch used to hang this form
+    // on "Loading…" with no message and no retry.
+    void attempt(() => Promise.all([api.listManifests(), api.getInventory()])).then((outcome) => {
       if (!alive) return;
+      if (!outcome.ok) {
+        setLoadError(outcome.reason);
+        return;
+      }
+      const [m, inv] = outcome.value;
       setManifests(m);
       setInventory(inv);
       setLoaded(true);
@@ -280,13 +293,25 @@ export function BulkRequestForm(): JSX.Element {
     return () => {
       alive = false;
     };
-  }, [projectId]);
+  }, [projectId, reloadToken]);
 
   const op = useMemo(
     () => (operationId ? getOperation(operationId, manifests) : undefined),
     [operationId, manifests],
   );
   const meta = getServiceMeta(serviceSlug);
+
+  if (loadError !== null) {
+    return (
+      <div className="rq">
+        <LoadError
+          message={loadError}
+          what="this form"
+          onRetry={() => setReloadToken((n) => n + 1)}
+        />
+      </div>
+    );
+  }
 
   if (!loaded || !inventory) {
     return (

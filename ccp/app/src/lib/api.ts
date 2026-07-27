@@ -159,10 +159,21 @@ export { SERVER_FLOWS, noCapabilities };
  * reason inline. `code` buckets the taxonomy the real API returns: `FROZEN`
  * (estate frozen → HTTP 423), `OP_DISABLED`/`OUT_OF_BOUNDS` (→ 422), `FORBIDDEN`
  * (any other refusal — team scope, role, no session).
+ *
+ * `UNREACHABLE` is the one code the SERVER never produces: it means the call
+ * never got an answer at all (a rejected fetch — dropped link, api restart,
+ * proxy error). It is a distinct code rather than being folded into
+ * `FORBIDDEN` because the two mean opposite things to a requester — a
+ * refusal is final and needs a different draft, an unreachable server needs
+ * the same draft sent again (FE-1). Nothing was submitted either way.
  */
 export type SubmitResult =
   | { ok: true; request: ChangeRequest }
-  | { ok: false; reason: string; code: 'FROZEN' | 'OP_DISABLED' | 'OUT_OF_BOUNDS' | 'FORBIDDEN' };
+  | {
+      ok: false;
+      reason: string;
+      code: 'FROZEN' | 'OP_DISABLED' | 'OUT_OF_BOUNDS' | 'FORBIDDEN' | 'UNREACHABLE';
+    };
 
 /**
  * The outcome of "Start drift check" (spec addendum A7 / plan B1,
