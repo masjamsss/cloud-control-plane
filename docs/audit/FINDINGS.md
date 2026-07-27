@@ -157,12 +157,12 @@ Failures that produce no signal — swallowed rejections, best-effort compensati
 
 States nothing can leave: wedged jobs, dead-end requests, permanently disabled controls.
 
-- [ ] API-2 | high | stuck-state | open | 02-api-correctness.md | HALTED_* and orphaned APPLYING requests are unrecoverable dead-end states
+- [x] API-2 | high | stuck-state | fixed:a19e688 | 02-api-correctness.md | HALTED_* and orphaned APPLYING requests are unrecoverable dead-end states
 - [ ] ERR-2 | high | stuck-state | open | 09-error-handling.md | A crash or late write failure strands `bundle.state='running'` forever; no recovery path exists
 - [ ] ERR-3 | high | stuck-state | open | 09-error-handling.md | Scan jobs stuck in non-terminal states are unrecoverable and block all future scans for the project
 - [ ] ERR-4 | high | stuck-state | open | 09-error-handling.md | A crashed apply worker strands a request in `APPLYING` forever, silently
 - [ ] FE-3 | high | stuck-state | open | 05-frontend-flows.md | RequestForm: one server-side rejection permanently disables submit — the only way out abandons the drafted request
-- [ ] OPS-4 | high | stuck-state | open | 10-reliability-operations.md | A scan job whose worker dies stays `claimed`/`cloning`/`scanning` forever and permanently wedges that project's onboarding
+- [x] OPS-4 | high | stuck-state | fixed:a19e688 | 10-reliability-operations.md | A scan job whose worker dies stays `claimed`/`cloning`/`scanning` forever and permanently wedges that project's onboarding
 - [ ] UI-2 | high | stuck-state | open | 06-frontend-ui-robustness.md | Resource drill-in dead-ends for every "named service" whose slug is not a literal manifest file: all 16 azure-fixture services are broken
 - [ ] API-4 | medium | stuck-state | open | 02-api-correctness.md | The bundle "claim" is not a mutual-exclusion, and a crashed bundle wedges the request at `running`
 - [ ] API-9 | medium | stuck-state | open | 02-api-correctness.md | Project deregistration leaves orphaned satellite rows; a reused id inherits the previous tenant's state
@@ -402,6 +402,6 @@ Workspaces, temp files and unbounded resources.
 
 The apply scheduler and cooling windows.
 
-- [ ] API-3 | high | scheduler | open | 02-api-correctness.md | Arming the scheduler halts every scheduled request: nothing ever writes the plan pin it requires
-- [ ] API-7 | medium | scheduler | open | 02-api-correctness.md | Scheduler ignores `earliestApplyAt`: a still-cooling request auto-applies the moment its window opens
+- [x] API-3 | high | scheduler | fixed:a19e688 | 02-api-correctness.md | Arming the scheduler halts every scheduled request: nothing ever writes the plan pin it requires
+- [x] API-7 | medium | scheduler | fixed:a19e688 | 02-api-correctness.md | Scheduler ignores `earliestApplyAt`: a still-cooling request auto-applies the moment its window opens
 - [ ] PERF-14 | low | scheduler | open | 11-performance-scalability.md | Scheduler tick re-scans every project's full request collection every minute

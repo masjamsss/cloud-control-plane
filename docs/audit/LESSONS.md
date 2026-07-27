@@ -213,3 +213,37 @@ the input exists before believing the output. Cheapest possible check: run the c
 against a value you *know* should hit, and confirm it does. Had anyone grepped that file
 for `BAD_CREDENTIALS` — which the same paragraph asserted the spec *does* pin — the zero
 would have contradicted the sentence next to it.
+
+### L-11 — A status with no exit is a bug, and the state diagram will tell you which ones
+
+Findings: API-2, API-3, OPS-4
+
+Four findings across three reports, one shape: a row enters a status, and no verb the
+product ships can move it out. `APPLYING` was writable only by the worker that claimed it,
+so a worker that died owned the row forever. `HALTED_DRIFT` and `HALTED_APPLY_FAILED` were
+written only by the scheduler and accepted by nothing — approve, reject, rewindow, cancel
+and the bundle each refused them. A claimed scan job could only be advanced by the worker
+holding it. In every case the documented remedy was editing the store JSON by hand, which
+is another way of saying there was none.
+
+These are cheap to find and nearly invisible to read for. Take each status the code can
+*write* and ask which code path writes something else over it. A status with exactly one
+writer, and that writer a process that can die, is a dead end by construction — no
+concurrency reasoning required. API-3 makes the point sharply: the halt it caused was
+reachable on the **first tick of ordinary operation**, and it was unrecoverable only
+because of API-2, filed separately in a different report. Neither report saw the other's
+half.
+
+**Do differently:** enumerate the exits when you add a status, not when someone gets
+stuck in it. Two rules cover most of it. A status a *worker* owns needs a **lease**, so a
+dead owner releases it without an operator remembering a verb — and the lease must
+release, never retry, when the work may have half-landed. A status a *human* must resolve
+needs at least one route that accepts it, chosen deliberately: cancel is right for a halt,
+and rewindow is wrong, because re-windowing re-arms the exact plan the halt refused.
+
+The corollary is that "fails closed" is not automatically safe. API-3's guard refused to
+apply without an intact plan pin — correct — but expressed the refusal as a transition
+into a state that could not be left, for a condition (**no pin-writer is deployed**) that
+was true of every row in the system. Refusing to act and destroying the thing you refused
+to act on are different refusals. Where the safe answer is "not now", **hold** the row
+where it is and say so in the timeline; save the terminal state for evidence of damage.

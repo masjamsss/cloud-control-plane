@@ -514,3 +514,137 @@ in both files rather than quietly dropped.
 are a real spec/implementation gap and belong to **DOC-2**, which stays open. The five
 inline `c.json` literals that bypass the taxonomy were "checked" by the same broken method
 and remain unverified against the real contract.
+
+## API-2
+
+*`HALTED_DRIFT`, `HALTED_APPLY_FAILED` and an orphaned `APPLYING` are states no verb in
+the product can leave.*
+
+- [x] **Defect reproduced first** — `test/schedulerStuckState.test.ts` seeds a request
+      claimed into `APPLYING` and drives every exit the API offers: approve, reject,
+      rewindow, cancel and the bundle all refuse it, and a later scheduler tick reports
+      `skipped-moved` without touching it. The same test does it for both halt statuses.
+      Against the unfixed tree the row is still `APPLYING` at the end of all of it.
+- [x] **Cause, not symptom** — two causes, not one. `APPLYING` carried **no age**: the
+      claim wrote only `updatedAt`, so a later tick could read the row as "owned by
+      someone" and never as "owned by someone who is gone". The claim now stamps
+      `applyClaimedAt`, and a claim past `APPLY_LEASE_MS` (1h — far longer than the
+      bundle's own 15m step bound, and `loop.ts` refuses to overlap ticks) is halted by a
+      later tick. The sweep **releases, it never re-applies**: the dead worker may have
+      landed some, all or none of the change, and re-running an apply over a half-applied
+      change is the one outcome worse than stopping. Separately the halt statuses were
+      absent from `CANCELLABLE_STATUSES`; cancel now accepts them.
+      The lease sweep also runs **outside** the window filter and **before** the freeze
+      check — a stranded row's window has usually closed by the time anyone notices, so a
+      window-filtered sweep would never look at exactly the rows that are stuck, and a
+      frozen deployment accumulating unreleasable claims is the same wedge with an extra
+      step.
+- [x] **Regression test** — `test/schedulerStuckState.test.ts` (11 tests). Confirmed to
+      fail against the unfixed code: without the stamp the lease predicate has nothing to
+      read, and without the `CANCELLABLE_STATUSES` widening cancel returns `STATE_CONFLICT`.
+- [x] **Failure is loud** — a released claim writes an audited `apply_failed` event and an
+      `apply-lease-expired` notification naming what happened: the worker never reported
+      back and a human must confirm what landed. Silence was the old behaviour.
+- [x] **Evidence in the status line** — `a19e688`.
+- [x] **Lesson recorded** — L-11.
+
+**Residue:** rewindow is deliberately **not** widened to the halt statuses. Re-windowing a
+halted row re-arms the exact plan the halt refused; the way out of a halt is cancel and a
+fresh request through the humans. Rows claimed by a build predating `applyClaimedAt` are
+aged by `updatedAt` instead, so rows already wedged when this ships recover too.
+
+## API-3
+
+*Arming the scheduler halts every scheduled request: nothing ever writes the plan pin it
+requires.*
+
+- [x] **Defect reproduced first** — `test/schedulerNoPin.test.ts` seeds an ordinary
+      approved, windowed request (no pin, like every real row) and ticks the scheduler.
+      Against the unfixed code it lands in `HALTED_DRIFT` — and per API-2 nothing could
+      move it back out. Setting `CCP_SCHEDULER=1` on a real deployment would have
+      destroyed every scheduled request on the first tick.
+- [x] **Cause, not symptom** — `isPinIntact` collapsed two different situations into one
+      answer. The schema says the pin is written "at approval time by a **later** step";
+      that step is not built, and a repo-wide search finds only test helpers and a proof
+      script writing `pinnedDiff`/`planDigest`. So an absent pin is a **deployment missing
+      a step**, while a pin that is half-written or whose digest does not match its diff is
+      **damage**. `pinStateOf` returns `intact`/`corrupt`/`absent`; corrupt still halts,
+      absent now **holds** the request exactly where it is — still `AWAITING_DEPLOY_APPROVAL`,
+      still cancellable, still re-windowable. Neither ever applies, which is the property
+      the original guard existed to protect and which is unchanged.
+- [x] **Regression test** — `test/schedulerNoPin.test.ts` (9 tests), including `pinStateOf`'s
+      three-way split and the corrupt cases still halting. Confirmed to fail against the
+      unfixed code.
+- [x] **Failure is loud** — a hold writes a one-time audited `apply_held_no_plan` timeline
+      event saying no reviewed plan is pinned and that auto-apply is holding rather than
+      applying. Recorded **once** per request, not per tick: a silent skip would be its own
+      finding (an operator arms the documented feature, nothing happens, nothing says why)
+      and a per-tick entry would hammer the per-project chain head forever.
+- [x] **Evidence in the status line** — `a19e688`.
+- [x] **Lesson recorded** — L-11.
+
+**Residue:** the pin-writer still does not exist, so **no** request is auto-appliable today
+— the scheduler holds all of them. That is the honest state and it is now visible in the
+timeline instead of being expressed as destruction. Building the pin-writer is separate
+work, not this finding.
+
+## API-7
+
+*Scheduler ignores `earliestApplyAt`: a still-cooling request auto-applies the moment its
+window opens.*
+
+- [x] **Defect reproduced first** — `test/schedulerCooling.test.ts` seeds a request whose
+      window is open but whose cooling-off has not elapsed. Against the unfixed code
+      `isDue` is true and the executor runs; `applyGate` — the composed predicate every
+      human-facing read uses — says `BEFORE_WINDOW` for the same row at the same instant.
+- [x] **Cause, not symptom** — `windowOpen` passed `undefined` where the row's
+      `earliestApplyAt` belongs, hard-coding the cooling gate away. `evaluateTime` already
+      handled the field correctly; the call site simply never gave it. The one lane that
+      applies with **no human present** was the one lane that skipped the compensating
+      control. Same shape at a second call site in `routes/requests.ts`: the quorum-met
+      infeasibility check also passed `undefined` while rewindow passed the field, so the
+      same question got two answers depending on which door you came in. Both now pass it.
+- [x] **Regression test** — `test/schedulerCooling.test.ts` (6 tests), including the
+      agreement property: `isDue` and `applyGate` must not disagree about the same row.
+      Confirmed to fail against the unfixed code.
+- [x] **Failure is loud** — n/a in the failure sense; the fix makes the scheduler *decline*
+      to act. The relevant loudness is the agreement test, which fails the build if the two
+      paths ever diverge again.
+- [x] **Evidence in the status line** — `a19e688`.
+- [x] **Lesson recorded** — L-11.
+
+## OPS-4
+
+*A scan job whose worker dies stays `claimed`/`cloning`/`scanning` forever and permanently
+wedges that project's onboarding.*
+
+- [x] **Defect reproduced first** — `test/scanJobLease.test.ts` claims a job, then never
+      reports. `POST /projects/:id/scan-jobs` returns `STATE_CONFLICT` forever, because it
+      refuses while any non-terminal job exists, and the progress read shows `scanning`
+      forever. The sole writer of job status is the worker holding it — there is no cancel,
+      no requeue, no janitor — so the row is unreachable by every route the product ships.
+      A `compose up -d --build` during `self-update.sh`, a host reboot or an OOM kill all
+      produce it.
+- [x] **Cause, not symptom** — a claim with no lease. `domain/scanJobLease.ts` adds one,
+      settled **lazily on read**: the same write-on-read doctrine `domain/cooling.ts#settleCooling`
+      and `domain/schedule.ts#settleWindow` already use, and for the same reason — there is
+      no background timer in this system, and a recovery an operator has to remember to run
+      is not a recovery. The two acts the wedge blocks (creating the next job, reading the
+      job's progress) are the two that settle it, so it clears itself at the moment it would
+      otherwise be felt. `SCAN_JOB_LEASE_MS` is 30m against the worker's own 10m clone bound
+      plus prescan and upload, so a slow clone on a large repository is never mistaken for a
+      dead process.
+- [x] **Regression test** — `test/scanJobLease.test.ts` (13 tests): the wedge, the settle,
+      `queued` deliberately exempt (waiting is not wedged), terminal rows untouched, an
+      unparseable timestamp treated as expired, and the guard losing to a worker that
+      finally reports returning the worker's row rather than failing the read.
+- [x] **Failure is loud** — the settled row is `failed` with a server-authored reason
+      naming what happened and that no artifact was uploaded, plus an audited
+      `scan-job-lease-expired` entry. The wizard's endless spinner becomes an honest
+      terminal failure.
+- [x] **Evidence in the status line** — `a19e688`.
+- [x] **Lesson recorded** — L-11.
+
+**Residue:** settling is read-driven, so a project nobody looks at keeps its stale row until
+someone does. That is acceptable — an unobserved wedge blocks nothing — but it does mean the
+audit trail dates the expiry from the read, not from the worker's death.
