@@ -302,3 +302,31 @@ security-bearing refuses.
 2. **The legacy-row window, for the third time.** Where `accountVersion` is `undefined` on
    both sides the guard cannot bite until one write lands. Recorded as residue on CONC-1,
    CONC-2 and now here, and it still has no finding.
+
+## CONC-14
+
+*Team CRUD writes bump `version` but never guard on it.*
+
+- [x] **Defect reproduced first** — the interesting case is not the rename race but
+      `stripFromOthers`, and the test pins the corruption directly: two concurrent
+      set-services calls whose strip sets were computed against each other's pre-image
+      leave **one slug owned by two teams**, breaking the single-ownership invariant the
+      helper exists to maintain.
+- [x] **Cause, not symptom** — all three team writes now guard on the `version` they read:
+      rename, the team's own set-services put, and the stolen-from puts inside
+      `stripFromOthers`. The last matter most; guarding only the caller's own row would
+      have left the invariant breakable.
+- [x] **Regression test** — `test/teamWriteGuards.test.ts`, 3 cases, including the
+      unguarded double-ownership as an explicit assertion.
+- [x] **Failure is loud** — a lost team edit was silent; it is now a refusal.
+- [x] **Evidence in the status line** — the three sites plus the test path.
+- [x] **Lesson recorded** — L-6 covers the shape.
+
+**Verification:** 77 test files, 1197 tests pass (was 76 / 1194); typecheck clean.
+
+**Residue:** the rename guard landed early, in the CONC-3 commit, because a bulk
+replacement matched a team row among the account rows. Typecheck and
+`adminSurface.test.ts` caught it. It was corrected into a real fix rather than reverted,
+but it arrived by accident rather than by intent — the same over-broad pattern match that
+mis-filed four findings under `blocking-io` earlier. REM-1's legacy-row window applies here
+too: a team row written before this change has `version` undefined on both sides.

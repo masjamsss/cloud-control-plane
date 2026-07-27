@@ -245,11 +245,33 @@ if baseline_declared is not None and len(declared) != baseline_declared:
 # answer that — a baseline file is just a number someone can edit. So compare against the
 # committed one. Any rise in `open` must be covered by a rise in `declared`: new findings
 # can be recorded, but a stalled backlog cannot be legalised by editing the number.
-prev = subprocess.run(
-    ["git", "show", "HEAD:scripts/findings-baseline.txt"],
-    capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(baseline_path)),
-)
-if prev.returncode == 0 and baseline is not None:
+# WHICH reference to compare against matters, and getting it wrong makes this check a
+# no-op that still prints a tick — the exact failure mode CI-2 was about. On a PR, HEAD is
+# the merge commit and already contains this branch's baseline, so comparing to HEAD
+# compares the file to itself. Prefer the PR's base branch; fall back to HEAD (correct
+# locally, where HEAD is the previous commit). Either way, SAY which one was used and say
+# so loudly when neither is usable, so the check's strength is visible instead of assumed.
+repo_root = os.path.dirname(os.path.dirname(baseline_path))
+base_ref = os.environ.get("GITHUB_BASE_REF")
+candidates = ([f"origin/{base_ref}"] if base_ref else []) + ["HEAD"]
+prev, prev_src = None, None
+for ref in candidates:
+    r = subprocess.run(
+        ["git", "show", f"{ref}:scripts/findings-baseline.txt"],
+        capture_output=True, text=True, cwd=repo_root,
+    )
+    if r.returncode == 0:
+        prev, prev_src = r, ref
+        break
+if prev is None:
+    print("findings-gate: NOTE — no committed baseline to compare against "
+          f"(tried {', '.join(candidates)}); the raise check is INERT this run. "
+          "It becomes effective once scripts/findings-baseline.txt exists on the base branch.")
+elif prev_src == "HEAD" and base_ref:
+    print(f"findings-gate: NOTE — base branch 'origin/{base_ref}' has no baseline yet; "
+          "compared against HEAD, which on a PR is the merge commit and may be this "
+          "branch's own value. Treat the raise check as WEAK this run.")
+if prev is not None and prev.returncode == 0 and baseline is not None:
     parts = prev.stdout.split()
     try:
         prev_open = int(parts[0])
@@ -268,8 +290,8 @@ if prev.returncode == 0 and baseline is not None:
                   f"finding(s) were declared ({prev_declared} -> {len(declared)}). A raise must be "
                   "paid for by newly declared findings, not by an edit.")
             sys.exit(1)
-        print(f"findings-gate: baseline raised {prev_open} -> {baseline}, covered by "
-              f"{allowance} newly declared finding(s).")
+        print(f"findings-gate: baseline raised {prev_open} -> {baseline} (vs {prev_src}), "
+              f"covered by {allowance} newly declared finding(s).")
 
 if baseline is not None and n_open < baseline:
     print(f"findings-gate: {baseline - n_open} finding(s) closed since the baseline. "

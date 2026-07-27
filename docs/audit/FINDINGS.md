@@ -103,7 +103,7 @@ Unguarded full-row writes and lost updates. Largely one root cause — the store
 - [ ] API-14 | low | concurrency | open | 02-api-correctness.md | Conditional-write collisions inside `transactWithAudit` surface as the wrong error
 - [ ] CONC-12 | low | concurrency | open | 04-concurrency.md | The store-backed submit rate limiter is check-then-insert: concurrent submits breach both caps
 - [ ] CONC-13 | low | concurrency | open | 04-concurrency.md | Concurrent first-boot settlement can escape its own race handling and 500 early requests
-- [ ] CONC-14 | low | concurrency | open | 04-concurrency.md | Team CRUD writes bump `version` but never guard on it
+- [x] CONC-14 | low | concurrency | fixed:version guards on rename, set-services and stripFromOthers; test/teamWriteGuards.test.ts | 04-concurrency.md | Team CRUD writes bump `version` but never guard on it
 - [ ] CONC-15 | low | concurrency | open | 04-concurrency.md | `transactWithAudit` conflates a caller's domain guard failure with chain contention, producing dead error paths and mislabeled conflicts
 - [ ] REM-2 | low | concurrency | open | 15-remediation.md | Session rows are still written with blind full-row puts
 
