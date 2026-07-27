@@ -12,7 +12,7 @@
 >
 > **The first account onboards exactly this way too.** A fresh install ships with zero
 > estates — there is no baked-in "starter" account and no shortcut for "the estate that came
-> with the install" ([ADR-0020](../../docs/adr/0020-ccp-data-birth-blank-install.md)). The
+> with the install" ([ADR-0029](../../docs/adr/0029-ccp-data-birth-blank-install-public-summary.md)). The
 > app's first-run screen, shown whenever nothing is onboarded yet, is this same ladder's front
 > door, not a second implementation of it. A solo evaluation-mode instance cannot get past
 > step 4 (trust) or step 5 (activate) below — both are 2-admin envelopes — until a second admin
@@ -227,7 +227,7 @@ invariant for any repo but the self-trusted in-repo root (`onboarding-security.m
 ## Settling a pre-data-birth instance (the one-time cutover)
 
 This section is for an instance that was already running **before** the blank-install change
-([ADR-0020](../../docs/adr/0020-ccp-data-birth-blank-install.md)/[ADR-0021](../../docs/adr/0021-ccp-control-scope-and-settlement.md))
+([ADR-0029](../../docs/adr/0029-ccp-data-birth-blank-install-public-summary.md)/[ADR-0030](../../docs/adr/0030-ccp-control-scope-and-settlement-public-summary.md))
 landed — this repository's own deployment included, whose estate has always gone by a fixed
 legacy project id. Nothing here is a manual step an operator runs: it happens automatically, once, the
 first time the new api code boots against that store.
@@ -261,7 +261,7 @@ full `catalogctl onboard` + 2-admin trust ceremony over this repository as a str
 is an open owner decision, not required for the cutover above.
 
 **A note on the sample estate's id.** Before the sample estate's own id was split out
-([ADR-0020](../../docs/adr/0020-ccp-data-birth-blank-install.md)), the legacy project id and
+([ADR-0029](../../docs/adr/0029-ccp-data-birth-blank-install-public-summary.md)), the legacy project id and
 the labeled **sample estate** the SPA carries as a demo fixture were the same value, so
 activating a fresh `ccp-data.yml` upload for the legacy project id had no visible effect: the
 app resolved that id's catalog/inventory from the frozen bundled capture regardless of api mode.

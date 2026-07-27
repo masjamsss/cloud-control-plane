@@ -1,12 +1,20 @@
 # ccp-api — API summary
 
 > **Source of truth:** `ccp/api/openapi/ccp-api.yaml`. This file is a **derived, human-readable summary** — when they disagree, the YAML wins, and the YAML itself defers to the route code for behavior it has not caught up with (see Caveats in the PR that generated this doc).
-> **Parity enforcement:** `ccp/api/test/openapi.test.ts` — a vitest suite that reads the YAML as text (openapi.test.ts:4) and asserts, string-containment style, that: the file is OpenAPI 3.1.0 with `ccp_session` and `X-Ccp-Client` declared (openapi.test.ts:7-12), every ApiClient path is present (openapi.test.ts:14-34), the scope enum and `SubmitDraft` exist (openapi.test.ts:36-39), and each later lane's endpoints/error-codes/status-values are declared (openapi.test.ts:41-100). It is a **spec-completeness** gate (spec must mention what shipped), not a route-by-route code↔spec differ.
+> **Parity enforcement:** `ccp/api/test/openapi.test.ts`. It is now a **route-by-route code↔spec differ** (DOC-1/DOC-2): it enumerates the live Hono route table from `createApp` and the operations declared under the YAML's `paths:`, then diffs them **in both directions** — a declared path no route serves fails, and a served route the spec omits fails. There is no hand-maintained list of path strings to keep in sync, so the check cannot rot into agreeing with itself.
+>
+> It also still asserts, string-containment style, that the file is OpenAPI 3.1.0 with `ccp_session` and `X-Ccp-Client` declared, that the scope enum and `SubmitDraft` exist, and that each lane's error codes and status values are declared — those are *content* claims the route diff cannot make.
+>
+> **Why it changed:** the old suite only asserted that a hand-written list of paths was **present**. That list pinned `/catalog/manifests` and `/catalog/inventory`, which no route ever served, so CI actively defended two phantom endpoints — deleting them from the spec broke the build — while seven genuinely shipped routes were missing from the contract and the test was structurally incapable of noticing. A one-directional completeness gate cannot detect the failure that matters most: the spec describing an API that does not exist.
 > Facts below are measured from the working tree at commit `d781c25` (2026-07-17, post-rename merge). All identifiers are verbatim from code.
 
 ## Base URL and versioning
 
-The YAML declares `servers: [{ url: /v2 }]` (ccp-api.yaml:6). The Hono app itself mounts route groups at the root — `/instance`, `/auth`, `/requests`, `/admin/migrate`, `/admin/instance`, `/admin`, `/projects` (ccp/api/src/index.ts) — so any `/v2` prefix must come from a reverse proxy, not this process.
+The Hono app mounts every route group at the **root** — `/instance`, `/auth`, `/requests`, `/admin/migrate`, `/admin/instance`, `/admin`, `/projects`, `/scan-jobs` (ccp/api/src/index.ts) — plus `/healthz` and `/readyz`. There is no version segment in any handler.
+
+The YAML's `servers` accordingly lists the two bases that actually exist: `/` (the api process itself — dev, and the proxy's upstream) and `/api` (the browser-facing base of the shipped reverse-proxy topology, whose nginx block **strips** `/api/` before forwarding — see [go-live.md](go-live.md)).
+
+> **Fixed (DOC-3):** the YAML used to declare `servers: [{ url: /v2 }]`. No handler, no SPA client path (`${baseUrl}${path}`, `httpApi.ts`), and no proxy config in this repo ever answered on `/v2`, so a client generated from that spec addressed `/v2/auth/login` and 404'd on **every** topology this repo ships. Pinned by `openapi.test.ts` ("servers list only base paths this repo actually deploys").
 
 ## Global middleware (every request, in order)
 
@@ -23,12 +31,14 @@ CORS → store context → `withSession` → `withClientHeader` (CSRF) → `with
 
 Auth column legend — **session**: valid full session cookie (`requireSession`, authz.ts via route group); **member**: account bound to the acting project (`requireProjectMembership`, ccp/api/src/middleware/authz.ts:54-69, else 403 `PROJECT_SCOPE`, denial audited); **role(x)**: per-project role gate (`requireRole`, authz.ts:26-34, else 403 `FORBIDDEN_ROLE`); **isAdmin**: `requireAdmin` gates on `isAdmin === true`, never `role === 'lead'` (authz.ts:37-42, else 403 `NOT_ADMIN`); **CSRF**: the `x-ccp-client` header (all non-GET below except `/auth/*`).
 
-### Infra (code-only; not in the YAML)
+### Infra
 
-| Method | Path | Auth | Purpose | Code |
+| Method | Path | Auth | Purpose | Spec : code |
 |---|---|---|---|---|
-| GET | `/healthz` | none | Liveness — always `{ok:true}` when the process serves | index.ts:52 |
-| GET | `/readyz` | none | Readiness: store-loaded + account-count + audit-chain verify (every known project's chain, incl. `@control`); 503 when not ready. Body includes `estates` — the ready-project count excluding `@control` — so `estates: 0, ready: true` distinguishes a founded-but-still-blank instance from an actually-unready one (data-birth, [ADR-0021](../../docs/adr/0021-ccp-control-scope-and-settlement.md), `domain/readiness.ts`) | index.ts:57-60 |
+| GET | `/healthz` | none | Liveness — always `{ok:true}` when the process serves | yaml `/healthz` : index.ts |
+| GET | `/readyz` | none | Readiness: store-loaded + account-count + audit-chain verify (every known project's chain, incl. `@control`); 503 when not ready, with the **same body shape** as 200. Body includes `estates` — the ready-project count excluding `@control` — so `estates: 0, ready: true` distinguishes a founded-but-still-blank instance from an actually-unready one (data-birth, [ADR-0030](../../docs/adr/0030-ccp-control-scope-and-settlement-public-summary.md), `domain/readiness.ts`) | yaml `/readyz` (`Readiness` schema) : index.ts |
+
+> **Fixed (DOC-2):** these were previously code-only and this section was headed "not in the YAML". They are part of the served surface an operator wires a load balancer to, so they are now declared.
 
 ### Instance identity (ADR-0023) — mounted before `/auth`, index.ts
 
@@ -77,13 +87,16 @@ Every route below requires a live **full** session and acts only on `c.get('acco
 | POST | `/requests/:id/approve` | role(approver\|lead) + CSRF + **enrolled TOTP factor** (403 `TOTP_ENROLLMENT_REQUIRED` without one, requests.ts:548-550) | Sign the next positional ladder step (L2 = approver-or-lead, L3 = lead, else 403 `WRONG_APPROVAL_LEVEL`); one signature per person (409 `ALREADY_APPROVED`); not own (403 `SELF_APPROVAL`); tighten-only requirement re-derived live | → `ChangeRequest` | yaml:206-222 : requests.ts:533-660 |
 | POST | `/requests/:id/reject` | role(approver\|lead) + CSRF; not own | Reject an open request (both tracks) | `{reason?}` → `ChangeRequest` | yaml:223-229 : requests.ts:663-700 |
 | POST | `/requests/:id/link-pr` | role(lead) + CSRF | Record the fulfilling engineering PR (https-only URL; number derived from a `/pull/{n}` tail); refused on REJECTED/CANCELLED | `{prUrl(≤500), prNumber?}` → `ChangeRequest` | yaml:258-273 : requests.ts:712-766 |
-| POST | `/requests/:id/plan-summary` | role(lead) + CSRF | CI records the structured terraform-plan summary onto the request; refused on REJECTED/CANCELLED/WITHDRAWN | `PlanSummarySchema` body → `ChangeRequest` | **not in YAML** : requests.ts:786-828 |
+| POST | `/requests/:id/plan-summary` | role(lead) + CSRF | CI records the structured terraform-plan summary onto the request; refused on REJECTED/CANCELLED/WITHDRAWN | `PlanSummarySchema` body → `ChangeRequest` | yaml `/requests/{id}/plan-summary` (`PlanSummary` schema) : requests.ts |
+| POST | `/requests/:id/apply` | **lead or isAdmin** (else 403 `APPLY_FORBIDDEN`) + CSRF | **ADR-0016 approval-to-apply bundle** — the most privileged verb on this surface. Runs, server-side and in order: local gate (the plan must equal the approved change and nothing else) → CAS commit to the configured branch → satisfy the gated CI apply. It never runs `terraform apply` itself. **Off by default**: 409 `BUNDLE_DISARMED` unless `CCP_BUNDLE` + git/gate/trigger config are set. Eligible from `AWAITING_CODE_REVIEW`, `AWAITING_DEPLOY_APPROVAL` (else 409 `STATE_CONFLICT`); cooling + window settled first; refused 423 `GLOBAL_FREEZE`. The run is claimed by a CAS on the observed status, so a lost race is reported rather than double-run; an in-flight bundle → 409 `BUNDLE_RUNNING`. Audited `request-bundle` with full per-step evidence | → `BundleOutcome` `{ok, status, bundle, steps}` — **same body on 200 and 502** | yaml `/requests/{id}/apply` : requests.ts |
 | POST | `/requests/:id/cancel` | requester-own OR lead/isAdmin (else 403 `CANCEL_FORBIDDEN`) + CSRF | Cancel an approved-but-unapplied change; valid from `APPROVED_COOLING`, `AWAITING_DEPLOY_APPROVAL`, `WINDOW_EXPIRED` (requests.ts:116) | → `ChangeRequest` | yaml:230-241 : requests.ts:836-905 |
 | POST | `/requests/:id/rewindow` | requester-own OR lead/isAdmin (else 403 `REWINDOW_FORBIDDEN`) + CSRF | Re-time a maintenance window (exit from `WINDOW_EXPIRED`, or before-window re-time); refused mid-window, for `kind:'now'` rows, or when the last approval is >30 days old (`SCHEDULE_STALE_APPROVAL`); approvals survive | `{at, endAt?}` → `ChangeRequest` | yaml:242-257 : requests.ts:914-1012 |
 
-### Catalog — **declared in the YAML, not routed in code**
+### Catalog — resolved (DOC-1)
 
-`GET /catalog/manifests` (yaml:282-283) and `GET /catalog/inventory` (yaml:284-285) have no route group in the app (index.ts:62-66 mounts only `/auth`, `/requests`, `/admin/migrate`, `/admin`, `/projects`) — a request to them returns 404 from this process.
+`GET /catalog/manifests` and `GET /catalog/inventory` were declared in the YAML and served by no route in `ccp/api/src`; both 404'd, and the old parity test pinned their presence, so CI defended them.
+
+**They have been deleted from the contract rather than implemented.** The shipped, project-scoped reads are `GET /projects/:id/manifests` and `GET /projects/:id/inventory` (below) — the SPA has only ever called those, and the YAML already declared them, so the `/catalog/*` pair was a pre-data-birth duplicate of a surface that was already correct. Implementing them would also have contradicted the security model: an unscoped catalog read is exactly what the `@control` scope rule forbids ("every estate-only surface … refuses it with 403 `CONTROL_SCOPE`", `ccp-api.yaml` `securitySchemes.session`).
 
 ### Admin (group gate: session + isAdmin + member — admin.ts:112; all non-GET need CSRF)
 
@@ -108,7 +121,9 @@ Every route below requires a live **full** session and acts only on `c.get('acco
 | POST | `/admin/config-changes/:id/ack` | Second DISTINCT admin applies (proposer self-ack → 403 `SELF_ACK`; drift → 409 `STALE_PROPOSAL`) | — | yaml:396-400 : admin.ts:643-655 |
 | POST | `/admin/config-changes/:id/reject` | Any admin (incl. proposer) withdraws | — | yaml:401-403 : admin.ts:657-665 |
 | GET | `/admin/audit` | Hash-chained audit, newest first; `?limit=` (default 100, max 1000) + `?cursor=` | — | yaml:404-408 : admin.ts:669-683 |
-| GET | `/admin/audit/export` | Whole chain as a self-verifying JSON attachment | — | **not in YAML** : admin.ts:687-690 |
+| GET | `/admin/audit/export` | Whole chain as a self-verifying JSON attachment (chronological — the reverse of `/admin/audit`; `verified` is recomputed at export time, not a stored flag) | — | yaml `/admin/audit/export` (`AuditExport` schema) : admin.ts |
+| GET | `/admin/deployment` | Every knob the server reads, on one screen, including the ones the portal cannot edit (each carrying `notEditable.reason` + `.instead`). **Global** — stored/read on the reserved control scope whatever project is being viewed. Secrets carry `configured: true\|false`, never a value | — | yaml `/admin/deployment` (`DeploymentKnob` schema) : admin.ts |
+| PUT | `/admin/deployment/:id` | Set one knob `{value}`, shape-checked against the knob's `kind` (a string `"false"` can never land on a toggle). Non-portal-editable knobs → 422 `OP_DISABLED` carrying the reason | **loosening** (arm scanner, widen allowlist, lift apply freeze) → 202; tightening → 200 | yaml `/admin/deployment/{id}` : admin.ts |
 | GET | `/admin/teams` | List teams | — | yaml:350-351 : admin.ts:693-698 |
 | POST | `/admin/teams` | Create `{name, serviceSlugs?}` (dupes → 409 `DUPLICATE_TEAM`; slugs stolen from other teams, audited) | immediate | yaml:352-353 : admin.ts:700-727 |
 | PATCH | `/admin/teams/:id` | Rename `{name}` | immediate | yaml:354-355 : admin.ts:729-749 |
@@ -163,7 +178,7 @@ The three routes this program ADDED (C2/B1/B2). The pre-existing `PUT`/`GET /pro
 - Header name (exact, as read in code): **`x-ccp-project`** (ccp/api/src/middleware/session.ts:73).
 - **Absent → defaults to the reserved control-plane scope `'@control'`** (`CONTROL_SCOPE`,
   ccp/api/src/projects.ts; session.ts) — data-birth
-  ([ADR-0021](../../docs/adr/0021-ccp-control-scope-and-settlement.md)): a header-less client
+  ([ADR-0030](../../docs/adr/0030-ccp-control-scope-and-settlement-public-summary.md)): a header-less client
   is now an inert **control-plane** client (auth + admin-global + the projects registry only),
   never an implicit estate. This supersedes the pre-data-birth wording "a header-less client is
   an inert single-project client," which described the old hardcoded single-project default.
@@ -238,10 +253,11 @@ grep -n "MAX_SUBMIT_BODY_BYTES\|MAX_CHANGE_SET_ITEMS" ccp/api/src/routes/request
 grep -n "DEFAULT_RATE_LIMITS" ccp/api/src/domain/config.ts
 grep -n "failedAttempts >= 5" ccp/api/src/routes/auth.ts
 
-# 8. Known spec-vs-code gaps still open? (should print route hits for plan-summary
-#    and audit/export, and NO /catalog mount in index.ts)
-grep -n "plan-summary\|audit/export" ccp/api/src/routes/*.ts ccp/api/openapi/ccp-api.yaml
-grep -n "catalog" ccp/api/src/index.ts
+# 8. Spec↔route parity. Do NOT grep for this — grep cannot answer it, and a grep
+#    against a moved file returns 0 for every needle and reads as "no gaps" (L-10).
+#    Run the differ, which enumerates the live route table and the declared paths
+#    and compares them BOTH ways. Expected: green.
+( cd ccp/api && npx vitest run test/openapi.test.ts )
 
 # 9. Error taxonomy statuses cited in the tables
 grep -n "status: 4" ccp/api/src/errors.ts
@@ -254,14 +270,22 @@ is lost. Actionable ones are tracked separately; do not silently "fix" this doc 
 
 - Task text said to state facts "at commit undefined" — the working tree HEAD is d781c25 (branch claude/docs-restructure-fundamentals-a929a5, clean); the doc cites d781c25.
 - Base-path mismatch: the YAML declares servers url /v2 (ccp/api/openapi/ccp-api.yaml:6) but the app mounts all groups at the root (ccp/api/src/index.ts:62-66); no /v2 prefix exists in this process. Stated in the doc; flagging because the YAML is nominally authoritative.
+  **RESOLVED 2026-07-27 (DOC-3):** `servers` now lists `/` and `/api`, the two bases this repo actually deploys. Pinned by openapi.test.ts.
 - /catalog/manifests and /catalog/inventory are declared in the YAML (ccp-api.yaml:282-285) but NO /catalog route group is mounted (ccp/api/src/index.ts:62-66) — they 404 in code. The parity test only checks the strings exist in the YAML (openapi.test.ts:19-20), so this gap is invisible to it.
+  **RESOLVED 2026-07-27 (DOC-1), and it resolved against the SPEC:** both paths deleted from the contract, not implemented — the SPA has only ever called the project-scoped `/projects/:id/manifests|inventory`, which the YAML already declared, and an unscoped catalog read is what the `@control` scope rule forbids. The parity test that *pinned* the phantoms was replaced by a bidirectional route-table diff.
 - POST /requests/{id}/plan-summary is implemented (ccp/api/src/routes/requests.ts:786-828, lead-only) but absent from the YAML paths — spec lags code.
+  **RESOLVED 2026-07-27 (DOC-2):** declared, with a full `PlanSummary` body schema.
 - GET /admin/audit/export is implemented (ccp/api/src/routes/admin.ts:687-690) but absent from the YAML paths.
+  **RESOLVED 2026-07-27 (DOC-2):** declared, with the `AuditExport` schema.
 - GET /healthz and GET /readyz are implemented (ccp/api/src/index.ts:52-60) but absent from the YAML.
+  **RESOLVED 2026-07-27 (DOC-2):** declared under an `infra` tag, `/readyz` with the `Readiness` schema.
+- **Newly found by the DOC-2 route diff, and named by no report:** `GET /admin/deployment` and `PUT /admin/deployment/{id}` (the portal-managed deployment settings pair, admin.ts) were also shipped and undeclared. The audit report listed five undocumented routes; the mechanical diff found seven. Both are now declared.
+- **POST /requests/{id}/apply was the worst of these** — the ADR-0016 apply bundle, the most privileged verb on the requests surface, described by no contract document anywhere in the repo: not the YAML, not this file's endpoint table, not PERMISSIONS.md §2. **RESOLVED 2026-07-27 (DOC-2)** in all three.
 - ChangeRequest.planSummary is typed `string` in the YAML (ccp-api.yaml:58) but code stores the structured PlanSummarySchema object with counts/resourceChanges (requests.ts:790-813, store/planSummarySchema.ts).
 - GET /admin/audit supports a `limit` query (default 100, cap 1000, admin.ts:672-673) that the YAML does not declare (ccp-api.yaml:404-408 declares only cursor).
 - The YAML's security-scheme note "Non-GET also requires X-Ccp-Client header" (ccp-api.yaml:11) is broader than code: /auth/* non-GET routes are exempt from the CSRF header (middleware/session.ts:55-63).
 - YAML /auth/totp summary says the TOTP step is "for approver/lead" (ccp-api.yaml:160); code's needsTotp also covers isAdmin accounts and any account with admin-pinned totpRequired=true (ccp/api/src/auth/totp.ts:67-71).
 - The parity test is string-containment over the YAML text only (openapi.test.ts:4, 32) — it proves the spec MENTIONS shipped surfaces, not that every code route is declared or that declared routes exist in code; the /catalog and plan-summary/audit-export gaps above are exactly the class it cannot catch.
+  **RESOLVED 2026-07-27 (DOC-1/DOC-2)** — and this was the root cause of every gap above it, not a separate observation. The suite now diffs the live Hono route table against the declared paths in both directions. It carries its own extractor sanity check (both extractors must find a known-present operation) so that a renamed spec file or a Hono upgrade that drops `.routes` fails loudly instead of producing two empty sets and reading as perfect parity — L-10's failure mode, in the very file DOC-4 was about.
 - Rate-limit OPEN_STATUSES includes CHANGES_REQUESTED and plan-summary refuses WITHDRAWN (rateLimit.ts:22, requests.ts:131) — neither status appears in the YAML's ChangeRequest.status known-values prose (ccp-api.yaml:53); likely SPA-era or future statuses.
 - The doc's endpoint auth column comes from route code (the guards actually enforced), not the YAML — the YAML has no per-path security overrides except security:[] on /auth/login, /auth/totp, /auth/totp/enroll (ccp-api.yaml:149,160,166); /auth/logout is declared session-secured in the YAML by inheritance but code deletes the session without requiring one (auth.ts:194-203).

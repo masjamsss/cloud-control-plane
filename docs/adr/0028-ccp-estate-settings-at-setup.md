@@ -1,7 +1,7 @@
 # ADR-0028: Estate settings are two-tier runtime config — born at first setup, changeable forever, projected (never compiled) into out-of-band tools
 
 **Status:** Proposed (design lane; build gated on owner decisions D1–D6 — spec:
-[estate config at setup](../superpowers/specs/2026-07-22-ccp-estate-config-at-setup.md))
+estate config at setup (`docs/superpowers/specs/2026-07-22-ccp-estate-config-at-setup.md`, private planning archive — not published))
 **Date:** 2026-07-22
 **Deciders:** repo owner (product direction); design lane `claude/estate-config-design`
 **Note on numbering:** 0027 is deliberately skipped — it remains reserved for the

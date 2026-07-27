@@ -1,10 +1,10 @@
 # Cutover Checklist (per service / resource group)
 
 Run this when declaring an Azure service "fully IaC-managed". It mirrors the AWS cutover
-checklist ([importer/docs/cutover-checklist.md](../../../importer/docs/cutover-checklist.md)),
+checklist (`importer/docs/cutover-checklist.md` (not written)),
 translated to Azure and to the kit's automated gates. The operator procedure is
-[docs/runbooks/azure-subscription-import.md](../../../docs/runbooks/azure-subscription-import.md);
-governance is [proposal 0039](../../../docs/proposals/0039-azure-second-provider-concept.md).
+`docs/runbooks/azure-subscription-import.md` (not written);
+governance is proposal 0039 (`docs/proposals/0039-azure-second-provider-concept.md`, private planning archive — not published).
 
 ## Before
 
@@ -44,8 +44,8 @@ governance is [proposal 0039](../../../docs/proposals/0039-azure-second-provider
 ## After (first 2 weeks)
 
 - [ ] **Drift job wired** and green for 14 consecutive days
-      ([runbook](../../../docs/runbooks/drift-detection.md)). Security-posture drift is
+      (runbook (`docs/runbooks/drift-detection.md` — not written)). Security-posture drift is
       surfaced and reverted, never adopted.
 - [ ] No emergency portal changes — or all reconciled per
-      [runbook](../../../docs/runbooks/emergency-changes.md).
+      runbook (`docs/runbooks/emergency-changes.md` — not written).
 - [ ] Manifest + topology docs updated.
