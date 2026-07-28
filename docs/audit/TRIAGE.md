@@ -898,9 +898,11 @@ For each finding you close:
 
 ## Fixture traps that will bite you
 
-- **`publish-gate.sh` PG-6 flags email-shaped strings.** A credentialed URL like
-  `https://bot:tok@github.com/...` in a fixture reads as an email. Use an RFC 2606 host —
-  `forge.example`, `example.com`.
+- **`publish-gate.sh` PG-6 flags email-shaped strings.** A clone URL with an embedded
+  credential — `user:token@` followed by a real forge host — reads as an email address and
+  fails the gate. Use an RFC 2606 reserved host in fixtures: `forge.example`,
+  `example.com`. *(This bullet itself tripped PG-6 on its first draft, because it spelled
+  the bad shape out literally. The gate does not care that you were only describing it.)*
 - **Build keys from the real key functions**, never hand-typed. A fixture that hand-typed a
   GSI partition name made a sweep find nothing, and the test passed because the code under
   test never looked at the row.
