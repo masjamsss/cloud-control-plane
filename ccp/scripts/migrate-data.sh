@@ -67,8 +67,16 @@ err()  { printf '%s✗ %s%s\n' "$C_RE" "$*" "$C_0" >&2; }
 # source manifest, copy). One tag, used consistently everywhere it's needed.
 ALPINE_IMAGE="alpine:3.20"
 
-STORE=/data/ccp/store
-UPDATE_STATE=/data/ccp/update
+# DATA_ROOT / LEGACY_UPDATE_DIR are the persistent-disk paths this ceremony
+# operates on. They are overridable ONLY so the whole migration can be walked
+# end to end by a test against a throwaway tree — the same seam install.sh grew
+# for CCP_STORE_FILE. Production never sets them; see
+# ccp/scripts/test/migrate-data-post-cutover.test.sh.
+DATA_ROOT="${CCP_DATA_ROOT:-/data}"
+LEGACY_UPDATE_DIR="${CCP_LEGACY_UPDATE_DIR:-/var/lib/ccp-update}"
+
+STORE="$DATA_ROOT/ccp/store"
+UPDATE_STATE="$DATA_ROOT/ccp/update"
 ROLLBACK_OVERRIDE="$UPDATE_STATE/rollback-volume.yml"
 TS="$(date +%Y%m%d-%H%M%S)"
 
@@ -79,9 +87,9 @@ readyz_ok()  { [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${1
 wait_readyz(){ local p="$1" t="${2:-180}" i=0; while [ "$i" -lt "$t" ]; do readyz_ok "$p" && return 0; sleep 2; i=$((i+2)); done; return 1; }
 PORT="$(api_port)"; PORT="${PORT:-8801}"
 
-is_separate_mount() { # /data ideally its own mount — informational only, never fatal
-  if command -v mountpoint >/dev/null 2>&1; then mountpoint -q /data; return $?; fi
-  awk '$2=="/data"{found=1} END{exit !found}' /proc/mounts 2>/dev/null
+is_separate_mount() { # $DATA_ROOT ideally its own mount — informational only, never fatal
+  if command -v mountpoint >/dev/null 2>&1; then mountpoint -q "$DATA_ROOT"; return $?; fi
+  awk -v d="$DATA_ROOT" '$2==d{found=1} END{exit !found}' /proc/mounts 2>/dev/null
 }
 
 mounted_by_running_container() { # $1=host path — true if any running container mounts it
@@ -154,9 +162,9 @@ if [ "$MODE" = "run" ] && [ "$(id -u)" != "0" ]; then
 fi
 command -v docker >/dev/null 2>&1 || { err "docker not found"; exit 1; }
 docker compose version >/dev/null 2>&1 || { err "'docker compose' v2 not found"; exit 1; }
-[ -d /data ] || { err "/data does not exist — mount a persistent disk at /data first (see docs/go-live.md → Prerequisites)"; exit 1; }
-[ -w /data ] || { err "/data exists but is not writable by this user"; exit 1; }
-is_separate_mount || warn "/data does not appear to be a separate mount (per /proc/mounts) — continuing, but confirm this is really your persistent disk"
+[ -d "$DATA_ROOT" ] || { err "$DATA_ROOT does not exist — mount a persistent disk at $DATA_ROOT first (see docs/go-live.md → Prerequisites)"; exit 1; }
+[ -w "$DATA_ROOT" ] || { err "$DATA_ROOT exists but is not writable by this user"; exit 1; }
+is_separate_mount || warn "$DATA_ROOT does not appear to be a separate mount (per /proc/mounts) — continuing, but confirm this is really your persistent disk"
 compose config --services 2>/dev/null | grep -qx api \
   || { err "compose project has no 'api' service — wrong directory, or docker-compose.yml changed shape"; exit 1; }
 docker volume inspect "$VOLUME" >/dev/null 2>&1 \
@@ -218,6 +226,13 @@ PRE_ROWS="$(docker run --rm -v "$VOLUME":/from:ro "$ALPINE_IMAGE" sh -c 'grep -o
 PRE_ACTIVE="$(docker run --rm -v "$VOLUME":/from:ro "$ALPINE_IMAGE" sh -c 'grep -o "\"dataActive\"" /from/ccp.json 2>/dev/null | wc -l' | tr -d '[:space:]')"
 PRE_ROWS="${PRE_ROWS:-0}"; PRE_ACTIVE="${PRE_ACTIVE:-0}"
 PRE_FILES_N="$(wc -l < "$UPDATE_STATE/pre.files" | tr -d '[:space:]')"
+# A projects/-only manifest as well (OPS-5). Step 8 compares the WHOLE tree — correct
+# there, because the api is down and a byte-for-byte copy is exactly what is being
+# proven. Step 11 runs after a boot that is ALLOWED to rewrite ccp.json (settlement),
+# so it can only honestly compare the part that must never change: project data.
+docker run --rm -v "$VOLUME":/from:ro "$ALPINE_IMAGE" \
+  sh -c 'cd /from && { [ -d projects ] && find projects -type f | sort | xargs -r sha256sum; true; }' \
+  > "$UPDATE_STATE/pre-projects.files" 2>/dev/null || refuse "could not hash the source project-data tree"
 ok "source manifest: $PRE_FILES_N files, $PRE_ROWS version rows, $PRE_ACTIVE active pointers"
 
 # ---- step 7: copy (source stays :ro throughout) -------------------------------
@@ -297,17 +312,54 @@ compose up -d --build || refuse "compose up -d --build failed during cutover"
 wait_readyz "$PORT" 180 || refuse "/readyz did not go green within 180s after cutover"
 ok "cutover complete; /readyz green"
 
-# ---- step 11: post-cutover manifest re-check — refuse (+rollback) on mismatch
-say "[11/12] post-cutover manifest re-check (inside the container) vs the pre-migration source"
-compose exec -T api sh -c 'cd "${CCP_DATA_DIR:-/var/lib/ccp}" && find . -type f | sort | xargs -r sha256sum' \
-  > "$UPDATE_STATE/post-cutover.files" 2>/dev/null || refuse "could not read the manifest from inside the container after cutover"
-CUTOVER_DIFF="$(diff "$UPDATE_STATE/pre.files" "$UPDATE_STATE/post-cutover.files" || true)"
-if [ -n "$CUTOVER_DIFF" ]; then
-  err "post-cutover manifest MISMATCH (container vs pre-migration source):"
-  printf '%s\n' "$CUTOVER_DIFF" | head -20 >&2
-  refuse "aborting after cutover — see the diff above (nothing destructive happened; the api is being restored on the old volume)"
+# ---- step 11: post-cutover data probe — refuse (+rollback) only on real LOSS ----
+#
+# OPS-5. This step used to re-hash the WHOLE store inside the running container and
+# `diff` it against the pre-migration manifest, refusing on ANY difference. But the
+# cutover boot is — by this ceremony's own design, "git pull --ff-only brings the new
+# compose + this script" — the first boot of the NEW code on this store. On any store
+# without a SETTLEMENT marker, `runSettlement` writes that marker (plus any retro
+# registration/materialization) at boot, rewriting ccp.json BEFORE this step reads it.
+# The diff was then non-empty, the script refused, and it rolled back a migration that
+# had completely succeeded. Re-running wiped the copy and failed identically.
+#
+# The population this script exists for — hosts still on the legacy named volume, i.e.
+# installs predating the /data consolidation and therefore almost certainly predating
+# settlement — is exactly the population guaranteed to hit it. The guarded migration
+# was effectively impossible for its only audience, and it failed with a hash-mismatch
+# error implicating data corruption that never happened.
+#
+# Byte-equality of the COPY is already proven, before anything started: steps 7-8 hash
+# source and destination while the api is down. What this step can honestly check after
+# a boot that is ALLOWED to write is that nothing was LOST — the same mutation-tolerant
+# probe self-update.sh already uses for the same reason: project-data files identical,
+# and version-row / active-pointer counts non-decreasing.
+say "[11/12] post-cutover data probe (inside the container) — project data + row counts"
+
+compose exec -T api sh -c 'cd "${CCP_DATA_DIR:-/var/lib/ccp}" && { [ -d projects ] && find projects -type f | sort | xargs -r sha256sum; true; }' \
+  > "$UPDATE_STATE/post-cutover.files" 2>/dev/null \
+  || refuse "could not read the project-data tree from inside the container after cutover"
+
+# Occurrence counts, not `grep -c`: the snapshot can be a single JSON line, which would
+# make a line count read 1 no matter how many rows there are.
+post_count() { # $1=needle
+  compose exec -T api sh -c "cd \"\${CCP_DATA_DIR:-/var/lib/ccp}\"; c=\$(grep -o '$1' ccp.json 2>/dev/null | wc -l); echo \"\${c:-0}\"" \
+    | tr -d '[:space:]'
+}
+POST_ROWS="$(post_count '\"DATA#v')";       POST_ROWS="${POST_ROWS:-0}"
+POST_ACTIVE="$(post_count '\"dataActive\"')"; POST_ACTIVE="${POST_ACTIVE:-0}"
+
+PROJ_DIFF="$(diff "$UPDATE_STATE/pre-projects.files" "$UPDATE_STATE/post-cutover.files" || true)"
+if [ -n "$PROJ_DIFF" ]; then
+  err "project-data files MISSING or CHANGED after cutover:"
+  printf '%s\n' "$PROJ_DIFF" | head -20 >&2
+  refuse "aborting after cutover — project data is not intact (nothing destructive happened; the api is being restored on the old volume)"
 fi
-ok "post-cutover manifest verified identical to the pre-migration source ($PRE_FILES_N files)"
+if [ "$POST_ROWS" -lt "$PRE_ROWS" ] || [ "$POST_ACTIVE" -lt "$PRE_ACTIVE" ]; then
+  err "version rows or active pointers DECREASED (rows $PRE_ROWS→$POST_ROWS, active $PRE_ACTIVE→$POST_ACTIVE)"
+  refuse "aborting after cutover — data was lost (nothing destructive happened; the api is being restored on the old volume)"
+fi
+ok "post-cutover data verified: project files identical; rows $PRE_ROWS→$POST_ROWS; active $PRE_ACTIVE→$POST_ACTIVE"
 
 # ---- step 12: success ----------------------------------------------------------
 say "[12/12] migration complete"
