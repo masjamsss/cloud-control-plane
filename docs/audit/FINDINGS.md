@@ -257,7 +257,7 @@ The same rule implemented in two places, free to drift.
 importer/kit, kit-azure and schemadump.
 
 - [x] IMP-2 | high | importer | fixed:scripts/drift/sweep-ignore.json shipped with generic seeds | 08-importer-schemadump.md | `scripts/drift/sweep-ignore.json` is missing: the statediff sweep refuses out of the box
-- [ ] IMP-4 | high | importer | open | 08-importer-schemadump.md | Azure capability ledger family classification is systematically wrong: multi-token `familyMap` keys are unreachable
+- [x] IMP-4 | high | importer | fixed:e3cc2c9 | 08-importer-schemadump.md | Azure capability ledger family classification is systematically wrong: multi-token `familyMap` keys are unreachable
 - [ ] IMP-6 | medium | importer | open | 08-importer-schemadump.md | statediff's managed-set match assumes Terraform state `id` equals the discovery id; false-positive findings for id-divergent types (concrete: `aws_volume_attachment`)
 - [x] IMP-7 | medium | importer | fixed:661d247 moved both Azure pins to 4.81.0; recurrence guard still missing | 08-importer-schemadump.md | Azure template provider pin (4.14.0) contradicts the committed azurerm schemadump tag (v4.81.0) it claims to bind to
 - [ ] IMP-8 | medium | importer | open | 08-importer-schemadump.md | Committed schemadump artifacts are not reproducible via the documented `gen.sh` pipeline; generated-catalog staleness detection is entirely manual

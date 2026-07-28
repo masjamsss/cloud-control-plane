@@ -581,3 +581,37 @@ And **the first version of the checker grepped the whole file**, so a glob prese
 event's list satisfied it; only its own negative test revealed that removing the path from
 one event changed nothing. A check written against a file rather than against the structure
 it means to inspect will find what it is looking for somewhere, and report success.
+
+### L-22 — A lookup that never matches produces confident, well-formed, wrong data
+
+Findings: IMP-4
+
+`getFamily()` looked up a multi-token key using a single token, so most of the map could
+never match. Nothing errored. The generator ran, the JSON validated, all 1141 rows were
+present, and 662 of them said `family: "other"` — a real value, plausible on any given row.
+The file was committed and consumed downstream, and the two gates that read the family were
+both silently wrong: one class was emitted zero times, and an exclusion list never excluded
+anything.
+
+The shape to recognise is a **lookup whose miss path is indistinguishable from a legitimate
+answer**. `map[k] || 'other'`, `.get(k) ?? DEFAULT`, `find(...) || fallback` — each turns
+"this key is unreachable" into ordinary-looking output. A crash would have been kinder.
+
+**Do differently:** when a table is written by hand and consulted by code, assert that every
+entry is *reachable*. It is a loop over the keys and costs nothing, and it fails on the day
+someone changes the lookup rather than at the next audit. Then add a **consequence check**:
+something downstream that must be non-empty if the table works — here `resize > 0`, which
+depends on family `compute` existing. Anchors prove the cases you thought of; the
+consequence check catches the ones you did not.
+
+The self-check is placed **before the write, and it exits non-zero**. A warning printed
+above a successfully-written file is how the original corrupted ledger would have shipped
+anyway.
+
+Two errors while fixing it were the same defect wearing different clothes, and both are
+worth admitting. An anchor asserted `azurerm_managed_disk → storage` because that is what I
+assumed; the map says `compute` — I had written a test against my guess rather than the
+source. And the consequence check read `r.safe_op_classes` when the field is
+`r.safeOpClasses`, producing a **uniform zero** that nearly passed as "resize is legitimately
+absent". A uniform result across every input means verify the input before believing the
+output — L-10, arrived at from a third direction.

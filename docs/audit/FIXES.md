@@ -1547,3 +1547,46 @@ the finding's own shape in miniature:
 the finding names; a new cross-component import elsewhere would not be noticed. That is a
 considered trade — a vague check nobody trusts gets deleted, and a specific one that names
 the alias and the file gets fixed — but it is a limit, not a guarantee.
+
+## IMP-4
+
+*Azure capability ledger family classification is systematically wrong: multi-token
+`familyMap` keys are unreachable.*
+
+- [x] **Defect reproduced first** — against the committed ledger, exactly as the finding
+      measured: `azurerm_key_vault`, `azurerm_linux_virtual_machine`,
+      `azurerm_resource_group`, `azurerm_managed_disk` and `azurerm_user_assigned_identity`
+      all classified `other`; `resize` emitted **zero** times across 1141 types.
+- [x] **Cause, not symptom** — `getFamily()` read the **second underscore token** while
+      `familyMap` is keyed by multi-token names, so a second token could never match them
+      and every multi-token key was dead. Matching is now on a contiguous **token
+      subsequence**, longest key first. Prefix matching alone is insufficient and the first
+      attempt proved it: the qualifier-prefixed types the finding names
+      (`azurerm_linux_virtual_machine`, `azurerm_windows_web_app`) carry the key in the
+      middle. Longest-first is load-bearing — otherwise `web` claims what `linux_web` should.
+- [x] **Regression test** — the generator's own self-check, and it **refuses to write**
+      rather than warn. Negative test confirmed: restoring the second-token classifier makes
+      it exit non-zero, naming the mismatched anchors.
+- [x] **Failure is loud** — three layers, because the original failure was *quiet*: named
+      anchors whose family is not a matter of opinion; an assertion that **every** key is
+      reachable; and `resize > 0` as the consequence check, since that class requires family
+      `compute` and zero across 1141 types means the gate is unreachable whatever the
+      anchors say.
+- [x] **Evidence in the status line** — `e3cc2c9`.
+- [x] **Lesson recorded** — L-22.
+
+**Result of regeneration:** 82 keys all reachable, `resize` **0 → 7**, `other`
+**662 → 266**. Both types the finding names as wrongly `catalog_candidate`
+(`azurerm_resource_group`, `azurerm_user_assigned_identity`) are now `engineer_only`.
+
+**Two mistakes this fix made first**, both the defect's own shape: an anchor asserting
+`azurerm_managed_disk → storage` when the map says `compute` (guessed instead of read),
+and a self-check reading `r.safe_op_classes` when the field is `r.safeOpClasses` — which
+returned a **uniform zero** and nearly led to concluding `resize` was legitimately absent.
+Checking the input is what revealed 7 genuinely resizable compute types.
+
+**Residue:** the downstream tag catalog was **not** regenerated.
+`ccp/app/scripts/gen-azure-tag-catalog.mjs` requires a file under `.superpowers/sdd/` that
+the public split removed, so it cannot run in this repo. The corrected ledger is committed;
+anything previously derived from the wrong one still needs regenerating wherever that input
+exists.

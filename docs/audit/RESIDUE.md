@@ -146,6 +146,14 @@ it. The code is the wrong side here: the entry should either be emitted or delet
 (which is the account row) and covered by no finding of its own. The same lost-update shape
 DATA-1 fixed for request rows.
 
+### R-29 · The Azure tag catalog was not regenerated from the corrected ledger
+*Residue on **IMP-4**.*
+
+`ccp/app/scripts/gen-azure-tag-catalog.mjs` reads a file under `.superpowers/sdd/` that the
+public split removed, so it cannot run in this repo. The ledger is corrected and committed;
+anything previously derived from the wrong one still needs regenerating wherever that input
+exists. Untracked, because no finding covers the split's effect on regenerable artifacts.
+
 ### R-9 · No end-to-end install-journey smoke
 *Residue on **OPS-1**, **OPS-5**.*
 
