@@ -9,12 +9,28 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      # CI-3 — this filter mirrors the IMPORT GRAPH, not the directory tree.
+      # The api is not a self-contained path: it VALUE-IMPORTS ccp/app/src/lib/* through
+      # the @app-lib alias (tsconfig.json), including the approval-authority predicates
+      # (canApprove/canRequest), policy defaults, the shared redactor and the dependsOn
+      # predicate — server-side AUTHORIZATION decisions. It also runs cross-layer parity
+      # suites against the catalogctl binary and its fixtures. Before this, a PR editing
+      # ccp/app/src/lib/permissions.ts ran the app and smoke lanes but NEVER the api's
+      # typecheck or tests — the suite that actually consumes those files — so a break
+      # landed on main and surfaced on some later, unrelated api PR.
+      # Verified by scripts/ci/check-path-filters.sh.
       - 'ccp/api/**'
+      - 'ccp/app/src/lib/**'
+      - 'ccp/app/src/data/manifests/**'
+      - 'tools/catalogctl/**'
       - '.github/workflows/ccp-api.yml'
   push:
     branches: [main]
     paths:
       - 'ccp/api/**'
+      - 'ccp/app/src/lib/**'
+      - 'ccp/app/src/data/manifests/**'
+      - 'tools/catalogctl/**'
 
 permissions:
   contents: read

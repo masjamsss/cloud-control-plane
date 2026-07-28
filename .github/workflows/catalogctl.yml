@@ -1,11 +1,21 @@
 name: catalogctl
+# CI-3 — the filter mirrors the IMPORT GRAPH, not the directory tree:
+#   scripts/ci/**  — windowgate_test.go and plancheck_gate_test.go EXECUTE
+#                    ../../scripts/ci/*.sh, so editing a gate script used to trigger no
+#                    run of the tests that validate it.
+#   catalog/**     — catalog/redaction-rules.json is the canonical copy of rules embedded
+#                    into Go (internal/hclops/redact.go, "SYNC OBLIGATION: byte-identical")
+#                    with a drift test that only ran on tools/catalogctl/** changes. A PR
+#                    touching only the JSON could let the fail-closed redaction layers
+#                    drift apart on main, undetected.
+# Verified by scripts/ci/check-path-filters.sh.
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['tools/catalogctl/**', '.github/workflows/catalogctl.yml']
+    paths: ['tools/catalogctl/**', 'scripts/ci/**', 'catalog/**', '.github/workflows/catalogctl.yml']
   push:
     branches: [main]
-    paths: ['tools/catalogctl/**', '.github/workflows/catalogctl.yml']
+    paths: ['tools/catalogctl/**', 'scripts/ci/**', 'catalog/**', '.github/workflows/catalogctl.yml']
 defaults:
   run:
     working-directory: tools/catalogctl
