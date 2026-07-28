@@ -1054,3 +1054,44 @@ two additional, smaller defects are fixed here and are worth their own note:
       durability nicety would be a worse bug than the narrow window it closes.
 - [x] **Evidence in the status line** — `0d4c3a4`.
 - [x] **Lesson recorded** — L-14.
+
+## TEST-4
+
+*The highest-value integration tests skip silently when a toolchain is missing, and nothing
+asserts they ran in CI.*
+
+- [x] **Defect reproduced first** — and this container reproduced it by accident, which is
+      the best evidence available: it has Go but **not** Terraform, so the LIVE
+      plan→pin→apply→halt-on-drift proof skipped while the suite reported
+      `1252 passed | 1 skipped` and a green exit. That single line is the entire finding.
+      The SPA↔API bridge is worse and needed no reproduction at all: its own comment says
+      *"CI's ccp-app job installs only ccp/app deps"*, so the one proof that the client and
+      the server agree had **never** run in GitHub CI.
+- [x] **Cause, not symptom** — two causes, and fixing either alone leaves the defect.
+      (1) The toolchain was **undeclared**: these suites ran only because `ubuntu-latest`
+      happens to preinstall Go and Terraform. `setup-go` and `setup-terraform` now name
+      them, and the `ccp-app` job installs `ccp/api`'s deps so the bridge proof can boot
+      the real api. (2) The **silent-skip mechanism** itself: declaring the toolchain would
+      leave the next gap just as invisible. `CCP_REQUIRE_INTEGRATION=1` converts "this
+      suite would skip" into a hard failure naming what is missing and how to get it.
+- [x] **Regression test** — the guard *is* the test, and both directions were verified in
+      both packages rather than assumed: default → clean skip; required → fails with
+      *"the terraform binary is not available, so this suite would have SKIPPED"*. The
+      bridge proof runs here (2 tests) with api deps present and fails naming them when
+      they are hidden.
+- [x] **Failure is loud** — the message names the missing dependency, the consequence, and
+      the fix, and cites TEST-4 so the next reader finds this entry.
+- [x] **Evidence in the status line** — `fdda986`.
+- [x] **Lesson recorded** — L-1, applied rather than restated: this is the same defect as
+      PG-9's permanently-clean gitleaks, in the test suite instead of a shell gate.
+
+**Deliberately local-friendly.** The flag is unset outside CI, so a developer without
+Terraform still gets a clean skip. The guarantee being bought is about CI, where nobody
+reads the skip count and a skipped proof is indistinguishable from a passing one.
+
+**Residue:** two things this does not fix. The **GitLab mirror** (`.gitlab/ci/`) still has
+no api/app test lane at all, so none of this reaches it — that is **CI-3**'s territory and
+stays open. And the helper is **duplicated** between `ccp/api/test/helpers/` and
+`ccp/app/src/test/helpers/` because the two packages have separate `node_modules` and
+`tsconfig` path maps; per **L-8** that divergence is a real risk, mitigated only by both
+copies reading the same `CCP_REQUIRE_INTEGRATION` variable and both being nine lines long.

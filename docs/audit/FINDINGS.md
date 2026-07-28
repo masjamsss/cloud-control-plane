@@ -136,7 +136,7 @@ OpenAPI vs reality, and docs citing things that do not exist.
 Failures that produce no signal — swallowed rejections, best-effort compensation, lanes that go green when they did nothing.
 
 - [x] DATA-3 | high | silent-failure | fixed:0d4c3a4 | 03-data-integrity.md | A failed disk persist is not rolled back from memory: served state diverges from disk, and "failed" writes silently commit later
-- [ ] TEST-4 | high | silent-failure | open | 12-testing-quality.md | The highest-value integration tests skip silently when a toolchain is missing, and nothing asserts they ran in CI
+- [x] TEST-4 | high | silent-failure | fixed:fdda986 | 12-testing-quality.md | The highest-value integration tests skip silently when a toolchain is missing, and nothing asserts they ran in CI
 - [ ] ARCH-10 | medium | silent-failure | open | 01-architecture.md | Unaudited governance transition: dual-control proposals expire silently
 - [ ] ARCH-9 | medium | silent-failure | open | 01-architecture.md | Single-process, single-file scaling ceiling with in-process singletons the planned DynamoDB path would silently break
 - [ ] CI-9 | medium | silent-failure | open | 13-ci-cd.md | The recurring data lane keeps the silent-skip gate its own sibling workflow documents as a trap
