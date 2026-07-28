@@ -322,3 +322,41 @@ defect, not as the specification for the fix (L-4 again, from the other directio
 tests pin the cases where the refusal must **not** expire, because the failure mode of an
 over-eager fix — a button that re-enables for a draft already rejected — is invisible in a
 suite that only tests that the bug is gone.
+
+### L-14 — When you cannot measure the damage, stop rather than guess at repair
+
+Findings: DATA-3, ERR-10
+
+A failed snapshot left the in-memory Map holding a mutation the disk had refused. The
+finding's first recommendation — capture the prior items and roll the Map back — reads as
+obviously right and is wrong here, for a reason visible only in how this store persists.
+Snapshots are **whole-state** and serialized on one chain, so if write A fails and a later
+write B succeeds, B's snapshot already contains A: A is durable on disk no matter what
+memory says. Rolling A back would *invert* the divergence rather than end it. And anything
+that ran between A's apply and A's failure may have read A and built on it, so discarding A
+discards that silently too.
+
+Once that is clear, the honest inventory is short. Memory and disk have diverged; the
+process cannot tell by how much; and no action available to it reduces that number. The
+only truthful move is to stop claiming authority — refuse further mutations before they
+touch memory, and fail readiness so the instance leaves rotation. Recovery becomes an
+operator's decision made with facts, instead of a repair the process improvises with none.
+
+**Do differently:** before writing a rollback, ask what the recovery code can actually
+*observe*. Compensating logic is only sound when the damage is bounded and measurable; when
+it is neither, "undo" is a guess wearing the costume of a fix, and it can enlarge the
+inconsistency it was written to remove. Prefer refusing to proceed — and make the refusal
+sticky, because a later success is not evidence about damage already done. This store
+already had that instinct: `load()` refuses to boot an empty-but-present snapshot rather
+than assume it means "fresh". The mutators simply never inherited it.
+
+Two smaller things fell out, both worth generalising. **Cleanup must span the whole window
+in which the thing being cleaned up exists** — the first fix wrapped `writeFile`/`sync`, as
+the finding described, and a failing `rename` leaked the temp file just as surely. And
+**a test that cannot fail is not a test**: filesystem permissions are useless for
+simulating a write failure in a suite that runs as uid 0, because root bypasses the mode
+bits and the "failure" quietly never happens. That is L-1's shape one more time — every
+assertion about the failure passes, vacuously. The state-machine tests use explicit
+injection; the temp-file test uses a real, root-proof failure precisely because asserting
+"no leaked file" against an injection that never touches the disk would exercise none of
+the cleanup it claims to cover.

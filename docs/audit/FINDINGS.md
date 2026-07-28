@@ -135,7 +135,7 @@ OpenAPI vs reality, and docs citing things that do not exist.
 
 Failures that produce no signal — swallowed rejections, best-effort compensation, lanes that go green when they did nothing.
 
-- [ ] DATA-3 | high | silent-failure | open | 03-data-integrity.md | A failed disk persist is not rolled back from memory: served state diverges from disk, and "failed" writes silently commit later
+- [x] DATA-3 | high | silent-failure | fixed:0d4c3a4 | 03-data-integrity.md | A failed disk persist is not rolled back from memory: served state diverges from disk, and "failed" writes silently commit later
 - [ ] TEST-4 | high | silent-failure | open | 12-testing-quality.md | The highest-value integration tests skip silently when a toolchain is missing, and nothing asserts they ran in CI
 - [ ] ARCH-10 | medium | silent-failure | open | 01-architecture.md | Unaudited governance transition: dual-control proposals expire silently
 - [ ] ARCH-9 | medium | silent-failure | open | 01-architecture.md | Single-process, single-file scaling ceiling with in-process singletons the planned DynamoDB path would silently break
@@ -219,7 +219,7 @@ Durability, rollback, schema validation on load, and store-seam fidelity against
 - [ ] CTL-5 | medium | data-persistence | open | 07-catalogctl.md | `drift-edit` writes are neither atomic nor transactional: a mid-batch refusal leaves earlier edits in the checkout
 - [ ] DATA-10 | medium | data-persistence | open | 03-data-integrity.md | Backup/restore covers only the store JSON; the on-disk project-data/drift root it references is out of scope, with no consistency check
 - [ ] DATA-6 | medium | data-persistence | open | 03-data-integrity.md | `rename` durability is not guaranteed: no directory fsync after the atomic swap
-- [ ] ERR-10 | medium | data-persistence | open | 09-error-handling.md | FileStore persist failure leaves memory ahead of disk: the client gets a 500 for a write that took effect
+- [x] ERR-10 | medium | data-persistence | fixed:0d4c3a4 | 09-error-handling.md | FileStore persist failure leaves memory ahead of disk: the client gets a 500 for a write that took effect
 - [ ] UI-8 | medium | data-persistence | open | 06-frontend-ui-robustness.md | DiffView corrupts `~` change lines whose old value contains " -> "
 - [ ] API-17 | low | data-persistence | open | 02-api-correctness.md | Store-seam divergences from the DynamoDB semantics it mirrors
 - [ ] DATA-14 | low | data-persistence | open | 03-data-integrity.md | Seam-fidelity gaps between MemoryStore and the promised DynamoDB semantics

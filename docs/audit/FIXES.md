@@ -988,3 +988,69 @@ because it also covers the call site nobody has written yet.
 
 - [x] **Evidence in the status line** — `b5b703b`.
 - [x] **Lesson recorded** — L-12.
+
+## DATA-3
+
+*A failed disk persist is not rolled back from memory: served state diverges from disk, and
+"failed" writes silently commit later.*
+
+- [x] **Defect reproduced first** — `test/storeDurabilityFault.test.ts` states it as an
+      observable fact rather than a description: a write fails (500 to its caller), the
+      disk recovers, an unrelated write succeeds — and the failed write's row is on disk.
+      Because every snapshot serializes the whole Map, the "failed" mutation rode along
+      with the next successful persist by any other request. The mirror case is worse: if
+      the process dies first it vanishes instead, having already been read and acted on.
+- [x] **Cause, not symptom** — and the finding's **first** recommendation was rejected.
+      Rolling the Map back does not work here: snapshots are whole-state and serialized,
+      so if write A fails but a later write B succeeds, B's snapshot **already contains
+      A** — undoing A in memory would invert the divergence, not end it. And any mutation
+      between A's apply and A's failure may have read A and built on it; discarding A
+      silently discards that too. What is actually knowable is only that memory and disk
+      have diverged by an unknown amount. So the second option was taken and made strict:
+      the first failed snapshot records a fault, every later mutation is refused **before**
+      touching the Map, and `/readyz` goes red naming the reason.
+- [x] **Regression test** — 12 tests. Two negative tests confirmed: removing the fault
+      fails 5, and narrowing the temp-file cleanup fails exactly the rename-leak test.
+- [x] **Failure is loud** — three ways. The failing caller still gets its own error
+      (the fault must not swallow it — pinned by a test). Later mutations get a
+      `DurabilityError`, deliberately distinct from `ConditionError`: a condition failure
+      means retry may help, this means no retry against this instance can. And readiness
+      goes red, which is the one that matters — an instance serving reads from a Map that
+      disk will not resurrect looks perfectly healthy to a liveness probe.
+- [x] **Evidence in the status line** — `0d4c3a4`.
+- [x] **Lesson recorded** — L-14.
+
+**Reads stay allowed, deliberately.** Memory holds exactly what has already been served;
+refusing to answer would remove the operator's ability to see the state they must
+reconcile. The fault also never clears — a later successful write proves nothing about the
+divergence already created, and a store that healed itself here would be guessing, which is
+precisely what `load()` already refuses to do with a corrupt snapshot.
+
+**Residue:** recovery is still an operator action (restart from the on-disk snapshot,
+accepting the loss of whatever memory held). Nothing here reconciles automatically, and
+nothing could — the divergence is unmeasurable from inside the process. What changed is
+that it stops compounding and stops being invisible.
+
+## ERR-10
+
+*FileStore persist failure leaves memory ahead of disk: the client gets a 500 for a write
+that took effect.*
+
+The main body is **DATA-3** above — same defect from the error-handling report. ERR-10's
+two additional, smaller defects are fixed here and are worth their own note:
+
+- [x] **The temp file leaked on failure.** Under sustained ENOSPC — the very condition
+      that makes writes fail — one leaked file per attempt fills the directory recovery
+      depends on. Cleanup now spans **every** step from the temp file's creation through
+      the rename. The first version of this fix wrapped only `writeFile`/`sync`, exactly
+      as the finding describes it, and **a failing `rename` leaks just as surely** — the
+      test caught that, which is why it uses a real filesystem failure rather than the
+      injected one.
+- [x] **No directory fsync after rename.** The rename is atomic against a process kill
+      regardless, but the directory entry is not durable against power loss until the
+      directory's own metadata is flushed, so a crash could leave the OLD snapshot after a
+      write was reported complete. Added as **best-effort**: some filesystems refuse a
+      directory open-for-sync, and failing a write that has already landed over a
+      durability nicety would be a worse bug than the narrow window it closes.
+- [x] **Evidence in the status line** — `0d4c3a4`.
+- [x] **Lesson recorded** — L-14.
