@@ -421,3 +421,41 @@ subtree, ran a redirect, and remounted it — a skeleton flash and a full data r
 click. A defect first noticed as "the active link isn't highlighted" was really "navigation
 does not work the way the router thinks it does", and the small visible symptom was the
 thread worth pulling.
+
+### L-17 — Writing the test for a fix you already shipped is how you find out it never worked
+
+Findings: DATA-1
+
+The four request-row writes had been guarded on `eventSeq` in earlier work, and the guard
+was correct: right attribute, right captured value, fail-closed on a deleted row, verified
+against a deliberate negative test. What none of that established is that the attribute
+being compared **existed**. Nothing set `eventSeq` at creation — the schema has it optional
+and the submit route omitted it — so on a freshly-submitted request both concurrent writers
+captured `undefined` against an absent attribute, `undefined !== undefined` was false, and
+both guarded writes succeeded.
+
+So the guard protected every row *except* the ones people actually race on: a new request
+awaiting its first pair of approvals. It had been reviewed, tested, and shipped, and it read
+as protection in every one of those passes.
+
+The tests that found it were written for a finding I expected to close by inspection — the
+code already had the guard, and the honest-looking move was to mark it fixed and move on.
+The only reason the hole surfaced is that the fixture had to be made real enough to
+exercise the guard, and it wasn't: `seedRequests` produced a row with no `eventSeq`, which
+real code cannot create. **A fixture that cannot be produced by the system under test
+exempts every test using it from whatever that field controls.**
+
+**Do differently:** when a guard compares a value, test that the value is *there*, not just
+that the comparison is right — an optional field plus an equality guard is a guard that
+disappears exactly when the field is absent, silently and only for some rows. And when a
+finding looks already-fixed, write its test anyway. Confirming a fix costs a fraction of
+finding the defect, and it is the only step that distinguishes "the code contains a guard"
+from "the guard works".
+
+The same sitting produced the counter-lesson. The seam-level fix — make `ifEquals` fail on
+an absent attribute, as DynamoDB does — is *more* correct and closes the whole class. It
+also broke 80 tests across 14 files, because several paths guard on absent attributes on
+purpose in order to back-fill them. Shipping it alongside the narrow fix would have been
+L-14's mistake with better intentions. It is left undone, with the hazard kept as an
+executable demonstration rather than a comment, so the next person inherits a failing-looking
+truth instead of a paragraph.

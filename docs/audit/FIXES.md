@@ -1180,3 +1180,47 @@ scope to `/p/<id>` with **no trailing slash**, because `/p/<id>/` does not match
 been half-done. And `end` must be set on the index route and **only** there: without it
 Home is active on every page, which is the same "no signal" outcome arrived at from the
 opposite direction.
+
+## DATA-1
+
+*Request-row writes lack optimistic concurrency: concurrent approvals/rejections silently
+lose updates and can corrupt the quorum ledger.*
+
+- [x] **Defect reproduced first** — `test/requestRowLostUpdate.test.ts` reproduces the
+      interleaving as data: two writers compute a full replacement row from the same
+      pre-image, and without the guard the second silently erases the first. It drives the
+      **store** rather than the routes, deliberately: the interleaving DATA-1 describes
+      requires two handlers suspended between their read and their write, which no route
+      test can produce.
+- [x] **Cause, not symptom** — and writing these tests found that the fix already in place
+      **did not work on the rows that matter most.** The four verbs were guarded on
+      `eventSeq` by the earlier CONC/REM work, but nothing ever *set* `eventSeq` at
+      creation: the schema has it optional and the submit route omitted it. `ifEquals`
+      compares `cur[attr] !== value`, so on a freshly-submitted request both writers
+      capture `undefined` against an absent attribute — `undefined !== undefined` is
+      false — and **both guarded writes succeeded**. That is exactly the approve/approve
+      race on a new request, the case the finding opens with. REM-1's boot stamp covers
+      rows that predate the field; a row created *after* boot is one it cannot reach.
+      Creation now writes `eventSeq: 0`.
+- [x] **Regression test** — 6 tests, covering reject / link-pr / plan-summary
+      (`approveLostUpdate.test.ts` already owns approve and the guard's mechanics).
+      Negative test confirmed: removing `eventSeq` from creation fails the assertion
+      written for it.
+- [x] **Failure is loud** — the losing writer gets a `ConditionError`, which the handlers
+      surface as `STATE_CONFLICT` rather than a silent overwrite.
+- [x] **Evidence in the status line** — `887746c`.
+- [x] **Lesson recorded** — L-17.
+
+**The fixture was part of the defect.** `seedRequests` built a row without `eventSeq` —
+a row real code cannot create — which quietly exempted every test using it from the guard
+that row is supposed to carry. It now mirrors what the submit route writes.
+
+**Residue, and it is real: the SEAM still lets a guard on an absent attribute pass.**
+DynamoDB fails a condition on a missing attribute; `memoryStore`'s `ifEquals` does not.
+Making it fail closed is the right fix and was attempted here — it breaks **80 tests across
+14 files**, because several real paths (`versionStamp` among them) guard on absent
+attributes *on purpose*, in order to back-fill them. That needs its own pass over every
+`ifEquals` call site rather than being smuggled in with this change (**L-14**: do not
+improvise a repair whose blast radius you have not measured). The hazard is kept as an
+**executable demonstration** in the test file rather than a comment, so it cannot be
+forgotten.
