@@ -317,7 +317,13 @@ func jsonToCty(v any) (cty.Value, error) {
 
 // objEntry is one parsed `key = value # comment` row of a literal object.
 type objEntry struct {
-	key     string
+	key string
+	// lead is trivia that sat on its own line(s) ABOVE this entry — full-line
+	// comments. Carried separately so it can never leak into keyToks (CTL-1) and
+	// re-emitted before the key so the bytes round-trip. This walker is a COPY of
+	// internal/edit's (CTL-10); the defect and the fix are the same in both, and
+	// fixing only one would have left this half broken and looking maintained (L-8).
+	lead    hclwrite.Tokens
 	keyToks hclwrite.Tokens
 	valToks hclwrite.Tokens
 	comment hclwrite.Tokens
@@ -394,11 +400,34 @@ func parseObjectLiteral(toks hclwrite.Tokens) ([]objEntry, bool) {
 	i++
 	var entries []objEntry
 	for i < len(toks) {
-		switch toks[i].Type {
-		case hclsyntax.TokenNewline, hclsyntax.TokenComma:
-			i++
-			continue
-		case hclsyntax.TokenCBrace:
+		// Leading trivia. A single-line comment token CARRIES its terminating newline
+		// ("# note\n" is ONE token), so a full-line comment above an entry is not a
+		// TokenNewline and the key loop below would append it to keyToks — yielding a
+		// key like "# owner of record\nOwner" that matches nothing. Every consumer then
+		// mis-identified the entry AT EXIT 0.
+		var lead hclwrite.Tokens
+		for i < len(toks) {
+			switch toks[i].Type {
+			case hclsyntax.TokenNewline, hclsyntax.TokenComma:
+				i++
+				continue
+			case hclsyntax.TokenComment:
+				lead = append(lead, toks[i])
+				i++
+				continue
+			}
+			break
+		}
+		if i >= len(toks) {
+			return nil, false
+		}
+		if toks[i].Type == hclsyntax.TokenCBrace {
+			if len(lead) > 0 {
+				// A dangling comment after the last entry has no entry to attach to;
+				// re-emitting it would move or drop it. Refuse rather than guess —
+				// NOT_LITERAL is loud and leaves the tree untouched.
+				return nil, false
+			}
 			return entries, true
 		}
 		var keyToks hclwrite.Tokens
@@ -440,7 +469,7 @@ func parseObjectLiteral(toks hclwrite.Tokens) ([]objEntry, bool) {
 			valToks = append(valToks, t)
 			i++
 		}
-		entries = append(entries, objEntry{key: keyLiteral(keyToks), keyToks: keyToks, valToks: valToks, comment: comment})
+		entries = append(entries, objEntry{key: keyLiteral(keyToks), lead: lead, keyToks: keyToks, valToks: valToks, comment: comment})
 	}
 	return nil, false
 }
@@ -481,6 +510,9 @@ func buildObjectLiteral(entries []objEntry) hclwrite.Tokens {
 		{Type: hclsyntax.TokenNewline, Bytes: []byte("\n")},
 	}
 	for _, e := range entries {
+		// Leading full-line comments come back out above their entry; each already
+		// carries its own newline (see parseObjectLiteral), so no separator is added.
+		toks = append(toks, e.lead...)
 		toks = append(toks, e.keyToks...)
 		toks = append(toks, &hclwrite.Token{Type: hclsyntax.TokenEqual, Bytes: []byte("=")})
 		toks = append(toks, e.valToks...)
