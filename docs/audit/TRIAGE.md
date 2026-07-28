@@ -457,3 +457,110 @@ mechanically against `FINDINGS.md` when this file was generated — no finding i
 twice, and none is invented. If you add a finding, add it to a batch; if the two lists
 disagree, `FINDINGS.md` is authoritative.
 
+
+---
+
+# Residue triage
+
+[`RESIDUE.md`](RESIDUE.md) holds **42 items** — what the fixes deliberately left behind.
+It is a separate ledger from `FINDINGS.md` and was **not** covered by the batches above, so
+here it is.
+
+**The headline: no residue item needs new scheduling.** Every one either rides a batch that
+already exists, is deliberately permanent, or is already closed. One is misfiled and needs a
+state correction, not work.
+
+| state | count | what it means for planning |
+| --- | ---: | --- |
+| `resolved` | 2 | Closed by later work. Nothing to do. |
+| `tracked` | 3 | An open finding covers it — it closes when that finding's batch runs. |
+| `untracked` | 15 | Nothing covered it when written. **14 of the 15 fold into a batch above**; 1 is misfiled. |
+| `accepted` | 22 | Deliberately permanent, with a reason. **Do not re-open these** without new information. |
+
+## Rides along — assign nothing, it comes with the batch
+
+These close as a side effect of work already scheduled. The point of listing them is so the
+person taking the batch knows the residue is theirs, and does not leave it behind a second
+time — which is the exact failure this ledger was built to stop.
+
+| residue | rides | with | note |
+| --- | --- | --- | --- |
+| **R-4** — `planSummary` is typed `string` in the contract | `B-S4` | DOC-11 | — |
+| **R-5** — The scan worker does not report its own terminal failure | `B-S7` | ERR-15 | — |
+| **R-6** — The bundle's landed-but-untriggered half state | `B-O1` | ERR-12 | — |
+| **R-25** — `ENGINEER_REVIEW_REQUIRED` is defined and emitted by nothing | `B-S3` | DOC-10 | Whoever enumerates the error codes for DOC-10 will hit this immediately. The decision is the deliverable, not the edit: emit it or delete it — `openapi.test.ts` currently pins its ABSENCE, which records the choice without making it. |
+| **R-3** — The Python/importer CI gap is only partly closed | `B-S8` | the importer/CI lane | The `importer` lane exists but the gap is only partly closed; the CI batch is already opening those files. |
+| **R-27** — The two literal-object token-walkers are still duplicated | `B-O9` | CTL-10 | Already carries a `Tracked by: CTL-10` marker — see the ledger corrections below, its section header is wrong. |
+| **R-28** — The path-filter check covers four named edges, not the import graph | `B-S8` | CI-10 | THE PATTERN NOW EXISTS: `test/schedulerGating.test.ts` and `ccp/app/src/test/entryGraph.test.ts` both walk a real import graph. `check-path-filters.sh` can stop being a list of four named edges (L-25). |
+| **R-32** — Sequential write latency is still O(store size) | `B-O3` | CONC-8 | CONC-8 is the same code path — PR #6 coalesced the writes, this is the serialization that remains. |
+| **R-33** — The SPA still fetches unpaged request lists | `B-O4` | PERF-8 | Needs the same decision PERF-8 needs: an `updatedAt`-ordered index, or a product ruling that the bell means "recently created". Do not add a server-side `limit` without settling that — it would silently drop a recently-approved old request. |
+| **R-8** — Session rows are written with blind puts | `B-S7` | REM-2 | REM-2 IS this residue with a finding number. Fix once. |
+| **R-29** — The Azure tag catalog was not regenerated from the corrected ledger | `B-O10` | IMP-8 | The corrected ledger exists (IMP-4); the Azure tag catalog was never regenerated from it. |
+| **R-9** — No end-to-end install-journey smoke | `B-O8` | CI-13 | CI-13 asks what the smoke should assert. "An end-to-end install journey" is the answer this residue is holding. |
+| **R-10** — `transactWithAudit` cannot tell which condition failed | `B-O12` | CONC-15 / API-14 | CONC-15 and API-14 are the finding-shaped version of exactly this. Fix once, close three. |
+| **R-11** — The redaction/toolchain helpers are duplicated across packages | `B-O5` | ARCH-6 | The shared package ARCH-6 asks for is where these helpers go. |
+| **R-12** — `versionStamp` cannot reach an incomplete project registry | `B-O7` | DATA-11 / API-9 | A project missing from the registry leaves its rows unstamped AND the one-shot marker is written anyway, so it never retries. Batch it with the migration work that can actually re-run it. |
+| **R-13** — IMP-7's recurrence guard was never built | `B-O10` | IMP-7 follow-up | IMP-7 is closed; its recurrence guard was never built, so the divergence can come back silently. |
+| **R-30** — The built-in gate runner was not shipped | `B-O1` | the bundle lane | ARCH-3 shipped the "at minimum" clause (the api verifies the digest). The built-in runner it recommends is still the operator's free-form command, and B-O1 is already inside `domain/bundle.ts`. |
+
+## Ledger corrections — no code, just the record
+
+Found while preparing this. Both are my own entries, and both are the kind of drift the
+residue ledger exists to catch, so they should be fixed in `RESIDUE.md` rather than left:
+
+| residue | problem | correction |
+| --- | --- | --- |
+| **R-27** | Sits under `## untracked — nothing covers these` while carrying `**Tracked by: CTL-10.**`. The gate passes it, because the gate only checks that a `tracked` claim cites an **open** finding — and CTL-10 is open. So the section header is the part that is wrong, and the gate cannot see it. | Move it into the `tracked` section. Consider teaching the gate to check section placement against the marker, since it clearly cannot today. |
+| **R-34** | Filed `untracked`, but its own text says "a stated trade" and notes that `GET /admin/audit/export` and `verify-audit-chain.ts` still verify every entry, **with a test pinning that they catch what the memo path does not**. A deliberate limit with a test on it is `accepted`, not a gap. | Restate as `accepted`. The substance is right; only the state is wrong. |
+
+## Accepted — deliberately permanent, do not re-open
+
+Listed so nobody spends a session re-deciding a decision. Each has its reasoning in
+`RESIDUE.md`; re-open one only if its **premise** changes, not because it looks like an
+open task.
+
+| residue | |
+| --- | --- |
+| **R-7** | A fix landed inside another finding's commit |
+| **R-14** | The link checker does not check external URLs |
+| **R-15** | Enrichment call sites degrade to absent rather than showing an error |
+| **R-16** | Neither process error handler exits |
+| **R-17** | Rewindow is not widened to the halt statuses |
+| **R-18** | `AWAITING_CODE_REVIEW` stays in `BUNDLE_ELIGIBLE` |
+| **R-19** | Scan-job leases settle on read, not on a timer |
+| **R-20** | Store durability recovery is an operator action |
+| **R-21** | The auto-apply pin-writer does not exist |
+| **R-22** | Component-level behaviour that jsdom would be needed to test |
+| **R-23** | The `importer` CI lane also runs a non-importer suite |
+| **R-24** | PERF-2 removed the freeze, not the serialisation |
+| **R-26** | Four allowlisted gitleaks hits, and a scanner that had never run |
+| **R-31** | The reference apply lane's apply step is a stub |
+| **R-35** | PERF-5 moved the catalog parse; it did not make it cheaper |
+| **R-36** | The entry chunk is still 855 kB (248 kB gzip), and `manualChunks` would not shrink it |
+| **R-37** | The forge-credential broker is not wired into the armed lanes |
+| **R-38** | With no pin and no registered repo, a multi-estate deployment still shares one remote |
+| **R-39** | Co-arming the two apply lanes is still allowed |
+| **R-40** | The ~10 client-only statuses were kept, not pruned |
+| **R-41** | The store schema still types `status` as `z.string()` |
+| **R-42** | `APPLIED` still means two things |
+
+Three of these are worth knowing about before you start any batch, because they will look
+like bugs:
+
+- **R-21** — the auto-apply pin-writer does not exist, so **no request carries a plan pin
+  today**. That makes ARCH-3's digest verification inert on every real request. If you are
+  in `B-O1` and the digest check never fires, this is why.
+- **R-22** — this repo has **no jsdom**, and `test/standalone.test.ts` enforces a
+  dependency allowlist. Anything in `B-S5` that seems to want a DOM test cannot have one;
+  extract the rule into a pure function instead. TEST-7 in `B-O13` is where that constraint
+  gets revisited, if it ever does.
+- **R-16** — neither process error handler exits. `B-O6` (ERR-8 / OPS-8) owns that seam;
+  don't fix it in passing from somewhere else.
+
+## Resolved
+
+**R-1** (the legacy-row concurrency window, closed by REM-1 + DATA-1) and **R-2**
+(`ifEquals` passing when the attribute is absent). Both closed. R-1 is worth reading once
+regardless: the same residue was recorded on three separate findings, each noting it "still
+has no finding", and nothing picked it up — which is why this file exists at all.
+
