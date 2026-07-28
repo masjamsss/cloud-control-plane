@@ -38,6 +38,7 @@ import { SchedulePicker } from '@/features/request/SchedulePicker';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { Badge } from '@/components/ui/Badge';
 import { RiskBadge } from '@/components/ui/RiskBadge';
+import { manifestForServiceSlug } from '@/lib/catalog';
 import { MacdTag } from '@/components/ui/MacdTag';
 import { AccessBadge } from '@/components/ui/AccessBadge';
 import { Button } from '@/components/ui/Button';
@@ -792,7 +793,10 @@ export function ResourceDetail(): JSX.Element {
 
   const state = useMemo<RouteState>(() => {
     if (!manifests || !inventory || !blocks) return { status: 'loading', serviceSlug, ops: [] };
-    const manifest = manifests.find((m) => m.service === serviceSlug);
+    // UI-2: the same fan-in ServiceConsole uses. A literal lookup dead-ended on every
+    // NAMED service — the slug the ResourceRow link was built from — so the drill-in
+    // resolved differently from the list it was reached from.
+    const manifest = manifestForServiceSlug(manifests, serviceSlug);
     if (!manifest) return { status: 'no-service', serviceSlug, ops: [] };
     const resource = inventory.resources.find((r) => r.address === address);
     if (!resource) return { status: 'no-resource', serviceSlug, ops: [] };

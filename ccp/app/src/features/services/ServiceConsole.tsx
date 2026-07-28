@@ -13,7 +13,7 @@ import { canRequest } from '@/lib/permissions';
 import { resolveRisk } from '@/lib/riskOverrides';
 import { getServiceMeta, hasServiceMeta, primaryTypeFor } from '@/lib/serviceMeta';
 import { provisionPathFor } from '@/lib/providerCatalog';
-import { catalogServiceKey } from '@/lib/catalog';
+import { manifestForServiceSlug } from '@/lib/catalog';
 import { useTeams } from '@/lib/teams';
 import { isProvisionAdd, isResourceScopedAdd, isScopedAction } from '@/lib/actionPicker';
 import {
@@ -166,34 +166,10 @@ export function ServiceConsole(): JSX.Element {
     };
   }, [projectId, reloadToken]);
 
-  const manifest = useMemo(() => {
-    const all = manifests ?? [];
-    // A real manifest slug (every AWS service, and legacy azure-* keys) resolves
-    // directly. A portal-parity NAMED service (e.g. "vm", "sql") has no manifest
-    // of its own — synthesize one from the ops whose catalogServiceKey is this
-    // slug, across the (already provider-filtered) manifests, so its console
-    // renders exactly the ops the browse tile grouped under it.
-    // Gather EVERY op whose catalogServiceKey is this slug, across all manifests —
-    // for a curated slug (e.g. ec2) this now includes the family tag-ops that key
-    // to it from other files, not just its own manifest, so the console op set
-    // matches the browse tile's count. contributions===0 means either an op-less
-    // named service (→ undefined, so the Provision CTA renders) or a bare manifest
-    // slug navigated directly (→ its manifest).
-    const contributions = all
-      .map((m) => ({
-        m,
-        ops: m.operations.filter(
-          (op) => catalogServiceKey(op.target.resourceType, m.service) === slug,
-        ),
-      }))
-      .filter((c) => c.ops.length > 0);
-    if (contributions.length === 0) return all.find((m) => m.service === slug);
-    // dominant manifest = the file contributing the most ops (its scope/summary base)
-    const dominant = contributions.reduce((a, b) => (b.ops.length > a.ops.length ? b : a));
-    const operations = contributions.flatMap((c) => c.ops);
-    const resourceTypes = [...new Set(operations.map((op) => op.target.resourceType))];
-    return { ...dominant.m, service: slug, operations, resourceTypes };
-  }, [manifests, slug]);
+  // UI-2: one implementation, shared with ResourceDetail. The two MUST agree — a
+  // drill-in that resolves the slug differently from the list it was reached from is
+  // precisely the dead-end this closes. See lib/catalog.ts#manifestForServiceSlug.
+  const manifest = useMemo(() => manifestForServiceSlug(manifests ?? [], slug), [manifests, slug]);
   // The active project's provider disambiguates the three slugs both clouds name
   // ('batch','dms','resource-groups') so this console shows the same identity its
   // browse tile did (getServiceMeta docblock); harmless for every other slug.

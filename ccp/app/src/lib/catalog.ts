@@ -72,6 +72,46 @@ export function catalogServiceKey(resourceType: string, manifestService: string)
   return azureServiceOf(resourceType) ?? awsServiceOf(resourceType) ?? manifestService;
 }
 
+/**
+ * The manifest a named-service SLUG resolves to — synthesized when the slug has no
+ * manifest file of its own (UI-2).
+ *
+ * `ServiceConsole` groups ops and resources under named-service slugs via
+ * {@link catalogServiceKey}, so a slug like `vm`, `sql` or `aks` is real to the browse
+ * tile and to every `ResourceRow` link, while no manifest FILE carries that name.
+ * `ResourceDetail` resolved with a literal `manifests.find(m => m.service === slug)` and
+ * therefore dead-ended on every one of them: 194 named services carry ops but no literal
+ * manifest slug, and all 16 azure-fixture services rendered "No service named ...".
+ *
+ * Extracted here rather than left inline because the two callers MUST agree — a drill-in
+ * that resolves differently from the list it was reached from is the defect itself. Pure,
+ * so it is testable without mounting either component (no jsdom in this repo).
+ *
+ * Returns `undefined` only when the slug names nothing at all: no contributing ops AND no
+ * literal manifest. That is a genuine "no such service", which the caller still reports.
+ */
+export function manifestForServiceSlug(
+  manifests: ServiceManifest[],
+  slug: string,
+): ServiceManifest | undefined {
+  const contributions = manifests
+    .map((m) => ({
+      m,
+      ops: m.operations.filter((op) => catalogServiceKey(op.target.resourceType, m.service) === slug),
+    }))
+    .filter((c) => c.ops.length > 0);
+  // No contributions: either an op-less named service or a bare manifest slug navigated
+  // directly. The literal lookup is the right answer for the second and correctly absent
+  // for the first.
+  if (contributions.length === 0) return manifests.find((m) => m.service === slug);
+  // Dominant manifest = the file contributing the most ops; it supplies the scope/summary
+  // base, and the synthesized manifest carries the union of every contributing op.
+  const dominant = contributions.reduce((a, b) => (b.ops.length > a.ops.length ? b : a));
+  const operations = contributions.flatMap((c) => c.ops);
+  const resourceTypes = [...new Set(operations.map((op) => op.target.resourceType))];
+  return { ...dominant.m, service: slug, operations, resourceTypes };
+}
+
 /** The generated named-service tile map for a provider — the full provisionable
  * service set the catalog browses (both with-ops and op-less services). GCP has
  * no tile map yet (0034 lane G4): an explicit empty map, never another
