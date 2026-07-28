@@ -615,3 +615,30 @@ source. And the consequence check read `r.safe_op_classes` when the field is
 `r.safeOpClasses`, producing a **uniform zero** that nearly passed as "resize is legitimately
 absent". A uniform result across every input means verify the input before believing the
 output — L-10, arrived at from a third direction.
+
+### L-23 — When a link and its destination disagree, the bug is the second implementation
+
+Findings: UI-2
+
+`ServiceConsole` built links from slugs it derived by fanning in every op whose
+`catalogServiceKey` matched. `ResourceDetail` resolved those same slugs with a literal
+`find`. Both were reasonable in isolation; together they meant the list produced links its
+own destination could not open, for 194 services.
+
+The tempting fix is to make the second implementation smarter — teach `ResourceDetail` the
+fan-in too. That restores agreement for exactly as long as nobody edits one of them. The
+defect is not that the literal lookup was wrong; it is that a second implementation of a
+shared question existed at all, in a place where only one side was reachable by a link and
+so only one side got exercised.
+
+**Do differently:** when a navigation target is computed in one place and resolved in
+another, make it one function. The general form — anything that constructs an identifier and
+anything that consumes it must share the derivation — covers slugs, cache keys, storage keys
+and URL builders alike. The asymmetry is what hides it: the producing side is exercised
+constantly, and the consuming side only when someone follows the link.
+
+**And test the property over the real data, not a fixture.** The mechanism test — "a
+synthesized slug resolves" — passes against a three-line fixture and proves almost nothing;
+the finding was 194 specific slugs. The assertion that earns its place enumerates every slug
+the producer can emit and requires the consumer to resolve all of them. That test would have
+failed the day the defect was introduced, which no fixture test here would have.

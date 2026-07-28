@@ -1590,3 +1590,33 @@ Checking the input is what revealed 7 genuinely resizable compute types.
 the public split removed, so it cannot run in this repo. The corrected ledger is committed;
 anything previously derived from the wrong one still needs regenerating wherever that input
 exists.
+
+## UI-2
+
+*Resource drill-in dead-ends for every "named service" whose slug is not a literal manifest
+file: all 16 azure-fixture services are broken.*
+
+- [x] **Defect reproduced first** — `src/test/manifestForServiceSlug.test.ts` shows the
+      literal lookup returning `undefined` for a slug that `catalogServiceKey` genuinely
+      groups ops under, which is the slug every `ResourceRow` link is built from. 194 named
+      services carry ops but no literal manifest slug.
+- [x] **Cause, not symptom** — the cause is **not** the literal lookup on its own. It is
+      that **two places answered the same question differently**, and only one of them was
+      reachable by a link: `ServiceConsole` synthesized a manifest by fanning in every op
+      whose `catalogServiceKey` matched, `ResourceDetail` did a literal `find`. The
+      synthesis moved into `lib/catalog.ts#manifestForServiceSlug` and **both** callers use
+      it. A second correct copy would only have been a slower route back to the same defect.
+- [x] **Regression test** — 6 tests. Negative test confirmed: restoring the literal lookup
+      fails 4 of 6.
+- [x] **Failure is loud** — a slug that names nothing still returns `undefined`, so a
+      typo'd URL keeps reporting "no such service" rather than rendering an empty page. A
+      test pins that, because it is exactly what an over-eager fix would break.
+- [x] **Evidence in the status line** — `ed4ca42`.
+- [x] **Lesson recorded** — L-23.
+
+**The test that matters is the last one**: over the **real bundled catalog**, every slug the
+console can group must resolve. A fixture-only test would have proved the mechanism while
+leaving the 194 real cases unverified — which is how the defect survived having tests at all.
+
+**Also pinned:** a bare manifest slug navigated directly must still resolve. Dropping that
+branch would break every real manifest slug while "fixing" the named ones.
