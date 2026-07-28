@@ -443,3 +443,43 @@ scheduler defers to a live bundle claim, and the bundle refuses an `APPLYING` ro
 nothing serialises them at a higher level. A third apply lane added later would have to
 learn both rules rather than inherit one. That is a real cost of the choice, recorded
 rather than argued away.
+
+### R-40 · The ~10 client-only statuses were kept, not pruned
+*Residue on **ARCH-7**.*
+
+`GENERATING`, `CHECKS_RUNNING`, `PLAN_READY`, `CODE_APPROVED`, `MERGED`, `NOOP`,
+`DIGEST_MISMATCH`, `WITHDRAWN`, `DRAFT` and `SUBMITTED` are in the closed set and the api
+has never written any of them. They stay because the SPA's ordering, labelling and
+phase-track tables index by them: removing one is a decision about what the pipeline view
+promises a user it can show, not a typing cleanup, and making that call inside a
+consistency fix would be smuggling a product change through a refactor.
+
+What changed is that they are now *in a list something can be checked against*. Pruning
+them is a follow-up with a UI owner; the vocabulary drifting again is not.
+
+### R-41 · The store schema still types `status` as `z.string()`
+*Residue on **ARCH-7**.*
+
+The finding's recommendation includes having the store schema validate against the closed
+enum with a legacy-passthrough shim. Not done. The closed set plus the source-scan parity
+test catches the drift at the point it is introduced — a developer writing a new status —
+which is where it is cheapest to catch and where every instance of this defect actually
+originated.
+
+Tightening the schema catches something different: a row that is *already* wrong, in a
+store that has been running. That needs the passthrough shim to be designed against real
+legacy data rather than guessed at, and getting it wrong fails a boot rather than a test.
+Worth doing; not worth doing blind.
+
+### R-42 · `APPLIED` still means two things
+*Residue on **ARCH-7**.*
+
+The api stamps `APPLIED` on quorum-met `schedule:'now'` requests with nothing applied — the
+"Stage-0/1 fiction" `DOMAIN-MODEL.md` itself warns operators about. The finding asks to
+split "approved, no apply lane armed" from "the change landed".
+
+That is a data migration and a UI change, not a vocabulary fix: existing rows carry the
+ambiguous value with no way to tell the two cases apart after the fact, and every reader —
+the quota list above included, where both readings are correctly terminal — would need
+auditing against the new pair. Recorded here rather than folded into a consistency pass
+that could not have done it honestly.

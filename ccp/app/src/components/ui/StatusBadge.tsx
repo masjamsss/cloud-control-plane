@@ -36,6 +36,12 @@ const STATUS_SPEC: Record<RequestStatus, StatusSpec> = {
   // Interim cooling-off (api-mode only): fully approved,
   // holding until earliestApplyAt — the same "waiting on something" tone as
   // AWAITING_DEPLOY_APPROVAL, not a failure.
+  // ARCH-7: the scheduler has written both of these since it shipped, and this table —
+  // an exhaustive Record over the union — could not have contained them, because the
+  // union did not. A halted request is a hard stop that needs a human, not a wait:
+  // `fail` tone, the same as APPLY_FAILED, which is what a halt usually follows.
+  HALTED_DRIFT: { tone: 'fail', label: 'Halted — plan drifted' },
+  HALTED_APPLY_FAILED: { tone: 'fail', label: 'Halted — apply failed' },
   APPROVED_COOLING: { tone: 'wait', label: 'Cooling off' },
   // A deliberate stop by the requester or a Lead/admin — same tone as
   // WITHDRAWN (self-initiated), not REJECTED (someone else refused it).

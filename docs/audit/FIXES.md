@@ -2061,3 +2061,52 @@ dependency-free `domain/bundleClaim.ts`, and `test/schedulerGating.test.ts` gain
 
 **Residue:** co-arming is still permitted (**R-39**) — the finding's alternative
 recommendation, deliberately not taken.
+
+## ARCH-7
+
+*The request-status vocabulary is an unowned, drifted contract.*
+
+The server stored status as free text (`z.string()`); the SPA declared a 21-value union.
+They had drifted in **both** directions. The scheduler writes `HALTED_DRIFT` and
+`HALTED_APPLY_FAILED`, which a grep of `ccp/app/src` did not find at all — the client was
+rendering statuses it could not type. Meanwhile the union carried ~10 statuses the api has
+never written. All of it was recorded as a known tension in `DOMAIN-MODEL.md` and left
+there while new statuses kept accreting, because nothing failed when they did.
+
+The vocabulary is now one closed set (`ccp/app/src/lib/requestStatus.ts`, dependency-free
+so `ccp/api` can import it through the `@app-lib` seam) with the two halt statuses in it.
+Adding them was not a formality: two exhaustive `Record<RequestStatus, …>` tables in the
+SPA — `StatusBadge`'s tone/label map and `RequestDetail`'s phase map — **stopped
+compiling**, which is precisely the drift the finding describes, surfacing the moment the
+union became true. Both now render a halt as a hard stop needing a human.
+
+**The concrete bug the finding predicted was in the rate limiter.** `OPEN_STATUSES` was a
+hand-maintained list of the five statuses that occupy a requester's `maxOpen` slot, and
+the vocabulary grew underneath it: `APPLYING` and both halts arrived with the scheduler,
+`WINDOW_EXPIRED` with maintenance windows, and none was added. Every one is non-terminal —
+mid-apply, waiting on a human, or parked with two exits — and every one **silently released
+the slot**, so a requester could hold unbounded open work by letting requests halt or park.
+
+It is now derived as *not terminal*. That inversion is the fix, not a relocation: the old
+list was of OPEN statuses, so anything it had not heard of released the slot; the new one
+is of TERMINAL statuses, so a status added tomorrow holds it until someone decides
+otherwise. Same forgetting, opposite consequence.
+
+**The parity check found a second unowned vocabulary on its first run.**
+`PendingConfigChangeItem` has its own five statuses — already closed in zod, but unnamed,
+and sharing the literal `APPLIED` with requests while meaning something different. So the
+rule is about *declaration*, not about one set: every status literal in the api must belong
+to some declared closed vocabulary, and a new entity has to name its own (L-25). The
+pending-change set is now exported from its schema, derived from `.options` so it cannot
+drift from the enum it describes.
+
+- [x] **Negative test** — restoring the five-status hand list fails the fail-open test on
+      all four missed statuses (`APPLYING: expected false to be true`).
+- [x] **Regression tests** — `test/statusVocabulary.test.ts` (8), including an
+      `L-1` sanity assertion that the source scan finds anything at all, and an explicit
+      test that an unknown status occupies a slot.
+- [x] **Evidence in the status line** — 1,353 api + 2,738 app tests pass; app build green.
+
+**Residue:** the ~10 client-only statuses stay (**R-40**), the store schema still types
+status as `z.string()` (**R-41**), and `APPLIED` still conflates "landed" with "approved,
+no apply lane armed" (**R-42**).

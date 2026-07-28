@@ -551,6 +551,21 @@ export const PendingConfigChangeItem = z.object({
 });
 export type PendingConfigChangeItem = z.infer<typeof PendingConfigChangeItem>;
 
+/**
+ * The pending-change status vocabulary, named (ARCH-7). It was already CLOSED — the zod
+ * enum above is the authority — but it had no name, so nothing outside this file could
+ * say "these five, and no others". It shares the literal `APPLIED` with the request
+ * vocabulary while meaning something different (a config change was acked and applied,
+ * not a Terraform change landed), which is why "a SCREAMING_SNAKE status literal" is not
+ * by itself enough to tell the two apart.
+ *
+ * Derived from `.options` rather than restated, so it cannot drift from the schema it
+ * describes. `test/statusVocabulary.test.ts` reads it to assert the real property: every
+ * status literal in the api belongs to SOME declared closed set. A new entity with its
+ * own statuses has to declare them.
+ */
+export const PENDING_CHANGE_STATUSES = PendingConfigChangeItem.shape.status.options;
+
 export const AuditItem = z.object({
   PK: z.string(),
   SK: z.string(), // '<ulid>'

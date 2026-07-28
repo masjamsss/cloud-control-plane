@@ -241,7 +241,7 @@ Durability, rollback, schema validation on load, and store-seam fidelity against
 The same rule implemented in two places, free to drift.
 
 - [ ] ARCH-5 | medium | duplication | open | 01-architecture.md | Two sources of truth for the catalog: the server validates against the image-baked catalog, the SPA renders the per-project uploaded one
-- [ ] ARCH-7 | medium | duplication | open | 01-architecture.md | The request-status vocabulary is an unowned, drifted contract
+- [x] ARCH-7 | medium | duplication | fixed:28c7fac | 01-architecture.md | The request-status vocabulary is an unowned, drifted contract
 - [ ] ARCH-8 | medium | duplication | open | 01-architecture.md | The governance domain is implemented twice (server + browser mock) with acknowledged behavioral divergence
 - [ ] DOC-13 | medium | duplication | open | 14-contracts-docs.md | Request-status vocabulary is three-way inconsistent (SPA union vs server writes vs YAML prose)
 - [ ] ARCH-11 | low | duplication | open | 01-architecture.md | Arming-flag sprawl with no whole-config validation

@@ -3,6 +3,7 @@ import type { RequestItem } from '../store/schema';
 import { requestCollectionGsi } from '../store/schema';
 import { rateLimits } from '../domain/config';
 import { nowMs } from '../clock';
+import { occupiesQuotaSlot } from '@app-lib/requestStatus';
 
 /**
  * Per-account rate limits: 50 submissions/hour and max 20 open
@@ -15,15 +16,26 @@ import { nowMs } from '../clock';
  */
 
 /**
- * Statuses that OCCUPY a maxOpen slot. This is deliberately a DIFFERENT list from
- * requests.ts's OPEN_STATUSES (which gates approve/reject eligibility): a request
- * stops being approvable long before it stops consuming requester quota.
- * `APPROVED_COOLING` (interim quorum met, parked until `earliestApplyAt`)
- * counts — it is approved but NOT yet applied, so without it here a requester could
- * queue unbounded cooling requests. Terminal statuses (`APPLIED`, `REJECTED`,
- * `CANCELLED`) deliberately do NOT count: they release the slot.
+ * Does this request still occupy a `maxOpen` slot? ARCH-7 — derived from the ONE closed
+ * status vocabulary (`@app-lib/requestStatus`) as *not terminal*, rather than restated
+ * here as a hand-maintained list of the open ones.
+ *
+ * The hand-maintained version enumerated five statuses and the vocabulary grew underneath
+ * it: `APPLYING` and both halt statuses arrived with the scheduler, `WINDOW_EXPIRED` with
+ * maintenance windows. None was added. Every one of them is non-terminal — mid-apply,
+ * waiting on a human, or parked with two exits — and every one silently RELEASED the
+ * slot, so a requester could hold unbounded open work simply by letting requests halt or
+ * park. That is the "must be hand-audited against a vocabulary that exists nowhere as a
+ * closed set" failure the finding names, in its most concrete form.
+ *
+ * Inverting the list is the fix, not just relocating it: a status added tomorrow occupies
+ * a slot until someone decides it should not, instead of being invisible to the limiter
+ * until someone notices.
+ *
+ * Still deliberately DIFFERENT from requests.ts's `OPEN_STATUSES`, which gates
+ * approve/reject eligibility — a request stops being approvable long before it stops
+ * consuming requester quota.
  */
-const OPEN_STATUSES = new Set(['AWAITING_CODE_REVIEW', 'AWAITING_DEPLOY_APPROVAL', 'CHANGES_REQUESTED', 'NEEDS_ENGINEER', 'APPROVED_COOLING']);
 
 export async function checkSubmitRateLimit(
   store: ConfigStore,
@@ -51,7 +63,7 @@ export async function checkSubmitRateLimit(
   for (const r of all) {
     if (r.requester !== requester) continue;
     if (Date.parse(r.createdAt) >= hourAgo && ++inHour >= limits.submissionsPerHour) return { ok: false };
-    if (OPEN_STATUSES.has(r.status) && ++open >= limits.maxOpen) return { ok: false };
+    if (occupiesQuotaSlot(r.status) && ++open >= limits.maxOpen) return { ok: false };
   }
 
   return { ok: true };

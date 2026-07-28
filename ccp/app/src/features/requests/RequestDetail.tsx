@@ -106,6 +106,11 @@ const NORMAL_MAP: Record<RequestStatus, { i: number; failed?: boolean }> = {
   // Cooling-off (api-mode only): fully approved, holding
   // before it applies — closest existing phase is "Awaiting deploy" (i:5);
   // there is no dedicated "cooling" phase in this fixed 8-step track.
+  // ARCH-7: halted by the scheduler at the apply step. Both sit at the apply phase and
+  // are marked failed — the request stopped there and needs a human, which is exactly
+  // what this track's `failed` flag means.
+  HALTED_DRIFT: { i: 6, failed: true },
+  HALTED_APPLY_FAILED: { i: 6, failed: true },
   APPROVED_COOLING: { i: 5 },
   // Stopped during that cooling window, or during/after a maintenance window.
   CANCELLED: { i: 5, failed: true },
