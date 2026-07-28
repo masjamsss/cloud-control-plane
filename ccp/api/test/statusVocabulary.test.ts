@@ -41,8 +41,15 @@ function statusLiteralsInApiSource(): Map<string, string> {
     for (const m of text.matchAll(/\bstatus:\s*'([A-Z][A-Z_]{3,})'/g)) {
       if (!found.has(m[1]!)) found.set(m[1]!, file.slice(API_SRC.length + 1));
     }
-    for (const m of text.matchAll(/^(?:export )?const [A-Z_]+ = '([A-Z][A-Z_]{3,})';$/gm)) {
-      if (!found.has(m[1]!)) found.set(m[1]!, file.slice(API_SRC.length + 1));
+    // A SELF-NAMED constant — `export const APPLYING = 'APPLYING'` — which is how this
+    // codebase declares a status it also needs a symbol for. Requiring name === value is
+    // what separates those from an env-var alias like
+    // `const TAKEOVER_ENV = 'CCP_DATA_LOCK_TAKEOVER'`, which this check flagged as a
+    // stray status the first time one appeared. Same rule-not-list discipline as the
+    // vocabulary set below (L-25): the pattern describes the shape, not the names.
+    for (const m of text.matchAll(/^(?:export )?const ([A-Z][A-Z_]{3,}) = '([A-Z][A-Z_]{3,})';$/gm)) {
+      if (m[1] !== m[2]) continue;
+      if (!found.has(m[2]!)) found.set(m[2]!, file.slice(API_SRC.length + 1));
     }
   }
   return found;

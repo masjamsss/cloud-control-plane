@@ -2231,3 +2231,76 @@ whole-row `put`. Both are closed by the same three guards; the reasoning, the ne
 and the regression suite are recorded once, under CONC-9.
 
 - [x] **Evidence in the status line** — see **CONC-9**; `test/pendingChangeCas.test.ts`.
+
+## CONC-7
+
+*`FileStore` has no single-writer enforcement: two processes on the same data file
+silently destroy each other's writes.*
+
+Each process loads the snapshot into its own in-memory `Map` and, on every mutation,
+rewrites the **entire file** from that map. Nothing stopped a second process opening the
+same file. Two of them never see each other's writes and alternately overwrite the whole
+store — accounts, sessions, requests, both audit chains — behind green health checks. And
+every careful in-process guarantee is void between them: the chain-head CAS and the
+`ifEquals` claims are all evaluated against a map that no longer describes the file.
+
+`src/store/dataLock.ts` claims the file at open. **Why a pid file rather than `flock`:**
+an OS advisory lock would be strictly better — the kernel releases it when the holder dies
+— but Node exposes none, and a native dependency costs more than it buys in a codebase
+whose posture is "no dependency you cannot read". So `O_EXCL` create, holder identity
+inside, and an explicit answer for every way it can go stale.
+
+**Staleness is where locks usually go wrong**, and the rule is: take over only where the
+holder can be *proven* gone, refuse where it would be a guess.
+
+| found | answer |
+| --- | --- |
+| same host, pid not alive | take over, loudly — a crash must not wedge boot (the ERR-2 shape) |
+| same host, pid alive | refuse; this is what the lock is for |
+| different host | refuse — an unverifiable pid is not a dead one |
+| unparseable lock file | refuse — a holder we cannot read is one we cannot rule out |
+
+`CCP_DATA_LOCK_TAKEOVER=1` is the operator saying "I have checked". `release()` deliberately
+does **not** delete a lock another process has taken over — otherwise a takeover plus a late
+release hands a third process a lock the real writer believes it holds, which is the same
+defect arrived at politely. A store that fails to *load* releases too, so an operator fixing
+a corrupt snapshot does not have to clear a lock first.
+
+**Every test fixture that "simulated a restart" had to change**, and that is the finding in
+miniature: `fileStore.test.ts`, `backupRestore.test.ts`, `totpDevices.test.ts` and
+`grantAdmin.test.ts` all opened a second `FileStore` on a live path. The shape was so easy
+to write that the test suite had been writing it for as long as the store existed. A
+restart now closes first.
+
+It also found a real gap in the fix itself: `grant-admin` opened the store and never
+released it, so a CLI that ran for 200 ms would have left the operator unable to start the
+server it was preparing — the stale-lock wedge one layer up. It now releases in a `finally`,
+and the server releases on SIGTERM/SIGINT/exit.
+
+- [x] **Negative test** — removing the `DataLock.acquire` call fails 5 of the 14 tests.
+- [x] **Regression tests** — `test/dataLock.test.ts` (14): the second-open refusal, the
+      refusal message naming the holder, release-and-reopen, idempotent close, all four
+      staleness arms, the takeover flag, the no-lock-after-failed-load rule, and the
+      take-over-then-release case.
+- [x] **Evidence in the status line** — 1,379 api tests pass.
+
+## DATA-9
+
+*No single-writer guard: restore can be silently clobbered by a running server; nothing
+prevents two processes on one file.*
+
+The second half of **CONC-7**, and the sharper one: `scripts/restore.ts` was a second
+writer *by design*. It installs a backup atomically — and then the running server's very
+next persist (a session slide from any authenticated request will do) rewrites the file
+from its own in-memory state and silently discards the restore. The operator reads
+"restored N items" and has restored nothing, with no error anywhere.
+
+`runRestore` now claims the same lock the server holds, before the write and across it,
+and releases it after. Failing to claim it *is* the running-server check — one mechanism
+serving both findings rather than a bespoke "is a server up?" heuristic that could only
+ever approximate it.
+
+- [x] **Regression tests** — three in `test/dataLock.test.ts`: the refusal, the data file
+      being left untouched rather than half-restored, and a control that with the server
+      stopped the restore lands *and* releases the lock.
+- [x] **Evidence in the status line** — see **CONC-7**.

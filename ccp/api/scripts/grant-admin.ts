@@ -1,4 +1,5 @@
 import { FileStore } from '../src/store/fileStore';
+import { DataLockError } from '../src/store/dataLock';
 import type { ConfigStore } from '../src/store/configStore';
 import { resolveDataFile } from '../src/deploy';
 import { CONTROL_SCOPE, isKnownProject } from '../src/projects';
@@ -158,14 +159,29 @@ export async function main(argv: string[], io: Io = consoleIo): Promise<number> 
     io.error('grant-admin: CCP_STORE=memory has no data file to grant admin into. Set a durable store (unset CCP_STORE) or pass --data.');
     return 2;
   }
-  const store = await FileStore.open(dataFile);
-
-  const res = await runGrantAdmin({ store, username: args.username, pr: args.pr, projectId: args.project, io });
-  if (!res.ok) {
-    io.error(`grant-admin failed: ${res.reason}`);
-    return 1;
+  // CONC-7 / DATA-9: opening the store claims the single-writer lock, so this refuses to
+  // run against a LIVE server rather than rewriting the whole snapshot from its own
+  // memory alongside it. The lock is RELEASED before returning — a short-lived CLI that
+  // held it past its own exit would leave the operator unable to start the server it was
+  // preparing, which is the stale-lock wedge one layer up.
+  let store: FileStore;
+  try {
+    store = await FileStore.open(dataFile);
+  } catch (e) {
+    if (!(e instanceof DataLockError)) throw e;
+    io.error(`grant-admin: ${e.message}`);
+    return 2;
   }
-  return 0;
+  try {
+    const res = await runGrantAdmin({ store, username: args.username, pr: args.pr, projectId: args.project, io });
+    if (!res.ok) {
+      io.error(`grant-admin failed: ${res.reason}`);
+      return 1;
+    }
+    return 0;
+  } finally {
+    store.close();
+  }
 }
 
 // Run when invoked directly (tsx scripts/grant-admin.ts ...).

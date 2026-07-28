@@ -165,6 +165,24 @@ async function start(): Promise<void> {
   }
 
   const port = Number(process.env.PORT) || 8801;
+  // CONC-7 / DATA-9 — hand the writer lock back on a clean shutdown, so a rolling deploy
+  // or a `docker compose restart` does not leave the next process clearing a lock before
+  // it can boot. A `kill -9` still leaves one behind; that path is covered by the
+  // same-host dead-pid takeover in `dataLock.ts`, which is the one case where the holder
+  // can be PROVEN gone rather than assumed.
+  if (store instanceof FileStore) {
+    const release = (): void => store.close();
+    process.once('SIGTERM', () => {
+      release();
+      process.exit(0);
+    });
+    process.once('SIGINT', () => {
+      release();
+      process.exit(0);
+    });
+    process.once('exit', release);
+  }
+
   serve({ fetch: app.fetch, port }, (i) => console.log(`ccp-api dev on :${i.port}`));
 }
 

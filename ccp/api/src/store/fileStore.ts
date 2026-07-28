@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { open as fsOpen, rename, mkdir, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { DurabilityError, type Item, type TransactWrite } from './configStore';
+import { DataLock } from './dataLock';
 import { MemoryStore } from './memoryStore';
 
 /**
@@ -82,11 +83,44 @@ export class FileStore extends MemoryStore {
     if (this.fault !== null) throw new DurabilityError(this.fault);
   }
 
-  /** Open a store at `file`, loading any existing snapshot (load-on-boot). */
-  static async open(file: string): Promise<FileStore> {
+  /**
+   * The single-writer claim (CONC-7 / DATA-9). Held for the process's life; released on
+   * {@link close}. Absent only when a caller explicitly opened unlocked.
+   */
+  private lock: DataLock | null = null;
+
+  /**
+   * Open a store at `file`, loading any existing snapshot (load-on-boot).
+   *
+   * CONC-7 / DATA-9: this CLAIMS the file first. Every mutation rewrites the whole
+   * snapshot from this process's private map, so a second writer does not merely race —
+   * it silently discards everything the first one has done, across accounts, sessions,
+   * requests and both audit chains, with every in-process `ifEquals` guard evaluated
+   * against a map that no longer describes the file. Refusing to boot is the only honest
+   * response; see `dataLock.ts` for what counts as a stale lock and why.
+   *
+   * `{ lock: false }` exists for read-only tooling that opens a snapshot to inspect it
+   * (and for tests that deliberately construct two stores on one path). It is never used
+   * by the server.
+   */
+  static async open(file: string, opts?: { lock?: boolean }): Promise<FileStore> {
     const store = new FileStore(file);
-    await store.load();
+    if (opts?.lock !== false) store.lock = DataLock.acquire(file);
+    try {
+      await store.load();
+    } catch (e) {
+      // A store that failed to load never becomes the writer, and must not leave a lock
+      // behind for the operator to clear before they can retry the fix.
+      store.close();
+      throw e;
+    }
     return store;
+  }
+
+  /** Release the single-writer claim. Idempotent; safe from an exit handler. */
+  close(): void {
+    this.lock?.release();
+    this.lock = null;
   }
 
   /**

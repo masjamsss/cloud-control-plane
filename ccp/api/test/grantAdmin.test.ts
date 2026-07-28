@@ -187,6 +187,11 @@ describe('grant-admin CLI (main) against a real durable FileStore', () => {
     await bootstrap(store, { print: () => {} }); // seeds 'putra'
     await store.put(account({ id: 'budi' }));
 
+    // The CLI opens the data file itself, so the seeding store has to let go first —
+    // grant-admin is a SECOND WRITER against a running server, exactly DATA-9's shape,
+    // and the single-writer lock now says so instead of letting both rewrite the whole
+    // snapshot from their own memory.
+    store.close();
     const code = await main(['--username', 'budi', '--pr', 'pr#42', '--data', dataFile], silent);
     expect(code).toBe(0);
 
@@ -215,6 +220,7 @@ describe('grant-admin CLI (main) against a real durable FileStore', () => {
   it('a failing grant (e.g. unknown account) exits 1 and logs the reason', async () => {
     const store = await FileStore.open(dataFile);
     await bootstrap(store, { print: () => {} });
+    store.close(); // the CLI below opens the same file — see above
     let logged = '';
     const io = { log: () => {}, error: (s: string) => { logged += s; } };
     const code = await main(['--username', 'ghost', '--pr', 'pr#1', '--data', dataFile], io);

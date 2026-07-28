@@ -101,10 +101,10 @@ Unguarded full-row writes and lost updates. Largely one root cause — the store
 - [ ] CONC-11 | medium | concurrency | open | 04-concurrency.md | Registry writes that bump `version` without guarding it (trust-request upload, identity confirm) can clobber concurrent registry ops and rewind the dual-control version guard
 - [x] CONC-4 | medium | concurrency | fixed:86d3e4e | 04-concurrency.md | A revoked session can be resurrected by the concurrent idle-window slide
 - [ ] CONC-6 | medium | concurrency | open | 04-concurrency.md | The bundle claim has no crash/exception/race recovery: `bundle.state:'running'` can stick forever, and a raced outcome write loses the record of a fired deploy
-- [ ] CONC-7 | medium | concurrency | open | 04-concurrency.md | `FileStore` has no single-writer enforcement: two processes on the same data file silently destroy each other's writes
+- [x] CONC-7 | medium | concurrency | fixed:ed369dc | 04-concurrency.md | `FileStore` has no single-writer enforcement: two processes on the same data file silently destroy each other's writes
 - [x] CONC-9 | medium | concurrency | fixed:d81741a | 04-concurrency.md | Dual-control ack does not guard the pending row's status: a concurrently rejected proposal can still apply
 - [x] DATA-8 | medium | concurrency | fixed:d81741a | 03-data-integrity.md | Pending-change status transitions have no CAS: concurrent ack + reject can apply a change and record it as REJECTED
-- [ ] DATA-9 | medium | concurrency | open | 03-data-integrity.md | No single-writer guard: restore can be silently clobbered by a running server; nothing prevents two processes on one file
+- [x] DATA-9 | medium | concurrency | fixed:ed369dc | 03-data-integrity.md | No single-writer guard: restore can be silently clobbered by a running server; nothing prevents two processes on one file
 - [x] ERR-11 | medium | concurrency | fixed:09fb510 | 09-error-handling.md | The bundle idempotency claim guards on `status`, not `bundle.state`: concurrent applies can both run
 - [ ] ERR-8 | medium | concurrency | open | 09-error-handling.md | No process-level failure handling: no graceful shutdown, no rejection/exception handlers, npm-as-PID-1
 - [ ] OPS-8 | medium | concurrency | open | 10-reliability-operations.md | No graceful shutdown: `npm` as PID 1, no SIGTERM handling, default 10 s grace on the api

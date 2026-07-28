@@ -165,7 +165,11 @@ describe('ADR-0024 clause 2 — the totpDevicesOf shim and lazy migration', () =
       const beforeRestart = await stored(store, 'dewi');
       expect(beforeRestart.totpDevices).toHaveLength(1);
 
-      // Simulate a restart: a brand-new store instance reading the same file.
+      // Simulate a restart: the old instance goes away, THEN a brand-new one reads the
+      // same file. The close is what makes this a restart rather than two live writers —
+      // CONC-7/DATA-9 gave the data file a single-writer lock, because a second FileStore
+      // on one path silently overwrites the first's whole snapshot.
+      (store as FileStore).close();
       store = await FileStore.open(file);
       const afterRestart = await stored(store, 'dewi');
       expect(afterRestart.totp).toBeUndefined();
