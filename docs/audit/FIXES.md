@@ -2110,3 +2110,68 @@ drift from the enum it describes.
 **Residue:** the ~10 client-only statuses stay (**R-40**), the store schema still types
 status as `z.string()` (**R-41**), and `APPLIED` still conflates "landed" with "approved,
 no apply lane armed" (**R-42**).
+
+## API-10
+
+*Session revocation can be silently undone by the idle-slide write-back race.*
+
+One defect, filed twice from two reports — which is itself the reason it is worth stating
+plainly. `resolveSession` slid the 30-minute idle window with an unconditional whole-item
+`store.put(slid)` after two awaited reads. The **self-service** revocation paths —
+`DELETE /auth/sessions/:id` and `POST /auth/sessions/revoke-others` — revoke by deleting
+rows *without* bumping `sessionVersion`, deliberately, so that "sign out my other devices"
+does not sign out the device asking. So an in-flight request on the session being revoked
+would read the row, watch the delete land, and then **recreate it**.
+
+The revocation was undone, and the resurrected row slid its own idle window on every
+subsequent request, so the "revoked" session lived to absolute expiry. Not a corner case:
+the reason to revoke a session is that it is active, a polling SPA has a request in flight
+essentially always, and `killOtherSessions` deletes row-by-row, holding the window open
+across every row.
+
+**Why it stayed invisible** is the interesting part. The `sessionVersion`-bumping paths
+(password reset, admin revoke-sessions) are immune — a resurrected row fails the version
+check — so two families of revocation sat next to each other in the same file and only one
+of them worked. Anyone testing "does revocation work" would have reached for the admin one.
+
+The slide is now a guarded `update`: `ifEquals` on `lastSeenAt`, which the store fails
+against a **missing** item (DynamoDB-faithful, `memoryStore.ts`), so a deleted row cannot
+be conditioned back into existence. It also narrows the write to the one attribute that
+changed, so the slide can no longer clobber a concurrent mutation to any other field.
+
+**A lost condition is not automatically a dead session**, and treating it as one would have
+traded this bug for a worse one. Two different things lose the guard: the row was revoked,
+or *another in-flight request on the same session slid it first* — which the
+`SLIDE_GRANULARITY_MS` coalescing makes likely under a burst. Signing a user out because
+two of their own tabs raced would be a self-inflicted denial of service. So the loser
+re-reads and lets presence decide: gone means revoked, present means someone else did the
+work. One extra read, only on the contended path.
+
+- [x] **Negative test** — restoring the blind `put(slid)` fails 2 of the 5 tests: the
+      direct race, and `killOtherSessions` with a request in flight on a victim row.
+- [x] **Regression tests** — `test/sessionRevokeRace.test.ts` (5), driven by a store
+      wrapper that lands the delete between the `get` and the write, plus a control that
+      an unrevoked session still slides and an explicit test that losing a slide race to
+      your own other tab does **not** sign you out.
+- [x] **Evidence in the status line** — 1,358 api tests pass.
+
+Each of the two race tests asserts that the interleave actually fired before asserting the
+outcome — without that they would pass against a fixture that was never racing (L-1). The
+same rule caught a real fixture bug here: the first version minted sessions with a guessed
+`sessionVersion: 0` while the seeded account carries `1`, so every session failed the
+version check and three tests were green for the wrong reason.
+
+## CONC-4
+
+*A revoked session can be resurrected by the concurrent idle-window slide.*
+
+The same defect as **API-10**, reported independently from the concurrency review — same
+file, same two line ranges, same recommendation. Closed by the same guarded slide; the
+reasoning, the negative test and the regression suite are recorded once, under API-10.
+
+Worth leaving both entries rather than merging them: two reviewers finding the same race
+from opposite directions (an API-surface read of "does revocation revoke" and a
+concurrency read of "what does this blind put race") is evidence about the defect, not
+duplication to tidy away.
+
+- [x] **Evidence in the status line** — see **API-10**; `test/sessionRevokeRace.test.ts`.
