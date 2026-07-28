@@ -959,6 +959,35 @@ export function requestRoutes(): Hono<AppEnv> {
   // pre-quorum, cooling, terminal, or already-applied request is refused.
   const BUNDLE_ELIGIBLE = new Set(['AWAITING_CODE_REVIEW', 'AWAITING_DEPLOY_APPROVAL']);
 
+  /**
+   * How long a `bundle.state:'running'` claim may go without an outcome before a later
+   * apply attempt may take it over (ERR-2).
+   *
+   * Before this, `running` was permanent. The claim is written, the multi-minute bundle
+   * runs, and the outcome is recorded — but nothing else in the codebase ever writes
+   * `bundle`, and there is no reaper, no timeout and no admin route that resets it. A
+   * process crash or restart mid-bundle (which ERR-1's healthcheck interaction makes
+   * likely) left the request answering 409 BUNDLE_RUNNING on every future apply, forever:
+   * a fully-approved change permanently un-appliable through the portal, recoverable only
+   * by editing the store by hand.
+   *
+   * An hour is well past the bundle's own worst case — its longest step timeout is 15
+   * minutes and the steps are sequential — so a LIVE run is never robbed of its claim.
+   */
+  const BUNDLE_LEASE_MS = 60 * 60_000;
+
+  /**
+   * Has a `running` claim outlived its lease as of `now`? A claim with an unparseable or
+   * missing `at` counts as expired: a claim that cannot be aged is one nothing can ever
+   * release, which is the wedge itself.
+   */
+  const bundleClaimExpired = (bundle: RequestItem['bundle'], now: number): boolean => {
+    if (bundle?.state !== 'running') return false;
+    const at = Date.parse(bundle.at ?? '');
+    if (!Number.isFinite(at)) return true;
+    return now - at >= BUNDLE_LEASE_MS;
+  };
+
   // POST /requests/:id/apply — ADR-0016: the approval-to-apply bundle. One click on
   // a fully approved request runs, server-side: local gate (plan == the approved
   // change and NOTHING else) → CAS commit to main → satisfy the gated CI apply.
@@ -983,20 +1012,53 @@ export function requestRoutes(): Hono<AppEnv> {
     }
     if (await isFrozen(store, projectId)) return apiError(c, 'GLOBAL_FREEZE');
     if (!BUNDLE_ELIGIBLE.has(req.status)) return apiError(c, 'STATE_CONFLICT');
-    if (req.bundle?.state === 'running') return c.json({ code: 'BUNDLE_RUNNING', reason: 'A bundle for this request is already in flight.' }, 409);
+    // ERR-2: refuse only while the claim is LIVE. An expired claim belongs to a run that
+    // never reported back, and taking it over here — on the very act the wedge blocks — is
+    // the same lazy-settle doctrine settleCooling/settleWindow/scanJobLease already use:
+    // there is no background timer in this system, and a recovery an operator has to know
+    // to perform is not a recovery.
+    const claimExpired = bundleClaimExpired(req.bundle, nowMs());
+    if (req.bundle?.state === 'running' && !claimExpired) {
+      return c.json({ code: 'BUNDLE_RUNNING', reason: 'A bundle for this request is already in flight.' }, 409);
+    }
     if (req.bundle?.state === 'triggered') return apiError(c, 'STATE_CONFLICT');
 
-    // Claim (idempotency guard) — CAS on the observed status; a lost race means a
-    // concurrent bundle/cancel/settle won, and we report it rather than double-run.
+    // Claim (idempotency guard) — CAS on `eventSeq`, which THIS WRITE ADVANCES (ERR-11).
+    //
+    // It used to guard on `status`, an attribute the claim does not change, so the guard
+    // could not discriminate: two near-simultaneous applies both passed the read-then-act
+    // pre-check above, both satisfied the status guard, and both ran full bundles — two
+    // clones, two gate runs. Only git's non-fast-forward rejection stopped a double
+    // landing, and the loser then recorded `bundle-failed` over the winner's `triggered`.
+    //
+    // Guarding on the attribute the claim itself moves is what makes it a claim. DATA-1
+    // made `eventSeq` present on every row, without which this guard would be the same
+    // no-op in a different place.
     const now = nowIso();
+    const claimSeq = (req.eventSeq ?? 0) + 1;
+    const takeoverEvent = claimExpired
+      ? [{ at: now, type: 'bundle-claim-expired', label: 'A previous apply bundle never reported back — its claim expired and this attempt took it over', actor: account.id }]
+      : [];
     try {
       await store.transact([
-        { kind: 'update', pk: k.PK, sk: k.SK, set: { bundle: { state: 'running', at: now }, updatedAt: now }, ifEquals: { attr: 'status', value: req.status } },
+        {
+          kind: 'update',
+          pk: k.PK,
+          sk: k.SK,
+          set: {
+            bundle: { state: 'running', at: now },
+            updatedAt: now,
+            eventSeq: claimSeq,
+            ...(takeoverEvent.length > 0 ? { events: [...req.events, ...takeoverEvent] } : {}),
+          },
+          ifEquals: { attr: 'eventSeq', value: req.eventSeq },
+        },
       ]);
     } catch (e) {
       if (e instanceof ConditionError) return apiError(c, 'STATE_CONFLICT');
       throw e;
     }
+    if (takeoverEvent.length > 0) req = { ...req, events: [...req.events, ...takeoverEvent] };
 
     // The bundle itself (gate → CAS commit → trigger). Never terraform apply here.
     const outcome = await runBundle(
@@ -1028,7 +1090,10 @@ export function requestRoutes(): Hono<AppEnv> {
       const { writes } = recordIn(projectId, head, entry);
       try {
         await store.transact([
-          { kind: 'update', pk: k.PK, sk: k.SK, set: { bundle, updatedAt: done, events }, ifEquals: { attr: 'status', value: req.status } },
+          // Guarded on the seq THIS handler's claim wrote (ERR-11). Guarding on `status`
+          // let an outcome land on a row that had moved under the running bundle — a
+          // cancel, a settle, or the losing half of the double-run the claim now prevents.
+          { kind: 'update', pk: k.PK, sk: k.SK, set: { bundle, updatedAt: done, events, eventSeq: claimSeq + 1 }, ifEquals: { attr: 'eventSeq', value: claimSeq } },
           ...writes,
         ]);
         break;
