@@ -1699,3 +1699,76 @@ to a labelled escape hatch. What landed is the "at minimum" clause. The property
 *verified* rather than *assumed*, which is the substantive half — but a deployment can still
 run any tool it likes as the gate, and until a pin-writer exists (**API-3**) the verification
 is inert on every real request.
+
+## CI-4
+
+*The product's core "CI applies" pipeline is not shipped: nothing invokes `plancheck-gate.sh`
+or `apply-window-gate.sh`, and docs/scripts reference a workflow that no longer exists.*
+
+- [x] **Defect reproduced first** — `scripts/ci/check-shipped-lanes.sh` reproduces both
+      halves mechanically: zero workflow consumers for either gate script, no publisher for
+      the `ccp/plan-digest` status, and shipped files pointing at a workflow that does not
+      exist. Against the pre-fix tree every one of those fails.
+- [x] **Cause, not symptom** — a scrub artifact, not a design choice: the gate scripts,
+      ADR-0016's prose, and four separate pin references all describe a pipeline that was
+      never shipped in this repo. `.github/workflows/ccp-apply.yml` is that pipeline, as an
+      **estate template**, inert by default on the same contract `ccp-data.yml` follows —
+      and **announced** when inert, because a lane that does nothing and says nothing is
+      indistinguishable from one that is broken.
+- [x] **Regression test** — `check-shipped-lanes.sh`, wired into the unfiltered
+      `path-filters` lane. Negative test confirmed: removing the `plancheck-gate.sh`
+      invocation fails it, naming the script.
+- [x] **Failure is loud** — the check names which script lost its consumer and which file
+      points at a missing workflow. It also refuses to run vacuously: if the gate scripts
+      were renamed it exits non-zero rather than passing on finding nothing (**L-1**).
+- [x] **Evidence in the status line** — `dd1c241`.
+- [x] **Lesson recorded** — L-25.
+
+**The gate order is the safety property**, and it is not arbitrary: neutral re-plan →
+digest → plan-check R1–R6 → window/freeze (freeze first, absolute) → apply. Steps 2–4 are
+cheap and offline; the apply is the only irreversible one, so it is last and the only step
+needing cloud credentials.
+
+**Two deliberate omissions.** `--expect-digest` is **not** passed on the first plan — it is
+the apply-time backstop for a digest the portal already approved, and deriving it from the
+same plan would be the check grading itself. And the apply job ships **no credential
+wiring**, only a stub: a credential pattern in a template invites copying one that does not
+match the estate's threat model, and this is the step where that matters most.
+
+**The general rule found a fifth offender.** The stale-reference check was written as a rule
+("no shipped file may reference a workflow that does not exist") rather than a list of the
+four known cases, and it immediately caught ADR-0032 naming a `ccp.yml` that was only ever
+*proposed*. Rewritten to describe the intent without asserting a repo path. `docs/audit/` is
+excluded: the reports **quote** the broken references as their evidence, and editing the
+record to satisfy a checker would be the wrong fix.
+
+**Residue:** the apply job is a **stub**. An estate must add its own cloud auth and
+`terraform apply`. The gates are wired, ordered and tested; the irreversible step
+deliberately is not. There is also no GitLab twin of this template — **CI-3**'s residue
+(**R-3**) covers the mirror's absence generally.
+
+## OPS-14
+
+*Stale references to a nonexistent `.github/workflows/terraform.yml` anchor the Terraform
+pin.*
+
+Closed by the **CI-4** work, which shipped the apply lane those references were reaching
+for. Checked against OPS-14's own three locations rather than by title: `ccp/scripts/setup.sh`,
+`ccp/scripts/self-update.sh` and `ccp/toolbox/Dockerfile` are each annotated to say the
+named workflow was never shipped and to point at the pin's real authority.
+
+The `self-update.sh` half mattered most: its toolchain-change warning **grepped for diffs
+to that nonexistent path**, so half that guard was dead code and could never fire. It now
+watches the lane that actually exists plus the pin file the data lane reads.
+
+- [x] **Regression test** — `scripts/ci/check-shipped-lanes.sh` enforces the general rule
+      (no shipped file may reference a workflow that does not exist), so this class cannot
+      return. Negative test confirmed.
+- [x] **Evidence in the status line** — `dd1c241`.
+- [x] **Lesson recorded** — L-25.
+
+**The Dockerfile is why the rule had to be widened.** The first version of the checker
+scanned `*.sh`/`*.md`/`*.mjs`/`*.ts` and therefore missed `ccp/toolbox/Dockerfile` — a file
+with no extension, carrying one of the three references the finding explicitly names. A
+rule with an arbitrary scope limit is a list wearing a rule's clothes. It now scans by
+content across the tree.

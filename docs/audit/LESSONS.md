@@ -672,3 +672,31 @@ command can skip by omission. But a request with **no** pin cannot be verified b
 there the honest report is "not verified", not a pass and not a failure. Today that is every
 request in this system. A check that reported those as green would have been worse than the
 original defect: it would have manufactured the confidence the original merely lacked.
+
+### L-25 — Write the rule, not the list — it finds the case nobody reported
+
+Findings: CI-4
+
+Four shipped files anchored a version pin to a workflow that does not exist in this repo.
+The finding named all four, and fixing exactly those four would have been a complete
+response to the report and an incomplete response to the problem. Written instead as a
+rule — *no shipped file may reference a workflow that does not exist* — the check
+immediately surfaced a fifth the audit had not found: an ADR naming a workflow that was
+only ever proposed.
+
+The economics favour the rule almost always. A list is written once and decays from the
+next commit; a rule is the same amount of code, catches the instances nobody enumerated,
+and keeps catching them. The list is only better when the rule cannot be stated crisply —
+and here it could be stated in one sentence.
+
+**Do differently:** when a finding gives you N instances of one shape, implement the shape.
+Then read what else it catches before assuming the finding was exhaustive; that delta is
+free evidence about how well the audit sampled.
+
+Two details that decide whether such a rule survives contact. **Exclude the record, not the
+subject**: `docs/audit/` is exempt because the reports *quote* the broken references as
+their evidence, and editing the record to satisfy a checker would corrupt the thing the
+checker exists to protect. And **describing history is not the same as pointing at it** —
+several annotations explaining a now-dead reference had to be reworded to stop naming the
+dead path, because a checker cannot distinguish a live pointer from a footnote about one.
+That is a real cost of the rule, and it is worth paying.

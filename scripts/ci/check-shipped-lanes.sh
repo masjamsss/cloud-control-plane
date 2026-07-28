@@ -65,8 +65,13 @@ while IFS=: read -r file ref; do
   printf '     %s -> %s (does not exist)\n' "$file" "$ref"
   missing=$((missing + 1))
 done < <(
+  # Scanned by CONTENT, not by extension. The first version of this check listed
+  # *.sh/*.md/*.mjs/*.ts and missed ccp/toolbox/Dockerfile — a file with no extension at
+  # all, carrying one of the four references the finding explicitly names. A rule with an
+  # arbitrary scope limit is a list wearing a rule's clothes (L-25).
   grep -rnoE '\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml' \
-    --include='*.sh' --include='*.md' --include='*.mjs' --include='*.ts' \
+    --binary-files=without-match \
+    --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist \
     . 2>/dev/null \
     | grep -v node_modules | grep -v '/docs/audit/' \
     | sed 's/^\.\///' | awk -F: '{print $1":"$3}' | sort -u

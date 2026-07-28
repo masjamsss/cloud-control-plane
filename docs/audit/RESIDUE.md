@@ -64,58 +64,6 @@ rather than a comment, so it fails visibly if anyone assumes it is fixed.
 
 ## tracked — an open finding covers it
 
-### R-3 · The Python/importer CI gap is only partly closed
-*Residue on **TEST-1**, **TEST-4**.*
-**Tracked by: CI-4.**
-
-`importer.yml` runs both kits, `ccp/app/scripts` and `tools/schemadump`;
-`CCP_REQUIRE_INTEGRATION=1` stops the api's integration suites skipping silently; and
-`scripts/gate.sh` gained a `py` section, which closed CI-1, IMP-3 and TEST-2.
-
-One gap remains: the **GitLab mirror** (`.gitlab/ci/`) has no api/app test lane at all, so
-none of this reaches it. Also still absent: a `requirements.txt`/`pyproject.toml` declaring
-the Python test environment — both the workflow and `gate.sh` read the pin from
-`gen-project-data.sh`, which keeps them consistent but is not a declared environment.
-
-### R-27 · The two literal-object token-walkers are still duplicated
-*Residue on **CTL-1**.*
-**Tracked by: CTL-10.**
-
-`internal/edit` and `internal/driftpropose` carry near-identical HCL object walkers. CTL-1's
-defect was fixed in **both** — the drift-adopt path would otherwise have stayed broken and
-looked maintained (L-8) — but the duplication itself is untouched, so the next divergence
-has nothing stopping it.
-
-### R-28 · The path-filter check covers four named edges, not the import graph
-*Residue on **CI-3**.*
-**Tracked by: CI-4.**
-
-`scripts/ci/check-path-filters.sh` derives each of the four cross-component edges CI-3
-names from the source — the `@app-lib` alias, the tests that execute `scripts/ci/*.sh`, the
-Go embed's sync obligation — and fails when a filter stops covering one. It is deliberately
-**not** a general import-graph walker, so a new cross-component import somewhere else would
-not be noticed.
-
-A considered trade rather than an oversight: a vague check nobody trusts gets deleted, and
-a specific one naming the alias and the file count gets fixed. But it is a limit, not a
-guarantee, and it belongs with the rest of the CI-completeness work.
-
-### R-30 · The built-in gate runner was not shipped
-*Residue on **ARCH-3**.*
-**Tracked by: ARCH-2.**
-
-ARCH-3's primary recommendation is a built-in gate runner invoking a pinned `catalogctl`
-with fixed arguments, demoting the free-form command to a labelled escape hatch. What landed
-is the "at minimum" clause: the api verifies the plan digest rather than assuming it. A
-deployment can still run any tool it likes as the gate.
-
-Tracked against ARCH-2 because that finding owns the same seam — the armed lanes' single
-deployment-global command/credential set — and a built-in runner is the same change ARCH-2's
-per-project resolution needs.
-
-Note also that the verification is **inert on every real request today**: no request carries
-a plan pin, because the pin-writer does not exist (R-21 / API-3).
-
 ### R-4 · `planSummary` is typed `string` in the contract
 *Residue on **DOC-2**.*
 **Tracked by: DOC-11.**
@@ -154,6 +102,77 @@ It is declared in `errors.ts`; the engineer-tier gate returns `WRONG_APPROVAL_LE
 instead. Adding it to the contract would document a response the API cannot return, so
 `openapi.test.ts` asserts its continued absence — that pins the decision but does not make
 it. The code is the wrong side here: the entry should either be emitted or deleted.
+
+### R-3 · The Python/importer CI gap is only partly closed
+*Residue on **TEST-1**, **TEST-4**, **CI-4**.*
+
+`importer.yml` runs both kits, `ccp/app/scripts` and `tools/schemadump`;
+`CCP_REQUIRE_INTEGRATION=1` stops the api's integration suites skipping silently; and
+`scripts/gate.sh` gained a `py` section, which closed CI-1, IMP-3 and TEST-2.
+
+One gap remains: the **GitLab mirror** (`.gitlab/ci/`) has no api/app test lane at all, so
+none of this reaches it — and none of the apply lane CI-4 shipped either.
+
+**Untracked.** It was tracked against CI-3 and then CI-4; both are now closed, and no
+remaining open finding mentions the GitLab mirror at all. Re-pointing it at another CI
+finding would be inventing a link — the honest state is that the mirror is nobody's. Also still absent: a `requirements.txt`/`pyproject.toml` declaring
+the Python test environment — both the workflow and `gate.sh` read the pin from
+`gen-project-data.sh`, which keeps them consistent but is not a declared environment.
+
+### R-27 · The two literal-object token-walkers are still duplicated
+*Residue on **CTL-1**.*
+**Tracked by: CTL-10.**
+
+`internal/edit` and `internal/driftpropose` carry near-identical HCL object walkers. CTL-1's
+defect was fixed in **both** — the drift-adopt path would otherwise have stayed broken and
+looked maintained (L-8) — but the duplication itself is untouched, so the next divergence
+has nothing stopping it.
+
+### R-28 · The path-filter check covers four named edges, not the import graph
+*Residue on **CI-3**.*
+
+`scripts/ci/check-path-filters.sh` derives each of the four cross-component edges CI-3
+names from the source — the `@app-lib` alias, the tests that execute `scripts/ci/*.sh`, the
+Go embed's sync obligation — and fails when a filter stops covering one. It is deliberately
+**not** a general import-graph walker, so a new cross-component import somewhere else would
+not be noticed.
+
+A considered trade rather than an oversight: a vague check nobody trusts gets deleted, and
+a specific one naming the alias and the file count gets fixed. But it is a limit, not a
+guarantee.
+
+**Untracked** — it was tracked against CI-4 until that finding closed, which is exactly the
+transition this ledger's `tracked` rule exists to catch. No open finding covers general
+import-graph coverage.
+
+### R-30 · The built-in gate runner was not shipped
+*Residue on **ARCH-3**.*
+**Tracked by: ARCH-2.**
+
+ARCH-3's primary recommendation is a built-in gate runner invoking a pinned `catalogctl`
+with fixed arguments, demoting the free-form command to a labelled escape hatch. What landed
+is the "at minimum" clause: the api verifies the plan digest rather than assuming it. A
+deployment can still run any tool it likes as the gate.
+
+Tracked against ARCH-2 because that finding owns the same seam — the armed lanes' single
+deployment-global command/credential set — and a built-in runner is the same change ARCH-2's
+per-project resolution needs.
+
+Note also that the verification is **inert on every real request today**: no request carries
+a plan pin, because the pin-writer does not exist (R-21 / API-3).
+
+### R-31 · The reference apply lane's apply step is a stub
+*Residue on **CI-4**.*
+**Tracked by: ARCH-2.**
+
+`ccp-apply.yml` wires, orders and tests every gate; the irreversible step deliberately
+ships no credential wiring. An estate adds its own cloud auth and `terraform apply`. A
+credential pattern in a template invites copying one that does not match the estate's
+threat model, and this is the step where that would matter most — but it does mean the
+template is not runnable as-is.
+
+Tracked against ARCH-2, which owns the same seam: how an armed lane resolves per-estate
+credentials and configuration rather than one deployment-global set.
 
 ### R-8 · Session rows are written with blind puts
 *Residue on **CONC-3**.*
