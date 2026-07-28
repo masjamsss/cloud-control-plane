@@ -179,3 +179,21 @@ a machine-readable body, e.g.:
 ```
 
 Both probes are unauthenticated (no session required).
+
+`/readyz` verifies each chain in full on the first probe of a process, then re-hashes
+only entries appended since — a probe on a timer must not get slower every day the
+estate is used. `GET /admin/audit/export` and `scripts/verify-audit-chain.ts` remain
+the full, uncached verifications. See [docs/PERFORMANCE.md](docs/PERFORMANCE.md#deliberate-trade-offs).
+
+## Performance
+
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md) records what the API costs, where the cost
+was, and the trade-offs taken — all of it reproducible:
+
+```bash
+npx tsx scripts/bench.ts --scale 8000 --store both --concurrency 32
+```
+
+The bench boots the real app against a deterministically seeded store and reports
+p50/p95/p99 plus concurrent throughput per endpoint, for the MemoryStore and the
+FileStore. Run it before and after a change with `--json` to A/B a diff.

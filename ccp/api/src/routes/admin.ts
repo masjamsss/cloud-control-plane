@@ -67,7 +67,7 @@ import { afterProjectConfigApply } from "../domain/projectsLifecycle";
 import { transactWithAudit } from "../domain/audit";
 import {
   exportAuditChain,
-  readAuditChronological,
+  readAuditPage,
   toAuditEntry,
 } from "../domain/auditQuery";
 import { nowIso } from "../clock";
@@ -1193,27 +1193,23 @@ export function adminRoutes(
   /* ── audit (evidence of record: readable, exportable, chain-verifiable) ──── */
   // GET /admin/audit — newest-first, cursor-paged. Read-only; admin gate is the enforcement.
   a.get("/audit", async (c) => {
-    const { entries } = await readAuditChronological(
-      c.get("store"),
-      c.get("projectId"),
-    );
-    const newestFirst = entries.slice().reverse().map(toAuditEntry);
     const limRaw = Number(c.req.query("limit"));
     const limit =
       Number.isFinite(limRaw) && limRaw > 0
         ? Math.min(Math.floor(limRaw), 1000)
         : 100;
     const cursor = c.req.query("cursor");
-    let start = 0;
-    if (cursor) {
-      const idx = newestFirst.findIndex((e) => e.id === cursor);
-      start = idx >= 0 ? idx + 1 : newestFirst.length; // unknown cursor → empty tail (never a silent full replay)
-    }
-    const page = newestFirst.slice(start, start + limit);
-    const next =
-      start + limit < newestFirst.length
-        ? page[page.length - 1]?.id
-        : undefined;
+    // Bounded read: `readAuditPage` walks month partitions newest-first and stops
+    // when the page is full, instead of materializing the whole chain to slice a
+    // page off the front of it. Same page, same cursor semantics (an unknown cursor
+    // still yields an empty tail rather than a silent replay from the top).
+    const { items, hasMore } = await readAuditPage(
+      c.get("store"),
+      c.get("projectId"),
+      { limit, ...(cursor ? { cursor } : {}) },
+    );
+    const page = items.map(toAuditEntry);
+    const next = hasMore ? page[page.length - 1]?.id : undefined;
     return c.json({ items: page, ...(next ? { cursor: next } : {}) });
   });
 
