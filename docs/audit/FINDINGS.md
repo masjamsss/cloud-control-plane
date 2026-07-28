@@ -360,7 +360,7 @@ The codemod, plan-check and drift-edit.
 
 Focus management, dialog semantics, duplicate DOM ids.
 
-- [ ] UI-3 | high | frontend-a11y | open | 06-frontend-ui-robustness.md | Primary/admin navigation is built from unscoped absolute paths: current-page indication (aria-current + active styling) never renders, and every nav click detours through a full unmount/redirect
+- [x] UI-3 | high | frontend-a11y | fixed:64dfc38 | 06-frontend-ui-robustness.md | Primary/admin navigation is built from unscoped absolute paths: current-page indication (aria-current + active styling) never renders, and every nav click detours through a full unmount/redirect
 - [ ] UI-5 | medium | frontend-a11y | open | 06-frontend-ui-robustness.md | RepeatedBlockField renders duplicate DOM ids and a shared radio-group `name` across instances
 - [ ] UI-6 | medium | frontend-a11y | open | 06-frontend-ui-robustness.md | Hand-rolled drift drawers are dialogs in name only: no aria-modal, no focus move, no focus trap, no Escape
 - [ ] UI-7 | medium | frontend-a11y | open | 06-frontend-ui-robustness.md | ErrorSummary links are dead anchors for radio-group and repeated-block fields

@@ -1141,3 +1141,42 @@ serves nothing. Staying up and loud is the better failure mode here; the exit po
 a decision an operator can make from evidence they previously did not have. Logging is also
 stderr-only — there is no structured/JSON sink and no correlation id, which is a real
 observability gap this finding does not cover.
+
+## UI-3
+
+*Primary/admin navigation is built from unscoped absolute paths: current-page indication
+(aria-current + active styling) never renders, and every nav click detours through a full
+unmount/redirect.*
+
+- [x] **Defect reproduced first** — `src/test/shellNav.test.ts` asserts the property over
+      the **whole** nav set; against unscoped targets 4 of its 8 tests fail. The shell
+      lives under `/p/:projectId` and every `NavLink` used an unscoped absolute `to`, so
+      React Router — which resolves `isActive` against the target — could never match a
+      location of `/p/<id>/…`. `.shell__link--active`,
+      `.shell__navmenu-item[aria-current='page']` and `.admin__tab--active` were dead CSS,
+      and `aria-current="page"` was emitted nowhere.
+- [x] **Cause, not symptom** — the missing scope, fixed once in `projectScopedPath` and
+      applied at every nav target, rather than by hand-editing each `to`. Both surfaces
+      moved into one module (`components/ShellNav.tsx`) because they were the same defect
+      with the same fix, and they are the only two places in the app that must render an
+      active state.
+- [x] **Regression test** — 8 tests. Two negative tests confirmed: dropping the scoping
+      fails 4, and re-adding a trailing slash on the index route fails exactly the test
+      that exists for it.
+- [x] **Failure is loud** — n/a; the fix restores a signal rather than adding a failure
+      path. The relevant guard is that the scoping property is asserted over the whole set,
+      so a single unscoped entry added later fails the build.
+- [x] **Evidence in the status line** — `64dfc38`.
+- [x] **Lesson recorded** — L-16.
+
+**The accessibility half was the visible one; the performance half was worse.** An unscoped
+click matched the top-level `*` route, which unmounted the entire `/p` subtree — AppShell
+included — so `LegacyRedirect` could rewrite the path, then remounted everything. Every
+top-nav click cost a skeleton flash and a full refetch of shell data.
+
+**Two things the tests pin that the fix could easily have got wrong:** the index route must
+scope to `/p/<id>` with **no trailing slash**, because `/p/<id>/` does not match a
+`NavLink` with `end` — the Home link would have stayed inactive and the fix would have
+been half-done. And `end` must be set on the index route and **only** there: without it
+Home is active on every page, which is the same "no signal" outcome arrived at from the
+opposite direction.

@@ -391,3 +391,33 @@ message can quote a URL or token some other layer interpolated. And **the redact
 were moved rather than copied**: `scanner.ts` already had them for the same reason, and a
 second copy would have been L-8 waiting to happen — a defect fixed in one copy of a copied
 helper is not fixed.
+
+### L-16 — Dead CSS is a bug report nobody filed
+
+Findings: UI-3
+
+Three selectors — `.shell__link--active`, `.shell__navmenu-item[aria-current='page']` and
+`.admin__tab--active` — had matched nothing since the app moved under `/p/:projectId`.
+Somebody wrote each of them deliberately, for a state the app then stopped being able to
+enter. They sat in the stylesheet looking like working code, and the missing "where am I"
+signal read as a design choice rather than a defect.
+
+The give-away is cheap and nobody looks for it: a styling rule for a state, and no test or
+render path that produces the state. Unlike dead JavaScript, dead CSS raises no warning, is
+never imported, and cannot be tree-shaken into visibility — it just quietly stops applying.
+An `--active`, `--selected`, `--error` or `[aria-current]` rule is a claim that the app can
+reach that state, and claims are checkable.
+
+**Do differently:** treat a state-specific selector as an assertion, and pin it with a test
+on whatever *decides* the state — here the nav targets, which had to be pure and exported
+before they could be tested at all. When a UI state has visual styling and no test, assume
+it is unreachable until shown otherwise; this one had been unreachable for long enough that
+the accessibility regression it caused (no `aria-current` anywhere, WCAG 2.4.8) was invisible
+to everyone including the people maintaining the CSS.
+
+The corollary is that the cosmetic symptom was not the expensive one. The same unscoped
+paths also matched the top-level `*` route, so every nav click unmounted the entire app
+subtree, ran a redirect, and remounted it — a skeleton flash and a full data refetch per
+click. A defect first noticed as "the active link isn't highlighted" was really "navigation
+does not work the way the router thinks it does", and the small visible symptom was the
+thread worth pulling.
