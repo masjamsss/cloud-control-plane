@@ -66,7 +66,7 @@ rather than a comment, so it fails visibly if anyone assumes it is fixed.
 
 ### R-3 · The Python/importer CI gap is only partly closed
 *Residue on **TEST-1**, **TEST-4**.*
-**Tracked by: CI-3.**
+**Tracked by: CI-4.**
 
 `importer.yml` runs both kits, `ccp/app/scripts` and `tools/schemadump`;
 `CCP_REQUIRE_INTEGRATION=1` stops the api's integration suites skipping silently; and
@@ -85,6 +85,20 @@ the Python test environment — both the workflow and `gate.sh` read the pin fro
 defect was fixed in **both** — the drift-adopt path would otherwise have stayed broken and
 looked maintained (L-8) — but the duplication itself is untouched, so the next divergence
 has nothing stopping it.
+
+### R-28 · The path-filter check covers four named edges, not the import graph
+*Residue on **CI-3**.*
+**Tracked by: CI-4.**
+
+`scripts/ci/check-path-filters.sh` derives each of the four cross-component edges CI-3
+names from the source — the `@app-lib` alias, the tests that execute `scripts/ci/*.sh`, the
+Go embed's sync obligation — and fails when a filter stops covering one. It is deliberately
+**not** a general import-graph walker, so a new cross-component import somewhere else would
+not be noticed.
+
+A considered trade rather than an oversight: a vague check nobody trusts gets deleted, and
+a specific one naming the alias and the file count gets fixed. But it is a limit, not a
+guarantee, and it belongs with the rest of the CI-completeness work.
 
 ### R-4 · `planSummary` is typed `string` in the contract
 *Residue on **DOC-2**.*

@@ -208,7 +208,7 @@ Checks that exist but run nowhere, or run and prove nothing.
 
 - [x] CI-1 | high | ci-not-wired | fixed:21fd092 | 13-ci-cd.md | Two components' test suites run in no CI at all, and one of them is currently failing
 - [x] CI-2 | high | ci-not-wired | fixed:pin >=v8.19.0 for `gitleaks dir` + PG-9 now hard-fails on a failed invocation | 13-ci-cd.md | PG-9 (gitleaks) is a silent no-op in CI: the pinned v8.18.4 has no `dir` subcommand, and the script converts the resulting error into PASS
-- [ ] CI-3 | high | ci-not-wired | open | 13-ci-cd.md | Path filters skip validation for cross-component dependencies: app-lib, catalogctl parity, the canonical redaction rules, and the gate scripts themselves
+- [x] CI-3 | high | ci-not-wired | fixed:81b7fbc | 13-ci-cd.md | Path filters skip validation for cross-component dependencies: app-lib, catalogctl parity, the canonical redaction rules, and the gate scripts themselves
 - [ ] CI-4 | high | ci-not-wired | open | 13-ci-cd.md | The product's core "CI applies" pipeline is not shipped: nothing invokes plancheck-gate.sh or apply-window-gate.sh, and docs/scripts reference a workflow that no longer exists
 - [x] IMP-3 | high | ci-not-wired | fixed:21fd092 | 08-importer-schemadump.md | No CI executes any importer test suite; two shipped regressions prove the gap
 - [x] TEST-2 | high | ci-not-wired | fixed:21fd092 | 12-testing-quality.md | No CI lane executes any Python test suite; `gate.sh` omits them too

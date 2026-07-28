@@ -1503,3 +1503,47 @@ actually catch these.
 Python test environment. There still is not — both the workflow and `gate.sh` read the pin
 from `gen-project-data.sh`, which keeps them consistent with each other and with the
 generator, but is not the same as a declared test environment.
+
+## CI-3
+
+*Path filters skip validation for cross-component dependencies: app-lib, catalogctl
+parity, the canonical redaction rules, and the gate scripts themselves.*
+
+- [x] **Defect reproduced first** — all four edges verified real before trusting the
+      finding: `ccp/api/tsconfig.json` declares the `@app-lib/*` alias and **7** api
+      source files import through it; `plancheck_gate_test.go` executes
+      `../../scripts/ci/plancheck-gate.sh`; `redact.go` carries the "SYNC OBLIGATION …
+      byte-identical" comment against `catalog/redaction-rules.json`. None of those paths
+      was in the corresponding filter.
+- [x] **Cause, not symptom** — the filters mirrored the **directory tree** rather than the
+      **import graph**. Widened per the finding — but widening alone fixes today and drifts
+      again on the next import, so `scripts/ci/check-path-filters.sh` derives each
+      dependency *from the source* (the tsconfig alias, the test files' own references, the
+      sync-obligation comment) and fails when a filter stops covering it.
+- [x] **Regression test** — the checker is the test. Negative test confirmed: dropping
+      `ccp/app/src/lib/**` from the `pull_request` filter alone fails it, naming the alias
+      and the file count.
+- [x] **Failure is loud** — it names which workflow, which path, and *why the edge exists*.
+      It also refuses to run vacuously: every input file it greps must exist, or it exits
+      non-zero rather than passing on a renamed file (**L-1**).
+- [x] **Evidence in the status line** — `81b7fbc`.
+- [x] **Lesson recorded** — L-21.
+
+**It runs in its own workflow with no path filter**, deliberately. A check whose job is
+catching an under-scoped filter must not be gated by one: the PR that breaks the
+relationship is exactly the PR a narrow filter would exclude, so it would go quiet at the
+moment it was needed.
+
+**Two defects the work itself produced and caught**, both worth recording because both are
+the finding's own shape in miniature:
+1. The first edit to `ccp-api.yml` **ate the `paths:` key**, making `pull_request` a list.
+   `yaml.safe_load` accepted it happily — *parsing is not validating*. Now asserted
+   structurally: both events must be mappings, and both must carry `paths`.
+2. The first version of the checker **grepped the whole file**, so it passed when a glob
+   appeared in *either* event's list. Its own negative test caught it: removing the path
+   from `pull_request` alone did not fail. It now parses and requires the glob in both.
+
+**Residue:** deliberately **not** a general import-graph walker. It covers the four edges
+the finding names; a new cross-component import elsewhere would not be noticed. That is a
+considered trade — a vague check nobody trusts gets deleted, and a specific one that names
+the alias and the file gets fixed — but it is a limit, not a guarantee.

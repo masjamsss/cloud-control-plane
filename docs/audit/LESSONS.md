@@ -550,3 +550,34 @@ be **decreasing-only** — settlement may add rows, and rows may never disappear
 accepted corruption. And **step 8 was deliberately left alone with a test asserting so**:
 when you relax a check, pin the stricter one that still applies, or the next reader cannot
 tell a considered narrowing from an erosion.
+
+### L-21 — A check that verifies scope must not itself be scoped
+
+Findings: CI-3
+
+The workflow path filters mirrored the directory tree while the code mirrored the import
+graph, so the api's tests — the suite that consumes `ccp/app/src/lib/*` for server-side
+authorization decisions — never ran on changes to those files. Widening the filters fixes
+that instant and nothing more: the two descriptions drift apart again on the next import,
+silently, because nothing compares them.
+
+So the fix is a check that derives the dependency from the source each run. The part worth
+generalising is where that check runs: **in a lane with no path filter at all.** A guard
+against an under-scoped filter, gated by a filter, goes quiet in exactly the case it exists
+for — the PR that breaks the relationship is the PR whose files the narrow filter excludes.
+The same holds for any scoping mechanism guarding itself: a lint rule exempting the linter's
+own config, a coverage threshold excluding new files, a secret scanner skipping the file
+that lists its own exclusions.
+
+**Do differently:** when a check's subject is the scope of other checks, run it unscoped and
+keep it cheap enough that this is affordable. Seconds of CI on every PR is the price of the
+guarantee.
+
+Two smaller things, both this finding's shape in miniature, both caught during the fix.
+**Parsing is not validating**: an edit that consumed a `paths:` key turned `pull_request`
+into a list, and `yaml.safe_load` accepted it without complaint — a workflow that parses can
+still describe nothing. Assert the *structure* you depend on, not just that the file loads.
+And **the first version of the checker grepped the whole file**, so a glob present in either
+event's list satisfied it; only its own negative test revealed that removing the path from
+one event changed nothing. A check written against a file rather than against the structure
+it means to inspect will find what it is looking for somewhere, and report success.
