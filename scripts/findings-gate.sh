@@ -62,7 +62,7 @@ for f in sorted(glob.glob(os.path.join(audit_dir, "*.md"))):
     base = os.path.basename(f)
     # FINDINGS.md and LESSONS.md are the tracking files, not reports. LESSONS.md in
     # particular numbers its entries `L-1`, which matches the finding-id shape.
-    if base in ("README.md", "FINDINGS.md", "LESSONS.md"):
+    if base in ("README.md", "FINDINGS.md", "LESSONS.md", "RESIDUE.md"):
         continue
     for line in open(f, encoding="utf-8"):
         h = re.match(r"^###\s+([A-Z]+-\d+[a-z]?)\s*(.*)$", line)
@@ -163,6 +163,73 @@ for fid, kind in sorted(entries.items()):
 for fid in sorted(documented_fixes):
     if fid not in declared:
         errors.append(f"FIXES.md: '## {fid}' is not a finding declared by any report")
+
+# --- residue ledger --------------------------------------------------------
+# RESIDUE.md lists what the fixes deliberately left behind. Individually each residue
+# note inside a FIXES.md entry is honest; collectively they were invisible, and the same
+# one got written three times without ever being tracked (see R-1). This check makes
+# "left behind and forgotten" a build failure rather than a footnote on a closed finding.
+#
+# Three rules, each earning its place:
+#   1. Every finding id cited must EXIST — a residue note pointing at nothing is worse
+#      than no note, because it reads as tracked.
+#   2. An item claiming to be `tracked` must cite at least one finding that is still
+#      OPEN. A closed finding cannot be tracking anything, and this is exactly how
+#      residue disappears: the finding that was going to cover it gets closed for other
+#      reasons and the residue silently becomes nobody's.
+#   3. Every FIXES.md section carrying a residue note must appear in RESIDUE.md. Without
+#      this the file is a snapshot that decays; with it, adding a residue note to a fix
+#      forces the item into the ledger.
+residue_path = os.path.join(audit_dir, "RESIDUE.md")
+n_residue = 0
+if os.path.exists(residue_path):
+    rtext = open(residue_path, encoding="utf-8").read()
+    # An item: "### R-<n> · <title>", then prose until the next item.
+    items = re.split(r"\n### (R-\d+)", rtext)
+    seen_ids = set()
+    for idx in range(1, len(items), 2):
+        rid, body = items[idx], items[idx + 1]
+        n_residue += 1
+        if rid in seen_ids:
+            errors.append(f"{residue_path}: duplicate residue id {rid}")
+        seen_ids.add(rid)
+        cited = set(re.findall(r"\b([A-Z]+-\d+[a-z]?)\b", body))
+        for c in cited:
+            # Not findings: L-<n> lessons, R-<n> residue cross-references, PG-<n>
+            # publish-gate check ids, and ADR-<n> decision records. All share the
+            # <LETTERS>-<digits> shape, so the exclusion has to be explicit.
+            if c.startswith(("L-", "R-", "PG-", "ADR-")):
+                continue
+            if c not in declared:
+                errors.append(
+                    f"{residue_path}: {rid} references '{c}', which is not a finding "
+                    "declared by any report"
+                )
+        m = re.search(r"\*\*Tracked by:\s*([^*]+)\*\*", body)
+        if m:
+            refs = [r.strip().rstrip('.') for r in m.group(1).split(",") if r.strip()]
+            live = [r for r in refs if r in open_ids]
+            if refs and not live:
+                errors.append(
+                    f"{residue_path}: {rid} claims to be tracked by {', '.join(refs)}, but "
+                    "none of those findings is still open — the residue has become nobody's"
+                )
+    # Rule 3: a residue note in FIXES.md must have an item here.
+    fx = os.path.join(audit_dir, "FIXES.md")
+    if os.path.exists(fx):
+        ftext = open(fx, encoding="utf-8").read()
+        # Strip fenced blocks first: FIXES.md's own header shows the entry FORMAT inside a
+        # fence, residue line included, and matching that example reports a phantom.
+        ftext = re.sub(r"```.*?```", "", ftext, flags=re.S)
+        for m in re.finditer(r"\n## ([A-Z]+-\d+[a-z]?)\n(.*?)(?=\n## |\Z)", ftext, re.S):
+            fid, fbody = m.group(1), m.group(2)
+            if "**Residue:**" in fbody and fid not in rtext:
+                errors.append(
+                    f"{fx}: {fid} carries a Residue note but {os.path.basename(residue_path)} "
+                    "never mentions it — residue must be tracked, not left as a footnote"
+                )
+else:
+    errors.append("docs/audit/RESIDUE.md is missing — the residue ledger is required")
 
 # --- lessons ledger --------------------------------------------------------
 # LESSONS.md is where a finding's generalisable lesson goes. It is checked here so it

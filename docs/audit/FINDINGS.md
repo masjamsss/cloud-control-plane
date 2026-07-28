@@ -26,6 +26,15 @@ Partial fixes are honest and welcome — but they stay `open`, with the residue 
 rather than being rounded up to `fixed`. IMP-7 is the worked example: its divergence is
 gone, its recurrence guard is not, so the entry records both.
 
+**Anything a fix deliberately leaves behind goes in [`RESIDUE.md`](RESIDUE.md).** A
+`**Residue:**` note inside a `FIXES.md` entry is a footnote to a closed finding — easy to
+write and impossible to find later. The residue ledger gives each one a state (`resolved` /
+`tracked` / `untracked` / `accepted`), and the gate enforces three things: a cited finding
+must exist, an item claiming to be *tracked* must cite a finding that is still **open**, and
+every `FIXES.md` entry carrying a residue note must appear there. The first item in that
+file is why it exists — the same residue was recorded on three separate findings, each
+noting it "still has no finding", and nothing ever picked it up.
+
 ## Line grammar (the gate parses this — keep the format)
 
 ```
