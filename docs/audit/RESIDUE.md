@@ -174,6 +174,39 @@ template is not runnable as-is.
 Tracked against ARCH-2, which owns the same seam: how an armed lane resolves per-estate
 credentials and configuration rather than one deployment-global set.
 
+### R-32 · Sequential write latency is still O(store size)
+*Residue on **DATA-4**.*
+
+Batching fixes the CONCURRENT case — a 32-write burst went 126 ms/op → 4.0 ms/op — which is
+the number a server lives by. A single write still costs a full-snapshot fsync proportional
+to the database. Changing the durability model of a governance database was judged not worth
+it for the sequential case; that judgement is the residue.
+
+### R-33 · The SPA still fetches unpaged request lists
+*Residue on **PERF-3**.*
+
+`GET /requests` pagination is real now, and deliberately opt-in — without `limit` the
+response is byte-for-byte what it always was, and the SPA does not pass one.
+
+Not an oversight: `Notifications` sorts by `updatedAt` and slices to 8, but the GSI orders
+by ulid (creation), so a server-side `limit` would silently drop a recently-approved OLD
+request from the bell. Correcting it needs either an `updatedAt`-ordered index or a product
+decision that the bell means "recently created". Left alone rather than quietly regressed —
+which is the right call, and leaves the client-side cost unaddressed.
+
+### R-34 · `/readyz`'s incremental verification is not a tamper-detector
+*Residue on **PERF-4**.*
+
+`/readyz` verifies fully on the first probe of a process, then re-hashes only entries
+appended since (253 ms → 1.05 ms). The memo is used only if the anchor entry still re-hashes
+**from its content** — trusting its stored `hash` field would let a content rewrite walk
+straight past.
+
+It deliberately does not detect a rewrite deep inside an already-verified prefix.
+`GET /admin/audit/export` and `scripts/verify-audit-chain.ts` still verify every entry every
+time, and a test pins that they catch what the memo path does not. A stated trade — but it
+means `/readyz` alone must not be read as continuous tamper-evidence.
+
 ### R-8 · Session rows are written with blind puts
 *Residue on **CONC-3**.*
 

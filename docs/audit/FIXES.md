@@ -1772,3 +1772,109 @@ scanned `*.sh`/`*.md`/`*.mjs`/`*.ts` and therefore missed `ccp/toolbox/Dockerfil
 with no extension, carrying one of the three references the finding explicitly names. A
 rule with an arbitrary scope limit is a list wearing a rule's clothes. It now scans by
 content across the tree.
+
+## PERF-1
+
+*Every authenticated request rewrites the entire database to disk (session-slide put on a
+full-snapshot store).*
+
+Fixed by **PR #6** (`813a6d9`), merged into `main` during this session — not by this branch.
+Recorded here because the finding is now closed and the reasoning must be auditable.
+
+- [x] **Defect reproduced first** — measured before anything changed, with a committed
+      harness (`ccp/api/scripts/bench.ts`). On the FileStore — *the store production runs* —
+      with 8,000 requests the whole API served about **5 req/s**, and the cost was flat
+      across every endpoint. `GET /healthz`, which reads nothing, cost **178 ms**. That
+      flatness was the diagnosis: the cost had nothing to do with what any endpoint did, and
+      scaled linearly in **database size**.
+- [x] **Cause, not symptom** — `resolveSession` slid the 30-minute idle window with a `PUT`
+      on every authenticated request, and on the FileStore a put is a full-snapshot `fsync`.
+      Now coalesced to one-minute granularity and deliberately **fail-closed**: a session
+      idles out at most a minute *early*, never late.
+- [x] **Regression test** — 26 added; the bench is committed and re-runnable.
+- [x] **Failure is loud** — n/a; a latency fix. The relevant guarantee is that the
+      coalescing errs toward expiring early.
+- [x] **Evidence in the status line** — `813a6d9`.
+- [x] **Lesson recorded** — L-26.
+
+**Result:** `/healthz` 178 ms → **0.09 ms**; `/auth/me` 179 ms → **0.10 ms**; concurrent
+read throughput ~5 → **14,394 req/s**.
+
+## DATA-2
+
+*Audit month-walk duplicates the current month at month ends: audit export corrupted.*
+
+Fixed by **PR #6** (`813a6d9`).
+
+- [x] **Defect reproduced first** — found while measuring, not while looking. The chain
+      reader stepped back a month with `d.setUTCMonth(d.getUTCMonth() - 1)`. On 31 March
+      that asks for 31 February, which JavaScript normalizes **forward** to 3 March — so the
+      walk yielded March twice, the reader accumulated that partition twice, and the
+      duplicated block broke the `prevHash` linkage.
+- [x] **Cause, not symptom** — an **intact chain reported as broken**, which makes `/readyz`
+      answer **503** (pulling the instance out of service) and `/admin/audit/export` report
+      `verified: false`. It fires on **15 days of 2026** and no others.
+- [x] **Regression test** — the calendar cases, which fail against the old reader. They
+      could not have existed before: the reader called `new Date()` directly instead of the
+      `clock.ts` seam every other time-dependent path uses, so **no test could pin a date to
+      try**. Both are fixed, and the walk now starts one month ahead to survive a backward
+      clock correction across a month boundary.
+- [x] **Evidence in the status line** — `813a6d9`.
+- [x] **Lesson recorded** — L-26.
+
+## DATA-4
+
+*Full-file rewrite + fsync on every mutation, including a session write on every request.*
+
+Fixed by **PR #6** (`813a6d9`) — the same session-slide coalescing as PERF-1, plus write
+batching: mutations arriving during an in-flight write join the next snapshot. Sound
+because the store never rolls a mutation back, so a snapshot taken after N mutations
+necessarily contains all N. Each caller's contract is unchanged and still strict —
+`await store.put(x)` resolves only once a snapshot containing `x` is durably on disk.
+
+`store.put` in a 32-write burst: 126 ms/op → **4.0 ms/op**.
+
+- [x] **Evidence in the status line** — `813a6d9`.
+
+**Residue:** sequential write latency is still O(store size). Batching fixes the concurrent
+case, which is the number a server lives by; changing the durability model of a governance
+database was judged not worth it otherwise. See **R-20** — the store's recovery story is
+unchanged.
+
+## PERF-3
+
+*`GET /requests` has no pagination and ships full rows.*
+
+Fixed by **PR #6** (`813a6d9`). `cursor` had been declared in `openapi/ccp-api.yaml` since
+the contract was written and was **never honoured** — the endpoint returned the estate's
+entire request history in one response, forever. Now real, and **opt-in**: without `limit`
+the response is byte-for-byte what it always was. A `cursor` without a `limit` is now a
+**422** rather than a silently ignored parameter — which is the failure mode that let this
+sit unnoticed.
+
+- [x] **Evidence in the status line** — `813a6d9`.
+
+**Residue:** the SPA still fetches unpaged request lists, deliberately. `Notifications` sorts
+by `updatedAt` and slices to 8, but the GSI orders by ulid (creation), so a server-side
+`limit` would silently drop a recently-approved old request from the bell. That needs either
+an `updatedAt`-ordered index or a product decision that the bell means "recently created" —
+left alone rather than quietly regressed.
+
+## PERF-4
+
+*`/readyz` re-verifies every audit chain hash on every probe.*
+
+Fixed by **PR #6** (`813a6d9`). `/readyz` now verifies fully on the first probe of a process
+and re-hashes only entries appended since. The memo is per-store and is used **only if the
+anchor entry still re-hashes from its content** — trusting its stored `hash` field would let
+a content rewrite walk straight past.
+
+`/readyz` 253 ms → **1.05 ms**.
+
+- [x] **Evidence in the status line** — `813a6d9`.
+
+**Residue:** the memo deliberately does **not** detect a rewrite deep inside an
+already-verified prefix. `GET /admin/audit/export` and `scripts/verify-audit-chain.ts` still
+verify every entry every time, and a test pins that they catch what the memo path does not.
+That is a stated trade, not an oversight — but it does mean `/readyz` alone is not a
+tamper-detector.

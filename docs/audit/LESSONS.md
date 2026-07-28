@@ -700,3 +700,36 @@ checker exists to protect. And **describing history is not the same as pointing 
 several annotations explaining a now-dead reference had to be reworded to stop naming the
 dead path, because a checker cannot distinguish a live pointer from a footnote about one.
 That is a real cost of the rule, and it is worth paying.
+
+### L-26 — Measure first: the flat number is the diagnosis, and the bugs are next to it
+
+Findings: PERF-1, DATA-2
+
+The API served about 5 req/s and `GET /healthz` — which reads nothing — cost 178 ms. The
+useful observation was not that it was slow but that it was **uniformly** slow: identical
+cost across endpoints doing wildly different work. A cost that does not vary with what an
+endpoint does is not that endpoint's cost, and the shape of the number pointed straight at
+the cause — a session-slide `PUT` on every authenticated request, against a store where a
+put is a full-snapshot `fsync`.
+
+Guessing would have found something plausible and wrong. The order matters: measure, read
+the *shape*, then change one thing.
+
+**What makes this worth a lesson is what else the measuring found.** Two of the findings
+turned out to be **correctness** bugs. The audit chain reader stepped back a month with
+`setUTCMonth(m - 1)`; on 31 March that asks for 31 February, which JavaScript normalizes
+*forward* to 3 March, so the walk yielded March twice and the duplicate broke the `prevHash`
+linkage. An intact chain reported as **broken** — `/readyz` 503, audit export
+`verified: false` — on 15 days of 2026 and no others. Nobody was looking for it; a
+performance pass walked past it.
+
+And it **could not have been caught**, because the reader called `new Date()` directly
+instead of the `clock.ts` seam every other time-dependent path uses. No test could pin a
+date to try. That is the transferable part: **a module that reads the clock directly is
+untestable in exactly the dimension where calendar bugs live**, and the absence of the seam
+is itself the finding. Grep for the raw clock read before trusting date logic.
+
+The same pass turned up a raw NUL byte used as a key separator, which made the file `data`
+rather than text — invisible to content search. It also made the file unmergeable: git
+produced no conflict markers, silently kept one side, and the loss surfaced only because a
+type signature stopped matching.

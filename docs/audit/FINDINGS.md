@@ -223,8 +223,8 @@ Checks that exist but run nowhere, or run and prove nothing.
 
 Durability, rollback, schema validation on load, and store-seam fidelity against DynamoDB.
 
-- [ ] PERF-1 | critical | data-persistence | open | 11-performance-scalability.md | Every authenticated request rewrites the entire database to disk (session-slide write × full-store snapshot)
-- [ ] DATA-4 | high | data-persistence | open | 03-data-integrity.md | Full-file rewrite + fsync on every mutation, including a session write on every authenticated request, against a store that only ever grows
+- [x] PERF-1 | critical | data-persistence | fixed:813a6d9 | 11-performance-scalability.md | Every authenticated request rewrites the entire database to disk (session-slide write × full-store snapshot)
+- [x] DATA-4 | high | data-persistence | fixed:813a6d9 | 03-data-integrity.md | Full-file rewrite + fsync on every mutation, including a session write on every authenticated request, against a store that only ever grows
 - [ ] CTL-5 | medium | data-persistence | open | 07-catalogctl.md | `drift-edit` writes are neither atomic nor transactional: a mid-batch refusal leaves earlier edits in the checkout
 - [ ] DATA-10 | medium | data-persistence | open | 03-data-integrity.md | Backup/restore covers only the store JSON; the on-disk project-data/drift root it references is out of scope, with no consistency check
 - [ ] DATA-6 | medium | data-persistence | open | 03-data-integrity.md | `rename` durability is not guaranteed: no directory fsync after the atomic swap
@@ -337,7 +337,7 @@ Bootstrap, install, migration, compose and overlays.
 
 Full scans, unpaged reads, work proportional to total data.
 
-- [ ] PERF-3 | high | scale-and-paging | open | 11-performance-scalability.md | `GET /requests` has no pagination and ships full rows (events, params, plan summaries, pinned plan text), with an O(n) write-capable settle loop per call
+- [x] PERF-3 | high | scale-and-paging | fixed:813a6d9 | 11-performance-scalability.md | `GET /requests` has no pagination and ships full rows (events, params, plan summaries, pinned plan text), with an O(n) write-capable settle loop per call
 - [ ] PERF-5 | high | scale-and-paging | open | 11-performance-scalability.md | Frontend main bundle is 3.76 MB (663 KB gzip) with all 115 manifest JSONs inlined and zod-parsed at module init
 - [ ] PERF-10 | medium | scale-and-paging | open | 11-performance-scalability.md | Submit-path full scans: rate-limit check and feasibility each re-scan whole collections per submission
 - [ ] PERF-8 | medium | scale-and-paging | open | 11-performance-scalability.md | Admin audit "pagination" materializes and re-sorts the whole chain per page; cursor lookup is a linear scan
@@ -349,8 +349,8 @@ Full scans, unpaged reads, work proportional to total data.
 
 The evidence chain: month walk, export, verification.
 
-- [ ] DATA-2 | high | audit-chain | open | 03-data-integrity.md | Audit month-walk duplicates the current month at month ends: audit export corrupts and `/readyz` goes red on ~7 days a year
-- [ ] PERF-4 | high | audit-chain | open | 11-performance-scalability.md | `/readyz` re-verifies every audit chain hash on every probe: O(total audit entries) CPU per health check
+- [x] DATA-2 | high | audit-chain | fixed:813a6d9 | 03-data-integrity.md | Audit month-walk duplicates the current month at month ends: audit export corrupts and `/readyz` goes red on ~7 days a year
+- [x] PERF-4 | high | audit-chain | fixed:813a6d9 | 11-performance-scalability.md | `/readyz` re-verifies every audit chain hash on every probe: O(total audit entries) CPU per health check
 - [ ] OPS-11 | medium | audit-chain | open | 10-reliability-operations.md | `/readyz` re-verifies every audit chain on every probe; cost grows unboundedly with history
 - [ ] PERF-11 | medium | audit-chain | open | 11-performance-scalability.md | Per-project audit chain head serializes all writes and surfaces contention as user-facing 409s after one retry
 - [ ] PERF-7 | medium | audit-chain | open | 11-performance-scalability.md | Nothing in the store is ever purged: sessions, idempotency markers, and the audit chain grow forever (and every byte is re-serialized per request)
