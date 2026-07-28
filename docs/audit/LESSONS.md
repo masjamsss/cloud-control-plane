@@ -521,3 +521,32 @@ decision**, and any invariant that really matters has to be checked against the 
 about — here `approvals.length` against the live ladder, not the row's own frozen count.
 The tell was available without running anything: the comment claimed a guarantee, and no
 line of code in the handler computed it.
+
+### L-20 — Ask the invariant at the moment it is still true
+
+Findings: OPS-5
+
+`migrate-data.sh` proved the copied store byte-identical to the source — twice. Once in
+step 8, while the api was stopped, which is correct and is the whole point of the ceremony.
+And again in step 11, *after* starting the new code on that store. The second check refused
+on any difference, and the new code's first boot writes a settlement marker, so the second
+check failed on every host the script was written for and rolled back a migration that had
+completely succeeded.
+
+Neither the check nor the boot write was wrong. The check was asking a question that had
+stopped being answerable. "Byte-identical" is a property of a copy, and it holds exactly
+until something is allowed to write; after that, the strongest true statement is "nothing
+was lost", which is a different assertion needing a different test.
+
+**Do differently:** when the same invariant is verified at two points, check what happened
+in between. If anything is *permitted* to change the subject, the second verification is not
+a safety net — it is a false alarm generator, and it will fire on the correct path rather
+than the broken one. Either move the check to where the property still holds, or weaken it
+to what remains true and say which.
+
+Two things kept the fix honest, and both are worth copying. The relaxed probe was written to
+be **decreasing-only** — settlement may add rows, and rows may never disappear — because
+"stop checking" would have passed the failing case just as well as a real fix and silently
+accepted corruption. And **step 8 was deliberately left alone with a test asserting so**:
+when you relax a check, pin the stricter one that still applies, or the next reader cannot
+tell a considered narrowing from an erosion.

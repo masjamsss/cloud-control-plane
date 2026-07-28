@@ -1375,3 +1375,77 @@ removing it; it is kept because a multi-item ladder can legitimately reach quoru
 row is still there, and the explicit check now makes membership harmless. **ARCH-3** — the
 "reviewed-plan ≡ applied-plan" guardrail being delegated to an operator-supplied gate
 command — is a different and still-open hole in the same lane.
+
+## CTL-1
+
+*Full-line comment above a map entry corrupts every literal-map edit (duplicate keys,
+silent no-op removals) at exit 0.*
+
+- [x] **Defect reproduced first** — `leadingcomment_test.go` (both packages). Against the
+      unfixed walker: the merge path wrote a **duplicate** `Owner` key, the remove path
+      **silently removed nothing** and reported success, and `parseObject` returned the key
+      `"# owner of record\nOwner"`.
+- [x] **Cause, not symptom** — a single-line comment token **carries its terminating
+      newline** ("`# note\n`" is ONE token), so a full-line comment above an entry is not a
+      `TokenNewline` and the key loop appended it to `keyToks`. Leading trivia is now
+      consumed before the key loop and **carried on the entry**, so it round-trips instead
+      of being dropped. This is the key-loop half of a lesson the value loop had already
+      learned in the same function.
+- [x] **Regression test** — 6 across the two packages. Verified against the unfixed code
+      (see above).
+- [x] **Failure is loud** — and this was the sharp end: every consumer mis-identified the
+      entry **at exit 0**. `mergeMap` and `appendForeachEntry` appended a duplicate key,
+      defeating the `KEY_CONFLICT` guard so last-one-wins silently changed a *protected*
+      value; `removeForeachEntry` found nothing and removed nothing. The operator's checkout
+      came back wrong and the exit code said fine. A **dangling** comment after the last
+      entry is now refused (`NOT_LITERAL`) rather than guessed at — re-emitting it would
+      move it and dropping it would delete something a person wrote.
+- [x] **Evidence in the status line** — `bd7275b`.
+- [x] **Lesson recorded** — L-8, applied rather than restated.
+
+**Fixed in BOTH copies.** `internal/edit` and `internal/driftpropose` carry duplicated
+literal-object token-walkers (**CTL-10**) with the same defect in each. Fixing only one
+would have left the drift-adopt path broken and looking maintained — which is **L-8**
+exactly, and is why CTL-10 is worth closing on its own merits rather than as tidying.
+
+**Residue:** CTL-10 itself stays open — the two walkers are still duplicated, and the next
+divergence has nothing stopping it. Only the *current* defect is fixed in both.
+
+## OPS-5
+
+*`migrate-data.sh`'s post-cutover byte-identical check is tripped by the new code's own
+boot writes: legacy migrations auto-roll back.*
+
+- [x] **Defect reproduced first** — `ccp/scripts/test/migrate-post-cutover.test.sh` drives
+      step 11's decision against a store where settlement rewrote `ccp.json` but no project
+      file changed. The old whole-store diff is non-empty, so the script refuses and rolls
+      back a migration that completely succeeded.
+- [x] **Cause, not symptom** — **the check was asking the right question at the wrong
+      moment.** Byte-equality of the copy is already proven in steps 7-8, while the api is
+      *down*, which is where that question is answerable. After a boot that is *allowed* to
+      write — and the cutover boot is by design the first boot of the new code on this
+      store — the only honest question is whether anything was **lost**. Step 11 now uses
+      the mutation-tolerant probe `self-update.sh` already uses for the same reason:
+      project-data files identical, version-row and active-pointer counts non-decreasing.
+- [x] **Regression test** — 6 assertions. **Half of them exist to stop an over-tolerant
+      fix:** one that simply stopped checking would pass the settlement case and silently
+      accept real corruption, so a missing project file and each decreasing count are
+      asserted to still refuse. Negative test confirmed: restoring the whole-store diff
+      fails 2.
+- [x] **Failure is loud** — a genuine loss still refuses *and* rolls back, naming which of
+      the two conditions tripped.
+- [x] **Evidence in the status line** — `f33aa29`.
+- [x] **Lesson recorded** — L-20.
+
+**Who this was breaking.** The population the script exists for — hosts still on the legacy
+named volume, i.e. installs predating the `/data` consolidation and therefore almost
+certainly predating settlement — is *precisely* the population guaranteed to hit it. The
+guarded migration was impossible for its only audience, and it failed with a hash-mismatch
+error implicating data corruption that never happened.
+
+**Step 8 is deliberately untouched**, and a test asserts it: relaxing the post-cutover probe
+must not relax the copy proof.
+
+**Residue:** the ceremony still has no end-to-end test against real containers — see
+**R-9**. `DATA_ROOT`/`LEGACY_UPDATE_DIR` are now parameterised (the seam `install.sh`
+already has) so one could be written; it has not been.

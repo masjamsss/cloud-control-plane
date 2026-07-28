@@ -73,6 +73,15 @@ rather than a comment, so it fails visibly if anyone assumes it is fixed.
 remain: the **GitLab mirror** (`.gitlab/ci/`) has no api/app test lane at all, and
 `scripts/gate.sh` — the local pre-push mirror — omits the Python suites.
 
+### R-27 · The two literal-object token-walkers are still duplicated
+*Residue on **CTL-1**.*
+**Tracked by: CTL-10.**
+
+`internal/edit` and `internal/driftpropose` carry near-identical HCL object walkers. CTL-1's
+defect was fixed in **both** — the drift-adopt path would otherwise have stayed broken and
+looked maintained (L-8) — but the duplication itself is untouched, so the next divergence
+has nothing stopping it.
+
 ### R-4 · `planSummary` is typed `string` in the contract
 *Residue on **DOC-2**.*
 **Tracked by: DOC-11.**
@@ -120,11 +129,16 @@ it. The code is the wrong side here: the entry should either be emitted or delet
 DATA-1 fixed for request rows.
 
 ### R-9 · No end-to-end install-journey smoke
-*Residue on **OPS-1**.*
+*Residue on **OPS-1**, **OPS-5**.*
 
 The finding asks for a test that runs the real two-phase compose flow. What exists covers
 the *decision* with docker stubbed, so it cannot catch a failure that only appears against
 real containers.
+
+The same gap covers `migrate-data.sh`: OPS-5's test drives step 11's decision, not the
+ceremony. `DATA_ROOT`/`LEGACY_UPDATE_DIR` are now parameterised (the seam `install.sh`
+already has) so an end-to-end walk *could* be written against a throwaway tree. It has not
+been.
 
 ### R-10 · `transactWithAudit` cannot tell which condition failed
 *Residue on **CONC-2**.*

@@ -301,7 +301,7 @@ Red suites, silent skips, fixtures that pin the wrong premise.
 Guards that pass when they should refuse.
 
 - [ ] ARCH-3 | high | fail-open | open | 01-architecture.md | The "reviewed-plan ≡ applied-plan" guardrail is delegated to unverifiable operator shell strings
-- [ ] CTL-1 | high | fail-open | open | 07-catalogctl.md | Full-line comment above a map entry corrupts every literal-map edit (duplicate keys, defeated KEY_CONFLICT guard, silent no-op removes) — exit 0
+- [x] CTL-1 | high | fail-open | fixed:bd7275b | 07-catalogctl.md | Full-line comment above a map entry corrupts every literal-map edit (duplicate keys, defeated KEY_CONFLICT guard, silent no-op removes) — exit 0
 - [ ] CTL-4 | medium | fail-open | open | 07-catalogctl.md | plan-check R1 structurally vetoes every legitimate plan for a `local.`-targeted foreach op
 - [ ] CTL-6 | medium | fail-open | open | 07-catalogctl.md | `danglingRef` substring scan falsely refuses removal when another resource's name extends the target's name
 - [ ] API-11 | low | fail-open | open | 02-api-correctness.md | Audit-chain read path bypasses the injected clock and truncates at 120 months
@@ -326,7 +326,7 @@ Missing error and retry paths; permanent loading states.
 Bootstrap, install, migration, compose and overlays.
 
 - [x] OPS-1 | critical | install-ops | fixed:install.sh + intranet-setup.sh decide bootstrap before the first up; ccp/scripts/test/install-bootstrap-decision.test.sh | 10-reliability-operations.md | Fresh-install bootstrap deadlock: boot-time settlement creates the store file, then `CCP_BOOTSTRAP=1` is refused
-- [ ] OPS-5 | high | install-ops | open | 10-reliability-operations.md | `migrate-data.sh`'s post-cutover byte-identical check is tripped by the new code's own boot writes: legacy migrations auto-roll back
+- [x] OPS-5 | high | install-ops | fixed:f33aa29 | 10-reliability-operations.md | `migrate-data.sh`'s post-cutover byte-identical check is tripped by the new code's own boot writes: legacy migrations auto-roll back
 - [ ] CI-5 | medium | install-ops | open | 13-ci-cd.md | Whether the api's live parity/integration suites run in CI depends on unpinned runner-preinstalled toolchains; nothing asserts they ran
 - [ ] CI-7 | medium | install-ops | open | 13-ci-cd.md | The Docker build path (the documented production install) is never exercised by CI; images are first built at release time
 - [x] DOC-3 | medium | install-ops | fixed:cdc5f2c | 14-contracts-docs.md | OpenAPI `servers: [{url: /v2}]` does not match any deployed base path
