@@ -194,7 +194,12 @@ describe('POST /requests/:id/apply — the route surface', () => {
     expect(body.ok).toBe(true);
     expect(body.bundle.state).toBe('triggered');
     expect(body.bundle.sha).toMatch(/^[0-9a-f]{40}$/);
-    expect(body.steps.map((s: { step: string; ok: boolean }) => `${s.step}:${s.ok}`)).toEqual(['prepare:true', 'gate:true', 'commit:true', 'trigger:true']);
+    // `plan-digest` sits between gate and commit (ARCH-3): the api re-checks the plan
+    // property itself rather than inferring it from the gate command's exit code. This
+    // request carries no pin (API-3 — no pin-writer is deployed), so the step passes as
+    // `unpinned` and says so in its detail rather than claiming verification.
+    expect(body.steps.map((s: { step: string; ok: boolean }) => `${s.step}:${s.ok}`)).toEqual(['prepare:true', 'gate:true', 'plan-digest:true', 'commit:true', 'trigger:true']);
+    expect(body.steps.find((s: { step: string }) => s.step === 'plan-digest').detail).toMatch(/NOT verified/);
     // the change really landed on the origin's main
     expect(g(bare, 'ls-tree', '--name-only', '-r', 'main')).toContain('environments/change.tf');
     // re-click ⇒ refused (already triggered)

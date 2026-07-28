@@ -80,12 +80,87 @@ export interface BundleSteps {
 export interface BundleOutcome {
   ok: boolean;
   /** Step log in execution order — becomes the audit payload. */
-  steps: Array<{ step: 'prepare' | 'gate' | 'commit' | 'trigger'; ok: boolean; detail: string }>;
+  steps: Array<{ step: 'prepare' | 'gate' | 'plan-digest' | 'commit' | 'trigger'; ok: boolean; detail: string }>;
   /** The landed commit on success. */
   sha?: string;
 }
 
 /** Sequential, stop-on-red, cleanup-always. Pure over the injected steps. */
+/**
+ * The line a gate command must print so the api can verify what it actually gated
+ * (ARCH-3). Case-insensitive, anywhere in the gate's stdout, last one wins.
+ */
+const GATE_DIGEST_LINE = /^\s*ccp-plan-digest:\s*([0-9a-f]{64})\s*$/gim;
+
+/**
+ * Extract the plan digest a gate command reported. Pure, so the parsing is testable
+ * without spawning anything.
+ *
+ * Returns `null` when the gate printed none — which is NOT the same as printing a wrong
+ * one, and the caller treats the two differently.
+ */
+export function parseGateDigest(out: string): string | null {
+  let last: string | null = null;
+  for (const m of out.matchAll(GATE_DIGEST_LINE)) last = (m[1] ?? '').toLowerCase();
+  return last;
+}
+
+/**
+ * Does the gate's self-reported digest satisfy the request's pinned one (ARCH-3)?
+ *
+ * ADR-0016 makes "the plan must equal the approved change" an Owner requirement, binding.
+ * As built, the api spawned the operator's shell string and trusted EXIT 0: the R-gates,
+ * the digest pin, and even which tool ran at all were the operator's command. The product's
+ * central safety property — "what was reviewed is exactly what runs" — held only on
+ * deployments whose operator wrote the right command, and a typo'd or weakened gate
+ * produced a green bundle with nothing in-product violated and no way to tell from the
+ * audit trail.
+ *
+ * This is the api re-checking the property itself rather than delegating it.
+ *
+ *  - No pin on the request  → nothing to verify. Today that is EVERY request (API-3: the
+ *    pin-writer does not exist), so this must not refuse, or the bundle stops working
+ *    entirely. Reported honestly as unverified rather than silently treated as passing.
+ *  - Pinned and the gate reports a MATCHING digest → verified.
+ *  - Pinned and the gate reports a DIFFERENT digest → refuse. This is the finding's whole
+ *    subject: the plan that would land is not the plan that was approved.
+ *  - Pinned and the gate reports NOTHING → refuse. Accepting silence would make the check
+ *    optional, and an optional safety check is one an operator's command can skip by
+ *    omission — which is the defect wearing a different hat (L-1).
+ */
+export type DigestVerdict =
+  | { ok: true; state: 'verified' | 'unpinned'; detail: string }
+  | { ok: false; detail: string };
+
+export function verifyGateDigest(pinned: string | undefined, gateOut: string): DigestVerdict {
+  const reported = parseGateDigest(gateOut);
+  if (pinned === undefined || pinned === '') {
+    return {
+      ok: true,
+      state: 'unpinned',
+      detail: reported
+        ? `gate reported ${reported.slice(0, 12)}… but the request carries no pinned plan — NOT verified`
+        : 'request carries no pinned plan — digest NOT verified (no pin-writer is deployed)',
+    };
+  }
+  if (reported === null) {
+    return {
+      ok: false,
+      detail:
+        `request pins plan ${pinned.slice(0, 12)}… but the gate reported no digest. ` +
+        'The gate command must print "ccp-plan-digest: <sha256>" so the api can verify that ' +
+        'what it gated is what was approved.',
+    };
+  }
+  if (reported !== pinned.toLowerCase()) {
+    return {
+      ok: false,
+      detail: `PLAN MISMATCH — approved ${pinned.slice(0, 12)}…, gate produced ${reported.slice(0, 12)}…`,
+    };
+  }
+  return { ok: true, state: 'verified', detail: `plan digest verified (${pinned.slice(0, 12)}…)` };
+}
+
 export async function runBundle(
   steps: BundleSteps,
   requestJson: string,
@@ -104,6 +179,13 @@ export async function runBundle(
     const gate = await steps.gate(prep.dir, reqPath);
     log.push({ step: 'gate', ok: gate.ok, detail: gate.detail });
     if (!gate.ok) return { ok: false, steps: log };
+
+    // ARCH-3 — the api verifies the reviewed-plan property itself, BEFORE committing,
+    // instead of inferring it from the operator command's exit code.
+    const pinned = (JSON.parse(requestJson) as { planDigest?: string }).planDigest;
+    const verdict = verifyGateDigest(pinned, gate.detail);
+    log.push({ step: 'plan-digest', ok: verdict.ok, detail: verdict.detail });
+    if (!verdict.ok) return { ok: false, steps: log };
 
     const commit = await steps.commit(prep.dir, prep.baseSha, message);
     log.push({ step: 'commit', ok: commit.ok, detail: commit.detail });
@@ -126,7 +208,11 @@ async function sh(
   cwd: string,
   extraEnv: Record<string, string>,
 ): Promise<{ status: number; out: string }> {
-  const r = await execCapture('bash', ['-lc', cmd], {
+  // `-c`, NOT `-lc` (ARCH-3). A login shell sources the operator's profile files into a
+  // security gate's environment, so what the gate does depends on shell dotfiles nobody
+  // reviewed alongside the command. The gate gets exactly the environment this code hands
+  // it and nothing else.
+  const r = await execCapture('bash', ['-c', cmd], {
     cwd,
     env: { ...process.env, ...extraEnv },
     timeoutMs: 15 * 60_000,

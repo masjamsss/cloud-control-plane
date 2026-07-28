@@ -236,6 +236,9 @@ export function bundleRequestPayload(req: RequestItem, projectId: string): Recor
     params: req.params,
     approvals: req.approvals,
     status: req.status,
+    // ARCH-3: the gate is told which plan was approved, so it can report a digest the api
+    // can check. Absent on every request today (API-3 — no pin-writer is deployed).
+    ...(req.planDigest !== undefined ? { planDigest: req.planDigest } : {}),
     ...(req.items ? { items: req.items } : {}),
   };
 }
