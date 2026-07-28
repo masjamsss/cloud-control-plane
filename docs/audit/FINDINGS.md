@@ -26,6 +26,12 @@ Partial fixes are honest and welcome — but they stay `open`, with the residue 
 rather than being rounded up to `fixed`. IMP-7 is the worked example: its divergence is
 gone, its recurrence guard is not, so the entry records both.
 
+**Which model should take what is in [`TRIAGE.md`](TRIAGE.md).** Every open finding is
+assigned to exactly one batch there, with a recommended model and a checkable statement of
+what "done" means. Batches are grouped by the files they touch, so two sessions can run in
+parallel without colliding — take a batch id, not a scattered set of findings. Ten findings
+are flagged **verify-before-you-fix**: earlier work may already have closed them.
+
 **Anything a fix deliberately leaves behind goes in [`RESIDUE.md`](RESIDUE.md).** A
 `**Residue:**` note inside a `FIXES.md` entry is a footnote to a closed finding — easy to
 write and impossible to find later. The residue ledger gives each one a state (`resolved` /
