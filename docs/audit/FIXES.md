@@ -1095,3 +1095,49 @@ stays open. And the helper is **duplicated** between `ccp/api/test/helpers/` and
 `ccp/app/src/test/helpers/` because the two packages have separate `node_modules` and
 `tsconfig` path maps; per **L-8** that divergence is a real risk, mitigated only by both
 copies reading the same `CCP_REQUIRE_INTEGRATION` variable and both being nine lines long.
+
+## OPS-2
+
+*Unhandled errors become 500 `INTERNAL` with zero server-side logging.*
+
+- [x] **Defect reproduced first** — `test/serverErrorLogging.test.ts` throws a `TypeError`
+      from a route and asserts what an operator would have: against the unfixed handler,
+      nothing at all. The response is `{code:"INTERNAL"}` and `console.error` is never
+      called, so `docker compose logs api` is empty for a real bug.
+- [x] **Cause, not symptom** — two gaps, not one. The route-level handler logged nothing,
+      **and** there was no `unhandledRejection`/`uncaughtException` handler anywhere in the
+      api, so a rejection outside a request — during boot, in the scheduler loop — had no
+      destination either. Both are now covered, and the process handlers install in
+      `server.ts` rather than `createApp`: the app factory runs once per test, and
+      attaching process listeners there leaks them.
+- [x] **Regression test** — 11 tests. Two negative tests confirmed: removing the log call
+      fails 2, removing redaction fails 3.
+- [x] **Failure is loud** — that *is* the fix. Worth noting what stays quiet: an
+      `ApiError` is deliberately **not** logged. It is a decided outcome inside the
+      taxonomy — a refusal, not a fault — and logging them would bury real faults under
+      every 403 the product emits by design, which is how an error log becomes something
+      nobody reads.
+- [x] **Evidence in the status line** — `c89f727`.
+- [x] **Lesson recorded** — L-15.
+
+**What is logged, and what is not.** Message, stack, method and path — enough to find the
+code and the request shape. Never the body, query string, headers or cookies: those carry
+credentials by construction, and a log is the one place a secret outlives the request that
+carried it. A test drives a request with a token in the query and a session cookie and
+asserts neither appears.
+
+**A duplication removed rather than added.** The URL/token redaction shapes moved out of
+`domain/scanner.ts` into `src/redact.ts` instead of being copied into the logger.
+`scanner.ts` had them first and for the right reason — the worker is handed a clone URL and
+an upload token, and a naive `err.message` can carry either — and `errors.ts` has the same
+exposure from the same strings. Copying would have been **L-8** in miniature. Tests assert
+both paths redact identically, and that scanner's display concerns (control-char stripping,
+truncation) did **not** move with them.
+
+**Residue:** neither process handler exits. `uncaughtException` is genuinely undefined
+behaviour and the textbook advice is to crash — but this process is supervised with
+`restart: unless-stopped`, and an api that exits on any stray throw is a restart loop that
+serves nothing. Staying up and loud is the better failure mode here; the exit policy is now
+a decision an operator can make from evidence they previously did not have. Logging is also
+stderr-only — there is no structured/JSON sink and no correlation id, which is a real
+observability gap this finding does not cover.

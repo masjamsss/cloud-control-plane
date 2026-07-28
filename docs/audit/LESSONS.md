@@ -360,3 +360,34 @@ assertion about the failure passes, vacuously. The state-machine tests use expli
 injection; the temp-file test uses a real, root-proof failure precisely because asserting
 "no leaked file" against an injection that never touches the disk would exercise none of
 the cleanup it claims to cover.
+
+### L-15 — A system that records everything except its own failures is not observable
+
+Findings: OPS-2
+
+This api maintains a hash-linked, tamper-evident audit chain of every action a user takes,
+verifies it on every readiness probe, and refuses to boot on a corrupt snapshot. It also
+mapped every unexpected exception to `{code:"INTERNAL"}` and logged **nothing** — no
+message, no stack, no route — and had no `unhandledRejection` handler at all. The care went
+entirely into recording what *users* did and none into recording what the *system* did
+wrong.
+
+That asymmetry is easy to acquire because the audit chain is a feature with a spec, and
+error logging is nobody's feature. But an operator debugging a recurring 500 has exactly
+the opposite need, and the product's own pitch — evidence — is what makes the gap
+embarrassing rather than merely inconvenient.
+
+**Do differently:** when a system's value proposition is evidence, check that the claim
+covers its own faults, not just its users' actions. The concrete version: for every failure
+path, ask where the *operator* reads about it. If the answer is "the HTTP response the
+end user got", there is no answer.
+
+Three judgements worth reusing from the fix. **Not everything belongs in an error log** —
+taxonomy refusals (403, 404) are decided outcomes, and logging them buries real faults
+under expected traffic until nobody reads the log. **A log is where a secret outlives the
+request that carried it** — so the body, query string, headers and cookies stay out
+entirely, and what does get logged is passed through redaction anyway, because an error
+message can quote a URL or token some other layer interpolated. And **the redaction shapes
+were moved rather than copied**: `scanner.ts` already had them for the same reason, and a
+second copy would have been L-8 waiting to happen — a defect fixed in one copy of a copied
+helper is not fixed.

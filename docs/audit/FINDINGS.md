@@ -369,7 +369,7 @@ Focus management, dialog semantics, duplicate DOM ids.
 
 No request logging, no request ids, missing healthchecks.
 
-- [ ] OPS-2 | high | observability | open | 10-reliability-operations.md | Unhandled errors become 500 `INTERNAL` with zero server-side logging
+- [x] OPS-2 | high | observability | fixed:c89f727 | 10-reliability-operations.md | Unhandled errors become 500 `INTERNAL` with zero server-side logging
 - [ ] ERR-7 | medium | observability | open | 09-error-handling.md | Unexpected errors become `{code:'INTERNAL'}` 500 with zero server-side logging
 - [ ] OPS-10 | medium | observability | open | 10-reliability-operations.md | No log rotation and no resource limits on any service
 - [ ] OPS-7 | medium | observability | open | 10-reliability-operations.md | No HTTP request logging and no request IDs anywhere in the api
