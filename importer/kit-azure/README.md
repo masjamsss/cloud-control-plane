@@ -192,7 +192,9 @@ apps) and per-scope children (role assignments, diagnostic settings, subnets) be
 ## Testing
 
 ```bash
-pip install python-hcl2==5.1.1     # the repo-pinned version (terraform.yml); normalize.py only
+pip install python-hcl2==5.1.1     # the repo-pinned version (scripts/gen-project-data.sh
+                                   # PIN_PYTHON_HCL2 — this used to name a CI workflow that
+                                   # was never shipped); normalize.py only
 python3 -m unittest discover -s importer/kit-azure/tests -v
 ```
 

@@ -60,7 +60,10 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "help" ]; then
 elif [ "$#" -gt 0 ] && [ "${1#-}" = "$1" ]; then MODE="$1"; shift; fi
 ENV_HOST="" ENV_API_HOST="" ENV_TOPOLOGY="same" ENV_NAME="" ENV_TAGLINE=""
 FORCE="${FORCE:-0}"
-# Terraform pin: 1.15.7 matches CI (.github/workflows/terraform.yml TF_VERSION) and
+# Terraform pin: 1.15.7. NOTE (CI-4/OPS-14): this used to anchor the pin to a CI
+# workflow that does not exist in this repo — the apply lane was never shipped. The
+# reference lane is now .github/workflows/ccp-apply.yml, which pins terraform via
+# hashicorp/setup-terraform. This value and
 # satisfies environments/prod's required_version ~> 1.10. Override via TF_VERSION.
 TF_VERSION="${TF_VERSION:-1.15.7}"
 

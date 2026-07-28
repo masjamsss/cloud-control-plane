@@ -25,3 +25,8 @@ jobs:
       - run: python3 -m pip install --quiet pyyaml
       - name: workflow path filters mirror the import graph
         run: bash scripts/ci/check-path-filters.sh
+      # CI-4 — the apply-lane gates must keep a workflow consumer, and no shipped file may
+      # point at a workflow that does not exist. Same reason this lane has no path filter:
+      # the change that breaks either relationship is the change a narrow filter excludes.
+      - name: shipped lanes have consumers and every workflow reference resolves
+        run: bash scripts/ci/check-shipped-lanes.sh
