@@ -96,7 +96,7 @@ Unguarded full-row writes and lost updates. Largely one root cause — the store
 - [ ] CONC-9 | medium | concurrency | open | 04-concurrency.md | Dual-control ack does not guard the pending row's status: a concurrently rejected proposal can still apply
 - [ ] DATA-8 | medium | concurrency | open | 03-data-integrity.md | Pending-change status transitions have no CAS: concurrent ack + reject can apply a change and record it as REJECTED
 - [ ] DATA-9 | medium | concurrency | open | 03-data-integrity.md | No single-writer guard: restore can be silently clobbered by a running server; nothing prevents two processes on one file
-- [ ] ERR-11 | medium | concurrency | open | 09-error-handling.md | The bundle idempotency claim guards on `status`, not `bundle.state`: concurrent applies can both run
+- [x] ERR-11 | medium | concurrency | fixed:09fb510 | 09-error-handling.md | The bundle idempotency claim guards on `status`, not `bundle.state`: concurrent applies can both run
 - [ ] ERR-8 | medium | concurrency | open | 09-error-handling.md | No process-level failure handling: no graceful shutdown, no rejection/exception handlers, npm-as-PID-1
 - [ ] OPS-8 | medium | concurrency | open | 10-reliability-operations.md | No graceful shutdown: `npm` as PID 1, no SIGTERM handling, default 10 s grace on the api
 - [ ] TEST-6 | medium | concurrency | open | 12-testing-quality.md | No route-level concurrency/race tests; store-level concurrency only
@@ -158,7 +158,7 @@ Failures that produce no signal — swallowed rejections, best-effort compensati
 States nothing can leave: wedged jobs, dead-end requests, permanently disabled controls.
 
 - [x] API-2 | high | stuck-state | fixed:a19e688 | 02-api-correctness.md | HALTED_* and orphaned APPLYING requests are unrecoverable dead-end states
-- [ ] ERR-2 | high | stuck-state | open | 09-error-handling.md | A crash or late write failure strands `bundle.state='running'` forever; no recovery path exists
+- [x] ERR-2 | high | stuck-state | fixed:09fb510 | 09-error-handling.md | A crash or late write failure strands `bundle.state='running'` forever; no recovery path exists
 - [x] ERR-3 | high | stuck-state | fixed:a19e688 | 09-error-handling.md | Scan jobs stuck in non-terminal states are unrecoverable and block all future scans for the project
 - [x] ERR-4 | high | stuck-state | fixed:a19e688 | 09-error-handling.md | A crashed apply worker strands a request in `APPLYING` forever, silently
 - [x] FE-3 | high | stuck-state | fixed:0b83aec | 05-frontend-flows.md | RequestForm: one server-side rejection permanently disables submit — the only way out abandons the drafted request

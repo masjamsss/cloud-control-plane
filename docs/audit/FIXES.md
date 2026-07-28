@@ -1224,3 +1224,66 @@ attributes *on purpose*, in order to back-fill them. That needs its own pass ove
 improvise a repair whose blast radius you have not measured). The hazard is kept as an
 **executable demonstration** in the test file rather than a comment, so it cannot be
 forgotten.
+
+## ERR-2
+
+*A crash or late write failure strands `bundle.state='running'` forever; no recovery path
+exists.*
+
+- [x] **Defect reproduced first** — `test/bundleClaimLease.test.ts` seeds the row a crash
+      leaves behind (`{state:'running'}` with an old timestamp) and applies again. Against
+      the unfixed route the answer is `409 BUNDLE_RUNNING`, and stays that way for every
+      future attempt: nothing else in the codebase writes `bundle`, so a fully-approved
+      change is permanently un-appliable through the portal.
+- [x] **Cause, not symptom** — a claim with no lease, which is **API-2's defect in a
+      second place**. The claim is now leased: an hour, well past the bundle's worst case
+      (longest step timeout 15 minutes, steps sequential), so a live run is never robbed of
+      its claim. A claim past the lease belongs to a run that never reported back and the
+      next apply takes it over. Settled on the apply attempt itself — the act the wedge
+      blocks is the act that clears it, the same lazy doctrine `settleCooling`,
+      `settleWindow` and `scanJobLease` already use.
+- [x] **Regression test** — 7 tests, including that a **live** claim still refuses
+      (exclusivity is unchanged), that a `triggered` bundle is left alone, and that a claim
+      with an unparseable timestamp counts as expired. Negative test confirmed: removing the
+      lease fails 3.
+- [x] **Failure is loud** — the takeover writes a `bundle-claim-expired` timeline event
+      rather than being silent. The abandoned run may have landed a commit before dying, so
+      "a previous attempt did not report back" is exactly what the next reader needs; a
+      clean-looking second run would hide it.
+- [x] **Evidence in the status line** — `09fb510`.
+- [x] **Lesson recorded** — L-11 (the same lesson API-2 and OPS-4 produced, now with a
+      third instance — a status with one writer, where that writer can die, is a dead end by
+      construction).
+
+**Residue:** ERR-12's half-state is untouched and stays open — if `commit` succeeds but
+`trigger` fails, the landed SHA survives only inside the audit `steps`, and a retry
+re-clones and dies at commit with a technically-true but actively misleading message. The
+lease makes the request re-appliable; it does not make that retry smarter.
+
+## ERR-11
+
+*The bundle idempotency claim guards on `status`, not `bundle.state`: concurrent applies
+can both run.*
+
+- [x] **Defect reproduced first** — the pre-check `req.bundle?.state === 'running'` is
+      read-then-act, and the CAS below it conditioned on `status` — an attribute the claim
+      **does not change**. So two near-simultaneous applies both passed the pre-check, both
+      satisfied the guard, and both ran full bundles: two clones, two gate runs, two pushes.
+      Only git's non-fast-forward rejection prevented a double landing, and the loser then
+      recorded `bundle-failed` over the winner's `triggered`.
+- [x] **Cause, not symptom** — a guard on the wrong attribute is not a weak guard, it is
+      no guard: it cannot discriminate between the two writers it exists to separate. The
+      claim now conditions on `eventSeq`, which the claim itself advances. **DATA-1 is what
+      made this possible** — before it, `eventSeq` was absent on new rows and this guard
+      would have been the same no-op in a different place.
+- [x] **Regression test** — included in the 7 above. Negative test confirmed: restoring the
+      `status` guard fails 4.
+- [x] **Failure is loud** — the loser gets `STATE_CONFLICT` instead of silently running a
+      second multi-minute bundle.
+- [x] **Evidence in the status line** — `09fb510`.
+- [x] **Lesson recorded** — L-17 covers the shape: a guard is only as good as the attribute
+      it compares, and "has a guard" is not the same as "is guarded".
+
+**The outcome write had the identical defect** and is fixed with it: it also conditioned on
+`status`, so a bundle outcome could land on a row that had moved underneath it — a cancel,
+a settle, or the losing half of the double-run the claim now prevents.
