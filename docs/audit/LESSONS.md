@@ -459,3 +459,35 @@ purpose in order to back-fill them. Shipping it alongside the narrow fix would h
 L-14's mistake with better intentions. It is left undone, with the hazard kept as an
 executable demonstration rather than a comment, so the next person inherits a failing-looking
 truth instead of a paragraph.
+
+### L-18 — An unsubscribed read is a cache with no invalidation, and it always looks fine
+
+Findings: FE-5
+
+`RequireAuth` called `currentUser()` — a plain function returning the current account. It
+is correct every time it runs. The defect is that it only runs when React happens to
+re-render for some *other* reason, so the guard's answer was whatever was true at the last
+render, indefinitely. An expired session therefore kept rendering the whole app, and a
+sign-out in another tab was equally invisible.
+
+Nothing about the call site looks wrong. `const user = currentUser()` reads like a fresh
+read, and in a sense it is — it is just never repeated. That is what makes this class hard
+to see in review and easy to reintroduce: the fix (`useAuthedAccount()`) differs from the
+bug by one identifier, and both compile, and both work in every manual test where you cause
+a re-render by clicking something.
+
+**Do differently:** in a component, treat any read of mutable module state as a
+subscription that has not been written yet. If the value can change without a prop or state
+change — session, settings, feature flags, another tab's writes — reading it unsubscribed
+means the UI can be arbitrarily stale with no signal. The tell is a plain function call
+where the surrounding code uses hooks; this app already had `useSettings`, `useCurrentUser`
+and `useTeams` doing it properly, and the guards were the place nobody converted.
+
+The other half is worth stating separately, because the fix needed both and either alone
+would have looked like progress while changing nothing. **A subscription with nothing to
+observe is inert, and an event with nobody listening is lost.** Here the HTTP layer never
+cleared the session on a 401 (nothing to observe) *and* the guard never subscribed (nobody
+listening). Fixing the clear alone leaves a stale guard; fixing the guard alone leaves it
+subscribed to a value that never changes. When a symptom needs two mechanisms to cooperate,
+verify both ends — the two-sided negative test is what proves the wiring, not the fix on
+either side.

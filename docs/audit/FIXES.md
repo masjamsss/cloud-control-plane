@@ -1287,3 +1287,46 @@ can both run.*
 **The outcome write had the identical defect** and is fixed with it: it also conditioned on
 `status`, so a bundle outcome could land on a row that had moved underneath it — a cancel,
 a settle, or the losing half of the double-run the claim now prevents.
+
+## FE-5
+
+*Api-mode session expiry is never detected in-app — the UI stays "signed in" while every
+call fails.*
+
+- [x] **Defect reproduced first** — `src/test/sessionExpiry.test.ts` drives the client with
+      a fetch that answers `401 SESSION_EXPIRED` and asserts on the session cache. Against
+      the unfixed client the cache stays populated, which is the whole bug: `RequireAuth`
+      reads it, keeps rendering the app, and the user sits on a page where every list hangs
+      on "Loading…" and every mutation fails with a bare reason and no route back to
+      sign-in. Recovery required a manual full reload.
+- [x] **Cause, not symptom** — two causes, and **fixing either alone leaves the zombie UI.**
+      (1) No 401 handling outside `me()`, so nothing ever cleared the cache; the check now
+      lives in `request()`, the one place every call passes through — not at ~200 call
+      sites. (2) The guards read the **unsubscribed** `currentUser()`, which answers with
+      whatever was true at the last render and is never told it changed; they now read
+      `useAuthedAccount()`, which is what turns the clear into a redirect.
+- [x] **Regression test** — 6 tests. Three negative tests confirmed: removing the handling
+      fails 2, clearing on *any* 401 fails 2, and reading the original body instead of a
+      clone fails exactly the test written for it.
+- [x] **Failure is loud** — the user is returned to `/login` instead of being left on a
+      page where nothing works and nothing says why.
+- [x] **Evidence in the status line** — `85f2980`.
+- [x] **Lesson recorded** — L-18.
+
+**Only session-class codes clear**: `NO_SESSION`, `SESSION_EXPIRED`, `SESSION_INVALIDATED`.
+`BAD_CREDENTIALS` and `TOTP_REQUIRED` are also 401 but describe a login **attempt**, not a
+lost session. "Any 401" is the tempting rule and it is wrong twice over: wrong in principle,
+and it would fight the multi-step login flow, where a TOTP challenge is the *expected*
+answer rather than a failure.
+
+**The response is cloned before the peek.** The caller still owns the body and reads it for
+its own error message; consuming it here would break every error path in `httpApi.ts`. That
+is invisible until something reads twice, so a test pins it.
+
+**Also closed in passing:** the guards were blind to a **cross-tab sign-out** for the same
+unsubscribed-read reason. `subscribeSessionChanged` is storage-backed precisely so it can
+see one.
+
+**Residue:** the guard half is not directly tested — `guards.tsx` needs a mounted router,
+and this repo has no jsdom. What is tested is the seam it depends on. The redirect itself
+rests on `useSyncExternalStore` behaving as it does everywhere else in this app.
