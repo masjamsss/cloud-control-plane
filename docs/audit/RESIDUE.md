@@ -100,6 +100,22 @@ A considered trade rather than an oversight: a vague check nobody trusts gets de
 a specific one naming the alias and the file count gets fixed. But it is a limit, not a
 guarantee, and it belongs with the rest of the CI-completeness work.
 
+### R-30 · The built-in gate runner was not shipped
+*Residue on **ARCH-3**.*
+**Tracked by: ARCH-2.**
+
+ARCH-3's primary recommendation is a built-in gate runner invoking a pinned `catalogctl`
+with fixed arguments, demoting the free-form command to a labelled escape hatch. What landed
+is the "at minimum" clause: the api verifies the plan digest rather than assuming it. A
+deployment can still run any tool it likes as the gate.
+
+Tracked against ARCH-2 because that finding owns the same seam — the armed lanes' single
+deployment-global command/credential set — and a built-in runner is the same change ARCH-2's
+per-project resolution needs.
+
+Note also that the verification is **inert on every real request today**: no request carries
+a plan pin, because the pin-writer does not exist (R-21 / API-3).
+
 ### R-4 · `planSummary` is typed `string` in the contract
 *Residue on **DOC-2**.*
 **Tracked by: DOC-11.**

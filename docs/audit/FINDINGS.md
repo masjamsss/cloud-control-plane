@@ -300,7 +300,7 @@ Red suites, silent skips, fixtures that pin the wrong premise.
 
 Guards that pass when they should refuse.
 
-- [ ] ARCH-3 | high | fail-open | open | 01-architecture.md | The "reviewed-plan ≡ applied-plan" guardrail is delegated to unverifiable operator shell strings
+- [x] ARCH-3 | high | fail-open | fixed:a64839a | 01-architecture.md | The "reviewed-plan ≡ applied-plan" guardrail is delegated to unverifiable operator shell strings
 - [x] CTL-1 | high | fail-open | fixed:bd7275b | 07-catalogctl.md | Full-line comment above a map entry corrupts every literal-map edit (duplicate keys, defeated KEY_CONFLICT guard, silent no-op removes) — exit 0
 - [ ] CTL-4 | medium | fail-open | open | 07-catalogctl.md | plan-check R1 structurally vetoes every legitimate plan for a `local.`-targeted foreach op
 - [ ] CTL-6 | medium | fail-open | open | 07-catalogctl.md | `danglingRef` substring scan falsely refuses removal when another resource's name extends the target's name

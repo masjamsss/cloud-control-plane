@@ -642,3 +642,33 @@ synthesized slug resolves" — passes against a three-line fixture and proves al
 the finding was 194 specific slugs. The assertion that earns its place enumerates every slug
 the producer can emit and requires the consumer to resolve all of them. That test would have
 failed the day the defect was introduced, which no fixture test here would have.
+
+### L-24 — A safety property you cannot check is a safety property you do not have
+
+Findings: ARCH-3
+
+The product's headline claim is "what was reviewed is exactly what runs — any difference at
+all, and it stops." The implementation ran the operator's shell command and read its exit
+code. Every part of the claim — re-deriving the change, the R-gates, the digest comparison,
+which tool ran at all — lived in a string the api never inspected. On a correctly configured
+deployment the property held; on a typo'd one it did not, and **nothing anywhere could tell
+the difference**. Determinism became a per-deployment accident.
+
+Delegation was not the mistake — the gate genuinely has to run operator-supplied tooling.
+The mistake was delegating the *verification* along with the work. The fix is small and
+general: have the delegate **report what it did** in a form the caller can check against
+something it already knows, and check it. Here the gate prints the digest it produced and
+the api compares it to the pin the request carries.
+
+**Do differently:** when a component you invoke is responsible for a property you advertise,
+do not accept its exit code as evidence. Ask what artifact of the work you can verify
+independently, and require it. If the answer is "nothing", the property is aspirational and
+the docs should say so rather than asserting it.
+
+The subtle half is what to do when verification is *impossible* rather than failed, and the
+two cases must not be collapsed. Silence from the delegate on a request that HAS a pin is a
+refusal — accepting it makes the check optional, and an optional safety check is one any
+command can skip by omission. But a request with **no** pin cannot be verified by anyone, and
+there the honest report is "not verified", not a pass and not a failure. Today that is every
+request in this system. A check that reported those as green would have been worse than the
+original defect: it would have manufactured the confidence the original merely lacked.

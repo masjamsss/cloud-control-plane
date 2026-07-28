@@ -1651,3 +1651,51 @@ the tree.*
 
 **Ignored rather than merely absent**, deliberately. "Absent" is a state that lasts until
 the next person runs the generator; "ignored" is a decision that survives it.
+
+## ARCH-3
+
+*The "reviewed-plan ≡ applied-plan" guardrail is delegated to unverifiable operator shell
+strings.*
+
+- [x] **Defect reproduced first** — `test/gateDigestVerify.test.ts` drives `runBundle` with
+      a gate that reports a **different** digest from the request's pin. Against the unfixed
+      code the bundle commits and triggers: nothing in-product examined the plan, only the
+      exit code of the operator's command.
+- [x] **Cause, not symptom** — the api **delegated a binding safety property** to a shell
+      string. ADR-0016 says the api re-derives the change and runs the plan-check gates; as
+      built it ran `bash -lc ""` and trusted exit 0, so the R-gates,
+      the digest pin and *which tool ran at all* were the operator's. The api now performs
+      the check itself, before committing — the finding's stated minimum, done in full. The
+      payload also carries `planDigest`, which it previously did not, so the gate could not
+      have known what it was meant to reproduce.
+- [x] **Regression test** — 12 tests. Both negative tests confirmed: removing the
+      verification, and accepting a missing digest, each fail exactly one.
+- [x] **Failure is loud** — a mismatch refuses with `PLAN MISMATCH` naming both digests,
+      and the refusal is recorded as its own `plan-digest` step in the bundle's audit
+      evidence rather than folded into the gate's 400-char output tail.
+- [x] **Evidence in the status line** — `a64839a`.
+- [x] **Lesson recorded** — L-24.
+
+**The two interesting cases are not match/mismatch:**
+- **Pinned, gate reports nothing → REFUSE.** Accepting silence would let any operator
+  command skip the check by omission — the original defect wearing a different hat (**L-1**).
+- **No pin → do not refuse, and do not claim verification.** Today that is *every* request
+  (**API-3**: no pin-writer is deployed), so refusing would brick the bundle entirely and
+  claiming success would be a lie. The step reports "NOT verified" and says why. An unpinned
+  request whose gate *does* report a digest is still not verified — there is nothing to
+  compare against, and treating the gate's own claim as confirmation is letting the thing
+  being checked grade itself.
+
+**Ordering is the safety property**: the refusal happens *before* commit, because a refusal
+afterwards has already landed the wrong plan on `main`.
+
+**Also hardened:** `bash -lc` → `bash -c`. A login shell sources the operator's profile
+files into a security gate's environment, so what the gate did depended on dotfiles nobody
+reviewed alongside the command.
+
+**Residue — the finding's PRIMARY recommendation is not done.** It asks for a built-in gate
+runner invoking a pinned `catalogctl` with fixed arguments, demoting the free-form command
+to a labelled escape hatch. What landed is the "at minimum" clause. The property is now
+*verified* rather than *assumed*, which is the substantive half — but a deployment can still
+run any tool it likes as the gate, and until a pin-writer exists (**API-3**) the verification
+is inert on every real request.
