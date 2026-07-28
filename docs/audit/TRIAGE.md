@@ -564,3 +564,82 @@ like bugs:
 regardless: the same residue was recorded on three separate findings, each noting it "still
 has no finding", and nothing picked it up — which is why this file exists at all.
 
+
+---
+
+# How many Sonnet lanes can run at once
+
+**75 findings, 9 batches — but batches are not lanes.** Three of the Sonnet batches all
+edit `ccp/app/src/`, and B-S9 ("various") spans four unrelated components. Regrouped by what
+they actually touch, the Sonnet work is **7 lanes that can run concurrently**, plus two
+things that cannot.
+
+| lane | batches | findings | owns | why it is one lane |
+| --- | --- | ---: | --- | --- |
+| **L1 · app** | B-S2, B-S5, B-S6 | 23 | `ccp/app/src/` | The whole front end. These three batches all reach into `ccp/app/src/` — B-S2's `StatusBadge` label map is the same file B-S5 edits for UI-5/6/7, and B-S6's PERF-9 touches `ServiceConsole` — so they are ONE lane, not three. |
+| **L2 · api-domain** | B-S7, plus API-11 from B-S9 | 9 | `ccp/api/src/domain/, scanner worker` | API-11 moves here from B-S9: the audit-chain read path is `domain/audit.ts`, so leaving it in a 'various' batch would collide with this lane. |
+| **L3 · ci-and-ops** | B-S8, plus OPS-10 / OPS-13 / OPS-15 from B-S9 | 13 | `.github/workflows/, scripts/, docker-compose*.yml` | The ops items live in `scripts/` and compose, which B-S8 already owns. Splitting them out would create a collision, not a lane. |
+| **L4 · docs** | B-S3 | 11 | `docs/, ccp/api/README.md, tools/catalogctl/README.md` | Pure documentation accuracy. Collides with nothing, and every item wants a check added so it cannot drift again. |
+| **L5 · catalogctl** | CTL-6, CTL-7, CTL-8 from B-S9 | 3 | `tools/catalogctl/ (Go)` | Go, self-contained. CTL-6 is a safety gate — match identifiers exactly and keep a fixture proving the true-positive still refuses. |
+| **L6 · importer** | IMP-5, IMP-9, IMP-10, IMP-11, IMP-12, IMP-13 from B-S9 | 6 | `importer/, kit-azure (Python + shell)` | Python and shell, self-contained. Note the deliberate no-`set -e` style in IMP-13 — work within it, don't 'fix' it. |
+| **L7 · contract** | B-S4, plus DATA-17 and ARCH-13 from B-S9 | 4 | `openapi/, ccp/api/src/store/, ccp/api/test/` | Small. DATA-17 is a store test; ARCH-13 is the project-id grammar's single home. |
+
+**Run last, alone:**
+
+- **`B-S1` (5 findings) — verify-and-close.** It writes only the ledger, so it collides with
+  every other lane by construction. It is also the cheapest work here and the most likely to
+  be invalidated by a parallel lane closing the same thing. Run it after the others land.
+- **ARCH-16 (vestigial code and stale references)** — cross-cutting by definition. Deleting
+  dead code while six lanes are adding code is how you delete something that just became
+  live. Last, alone.
+
+## The real ceiling is the ledger, not the code
+
+Seven lanes is what the *source tree* allows. What actually caps parallelism is that every
+fix touches the same four ledger files. Measured across the 8 fix commits already on this
+branch:
+
+| file | touched by |
+| --- | --- |
+| `docs/audit/FIXES.md` | 8 of 8 |
+| `docs/audit/FINDINGS.md` | 7 of 8 |
+| `scripts/findings-baseline.txt` | 7 of 8 |
+| `docs/audit/RESIDUE.md` | 3 of 8 |
+
+`FIXES.md` and `RESIDUE.md` are append-only at the end of the file, so two parallel sessions
+conflict there **every time** — git sees two additions at the same location.
+`findings-baseline.txt` is a single line, so it conflicts every time too, and a careless
+resolution is silently wrong (it must reflect *both* lanes' closures, not the later one's).
+
+**The baseline conflict is avoidable, and this is the one operational thing worth knowing:
+the baseline is a CEILING, not an exact match.** `findings-gate.sh` fails only when
+`n_open > baseline`. A lane that closes findings without touching the file leaves the open
+count *lower* than the baseline, and the gate passes. So:
+
+- **Parallel lanes should not touch `scripts/findings-baseline.txt` at all.**
+- One reconciliation pass at the end tightens it to the true count, in a single commit.
+
+That leaves `FIXES.md` and `RESIDUE.md` as the remaining friction. They are append-only
+conflicts — mechanical to resolve (keep both), but they arrive on every merge. With 7 lanes
+that is 7 trivial-but-real conflicts per round.
+
+## What I would actually run
+
+**Four to five concurrent lanes**, not seven. The extra two lanes buy little: L5 (3
+findings), L7 (4) and L2 (9) are small enough that a single session absorbs one of them
+alongside another lane faster than the merge overhead of a separate branch.
+
+A reasonable shape:
+
+| session | lanes | findings |
+| --- | --- | ---: |
+| 1 | L1 app | 23 |
+| 2 | L3 ci-and-ops | 13 |
+| 3 | L4 docs | 11 |
+| 4 | L2 api-domain + L7 contract | 13 |
+| 5 | L5 catalogctl + L6 importer | 9 |
+| then | B-S1 verify-and-close, then ARCH-16 | 6 |
+
+Each on its own branch off the same base, each skipping the baseline file, merged in any
+order, with one reconciliation commit at the end.
+
