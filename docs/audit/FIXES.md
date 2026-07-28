@@ -878,3 +878,113 @@ shape — noted rather than done.
       became an explicit "could not refresh".
 - [x] **Evidence in the status line** — `b5b703b`.
 - [x] **Lesson recorded** — L-12.
+
+## FE-3
+
+*RequestForm: one server-side rejection permanently disables submit — the only way out
+abandons the drafted request.*
+
+- [x] **Defect reproduced first** — `test/refusalFlow.test.ts` reproduces both paths as
+      data: a refusal keyed to one draft, then the same refusal consulted after the
+      requester edits the offending parameter, and after an admin lifts a freeze. Against
+      the unfixed behaviour it still blocks in both. In the product that meant a corrected
+      form with a dead submit button, explaining a value no longer in it — and the only
+      escape, leaving the route, **discards the entire drafted request**.
+- [x] **Cause, not symptom** — and the finding's own recommendation was **not** taken.
+      It proposes disabling submit only on the live gate and rendering the refusal as an
+      inline error. That drops a property worth keeping: the server *did* decide, and
+      re-sending an identical draft would only be refused again. The defect is not that
+      the refusal blocks — it is that it outlived what it was a verdict **about**. So the
+      refusal is stored with a key describing the judged state and does not apply once
+      that key changes. Clearing was never an action anyone took, which is precisely why
+      it never happened; being out of date is a *consequence* of editing, so it belongs
+      in the derivation rather than in an effect someone must remember to write.
+- [x] **Regression test** — `test/refusalFlow.test.ts` (9), covering the expiry cases and
+      equally the cases where the refusal must **not** expire, since the failure mode of
+      an over-eager fix is re-enabling submit for a draft the server already rejected.
+      Negative test confirmed: making the refusal permanent again fails exactly the 3
+      expiry tests.
+- [x] **Failure is loud** — n/a in the crash sense; the fix restores a control the user
+      needs. The related loudness is that an expired refusal returns `undefined`, not
+      `null` — `ReviewStep` disables on `blocked !== undefined`, so returning `null`
+      would leave the button dead while showing no reason at all, strictly worse than the
+      original bug. A test pins it.
+- [x] **Evidence in the status line** — `0b83aec`.
+- [x] **Lesson recorded** — L-13.
+
+**Why the live settings are in the key too:** a refusal can be about the *world* rather
+than the draft. A freeze is not something the requester can edit their way out of, so a
+stale freeze message is the version of this bug that no correction escapes. While the gate
+is still closed `liveBlockedReason` keeps the button disabled from the *current* snapshot,
+so dropping the stale copy loses nothing.
+
+## ERR-4
+
+*A crashed apply worker strands a request in `APPLYING` forever, silently.*
+
+Closed by the **API-2** fix — same defect, filed independently in the error-handling
+report. Verified against ERR-4's own recommendation rather than by title match: it asks to
+"record `claimedAt` on the claim write" (now `applyClaimedAt`) and "on a later tick, treat
+an `APPLYING` row older than the executor timeout as abandoned → transition to
+`HALTED_APPLY_FAILED` … and notify" (now `APPLY_LEASE_EXPIRED`, with an
+`apply-lease-expired` notification naming that a human must confirm what landed). Both
+satisfied. See **API-2** for the definition-of-done boxes and `test/schedulerStuckState.test.ts`.
+
+- [x] **Evidence in the status line** — `a19e688`.
+- [x] **Lesson recorded** — L-11.
+
+## ERR-3
+
+*Scan jobs stuck in non-terminal states are unrecoverable and block all future scans for
+the project.*
+
+Closed by the **OPS-4** fix — same defect from the error-handling report's angle. ERR-3
+offers three remedies (auto-fail expired jobs at claim/queue time, let the queue route
+supersede them, or add an admin force-fail verb); the lazy lease settle implements the
+first, and does it on the progress read as well, so the wizard's endless spinner becomes
+an honest terminal failure rather than only unblocking the next queue attempt. ERR-3's
+extra cause — `mintOnboardToken` throwing *after* the claim committed — is covered, since
+that leaves exactly the aged `claimed` row the lease sweeps. See **OPS-4** and
+`test/scanJobLease.test.ts`.
+
+- [x] **Evidence in the status line** — `a19e688`.
+- [x] **Lesson recorded** — L-11.
+
+**Residue:** ERR-3 also names the worker side — `worker.go` returns without attempting a
+terminal `failed` report after a progress-report failure. That is **ERR-15** and stays
+open. The server-side lease makes recovery independent of the worker's behaviour, which is
+the stronger guarantee, but it does not make the worker better-behaved.
+
+## UI-1
+
+*Non-admin data pages have no fetch-error path: any API failure leaves a permanent
+"Loading…" with no message or retry.*
+
+Closed by the **FE-2** fix — the same defect, found independently by the UI-robustness
+report. Checked against UI-1's own file list rather than by title: `MyRequests`,
+`ServiceConsole`, `RequestDetail`, `ApprovalsQueue`, `RequestForm`, `BulkRequestForm`,
+`CommandPalette`, `Notifications` and `DriftPage` — all nine carry a rejection path, and a
+repo-wide search for the unguarded shape under `ccp/app/src` returns nothing. UI-1 also
+names the retry as the missing piece the admin pages never had; that is `components/LoadError.tsx`.
+
+- [x] **Evidence in the status line** — `b5b703b`.
+- [x] **Lesson recorded** — L-12.
+
+## UI-4
+
+*Mutation handlers `await` API calls without try/catch: a network failure permanently
+wedges busy/submitting state.*
+
+Closed by the **FE-1** fix. Verified against UI-4's three named handlers specifically:
+`ApprovalsQueue.approve` and `confirmReject`, `RequestForm.onSubmit`, and
+`RequestDetail.handleLinkPr` — the last of which was checked line by line, since it is the
+one UI-4 names that FE-1's own write-up does not. All four reset their busy flag on every
+path.
+
+UI-4's recommendation is `try/finally { setBusy(null) }` at each call site. The seam
+approach was taken instead: `attempt` never rejects, so the reset cannot be skipped even
+if a future call site forgets — a guarantee thirty correct `finally` blocks do not give,
+because it also covers the call site nobody has written yet.
+
+- [x] **Evidence in the status line** — `b5b703b`.
+- [x] **Lesson recorded** — L-12.

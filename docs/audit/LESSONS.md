@@ -286,3 +286,39 @@ to move the writes, not to add a second check. And the quietest bug of the group
 pending state is indistinguishable from a slow one**. Nothing looked broken. When clearing
 such a flag, clear it toward the *refusing* default, never the permissive one — the whole
 hazard is that "we never got an answer" and "everything is allowed" are one edit apart.
+
+### L-13 — State that must be cleared will not be; make going stale a consequence, not a chore
+
+Findings: FE-3
+
+`blockedReason` held the server's refusal of a draft, and `ReviewStep` disabled submit
+whenever it was set. There was no `setBlockedReason(null)` **anywhere in the file** — not
+in the reseed effect that resets values, touched, justification, schedule and confirmation,
+and not on the next submit. The verdict was correct when written and then never expired,
+so a corrected form kept a dead button explaining a value no longer in it, and the only
+escape discarded the draft.
+
+The instinct is to add the missing clear. That is the same bet that already lost: it works
+until the next state that should invalidate it is added, and nobody thinks to extend the
+list. Here the invalidating inputs were *five* — every parameter, the schedule, the
+justification, the replace confirmation, and the live settings — and the reseed effect
+already demonstrated how that goes, resetting four of them and missing this one.
+
+So the refusal is stored **with a key describing the state it judged**, and is derived as
+inapplicable once that key changes. Nothing has to remember anything: going stale is a
+consequence of editing rather than a chore attached to it. The general form — when a value
+is a *verdict about* other state, store what it judged alongside it, and derive its
+validity — beats any discipline about clearing, because it cannot be forgotten.
+
+Deriving also removed a hazard the effect version had: an effect keyed on the draft races
+the `setRefusal` that follows an awaited submit, and can erase the message the requester
+needs to read. A derivation has no ordering at all.
+
+**Two things worth copying beyond the mechanism.** The finding's own recommendation was to
+stop blocking on the refusal entirely and render it inline. That would have fixed the
+symptom by discarding a real property — the server *did* decide, and re-sending an
+identical draft only earns the same refusal. Read a recommendation as evidence about the
+defect, not as the specification for the fix (L-4 again, from the other direction). And the
+tests pin the cases where the refusal must **not** expire, because the failure mode of an
+over-eager fix — a button that re-enables for a draft already rejected — is invisible in a
+suite that only tests that the bug is gone.

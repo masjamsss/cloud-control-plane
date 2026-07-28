@@ -159,9 +159,9 @@ States nothing can leave: wedged jobs, dead-end requests, permanently disabled c
 
 - [x] API-2 | high | stuck-state | fixed:a19e688 | 02-api-correctness.md | HALTED_* and orphaned APPLYING requests are unrecoverable dead-end states
 - [ ] ERR-2 | high | stuck-state | open | 09-error-handling.md | A crash or late write failure strands `bundle.state='running'` forever; no recovery path exists
-- [ ] ERR-3 | high | stuck-state | open | 09-error-handling.md | Scan jobs stuck in non-terminal states are unrecoverable and block all future scans for the project
-- [ ] ERR-4 | high | stuck-state | open | 09-error-handling.md | A crashed apply worker strands a request in `APPLYING` forever, silently
-- [ ] FE-3 | high | stuck-state | open | 05-frontend-flows.md | RequestForm: one server-side rejection permanently disables submit — the only way out abandons the drafted request
+- [x] ERR-3 | high | stuck-state | fixed:a19e688 | 09-error-handling.md | Scan jobs stuck in non-terminal states are unrecoverable and block all future scans for the project
+- [x] ERR-4 | high | stuck-state | fixed:a19e688 | 09-error-handling.md | A crashed apply worker strands a request in `APPLYING` forever, silently
+- [x] FE-3 | high | stuck-state | fixed:0b83aec | 05-frontend-flows.md | RequestForm: one server-side rejection permanently disables submit — the only way out abandons the drafted request
 - [x] OPS-4 | high | stuck-state | fixed:a19e688 | 10-reliability-operations.md | A scan job whose worker dies stays `claimed`/`cloning`/`scanning` forever and permanently wedges that project's onboarding
 - [ ] UI-2 | high | stuck-state | open | 06-frontend-ui-robustness.md | Resource drill-in dead-ends for every "named service" whose slug is not a literal manifest file: all 16 azure-fixture services are broken
 - [ ] API-4 | medium | stuck-state | open | 02-api-correctness.md | The bundle "claim" is not a mutual-exclusion, and a crashed bundle wedges the request at `running`
@@ -169,7 +169,7 @@ States nothing can leave: wedged jobs, dead-end requests, permanently disabled c
 - [ ] CONC-10 | medium | stuck-state | open | 04-concurrency.md | Stuck `APPLYING` after a worker crash has no reclaim or operator path
 - [ ] ERR-12 | medium | stuck-state | open | 09-error-handling.md | Trigger failure after a landed commit: honest-but-dead-end half state, and spawn timeouts are indistinguishable from exit-1
 - [ ] ERR-5 | medium | stuck-state | open | 09-error-handling.md | `TerraformExecutor.init()` caches a rejected promise: one transient init failure bricks the executor until restart
-- [ ] UI-4 | medium | stuck-state | open | 06-frontend-ui-robustness.md | Mutation handlers `await` API calls without try/catch: a network failure permanently wedges busy/submitting state
+- [x] UI-4 | medium | stuck-state | fixed:b5b703b | 06-frontend-ui-robustness.md | Mutation handlers `await` API calls without try/catch: a network failure permanently wedges busy/submitting state
 - [ ] API-15 | low | stuck-state | open | 02-api-correctness.md | A dangling idempotency marker makes its key permanently unusable
 - [ ] DATA-12 | low | stuck-state | open | 03-data-integrity.md | Crash between the version-row transact and the file write leaves an activatable orphan row in the upload lane
 - [ ] ERR-15 | low | stuck-state | open | 09-error-handling.md | Scan worker: a failed progress report abandons the job without a terminal status; a claim non-2xx is process-fatal with no backoff
@@ -306,7 +306,7 @@ Missing error and retry paths; permanent loading states.
 
 - [x] FE-1 | high | frontend-ux | fixed:b5b703b | 05-frontend-flows.md | Mutation calls have no rejection path — a network failure strands the acting control in a permanent busy state
 - [x] FE-2 | high | frontend-ux | fixed:b5b703b | 05-frontend-flows.md | Initial page loads have no error state — any failed fetch leaves an eternal "Loading…" with no retry
-- [ ] UI-1 | high | frontend-ux | open | 06-frontend-ui-robustness.md | Non-admin data pages have no fetch-error path: any API failure leaves a permanent "Loading…" with no message or retry
+- [x] UI-1 | high | frontend-ux | fixed:b5b703b | 06-frontend-ui-robustness.md | Non-admin data pages have no fetch-error path: any API failure leaves a permanent "Loading…" with no message or retry
 - [ ] ERR-9 | medium | frontend-ux | open | 09-error-handling.md | GitHub App credential fetches have no timeout, and any failure terminally fails the scan job with no retry
 - [ ] UI-9 | medium | frontend-ux | open | 06-frontend-ui-robustness.md | `/login`, `/onboarding`, and the LegacyRedirect route have no errorElement: a render error there shows React Router's raw default error screen
 - [ ] IMP-11 | low | frontend-ux | open | 08-importer-schemadump.md | `payloads.py` block scanner: a column-0 `}` inside a heredoc body truncates the skeleton and ships it
