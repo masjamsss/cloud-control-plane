@@ -18,6 +18,7 @@ import type {
 import type { DriftProposal, DriftReport, DriftStatus } from '@/types/drift';
 import { noCapabilities, type ServerInfo } from '@/lib/serverInfo';
 import { currentProjectId, SAMPLE_ESTATE_ID } from '@/lib/projectScope';
+import { clearApiSession } from '@/lib/apiSession';
 import { parseManifests } from '@/types/manifestSchema';
 import { manifests as bundledManifests } from '@/data/manifests';
 import inventoryData from '@/data/inventory.json';
@@ -1114,8 +1115,47 @@ export function createHttpApiClient(baseUrl: string, opts?: HttpApiOptions): Htt
     if (scope) headers.set(PROJECT_HEADER, scope);
     if (init.body != null && !headers.has('Content-Type'))
       headers.set('Content-Type', 'application/json');
-    return doFetch(`${baseUrl}${path}`, { ...init, headers, credentials: 'include' });
+    const res = await doFetch(`${baseUrl}${path}`, { ...init, headers, credentials: 'include' });
+    await noteSessionLoss(res);
+    return res;
   }
+
+  /**
+   * FE-5 — a 401 that says the SESSION is gone must end the client's belief in it.
+   *
+   * Identity in api mode is the in-memory `apiSession` cache, set at login/TOTP/`me()` and
+   * cleared only by explicit logout. There was no 401 handling anywhere outside `me()`, so
+   * once a session expired (12h absolute / 30m idle) the cache stayed populated: the guard
+   * kept rendering the app, every list hung on "Loading…", every mutation failed with a
+   * bare server reason, and the only way out was a manual full reload. Every session that
+   * outlived the idle window ended in a zombie UI.
+   *
+   * This is the one place every call passes through, which is why it belongs here rather
+   * than at ~200 call sites.
+   *
+   * ONLY session-class codes clear. `BAD_CREDENTIALS` and `TOTP_REQUIRED` are also 401 but
+   * describe a login ATTEMPT, not a lost session — clearing on them would be wrong in
+   * principle and would fight the multi-step login flow, where a TOTP challenge is the
+   * expected answer rather than a failure.
+   *
+   * The response is CLONED before reading. The caller still owns the body and will read it
+   * for its own error message; consuming it here would break every error path in the file.
+   */
+  async function noteSessionLoss(res: Response): Promise<void> {
+    if (res.status !== 401) return;
+    const body = (await res
+      .clone()
+      .json()
+      .catch(() => null)) as { code?: string } | null;
+    if (body?.code !== undefined && SESSION_LOST_CODES.has(body.code)) clearApiSession();
+  }
+
+  /**
+   * The 401 codes that mean "the session you had is over" — as opposed to "this login
+   * attempt did not succeed". Kept as an explicit set rather than "any 401" so the login
+   * flow's own 401s (bad password, TOTP challenge) cannot clear anything.
+   */
+  const SESSION_LOST_CODES = new Set(['NO_SESSION', 'SESSION_EXPIRED', 'SESSION_INVALIDATED']);
 
   async function readError(res: Response): Promise<{ code: string; reason: string }> {
     const body = (await res.json().catch(() => null)) as { code?: string; reason?: string } | null;
