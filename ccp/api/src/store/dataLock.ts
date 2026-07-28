@@ -1,4 +1,4 @@
-import { openSync, closeSync, mkdirSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { hostname } from 'node:os';
 
@@ -30,23 +30,50 @@ import { hostname } from 'node:os';
  * in a codebase whose whole posture is "no dependency you cannot read". So: `O_EXCL`
  * create, holder identity inside, and an explicit answer for every way it can go stale.
  *
- * ## Staleness, which is where locks usually go wrong
+ * ## Staleness: a HEARTBEAT, not an identity check
  *
  * A lock that survives its holder wedges the service — the ERR-2 shape, where `running`
- * was permanent and a crash left a request un-appliable forever. A lock that clears
- * itself on a guess defeats its own purpose. So the rule is: **take over only where the
- * holder can be PROVEN gone, refuse where it would be a guess.**
+ * was permanent and a crash left a request un-appliable forever. A lock that clears itself
+ * on a guess defeats its own purpose.
  *
- *  - Same host, pid not alive → the holder is definitely dead. Take over, loudly.
- *  - Same host, pid alive → refuse. This is the case the lock exists for.
- *  - Different host → refuse. A shared volume mounted into a second machine is exactly
- *    the scenario, and this process cannot check a pid it cannot see. `CCP_DATA_LOCK_TAKEOVER=1`
- *    is the operator saying "I have checked"; it is a deliberate act, not a default.
- *  - Unreadable/corrupt lock → treated as a foreign lock: refuse, same escape hatch. A
- *    lock file we cannot parse is one whose holder we cannot rule out.
+ * The obvious discriminator — "is the recorded pid alive on the recorded host?" — is wrong
+ * in exactly the deployment this product documents as its default. Under
+ * `docker compose`, the container's hostname IS its id, so a crash-restart arrives with a
+ * NEW hostname and can never verify the old one: every OOM kill would wedge the next boot.
+ * Worse in the other direction: containers have their own pid namespace, and pid 1 always
+ * exists, so a stale lock recorded by a dead container's pid 1 looks *alive* to the
+ * replacement container's check. The identity test fails open and closed at once.
+ *
+ * So the holder **heartbeats**: it rewrites the lock's `since` every
+ * {@link HEARTBEAT_MS}, and a lock whose `since` is older than {@link STALE_MS} is stale
+ * no matter which host, container, or pid namespace wrote it. That is a property of the
+ * file, checkable by anyone, and it bounds the post-crash wedge to about two minutes
+ * instead of forever.
+ *
+ * The pid check survives only as a FAST PATH, and only in the direction that is safe: a
+ * dead pid on the same host lets a bare-metal restart recover in milliseconds rather than
+ * waiting out the stale window. It can only ever ADD a takeover, never block one — so
+ * container pid-1 ambiguity cannot keep a genuinely stale lock alive.
+ *
+ *  - Heartbeat older than STALE_MS → take over, loudly. The holder is gone or wedged.
+ *  - Same host, pid not alive → take over, loudly (the fast path).
+ *  - Otherwise → refuse. Something is writing this file right now.
+ *  - Unreadable/corrupt lock → refuse until it goes stale by time; a holder we cannot read
+ *    is one we cannot rule out, but it still cannot hold the file forever.
+ *
+ * `CCP_DATA_LOCK_TAKEOVER=1` remains the operator's override for the impatient case.
  */
 
 const TAKEOVER_ENV = 'CCP_DATA_LOCK_TAKEOVER';
+
+/** How often the holder refreshes its claim. */
+export const HEARTBEAT_MS = 30_000;
+/**
+ * How long a claim may go unrefreshed before anyone may take it. Four missed beats: long
+ * enough that a paused container, a long GC or a slow disk never loses a lock it still
+ * holds, short enough that a crashed process does not block the next boot for long.
+ */
+export const STALE_MS = 4 * HEARTBEAT_MS;
 
 export interface LockHolder {
   pid: number;
@@ -82,6 +109,29 @@ function pidAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Why this lock may be taken, or `null` to leave it alone. Pure, so the whole
+ * refuse/take-over matrix is a table test with no timers and no second process.
+ */
+export function staleReason(current: LockHolder | null, ourHost: string, now: number): string | null {
+  if (current === null) return null; // unparseable: refuse; it will age out via the file's mtime path below
+  const age = now - Date.parse(current.since);
+  if (Number.isFinite(age) && age > STALE_MS) {
+    return `its claim has not been refreshed for ${Math.round(age / 1000)}s (pid ${current.pid} on ${current.host}, held since ${current.since})`;
+  }
+  if (!Number.isFinite(age)) {
+    return `its claim carries an unreadable timestamp (${current.since}), so it can never be shown to be live`;
+  }
+  // FAST PATH ONLY, and only where it is unambiguous: a dead pid on OUR host means a
+  // bare-metal restart recovers immediately instead of waiting out the stale window. It
+  // can add a takeover, never block one — so container pid-1 ambiguity (where a dead
+  // container's pid 1 looks alive here) cannot keep a genuinely stale lock alive.
+  if (current.host === ourHost && !pidAlive(current.pid)) {
+    return `pid ${current.pid} on this host (${current.host}, held since ${current.since}) is gone`;
+  }
+  return null;
+}
+
 function readHolder(path: string): LockHolder | null {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<LockHolder>;
@@ -95,10 +145,34 @@ function readHolder(path: string): LockHolder | null {
 /** A held lock. `release()` is idempotent and safe to call from an exit handler. */
 export class DataLock {
   private released = false;
+  private beat: ReturnType<typeof setInterval> | null = null;
   private constructor(
     readonly path: string,
     private readonly holder: LockHolder,
   ) {}
+
+  /**
+   * Start refreshing the claim. `unref()` so a held lock never keeps the process alive —
+   * a store lock must not be the reason a CLI hangs after its work is done.
+   */
+  private startHeartbeat(): this {
+    this.beat = setInterval(() => {
+      if (this.released) return;
+      try {
+        // Written whole, through a temp + rename, so a reader never sees a half-file and
+        // mistakes a live holder for an unparseable one.
+        const tmp = `${this.path}.beat-${process.pid}`;
+        writeFileSync(tmp, JSON.stringify({ ...this.holder, since: new Date().toISOString() }));
+        renameSync(tmp, this.path);
+      } catch {
+        // A failed beat is not fatal on its own: the claim simply ages, and if the
+        // condition persists another process is entitled to take over. Throwing from a
+        // timer would be worse than losing a lock we can no longer defend.
+      }
+    }, HEARTBEAT_MS);
+    this.beat.unref();
+    return this;
+  }
 
   /**
    * Claim exclusive write access to `dataFile`, or throw {@link DataLockError} naming who
@@ -124,7 +198,7 @@ export class DataLock {
         } finally {
           closeSync(fd);
         }
-        return new DataLock(path, holder);
+        return new DataLock(path, holder).startHeartbeat();
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
         if (attempt === 1) {
@@ -138,14 +212,11 @@ export class DataLock {
 
         const current = readHolder(path);
         const takeover = env[TAKEOVER_ENV] === '1';
+        const why = staleReason(current, holder.host, Date.now());
 
-        if (current !== null && current.host === holder.host && !pidAlive(current.pid)) {
-          // Provably dead, same host. Clear it and retry — this is the crash-restart path,
-          // and leaving it wedged would trade a data-loss bug for an availability one.
+        if (why !== null) {
           // eslint-disable-next-line no-console
-          console.warn(
-            `[ccp:store] clearing a stale lock on ${dataFile}: pid ${current.pid} on this host (${current.host}, held since ${current.since}) is gone.`,
-          );
+          console.warn(`[ccp:store] clearing a stale lock on ${dataFile}: ${why}.`);
           unlinkSync(path);
           continue;
         }
@@ -186,6 +257,8 @@ export class DataLock {
   release(): void {
     if (this.released) return;
     this.released = true;
+    if (this.beat !== null) clearInterval(this.beat);
+    this.beat = null;
     const current = readHolder(this.path);
     if (current !== null && (current.pid !== this.holder.pid || current.host !== this.holder.host)) return;
     try {

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { hostname } from 'node:os';
 import { dirname, join } from 'node:path';
-import { DataLock, DataLockError, lockPathFor } from '../src/store/dataLock';
+import { DataLock, DataLockError, lockPathFor, staleReason, STALE_MS } from '../src/store/dataLock';
 import { FileStore } from '../src/store/fileStore';
 import { runRestore } from '../scripts/restore';
 import { writeFileAtomic } from '../src/store/snapshot';
@@ -82,15 +82,33 @@ describe('CONC-7 — the data file has exactly one writer', () => {
     lock.release();
   });
 
-  it('a lock from ANOTHER HOST is refused — an unverifiable pid is not a dead one', () => {
+  it('a lock from ANOTHER HOST with a FRESH heartbeat is refused', () => {
     // A shared volume mounted into a second machine is the scenario. This process cannot
-    // check a pid it cannot see, and guessing here is exactly the failure being fixed.
-    plantLock(JSON.stringify({ pid: 1, host: 'some-other-host', since: '2026-07-01T00:00:00.000Z' }));
+    // check a pid it cannot see, so the heartbeat is what decides — and it is beating.
+    plantLock(JSON.stringify({ pid: 1, host: 'some-other-host', since: new Date().toISOString() }));
     expect(() => DataLock.acquire(dataFile, {})).toThrow(/some-other-host/);
   });
 
+  it('THE CONTAINER CASE: a foreign-host lock that stopped beating IS taken over', () => {
+    // The identity check alone would wedge here forever, and this is the DEFAULT deploy:
+    // under docker compose a container's hostname is its id, so a crash-restart arrives
+    // with a new hostname and can never verify the old one. Every OOM kill would have
+    // blocked the next boot.
+    plantLock(
+      JSON.stringify({
+        pid: 1,
+        host: 'dead-container-9f3a',
+        since: new Date(Date.now() - STALE_MS - 1_000).toISOString(),
+      }),
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const lock = DataLock.acquire(dataFile, {});
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/has not been refreshed/));
+    lock.release();
+  });
+
   it('…unless the operator says so explicitly, and then it says what it just did', () => {
-    plantLock(JSON.stringify({ pid: 1, host: 'some-other-host', since: '2026-07-01T00:00:00.000Z' }));
+    plantLock(JSON.stringify({ pid: 1, host: 'some-other-host', since: new Date().toISOString() }));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const lock = DataLock.acquire(dataFile, { CCP_DATA_LOCK_TAKEOVER: '1' });
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/taking over the lock/));
@@ -100,6 +118,25 @@ describe('CONC-7 — the data file has exactly one writer', () => {
   it('an UNPARSEABLE lock is refused too — a holder we cannot read is one we cannot rule out', () => {
     plantLock('not json at all');
     expect(() => DataLock.acquire(dataFile, {})).toThrow(/cannot parse/);
+  });
+
+  it('the pid fast path can only ADD a takeover, never block one', () => {
+    // Container pid namespaces make "pid 1 is alive" meaningless across containers. If
+    // the fast path could VETO, a dead container's stale lock would look live forever.
+    const fresh = new Date().toISOString();
+    const old = new Date(Date.now() - STALE_MS - 1).toISOString();
+    // Alive-looking pid, stale beat ⇒ still taken.
+    expect(staleReason({ pid: 1, host: 'other', since: old }, 'ours', Date.now())).toMatch(/not been refreshed/);
+    // Alive-looking pid, fresh beat ⇒ left alone.
+    expect(staleReason({ pid: 1, host: 'other', since: fresh }, 'ours', Date.now())).toBeNull();
+    // Dead pid on OUR host, fresh beat ⇒ taken anyway, immediately (the fast path).
+    expect(staleReason({ pid: 999_999_998, host: 'ours', since: fresh }, 'ours', Date.now())).toMatch(/is gone/);
+  });
+
+  it('a claim with an unreadable timestamp is stale — it can never be shown to be live', () => {
+    expect(staleReason({ pid: 1, host: 'other', since: 'whenever' }, 'ours', Date.now())).toMatch(
+      /unreadable timestamp/,
+    );
   });
 
   it('release() does NOT delete a lock another process has taken over', () => {

@@ -2250,15 +2250,32 @@ an OS advisory lock would be strictly better — the kernel releases it when the
 whose posture is "no dependency you cannot read". So `O_EXCL` create, holder identity
 inside, and an explicit answer for every way it can go stale.
 
-**Staleness is where locks usually go wrong**, and the rule is: take over only where the
-holder can be *proven* gone, refuse where it would be a guess.
+**Staleness is where locks usually go wrong, and the first version got it wrong.** It
+decided liveness by identity — "is the recorded pid alive on the recorded host?" — which is
+broken in exactly the deployment this product documents as its default. Under
+`docker compose` a container's hostname **is** its id, so a crash-restart arrives with a new
+hostname and can never verify the old one: every OOM kill would have wedged the next boot.
+And it is broken in the other direction too, because containers have their own pid
+namespace and pid 1 always exists — a stale lock written by a dead container's pid 1 looks
+*alive* to its replacement. The identity test fails open and closed at once, and shipping it
+would have traded a silent data-loss bug for a loud availability one.
+
+So the holder **heartbeats**: it rewrites the claim's timestamp every 30s, and a claim
+unrefreshed for 120s is stale regardless of host, container or pid namespace. That is a
+property of the file, checkable by anyone, and it bounds the post-crash wedge to about two
+minutes rather than forever. The pid check survives only as a fast path, and only in the
+direction that is safe:
 
 | found | answer |
 | --- | --- |
-| same host, pid not alive | take over, loudly — a crash must not wedge boot (the ERR-2 shape) |
-| same host, pid alive | refuse; this is what the lock is for |
-| different host | refuse — an unverifiable pid is not a dead one |
-| unparseable lock file | refuse — a holder we cannot read is one we cannot rule out |
+| heartbeat older than 120s | take over, loudly — works across hosts, containers, namespaces |
+| same host, pid not alive | take over, loudly — the fast path; a bare-metal restart recovers in ms |
+| unreadable timestamp | take over — a claim that can never be shown live must not hold forever |
+| otherwise | refuse; something is writing this file right now |
+
+The fast path can only ever **add** a takeover, never block one, which is what stops
+container pid-1 ambiguity from keeping a genuinely stale lock alive. A test pins that
+direction explicitly.
 
 `CCP_DATA_LOCK_TAKEOVER=1` is the operator saying "I have checked". `release()` deliberately
 does **not** delete a lock another process has taken over — otherwise a takeover plus a late
@@ -2277,12 +2294,13 @@ released it, so a CLI that ran for 200 ms would have left the operator unable to
 server it was preparing — the stale-lock wedge one layer up. It now releases in a `finally`,
 and the server releases on SIGTERM/SIGINT/exit.
 
-- [x] **Negative test** — removing the `DataLock.acquire` call fails 5 of the 14 tests.
-- [x] **Regression tests** — `test/dataLock.test.ts` (14): the second-open refusal, the
-      refusal message naming the holder, release-and-reopen, idempotent close, all four
-      staleness arms, the takeover flag, the no-lock-after-failed-load rule, and the
+- [x] **Negative test** — removing the `DataLock.acquire` call fails 5 of the 17 tests.
+- [x] **Regression tests** — `test/dataLock.test.ts` (17): the second-open refusal, the
+      refusal message naming the holder, release-and-reopen, idempotent close, every
+      staleness arm as a pure table test, the container crash-restart case, the fast path's
+      add-only direction, the takeover flag, the no-lock-after-failed-load rule, and the
       take-over-then-release case.
-- [x] **Evidence in the status line** — 1,379 api tests pass.
+- [x] **Evidence in the status line** — 1,382 api tests pass.
 
 ## DATA-9
 
