@@ -1,4 +1,5 @@
 import type { Context, Env, Hono } from "hono";
+import { logServerError } from "./log";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 /**
@@ -364,7 +365,11 @@ export function apiError(c: Context, code: ErrorCode, details?: ErrorDetails) {
  */
 export function registerErrorHandler<E extends Env>(app: Hono<E>): void {
   app.onError((err, c) => {
+    // An ApiError is a DECIDED outcome inside the taxonomy — a refusal, not a fault — so
+    // it is not logged as one. Everything else reaching here is a bug, and used to vanish
+    // without a trace (OPS-2).
     if (err instanceof ApiError) return apiError(c, err.code, err.details);
+    logServerError(err, { method: c.req.method, path: c.req.path });
     return c.json({ code: "INTERNAL", reason: "Internal error." }, 500);
   });
 }

@@ -11,6 +11,7 @@ import { bootstrap, seedInstanceIdentity } from '../scripts/bootstrap';
 import { executorKind, maybeStartSchedulerLoop, schedulerEnabled } from './domain/apply/loop';
 import { runSettlement, SettlementConfigError } from './domain/settlement';
 import { runVersionStamp } from './domain/versionStamp';
+import { installProcessErrorLogging } from './log';
 
 export { resolveDataFile };
 
@@ -38,6 +39,13 @@ export function selectStore(): Promise<ConfigStore> | ConfigStore {
 }
 
 async function start(): Promise<void> {
+  // FIRST thing in the process, before anything that can throw (OPS-2). There was no
+  // unhandledRejection/uncaughtException handler anywhere in the api, so a stray rejection
+  // during boot — a bad data dir, a store that will not load — printed Node's own warning
+  // at best and nothing at all at worst. Installed here rather than in createApp: the app
+  // factory runs once per test, and attaching process listeners there leaks them.
+  installProcessErrorLogging();
+
   // Fail closed on an insecure/incomplete production config BEFORE opening the store
   // or binding a port. Outside NODE_ENV=production this is a no-op (dev/tests + B2's
   // restart-survival proof, which boots with NODE_ENV=development, are unaffected).
