@@ -955,8 +955,17 @@ export function requestRoutes(): Hono<AppEnv> {
     return c.json(toChangeRequest(updated, projectId));
   });
 
-  // ADR-0016: statuses the bundle may act on — fully approved, unapplied. A
-  // pre-quorum, cooling, terminal, or already-applied request is refused.
+  // ADR-0016: statuses the bundle may act on. A cooling, terminal, or already-applied
+  // request is refused here — but NOT a pre-quorum one, which is ARCH-1: this set's old
+  // comment claimed "fully approved" and `AWAITING_CODE_REVIEW` **is** the pre-quorum
+  // status. `initialStatusFor` puts every fresh non-engineer submission there, and the
+  // approve handler moves a quorum-met request OUT of it. So the status was never the
+  // quorum signal, and status alone can never be one.
+  //
+  // The set stays a coarse pre-filter and the real gate is the explicit approvals check in
+  // the handler. `AWAITING_CODE_REVIEW` is kept because a request CAN legitimately reach
+  // quorum and remain there in a multi-item ladder edge case; what must not happen is
+  // applying it without checking, which is now impossible.
   const BUNDLE_ELIGIBLE = new Set(['AWAITING_CODE_REVIEW', 'AWAITING_DEPLOY_APPROVAL']);
 
   /**
@@ -1012,6 +1021,29 @@ export function requestRoutes(): Hono<AppEnv> {
     }
     if (await isFrozen(store, projectId)) return apiError(c, 'GLOBAL_FREEZE');
     if (!BUNDLE_ELIGIBLE.has(req.status)) return apiError(c, 'STATE_CONFLICT');
+
+    // ARCH-1 — THE QUORUM CHECK. ADR-0016's whole premise is that the portal ladder IS the
+    // human review of the change, so the bundle may only act on a request that has actually
+    // completed it. The handler checked role, freeze, status and bundle state, and never
+    // `approvals.length` against the ladder — so on an armed deployment a Lead or admin
+    // calling this on a ZERO-APPROVAL request ran the full bundle: gate, commit to main,
+    // deploy-gate trigger. The only remaining defence was whatever the operator happened to
+    // wire into CCP_BUNDLE_GATE_CMD, and the shipped UNAPPROVED refusal lives in
+    // `pr-prepare`, not in the documented drift-edit/plan-check gate recipe.
+    //
+    // `currentRequirement` is the same tighten-only helper the approve handler uses, so the
+    // bar here is the live one — a tier raised after submission applies, and a request
+    // approved under a laxer ladder does not sneak through on its old count.
+    const { required } = currentRequirement(req);
+    if (req.approvals.length < required) {
+      return c.json(
+        {
+          code: 'STATE_CONFLICT',
+          reason: `This change has ${req.approvals.length} of ${required} required approvals — the apply bundle acts only on a fully approved request.`,
+        },
+        409,
+      );
+    }
     // ERR-2: refuse only while the claim is LIVE. An expired claim belongs to a run that
     // never reported back, and taking it over here — on the very act the wedge blocks — is
     // the same lazy-settle doctrine settleCooling/settleWindow/scanJobLease already use:
