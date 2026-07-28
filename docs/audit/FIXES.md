@@ -1330,3 +1330,48 @@ see one.
 **Residue:** the guard half is not directly tested — `guards.tsx` needs a mounted router,
 and this repo has no jsdom. What is tested is the seam it depends on. The redirect itself
 rests on `useSyncExternalStore` behaving as it does everywhere else in this app.
+
+## ARCH-1
+
+*Bundle apply route accepts pre-quorum requests, contradicting ADR-0016's "fully approved"
+contract.*
+
+- [x] **Defect reproduced first** — `test/bundleQuorum.test.ts` posts `/apply` to a request
+      in `AWAITING_CODE_REVIEW` with **zero** approvals. Against the unfixed handler it is
+      accepted and the bundle runs: gate, commit to `main`, deploy-gate trigger. The gate
+      command writes a marker file, so the test asserts the bundle **never started** rather
+      than only that the response was a 409 — a refusal that still ran the gate would be a
+      refusal in name only.
+- [x] **Cause, not symptom** — `AWAITING_CODE_REVIEW` **is** the pre-quorum status
+      (`initialStatusFor` puts every fresh non-engineer submission there; approve moves a
+      quorum-met request *out* of it), so the eligible-status set could never have carried
+      the guarantee its comment claimed. **Status was never the quorum signal and no status
+      can be one**, so the fix is an explicit `approvals.length` check rather than a
+      different set. It counts against `currentRequirement` — the same tighten-only helper
+      approve uses — not the row's own `approvalsRequired`, so a tier raised after
+      submission applies and a request approved under a laxer ladder cannot come through on
+      its old count.
+- [x] **Regression test** — 5 tests, including the **un-flipped `AWAITING_CODE_REVIEW`
+      case the finding explicitly asks for**, a partially-approved request, and a
+      pre-quorum `AWAITING_DEPLOY_APPROVAL` row (status-independence, which is the point).
+      Both negative tests confirmed: removing the gate fails 4, trusting the row's own count
+      fails exactly the live-ladder test.
+- [x] **Failure is loud** — the refusal names the shortfall ("2 of 3 required approvals")
+      rather than a bare `STATE_CONFLICT`, so a Lead who expected this to work learns why.
+- [x] **Evidence in the status line** — `4af8a46`.
+- [x] **Lesson recorded** — L-19.
+
+**The suite was already telling us.** The existing "pre-quorum is refused" test has to flip
+its seeded row to `NEEDS_ENGINEER` first — *precisely because* `AWAITING_CODE_REVIEW` would
+not have been refused. A test that has to work around the bug in order to pass is evidence
+of the bug, and it sat there being green.
+
+**One test guards the over-strict failure mode:** a fully approved request must still run.
+A quorum gate that refuses everything is not a safer version of this fix, it is a different
+outage.
+
+**Residue:** `AWAITING_CODE_REVIEW` stays in `BUNDLE_ELIGIBLE`. The finding suggests
+removing it; it is kept because a multi-item ladder can legitimately reach quorum while the
+row is still there, and the explicit check now makes membership harmless. **ARCH-3** — the
+"reviewed-plan ≡ applied-plan" guardrail being delegated to an operator-supplied gate
+command — is a different and still-open hole in the same lane.

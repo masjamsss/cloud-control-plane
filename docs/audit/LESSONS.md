@@ -491,3 +491,33 @@ listening). Fixing the clear alone leaves a stale guard; fixing the guard alone 
 subscribed to a value that never changes. When a symptom needs two mechanisms to cooperate,
 verify both ends — the two-sided negative test is what proves the wiring, not the fix on
 either side.
+
+### L-19 — A test that works around the bug in order to pass is a bug report
+
+Findings: ARCH-1
+
+The apply bundle would run on a request with zero approvals. What makes this one worth
+recording is not the hole, it is that the test suite had already found it and said so in a
+form nobody read: the existing "pre-quorum is refused" case flips its seeded row to
+`NEEDS_ENGINEER` before asserting, *because* the natural pre-quorum status —
+`AWAITING_CODE_REVIEW` — would not have been refused. Someone hit the real behaviour,
+adjusted the fixture until the test went green, and moved on. The workaround was the
+discovery, and it stayed green for as long as the defect existed.
+
+That shape is recognisable once you look for it: a fixture set to a value the scenario does
+not call for, a status flipped "so the test works", an assertion narrowed to the case that
+happens to pass. Each is a place where reality disagreed with the test's premise and the
+test yielded.
+
+**Do differently:** when a test needs an unnatural setup to demonstrate its claim, ask what
+the natural setup does — and if the answer is "something worse", that is the finding. In
+review, treat an unexplained fixture adjustment the way you would treat a commented-out
+assertion.
+
+The substantive half is the same mistake in a different vocabulary. `BUNDLE_ELIGIBLE`
+encoded "fully approved" as a set of statuses, and the comment above it asserted the
+property while the set could not carry it. **A status is a summary of a decision, not the
+decision**, and any invariant that really matters has to be checked against the thing it is
+about — here `approvals.length` against the live ladder, not the row's own frozen count.
+The tell was available without running anything: the comment claimed a guarantee, and no
+line of code in the handler computed it.
