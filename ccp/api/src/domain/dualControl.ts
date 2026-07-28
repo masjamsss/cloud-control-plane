@@ -271,7 +271,20 @@ export async function ackPending(
   const applied: PendingConfigChangeItem = { ...pending, status: 'APPLIED', ackBy: ackerId, ackAt: now };
   const domain: TransactWrite[] = [
     applyToWrite(apply),
-    { kind: 'update', pk: k.PK, sk: k.SK, set: { status: 'APPLIED', ackBy: ackerId, ackAt: now, GSI1PK: undefined } },
+    {
+      kind: 'update',
+      pk: k.PK,
+      sk: k.SK,
+      set: { status: 'APPLIED', ackBy: ackerId, ackAt: now, GSI1PK: undefined },
+      // CONC-9 / DATA-8 — guard the PENDING row's own status, not just the apply
+      // target's. `status === 'PENDING'` was checked on the read snapshot and then
+      // written unconditionally, and this transact retries on chain contention. A reject
+      // committing in between changed the pending row and nothing else, so the retry's
+      // re-check — which looked only at the apply TARGET's guard — still passed: the
+      // config change applied and the row flipped REJECTED → APPLIED. An admin's explicit
+      // refusal, overridden by a racing ack.
+      ifEquals: { attr: 'status', value: 'PENDING' },
+    },
   ];
   // Carry the target account/setting onto config-apply itself
   // (previously it lived ONLY on the paired config-propose entry, joined by targetId
@@ -304,13 +317,21 @@ export async function ackPending(
       return applied;
     } catch (e) {
       if (e instanceof ConditionError) {
-        // distinguish drift from chain contention
+        // Three conditions can fail here and they mean different things to the caller, so
+        // the diagnosis order matters: the proposal is stale (target drifted), the
+        // proposal is already resolved (CONC-9 — someone rejected or acked it), or the
+        // audit chain head moved under us (retryable, and the only retryable one).
         if (apply.guardAttr !== undefined) {
           const cur = await store.get(apply.pk, apply.sk);
           if (!cur && apply.op !== 'put') throw new ApiError('STALE_PROPOSAL');
           const actual = cur ? (cur as Record<string, unknown>)[apply.guardAttr] : undefined;
           if (actual !== apply.guardValue) throw new ApiError('STALE_PROPOSAL');
         }
+        // Re-read rather than retry. Retrying a lost STATUS guard can only fail again —
+        // nothing puts a resolved proposal back to PENDING — so without this the caller
+        // gets CHAIN_CONTENTION ("try again") for something no retry can fix.
+        const nowPending = (await store.get(k.PK, k.SK)) as PendingConfigChangeItem | null;
+        if (!nowPending || nowPending.status !== 'PENDING') throw new ApiError('STATE_CONFLICT');
         if (attempt === 0) continue;
         throw new ApiError('CHAIN_CONTENTION');
       }
@@ -337,7 +358,21 @@ export async function rejectPending(
     // Same chain as the propose entry — a target-chained proposal's resolution
     // must not strand its config-propose without a paired outcome.
     pending.auditProjectId ?? projectId,
-    [{ kind: 'update', pk: k.PK, sk: k.SK, set: { status: 'REJECTED', ackBy: actorId, ackAt: now, GSI1PK: undefined } }],
+    [
+      {
+        kind: 'update',
+        pk: k.PK,
+        sk: k.SK,
+        set: { status: 'REJECTED', ackBy: actorId, ackAt: now, GSI1PK: undefined },
+        // CONC-9 / DATA-8, the mirror of ack's guard: a reject that read PENDING and
+        // wrote unconditionally would overwrite a concurrent ack's APPLIED, recording a
+        // change that DID apply as refused. Carrying an `ifEquals` also makes
+        // `transactWithAudit` refuse to replay these writes on contention (CONC-2) and
+        // surface STATE_CONFLICT instead — which is the correct answer: re-read, the
+        // proposal is already resolved.
+        ifEquals: { attr: 'status', value: 'PENDING' },
+      },
+    ],
     { action: 'config-reject', actor: actorId, targetType: 'config-change', targetId: pending.id },
   );
   return rejected;
@@ -350,8 +385,27 @@ export async function sweepExpired(store: ConfigStore, projectId: string, now: n
   for (const p of pending) {
     if (p.status === 'PENDING' && Date.parse(p.expiresAt) < now) {
       const k = configChangeKey(projectId, p.id);
-      await store.put({ ...p, status: 'EXPIRED', GSI1PK: undefined });
-      swept++;
+      try {
+        // DATA-8 — the sweep's blind whole-row put was the third unguarded transition,
+        // and the worst-placed: it runs on a timer against rows it read in a previous
+        // step, so an ack landing in between was overwritten with EXPIRED. The change had
+        // applied; the record said it timed out.
+        await store.transact([
+          {
+            kind: 'update',
+            pk: k.PK,
+            sk: k.SK,
+            set: { status: 'EXPIRED', GSI1PK: undefined },
+            ifEquals: { attr: 'status', value: 'PENDING' },
+          },
+        ]);
+        swept++;
+      } catch (e) {
+        // Losing this race is not an error: somebody resolved the proposal while the
+        // sweep was walking, which is the outcome the sweep exists to avoid needing.
+        // It is simply no longer this pass's to expire, so it is not counted.
+        if (!(e instanceof ConditionError)) throw e;
+      }
     }
   }
   return swept;

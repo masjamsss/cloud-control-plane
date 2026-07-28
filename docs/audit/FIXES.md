@@ -2175,3 +2175,59 @@ concurrency read of "what does this blind put race") is evidence about the defec
 duplication to tidy away.
 
 - [x] **Evidence in the status line** — see **API-10**; `test/sessionRevokeRace.test.ts`.
+
+## CONC-9
+
+*Dual-control ack does not guard the pending row's status: a concurrently rejected
+proposal can still apply.*
+
+`ackPending` and `rejectPending` both read the pending row, verify `status === 'PENDING'`
+in memory, and then wrote the transition **unconditionally**; `sweepExpired` blind-put the
+whole row. Three ways for a proposal to leave PENDING, and each could overwrite either of
+the others.
+
+The ack case is the sharp one, and it survived a retry loop that looks like it should have
+caught it. `ackPending` transacts `[apply, pending → APPLIED]` and retries on chain
+contention. A reject committing in between changes **the pending row and nothing else** —
+so the retry's re-check, which examined only the apply *target's* guard, still passed. The
+config change applied and the row flipped `REJECTED → APPLIED`: an admin's explicit
+refusal overridden by a racing ack, with the audit chain faithfully recording both.
+
+All three transitions now carry `ifEquals: {attr:'status', value:'PENDING'}`.
+
+- **Ack** additionally re-reads on a lost condition instead of retrying. Retrying a lost
+  *status* guard can only fail again — nothing puts a resolved proposal back to PENDING —
+  so without that the caller got `CHAIN_CONTENTION` ("try again") for something no retry
+  can fix. It now gets `STATE_CONFLICT`.
+- **Reject** needed only the guard: carrying an `ifEquals` makes `transactWithAudit`
+  refuse to replay the writes on contention (CONC-2's rule) and surface `STATE_CONFLICT`,
+  which is already the right answer.
+- **The sweep** was the worst-placed of the three — it runs on a timer against rows read
+  in a previous step, so its write is stale by construction. A lost guard there is not an
+  error and is not counted: somebody resolved the proposal while the sweep was walking,
+  which is the outcome the sweep exists to avoid needing.
+
+- [x] **Negative test** — removing all three guards fails 3 of the 7 tests: the race, its
+      error code, and the mirror.
+- [x] **Regression tests** — `test/pendingChangeCas.test.ts` (7), driven by a store
+      wrapper that commits the competing resolution between the read and the write, plus
+      three controls (uncontended ack, uncontended reject, and a sweep that still expires
+      a genuinely stale row).
+- [x] **Evidence in the status line** — 1,365 api tests pass.
+
+The sweep control earned its place immediately: the fixture first hand-typed the GSI
+partition name, the sweep found nothing, and "the sweep did not overwrite an acked row"
+was true only because the sweep never looked at the row (L-1). The fixture now builds the
+key from `pendingConfigGsi`.
+
+## DATA-8
+
+*Pending-change status transitions have no CAS: concurrent ack + reject can apply a change
+and record it as REJECTED.*
+
+The same defect as **CONC-9**, reported independently from the data-integrity review, and
+naming the third site the concurrency report did not: `sweepExpired`'s unconditional
+whole-row `put`. Both are closed by the same three guards; the reasoning, the negative test
+and the regression suite are recorded once, under CONC-9.
+
+- [x] **Evidence in the status line** — see **CONC-9**; `test/pendingChangeCas.test.ts`.
