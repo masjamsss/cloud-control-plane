@@ -7,6 +7,7 @@ import type { AuditEntryInput } from '../audit';
 import { record, recordIn } from '../audit';
 import { isFrozen } from '../config';
 import { evaluateTime } from '../schedule';
+import { bundleClaimLive } from '../bundleClaim';
 import { digestOf, type ApplyExecutor, type ApplyResult } from './executor';
 import { nullNotifier, type NotificationKind, type Notifier } from './notify';
 
@@ -170,11 +171,39 @@ function windowOpen(req: Pick<RequestItem, 'schedule' | 'earliestApplyAt'>, now:
 
 /**
  * Is this request CLAIMABLE for auto-apply as of `now`? ONLY a fully-approved windowed
- * request in AWAITING_DEPLOY_APPROVAL whose window is currently open. An APPLYING row is
- * NOT claimable (it is already owned) — `runDueApplies` handles those separately.
+ * request in AWAITING_DEPLOY_APPROVAL whose window is currently open, and which the OTHER
+ * apply lane is not already inside. An APPLYING row is NOT claimable (it is already
+ * owned) — `runDueApplies` handles those separately.
+ *
+ * ARCH-4 — THE BUNDLE CHECK. The route-triggered bundle (`CCP_BUNDLE=1`) and this
+ * timer-driven scheduler (`CCP_SCHEDULER=1`) are independent opt-ins with overlapping
+ * domains, and nothing at arming time refuses the combination. Every bundle-eligible
+ * approved request is windowed, i.e. sits in exactly the status this filter claims. The
+ * bundle's claim writes `bundle.state:'running'` and deliberately does NOT move `status`,
+ * so this filter — which read only status and window — could not see it.
+ *
+ * With both lanes armed, a Lead's bundle click inside an open window raced the next tick:
+ * the scheduler claimed `AWAITING_DEPLOY_APPROVAL → APPLYING` and ran its executor while
+ * the bundle was mid-clone/gate; the bundle then landed its commit and satisfied the CI
+ * deploy gate, after which its own result write lost the `ifEquals status` guard and
+ * surfaced as a 500 `CHAIN_CONTENTION` — real, irreversible side effects with a request
+ * record stuck at `bundle.state:'running'`.
+ *
+ * The check is on the LEASE, not the bare flag ({@link bundleClaimLive}): a crashed
+ * bundle must not wedge auto-apply forever, which would be ERR-2's defect one lane over.
+ * It is deliberately a *skip*, not a halt — the bundle is a legitimate owner doing exactly
+ * what it was asked to, and the next tick after it finishes (or after its lease lapses)
+ * picks the row up normally.
+ *
+ * The reverse direction was already safe and stays that way by a different mechanism:
+ * `APPLYING` is not in the route's `BUNDLE_ELIGIBLE` set, so a scheduler-claimed row
+ * refuses the bundle with a 409.
  */
-export function isDue(req: Pick<RequestItem, 'status' | 'schedule' | 'earliestApplyAt'>, now: number): boolean {
-  return req.status === AWAITING && windowOpen(req, now);
+export function isDue(
+  req: Pick<RequestItem, 'status' | 'schedule' | 'earliestApplyAt' | 'bundle'>,
+  now: number,
+): boolean {
+  return req.status === AWAITING && !bundleClaimLive(req.bundle, now) && windowOpen(req, now);
 }
 
 /* ── halt specs ──────────────────────────────────────────────────────────────── */
@@ -252,8 +281,10 @@ export async function runDueApplies(
   const claimed = all.filter((r) => r.status === APPLYING);
 
   // The due set is windowed + in-window requests that are CLAIMABLE
-  // (AWAITING_DEPLOY_APPROVAL).
-  const due = all.filter((r) => r.status === AWAITING && windowOpen(r, now));
+  // (AWAITING_DEPLOY_APPROVAL, no live bundle claim — see {@link isDue}). Calls the
+  // exported predicate rather than restating it: this line WAS a copy of `isDue`'s body,
+  // which is exactly how the one lane that matters could miss a rule the predicate gained.
+  const due = all.filter((r) => isDue(r, now));
 
   const outcomes: ApplyOutcome[] = [];
 

@@ -22,7 +22,7 @@ import { isSystemDriftOp } from '../domain/systemOps';
 import { disabledOps, isFrozen, loadPolicy, loadTeams, resolveRisk } from '../domain/config';
 import { checkSubmitRateLimit } from '../middleware/rateLimit';
 import { recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
-import { bundleArmed, bundleConfig, realSteps, runBundle } from '../domain/bundle';
+import { bundleArmed, bundleClaimLive, bundleConfig, realSteps, runBundle } from '../domain/bundle';
 import { resolveLaneRemote, type LaneProject } from '../domain/laneRepo';
 import { resolveKnob } from '../domain/deploymentSettings';
 import { coolingElapsed, settleCooling } from '../domain/cooling';
@@ -1053,34 +1053,11 @@ export function requestRoutes(): Hono<AppEnv> {
   // applying it without checking, which is now impossible.
   const BUNDLE_ELIGIBLE = new Set(['AWAITING_CODE_REVIEW', 'AWAITING_DEPLOY_APPROVAL']);
 
-  /**
-   * How long a `bundle.state:'running'` claim may go without an outcome before a later
-   * apply attempt may take it over (ERR-2).
-   *
-   * Before this, `running` was permanent. The claim is written, the multi-minute bundle
-   * runs, and the outcome is recorded — but nothing else in the codebase ever writes
-   * `bundle`, and there is no reaper, no timeout and no admin route that resets it. A
-   * process crash or restart mid-bundle (which ERR-1's healthcheck interaction makes
-   * likely) left the request answering 409 BUNDLE_RUNNING on every future apply, forever:
-   * a fully-approved change permanently un-appliable through the portal, recoverable only
-   * by editing the store by hand.
-   *
-   * An hour is well past the bundle's own worst case — its longest step timeout is 15
-   * minutes and the steps are sequential — so a LIVE run is never robbed of its claim.
-   */
-  const BUNDLE_LEASE_MS = 60 * 60_000;
-
-  /**
-   * Has a `running` claim outlived its lease as of `now`? A claim with an unparseable or
-   * missing `at` counts as expired: a claim that cannot be aged is one nothing can ever
-   * release, which is the wedge itself.
-   */
-  const bundleClaimExpired = (bundle: RequestItem['bundle'], now: number): boolean => {
-    if (bundle?.state !== 'running') return false;
-    const at = Date.parse(bundle.at ?? '');
-    if (!Number.isFinite(at)) return true;
-    return now - at >= BUNDLE_LEASE_MS;
-  };
+  /** ARCH-4/ERR-2: one definition of "a live bundle claim", shared with the scheduler's
+   * due filter (domain/bundle.ts). The route reads it as "is another apply already in
+   * flight"; the scheduler reads it as "keep off this row". */
+  const bundleClaimExpired = (bundle: RequestItem['bundle'], now: number): boolean =>
+    bundle?.state === 'running' && !bundleClaimLive(bundle, now);
 
   // POST /requests/:id/apply — ADR-0016: the approval-to-apply bundle. One click on
   // a fully approved request runs, server-side: local gate (plan == the approved

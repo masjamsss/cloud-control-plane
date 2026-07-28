@@ -424,3 +424,22 @@ template is not runnable as-is.
 either. This is not a gap waiting on a finding — it is a decision: a template that ships a
 credential pattern gets that pattern copied into estates whose threat model it does not fit,
 and this is the one step where that would matter most. The stub is the deliverable.
+
+### R-39 · Co-arming the two apply lanes is still allowed
+*Residue on **ARCH-4**.*
+
+The finding offers a second remedy: refuse `CCP_BUNDLE` + `CCP_SCHEDULER` together at
+`assertDeployable` unless an override is set. That was not taken, and not by oversight.
+
+The two lanes answer different questions — "a Lead decided to apply this now" and "this
+request's window opened while nobody was watching" — and an estate can legitimately want
+both. Refusing the combination would make the safe configuration unavailable rather than
+making the unsafe one safe. Now that the scheduler observes the bundle's claim, the
+overlap has an answer instead of a race, so the arming-time refusal would only remove a
+capability.
+
+What remains is that the two lanes are *coordinated* rather than *mutually exclusive*: the
+scheduler defers to a live bundle claim, and the bundle refuses an `APPLYING` row, but
+nothing serialises them at a higher level. A third apply lane added later would have to
+learn both rules rather than inherit one. That is a real cost of the choice, recorded
+rather than argued away.

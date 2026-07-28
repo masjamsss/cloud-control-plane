@@ -95,6 +95,8 @@ export function bundleConfig(
   };
 }
 
+export { BUNDLE_LEASE_MS, bundleClaimLive } from './bundleClaim';
+
 export interface StepResult {
   ok: boolean;
   /** Captured stdout/stderr tail or the refusal reason — audit evidence. */

@@ -1,4 +1,6 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MemoryStore } from '../src/store/memoryStore';
 import type { RequestItem } from '../src/store/schema';
@@ -98,6 +100,68 @@ describe('off by default — with CCP_SCHEDULER unset, no loop and nothing is pr
 function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 }
+
+/**
+ * Every `.ts` file reachable from `domain/apply/*` by STATIC import, excluding the one
+ * sanctioned executor. Bare specifiers (node builtins, npm packages) are not followed —
+ * the subject is this repo's own modules.
+ */
+function transitiveDeps(): string[] {
+  const seen = new Set<string>();
+  const queue = APPLY_SRC.map((u) => fileURLToPath(u));
+  while (queue.length > 0) {
+    const file = queue.pop()!;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    const text = stripComments(readFileSync(file, 'utf8'));
+    for (const m of text.matchAll(/(?:^|\s)(?:import|export)(?:\s[\s\S]*?)?\sfrom\s*['"](\.[^'"]+)['"]/g)) {
+      const base = resolve(dirname(file), m[1]!);
+      const hit = [base, `${base}.ts`, join(base, 'index.ts')].find(
+        (c) => existsSync(c) && statSync(c).isFile(),
+      );
+      if (hit && !seen.has(hit)) queue.push(hit);
+    }
+  }
+  return [...seen].filter((f) => !f.endsWith('terraformExecutor.ts'));
+}
+
+describe('INVARIANT #1 (transitive): nothing the apply subsystem IMPORTS may spawn either', () => {
+  /**
+   * The source-level check below scans each file's own TEXT. That was enough while the
+   * subsystem imported only leaf modules — and it silently stopped being enough the first
+   * time someone wanted a helper that lives beside a spawner. A static
+   * `import { bundleClaimLive } from '../bundle'` adds no forbidden token to
+   * `scheduler.ts`, so the text scan passes with a process-spawner in the module graph:
+   * the guarantee reads as intact while being untrue. That is the whole ARCH-4 shape
+   * (a check that cannot see the thing it is about) in the test suite instead of the code.
+   *
+   * `domain/bundleClaim.ts` exists so the predicate can be shared WITHOUT the spawner.
+   * This test is what keeps that split from being quietly undone.
+   */
+  it('walks a real graph beyond domain/apply itself (sanity)', () => {
+    const deps = transitiveDeps();
+    expect(deps.length).toBeGreaterThan(APPLY_SRC.length);
+    expect(deps.some((f) => f.endsWith('/domain/bundleClaim.ts'))).toBe(true);
+  });
+
+  it('no module reachable from the apply subsystem spawns a process or reaches the network', () => {
+    const offenders: string[] = [];
+    for (const file of transitiveDeps()) {
+      const code = stripComments(readFileSync(file, 'utf8'));
+      for (const [label, re] of [
+        ['child_process', /child_process/],
+        ['aws-sdk', /@aws-sdk|\baws-sdk\b/],
+        ['spawn', /\bspawn(Sync)?\s*\(/],
+        ['exec', /\bexec(Sync|File)?\s*\(/],
+        ['fetch', /\bfetch\s*\(/],
+        ['node net/http', /node:(net|http|https|dgram|tls)/],
+      ] as const) {
+        if (re.test(code)) offenders.push(`${file.split('/src/')[1]}: ${label}`);
+      }
+    }
+    expect(offenders, offenders.join('\n')).toEqual([]);
+  });
+});
 
 describe('INVARIANT #1 (source-level): the apply subsystem never spawns a process, imports an AWS SDK, or does network I/O — except the ONE sanctioned executor file', () => {
   it('no process-spawn / AWS-SDK / dynamic-import / require / fetch / raw-socket in the executable code of domain/apply/* (minus terraformExecutor.ts)', () => {

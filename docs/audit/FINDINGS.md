@@ -192,7 +192,7 @@ Roles, sessions, TOTP, dual control, quorum and idempotency.
 - [x] ARCH-2 | high | authz-identity | fixed:d5d9467 | 01-architecture.md | The armed apply/drift-generation lanes are single-estate by construction in a multi-account product
 - [x] FE-5 | high | authz-identity | fixed:85f2980 | 05-frontend-flows.md | Api-mode session expiry is never detected in-app — the UI stays "signed in" while every call fails
 - [ ] API-6 | medium | authz-identity | open | 02-api-correctness.md | The 72-hour dual-control expiry is dead code: `sweepExpired` has no callers and `ackPending` never checks `expiresAt`
-- [ ] ARCH-4 | medium | authz-identity | open | 01-architecture.md | No mutual exclusion between the two apply lanes; both act on `AWAITING_DEPLOY_APPROVAL`
+- [x] ARCH-4 | medium | authz-identity | fixed:0e225e5 | 01-architecture.md | No mutual exclusion between the two apply lanes; both act on `AWAITING_DEPLOY_APPROVAL`
 - [ ] DATA-11 | medium | authz-identity | open | 03-data-integrity.md | v1 migration writes rows that violate the store schemas, including an `id`≠`username` shape that breaks session resolution
 - [ ] DATA-7 | medium | authz-identity | open | 03-data-integrity.md | The 72-hour dual-control expiry is unenforced: `sweepExpired` is dead code and `ackPending` never checks `expiresAt`
 - [x] FE-4 | medium | authz-identity | fixed:b5b703b | 05-frontend-flows.md | ApprovalsQueue's stale-response guard is dead code — overlapping project-switch fetches can commit the wrong project's queue

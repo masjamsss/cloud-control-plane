@@ -2006,3 +2006,58 @@ touch* lived only in one process's environment.
 multi-estate deployment still shares one remote, which is now at least visible in the audit
 entry (**R-38**). R-30 and R-31 were tracked against this finding and are re-homed: neither
 was ever ARCH-2's to carry, which closing it settles.
+
+## ARCH-4
+
+*No mutual exclusion between the two apply lanes; both act on
+`AWAITING_DEPLOY_APPROVAL`.*
+
+The route-triggered bundle (`CCP_BUNDLE=1`) and the timer-driven scheduler
+(`CCP_SCHEDULER=1`) are independent opt-ins with overlapping domains, and nothing at
+arming time refuses the combination. Every bundle-eligible *approved* request is windowed
+— it sits in exactly the status the scheduler claims. The bundle's claim writes
+`bundle.state:'running'` and deliberately does **not** move `status`; the scheduler's due
+filter read only status + window and never consulted `bundle` at all. Neither lane could
+see the other.
+
+**One direction was already safe** and is left alone: `APPLYING` is not in the route's
+`BUNDLE_ELIGIBLE` set, so a scheduler-claimed row already refuses the bundle with a 409.
+The unguarded direction is the other one, and it is the expensive one — the scheduler
+could claim `AWAITING_DEPLOY_APPROVAL → APPLYING` and run its executor while the bundle
+was mid-clone/gate, after which the bundle landed its commit, satisfied the CI deploy
+gate, lost the `ifEquals status` guard on its result write, and returned a 500. Real,
+irreversible side effects with the record stuck at `state:'running'`.
+
+`isDue` now excludes a row with a **live** bundle claim. Three things about that:
+
+- **The lease, not the flag.** `bundleClaimLive` checks `BUNDLE_LEASE_MS`, so a crashed
+  bundle does not wedge auto-apply forever — that would be ERR-2's permanent wedge
+  reappearing one lane over, on a fully-approved change.
+- **A skip, not a halt.** The bundle is a legitimate owner doing what it was asked to. The
+  next tick after it finishes picks the row up normally.
+- **`runDueApplies` now calls `isDue`** instead of restating its body inline. That
+  duplication is how the one lane that matters could miss a rule the predicate gained.
+
+**The fix moved a module, and the reason is a defect in the test suite.** The scheduler
+needs the claim predicate, and the predicate lived in `domain/bundle.ts` — which spawns
+processes, while the apply subsystem's INVARIANT #1 is that it never does. That invariant
+was checked by scanning each file's own **text**, so a static
+`import { bundleClaimLive } from '../bundle'` would have passed it with a process-spawner
+in the module graph: the guarantee reading as intact while being untrue. The same shape as
+ARCH-4 itself — a check that cannot see the thing it is about. So the predicate moved to a
+dependency-free `domain/bundleClaim.ts`, and `test/schedulerGating.test.ts` gained a
+**transitive** import-graph assertion that makes the split enforced rather than intended.
+
+- [x] **Negative test (the fix)** — restoring the old due filter fails 2 of the 7 new
+      tests: the race predicate, and `runDueApplies` claiming a row the bundle owns.
+- [x] **Negative test (the invariant)** — importing `bundleClaimLive` from `../bundle`
+      instead of `../bundleClaim` fails the new transitive check with
+      `domain/exec.ts: child_process`, while the old text scan passes throughout —
+      which is the demonstration that it was insufficient.
+- [x] **Regression tests** — `test/applyLaneExclusion.test.ts` (7): the race, a control
+      proving the skip is the claim and not the fixture, the expired-claim non-wedge, the
+      unparseable timestamp, non-running states, and the exact lease boundary.
+- [x] **Evidence in the status line** — 1,345 api tests pass.
+
+**Residue:** co-arming is still permitted (**R-39**) — the finding's alternative
+recommendation, deliberately not taken.
