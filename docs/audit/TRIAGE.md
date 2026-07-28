@@ -11,6 +11,36 @@ checked rather than interpreted.
 > Batch ids are stable. If you take `B-O4`, say so; nothing else in that batch should be
 > picked up in parallel, because the findings in a batch touch the same files on purpose.
 
+## Start here
+
+If you are a worker picking up a batch, read these in this order — the runbook is at the
+bottom of this file and you need it *first*:
+
+1. **[Worker runbook](#worker-runbook)** — setup, the loop, the gates, the ledger
+   procedure. Two things there will cost you a red CI run if you skip them: `npm ci` in
+   `ccp/app`, and putting `gitleaks` on `PATH` (without it the secret scan **skips** and
+   still reports PASS).
+2. **Your batch**, below. Take a whole batch id — they are grouped by the files they touch
+   so parallel workers do not collide.
+3. **[The appendix](#appendix--every-finding-and-where-to-read-it)** — links each finding
+   to the report section with its full text. Read that before fixing; the expected result
+   in this file says what *done* looks like, not what is wrong.
+4. **[`LESSONS.md`](LESSONS.md)** — `L-1`, `L-25`, `L-26`, `L-27` apply to almost any batch.
+
+**Assigning work programmatically?** [`triage.json`](triage.json) carries the same data in
+machine-readable form — every batch with its model, lane, files touched, and every finding
+with its severity, report path, expected result and a `verify_first` flag. It is generated
+from `FINDINGS.md`; if the two ever disagree, `FINDINGS.md` wins.
+
+**One worked example beats any amount of description.** Read commit `951aaf9` (CONC-11)
+end to end: the two-line code fix, the rule-shaped regression test, the ledger entries, and
+a commit message that says what was wrong rather than what changed. Its negative test also
+found a bug *in the check itself* — which is the habit this repo runs on.
+
+Other commits worth reading for their shape: `3b243aa` (a race test driven by a store
+wrapper), `9dce28b` + `ace4642` (a fix, then the correction when its first design turned
+out to be wrong in containers — the second commit is the more useful one).
+
 ## How the model was chosen
 
 This is not a difficulty ranking. It is about **what happens when the fix is wrong**.
@@ -856,9 +886,15 @@ python3 scripts/docs-link-check.py
 bash scripts/ci/check-path-filters.sh
 bash scripts/ci/check-shipped-lanes.sh
 
-# everything CI runs, in one shot
+# the code gates in one shot — go + api + app + python + tf-fmt
 bash scripts/gate.sh
 ```
+
+**`scripts/gate.sh` is NOT everything CI runs.** It mirrors the *code* workflows
+(catalogctl, ccp-api, ccp-app, importer, terraform) and runs **none** of the ledger or
+publish gates — `findings.yml`, `publish-gate.yml`, `docs-links.yml` and `path-filters.yml`
+have no local equivalent inside it. A green `gate.sh` with a broken ledger entry is a red
+PR. Run the five repo-wide commands above as well; they take seconds.
 
 **`npm run lint` and `npm run format:check` in `ccp/app` are informational** —
 `continue-on-error: true` in the workflow, tracked as pre-existing debt (MAINT-6 / MAINT-9).
