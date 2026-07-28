@@ -2322,3 +2322,42 @@ ever approximate it.
       being left untouched rather than half-restored, and a control that with the server
       stopped the restore lands *and* releases the lock.
 - [x] **Evidence in the status line** — see **CONC-7**.
+
+## CONC-11
+
+*Registry writes that bump `version` without guarding it (trust-request upload, identity
+confirm) can clobber concurrent registry ops and rewind the dual-control version guard.*
+
+The `ProjectItem` row **has** an optimistic-concurrency discipline — the trust decision
+guards `version`, and so do activate/archive/unarchive. These two handlers bypassed it
+with unconditional full-row puts built from a stale read.
+
+Two costs, and the second is the serious one. A trust-request upload racing an identity
+confirm loses one of the two writes entirely. And because both handlers **reset** `version`
+to `stale + 1`, they can **rewind** the counter to a value a pending dual-controlled
+proposal already captured — after which a genuinely stale ack passes its `version` guard
+against different row content. That is the precise class the guard exists to stop, defeated
+by the writes that were supposed to advance it.
+
+Both now carry `ifEquals: {attr:'version', value: project.version}`. Carrying a guard also
+makes `transactWithAudit` refuse to *replay* these writes on chain contention (CONC-2's
+rule) and surface `STATE_CONFLICT` — which is correct here: a replay would write exactly
+the lost update the guard just caught.
+
+**The regression test is a rule, not a pair of assertions.** A third handler added next
+quarter with the same unconditional put is the failure being prevented, so the check scans
+for *any* `version: project.version + 1` and requires a guard inside the same route
+handler. Bounding it by the handler rather than a line window matters: the first version
+used ±14 lines and reported a correctly-guarded handler as an offender, because its
+`ifEquals` rides on a `transactWithAudit` call further down.
+
+- [x] **Negative test** — and it failed the first time, revealing a hole in the check
+      rather than in the fix. The scan matched **the prose of the very fix it protects**: a
+      comment reading `guardAttr:'version' on the trust decision` satisfied the pattern, so
+      deleting the real guard changed nothing and the test stayed green. It had been passing
+      for the wrong reason from the moment it was written. Comments are now stripped first,
+      and removing either guard fails the check.
+- [x] **Regression tests** — `test/projectVersionGuard.test.ts` (4): the rule, an L-1
+      sanity assertion that it finds the writers at all, the store-level property the
+      handlers rely on, and the rewind demonstrated directly rather than described.
+- [x] **Evidence in the status line** — 1,386 api tests pass.

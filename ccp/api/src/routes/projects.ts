@@ -1265,7 +1265,21 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
       await transactWithAudit(
         store,
         auditProjectId,
-        [{ kind: "put", item: updated as never }],
+        [
+          {
+            kind: "put",
+            item: updated as never,
+            // CONC-11 — the project row HAS an OCC discipline (`guardAttr:'version'` on the
+            // trust decision, and on activate/archive/unarchive) and this handler bypassed
+            // it with an unconditional full-row put built from a stale read. Two costs, and
+            // the second is the serious one: a racing identity confirm loses one write
+            // entirely, and because both handlers RESET `version` to `stale + 1` they can
+            // rewind the counter to a value a pending dual-controlled proposal already
+            // captured — letting a genuinely stale ack pass its `version` guard against
+            // different row content, which is the exact class that guard exists to stop.
+            ifEquals: { attr: "version", value: project.version },
+          },
+        ],
         {
           action: "project-trust-request",
           actor,
@@ -1419,7 +1433,17 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     await transactWithAudit(
       store,
       c.get("projectId"),
-      [{ kind: "put", item: updated as never }],
+      [
+        {
+          kind: "put",
+          item: updated as never,
+          // CONC-11, the other half: same unconditional full-row put, same version reset.
+          // Carrying an `ifEquals` also makes `transactWithAudit` refuse to REPLAY these
+          // writes on chain contention (CONC-2's rule) and surface STATE_CONFLICT — which
+          // is right: a replay would write exactly the lost update the guard just caught.
+          ifEquals: { attr: "version", value: project.version },
+        },
+      ],
       {
         action: "project-identity-confirm",
         actor,

@@ -98,7 +98,7 @@ Unguarded full-row writes and lost updates. Largely one root cause — the store
 - [x] DATA-1 | high | concurrency | fixed:887746c | 03-data-integrity.md | Request-row writes lack optimistic concurrency: concurrent approvals/rejections silently lose updates and can corrupt the quorum ledger
 - [x] API-10 | medium | concurrency | fixed:86d3e4e | 02-api-correctness.md | Session revocation can be silently undone by the idle-slide write-back race
 - [ ] API-5 | medium | concurrency | open | 02-api-correctness.md | Cancel can race an in-flight bundle: the change applies but the request reads CANCELLED
-- [ ] CONC-11 | medium | concurrency | open | 04-concurrency.md | Registry writes that bump `version` without guarding it (trust-request upload, identity confirm) can clobber concurrent registry ops and rewind the dual-control version guard
+- [x] CONC-11 | medium | concurrency | fixed:152fece | 04-concurrency.md | Registry writes that bump `version` without guarding it (trust-request upload, identity confirm) can clobber concurrent registry ops and rewind the dual-control version guard
 - [x] CONC-4 | medium | concurrency | fixed:86d3e4e | 04-concurrency.md | A revoked session can be resurrected by the concurrent idle-window slide
 - [ ] CONC-6 | medium | concurrency | open | 04-concurrency.md | The bundle claim has no crash/exception/race recovery: `bundle.state:'running'` can stick forever, and a raced outcome write loses the record of a fired deploy
 - [x] CONC-7 | medium | concurrency | fixed:ed369dc | 04-concurrency.md | `FileStore` has no single-writer enforcement: two processes on the same data file silently destroy each other's writes
