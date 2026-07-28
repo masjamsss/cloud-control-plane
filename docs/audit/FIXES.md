@@ -1449,3 +1449,57 @@ must not relax the copy proof.
 **Residue:** the ceremony still has no end-to-end test against real containers — see
 **R-9**. `DATA_ROOT`/`LEGACY_UPDATE_DIR` are now parameterised (the seam `install.sh`
 already has) so one could be written; it has not been.
+
+## CI-1
+
+*Two components' test suites run in no CI at all, and one of them is currently failing.*
+
+- [x] **Defect reproduced first** — the finding reproduced it: `python3 -m pytest` in
+      `importer/kit` yielded **7 failures, 99 passes** on the audited checkout, and nobody
+      could see red because the suite was wired into nothing. `tools/schemadump`'s Go suite
+      was equally unrun — `catalogctl.yml`'s path filter covers only `tools/catalogctl/**`.
+- [x] **Cause, not symptom** — not the failing tests (those are IMP-1/IMP-2/TEST-1, fixed
+      separately) but the **absence of a lane**. `.github/workflows/importer.yml` runs both
+      kits, `ccp/app/scripts` and `tools/schemadump`; `scripts/gate.sh` gained a `py`
+      section so the local pre-push mirror runs them too.
+- [x] **Regression test** — the lane *is* the test: the suites now gate merges, and the
+      7 failures the finding measured would fail a build today rather than sitting unseen.
+- [x] **Failure is loud** — and this is the part that needed care. `gate_py`'s dependency
+      check **fails rather than skips**. A gate that quietly skipped when `python-hcl2` was
+      absent would reproduce the exact defect being closed — a suite that runs nowhere,
+      reported as fine — which this repo has already shipped once, in a security gate that
+      reported PASS for months without running.
+- [x] **Evidence in the status line** — `21fd092`.
+- [x] **Lesson recorded** — L-1 and L-8, applied rather than restated.
+
+**Residue:** the GitLab mirror still has no lane — see **R-3**.
+
+## IMP-3
+
+*No CI executes any importer test suite; two shipped regressions prove the gap.*
+
+Closed by the same work. Checked against IMP-3's own recommendation rather than by title:
+it asks for a workflow that installs the pinned `python-hcl2` (reading the pin from
+`gen-project-data.sh` "to avoid a second pin copy"), runs both kits' tests, plus
+`go test ./tools/schemadump/...`, and gates merges on it. `importer.yml` does all four —
+including reading the pin out of the script rather than duplicating it. It uses `pytest`
+rather than `unittest discover`; the same tests are collected, and `pytest` is what the
+kits' own docs use.
+
+- [x] **Evidence in the status line** — `21fd092`.
+
+## TEST-2
+
+*No CI lane executes any Python test suite; `gate.sh` omits them too.*
+
+Closed by the same work, and this is the finding that named **both** halves — which is why
+it stayed open after `importer.yml` landed. `gate.sh` now runs all three suites (106 + 48
++ 30 = **184 tests**), so the fast local check that exists to catch a red PR in seconds can
+actually catch these.
+
+- [x] **Evidence in the status line** — `21fd092`.
+
+**Residue:** TEST-2 also notes there is no `requirements.txt`/`pyproject.toml` pinning the
+Python test environment. There still is not — both the workflow and `gate.sh` read the pin
+from `gen-project-data.sh`, which keeps them consistent with each other and with the
+generator, but is not the same as a declared test environment.

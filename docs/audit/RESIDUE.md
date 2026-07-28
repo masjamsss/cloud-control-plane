@@ -66,12 +66,16 @@ rather than a comment, so it fails visibly if anyone assumes it is fixed.
 
 ### R-3 · The Python/importer CI gap is only partly closed
 *Residue on **TEST-1**, **TEST-4**.*
-**Tracked by: CI-1, CI-3, TEST-2.**
+**Tracked by: CI-3.**
 
-`importer.yml` runs both kits, `ccp/app/scripts` and `tools/schemadump`, and
-`CCP_REQUIRE_INTEGRATION=1` stops the api's integration suites skipping silently. Two gaps
-remain: the **GitLab mirror** (`.gitlab/ci/`) has no api/app test lane at all, and
-`scripts/gate.sh` — the local pre-push mirror — omits the Python suites.
+`importer.yml` runs both kits, `ccp/app/scripts` and `tools/schemadump`;
+`CCP_REQUIRE_INTEGRATION=1` stops the api's integration suites skipping silently; and
+`scripts/gate.sh` gained a `py` section, which closed CI-1, IMP-3 and TEST-2.
+
+One gap remains: the **GitLab mirror** (`.gitlab/ci/`) has no api/app test lane at all, so
+none of this reaches it. Also still absent: a `requirements.txt`/`pyproject.toml` declaring
+the Python test environment — both the workflow and `gate.sh` read the pin from
+`gen-project-data.sh`, which keeps them consistent but is not a declared environment.
 
 ### R-27 · The two literal-object token-walkers are still duplicated
 *Residue on **CTL-1**.*
