@@ -23,12 +23,12 @@ import { disabledOps, isFrozen, loadPolicy, loadTeams, resolveRisk } from '../do
 import { checkSubmitRateLimit } from '../middleware/rateLimit';
 import { recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
 import { bundleConfig, realSteps, runBundle } from '../domain/bundle';
-import { settleCooling } from '../domain/cooling';
+import { coolingElapsed, settleCooling } from '../domain/cooling';
 import { canSignStep } from '../domain/eligibility';
 import { totpDevicesOf } from '../auth/totp';
 import { computeFeasibility } from '../domain/feasibility';
 import { currentRequirement } from '../domain/requirement';
-import { applyGate, isWindowInfeasible, REWINDOW_STALE_MS, settleWindow, validateSchedule } from '../domain/schedule';
+import { applyGate, isWindowInfeasible, needsWindowSettlement, REWINDOW_STALE_MS, settleWindow, validateSchedule } from '../domain/schedule';
 import { nowIso, nowMs } from '../clock';
 
 // Schedule v2: shape-only zod, same as ever — `endAt` is now accepted
@@ -53,6 +53,13 @@ const MAX_CHANGE_SET_ITEMS = 100;
  * while a multi-megabyte body is refused before it is ever parsed. Over it → VALIDATION_FAILED,
  * the same fail-closed answer as the item-count cap. */
 const MAX_SUBMIT_BODY_BYTES = 256 * 1024;
+
+/** Ceiling on `GET /requests?limit=` — mirrors the same cap on `GET /admin/audit`. */
+const MAX_LIST_PAGE = 1000;
+/** How many GSI rows a paged list reads per round trip while filling a page. A
+ *  `pending` page can reject most of what it reads, so the walk is chunked rather
+ *  than assuming one read yields a full page. */
+const LIST_SCAN_CHUNK = 500;
 
 /** One operation inside a submitted change set — the client supplies ONLY the intent
  * (operationId/targetAddress/params) plus an optional forces-replace `replaceConfirmation`;
@@ -199,17 +206,31 @@ function ladderStateOf(
  * acting `projectId` is injected so a legacy row (stored before request-tagging) still
  * reports the project it lives under — the storage key `requestKey(projectId, id)` is the
  * source of truth, so the read scope IS the row's project. */
+const STORAGE_ONLY_FIELDS: ReadonlySet<string> = new Set([
+  'PK',
+  'SK',
+  'GSI1PK',
+  'GSI1SK',
+  'requestUlid',
+  'eventSeq',
+  'riskOverrideVersion',
+]);
+
 export function toChangeRequest(item: RequestItem, projectId: string): Record<string, unknown> {
-  const { PK, SK, GSI1PK, GSI1SK, requestUlid, eventSeq, riskOverrideVersion, ...rest } = item;
-  void PK;
-  void SK;
-  void GSI1PK;
-  void GSI1SK;
-  void requestUlid;
-  void eventSeq;
-  void riskOverrideVersion;
+  // Copied field-by-field rather than rest-destructured-then-spread. The obvious
+  // `const {PK, ..., ...rest} = item; return {...rest, extras}` builds TWO full
+  // copies of every request — and this runs once per row of every list response,
+  // where it was the single largest cost in the endpoint. One pass, one object,
+  // same key order (`projectId`, when stored, keeps its original position).
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(item)) {
+    if (!STORAGE_ONLY_FIELDS.has(k)) out[k] = (item as Record<string, unknown>)[k];
+  }
+  out.projectId = item.projectId ?? projectId;
   const { ladder, next } = ladderStateOf(item);
-  return { ...rest, projectId: item.projectId ?? projectId, approvalLadder: ladder, nextApprovalStep: next };
+  out.approvalLadder = ladder;
+  out.nextApprovalStep = next;
+  return out;
 }
 
 /**
@@ -550,28 +571,87 @@ export function requestRoutes(): Hono<AppEnv> {
       return apiError(c, 'FORBIDDEN_ROLE');
     }
 
-    const fetched = (await store.queryGSI1(requestCollectionGsi(projectId))) as RequestItem[];
-    // Lazy cooling-off + window-expiry settlement: sequential,
-    // not Promise.all — concurrent transacts against the SAME per-project chain head
-    // would just self-contend. Cooling settles FIRST so a request that just left
-    // APPROVED_COOLING can be re-evaluated for window expiry in this SAME touch.
-    const all: RequestItem[] = [];
-    for (const x of fetched) all.push(await settleWindow(store, projectId, await settleCooling(store, projectId, x)));
+    // Pagination (declared in openapi/ccp-api.yaml since the contract was written —
+    // the `cursor` parameter and the response's `cursor` field were both specified
+    // and neither was ever honoured, so this endpoint returned the estate's ENTIRE
+    // request history in one response, forever, and grew without bound).
+    //
+    // Opt-in, so nothing that calls it today changes: WITHOUT `limit` the response
+    // is exactly what it always was — every matching request, no cursor. WITH
+    // `limit` the GSI partition is walked in chunks and the walk stops as soon as
+    // the page is full, so page cost tracks the page and not the estate.
+    const limRaw = Number(c.req.query('limit'));
+    const limit = Number.isFinite(limRaw) && limRaw > 0 ? Math.min(Math.floor(limRaw), MAX_LIST_PAGE) : undefined;
+    const cursor = c.req.query('cursor');
+    if (cursor !== undefined && limit === undefined) return apiError(c, 'VALIDATION_FAILED', { field: 'limit' });
+
     const user = toUser(account, projectId);
-    let items: RequestItem[];
-    if (scope === 'mine') items = all.filter((x) => x.requester === account.id);
-    else if (scope === 'pending')
+    // The scope predicate, applied AFTER settlement — settling can change a row's
+    // status, which `pending` reads.
+    const matches = (x: RequestItem): boolean => {
+      if (scope === 'mine') return x.requester === account.id;
+      if (scope === 'all') return true;
       // pending-for-ME (0037): open, generally approvable (not mine, not already signed),
       // AND my role can sign the request's NEXT ladder step. So an approver sees a riskier
       // change only while its first step (L2) is unsigned; once L2 is signed the next step
       // is L3 (lead-only) and the approver no longer sees it as theirs.
-      items = all.filter((x) => {
-        const { next } = ladderStateOf(x);
-        return OPEN_STATUSES.has(x.status) && canApprove(user, x as never) && next !== null && canSignStep(next, actingRole);
-      });
-    else items = all;
+      const { next } = ladderStateOf(x);
+      return OPEN_STATUSES.has(x.status) && canApprove(user, x as never) && next !== null && canSignStep(next, actingRole);
+    };
 
-    return c.json({ items: items.map((x) => toChangeRequest(x, projectId)) });
+    // Lazy cooling-off + window-expiry settlement: sequential,
+    // not Promise.all — concurrent transacts against the SAME per-project chain head
+    // would just self-contend. Cooling settles FIRST so a request that just left
+    // APPROVED_COOLING can be re-evaluated for window expiry in this SAME touch.
+    //
+    // Screened by the settlers' OWN synchronous preconditions so a row that needs
+    // nothing costs nothing. Both settlers are already no-ops for such a row, but
+    // `await`-ing a no-op still allocates a promise and yields the microtask queue
+    // once per settler per row — 2N turns to do no work on a list of N. The
+    // screened rows still go through the FULL cooling→window chain, because
+    // settling cooling can hand a row straight into a window that has expired.
+    const settleNow = nowMs();
+    const settle = async (x: RequestItem): Promise<RequestItem> =>
+      coolingElapsed(x, settleNow) || needsWindowSettlement(x, settleNow)
+        ? settleWindow(store, projectId, await settleCooling(store, projectId, x))
+        : x;
+
+    const gsi = requestCollectionGsi(projectId);
+
+    if (limit === undefined) {
+      // Unpaged: byte-for-byte the historical response.
+      const fetched = (await store.queryGSI1(gsi)) as RequestItem[];
+      const items: RequestItem[] = [];
+      for (const x of fetched) {
+        const s = await settle(x);
+        if (matches(s)) items.push(s);
+      }
+      return c.json({ items: items.map((x) => toChangeRequest(x, projectId)) });
+    }
+
+    // Paged. `scope=pending`/`mine` may reject most of what it reads, so the
+    // partition is walked in chunks until the page fills rather than assumed to
+    // yield `limit` matches per read. One extra match is collected to decide
+    // `cursor` without a second pass.
+    const page: RequestItem[] = [];
+    let after = cursor;
+    let exhausted = false;
+    while (page.length <= limit && !exhausted) {
+      const batch = (await store.queryGSI1(gsi, { limit: LIST_SCAN_CHUNK, ...(after !== undefined ? { after } : {}) })) as RequestItem[];
+      if (batch.length < LIST_SCAN_CHUNK) exhausted = true;
+      if (batch.length === 0) break;
+      after = batch[batch.length - 1]!.GSI1SK ?? batch[batch.length - 1]!.id;
+      for (const x of batch) {
+        const s = await settle(x);
+        if (matches(s)) page.push(s);
+        if (page.length > limit) break;
+      }
+    }
+
+    const hasMore = page.length > limit;
+    if (hasMore) page.length = limit;
+    const next = hasMore ? page[page.length - 1]?.id : undefined;
+    return c.json({ items: page.map((x) => toChangeRequest(x, projectId)), ...(next ? { cursor: next } : {}) });
   });
 
   // GET /requests/:id

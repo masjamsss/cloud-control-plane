@@ -22,6 +22,7 @@ components:
     client: { name: X-Ccp-Client, in: header, required: true, schema: { type: string, const: ccp-spa } }
     id: { name: id, in: path, required: true, schema: { type: string } }
     cursor: { name: cursor, in: query, schema: { type: string } }
+    limit: { name: limit, in: query, description: 'Page size. Omit for the whole collection (unpaged); a cursor without a limit is a 422.', schema: { type: integer, minimum: 1, maximum: 1000 } }
     digest: { name: digest, in: path, required: true, description: 'proposalDigest — sha256 hex (drift-portal spec §2.4)', schema: { type: string, pattern: '^[0-9a-f]{64}$' } }
   responses:
     E401: { description: No/expired/invalidated session, content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } }
@@ -557,7 +558,7 @@ paths:
   /requests:
     get: { summary: List requests. scope=mine|pending|all; pending/all require approver|lead (server-filtered by canApprove),
       parameters: [{ name: scope, in: query, required: true, schema: { type: string, enum: [mine, pending, all] } },
-        { $ref: '#/components/parameters/cursor' }],
+        { $ref: '#/components/parameters/limit' }, { $ref: '#/components/parameters/cursor' }],
       responses: { '200': { description: OK, content: { application/json: { schema: { type: object,
         properties: { items: {type: array, items: {$ref: '#/components/schemas/ChangeRequest'}}, cursor: {type: string} } } } } },
         '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' } } }
@@ -871,7 +872,10 @@ paths:
         properties: { enabled: {type: boolean} } } } } },
       responses: { '200': { description: Applied }, '202': { description: Pending } } }
   /admin/config-changes:
-    get: { summary: Pending/dispositioned dual-control items, parameters: [{ $ref: '#/components/parameters/cursor' }],
+    get: { summary: 'Dual-control items AWAITING a second admin. Unpaged, and bounded by construction rather
+        than by a page size: ack, reject and expiry each clear the row GSI1PK, so this partition only ever holds
+        proposals that are still open. (It previously also declared a cursor parameter, which nothing implemented
+        and which the bare-array response has nowhere to return.)',
       responses: { '200': { description: OK, content: { application/json: { schema: { type: array,
         items: { $ref: '#/components/schemas/PendingConfigChange' } } } } } } }
   /admin/config-changes/{id}/ack:

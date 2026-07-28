@@ -16,9 +16,16 @@ import { MemoryStore } from './memoryStore';
  * A POSIX rename is atomic, so a `kill -9` at any instant leaves EITHER the prior
  * complete snapshot or the new complete snapshot on disk — never a torn file.
  *
- * Ordering: a mutation captures its snapshot string SYNCHRONOUSLY (right after the
- * synchronous Map apply) and enqueues the disk write on a serialized chain, so
- * snapshots land in mutation order and the last writer always reflects true state.
+ * Ordering + batching: disk writes run on a serialized chain, and every mutation
+ * that arrives while a write is in flight joins the SAME next snapshot instead of
+ * queueing a snapshot of its own. That is sound because the store never rolls a
+ * mutation back: a snapshot taken after N mutations have landed necessarily
+ * contains all N, so one write can honour all N durability promises. The contract
+ * each caller gets is unchanged and still strict — `await store.put(x)` resolves
+ * only once a snapshot CONTAINING x is durably on disk — but a burst of writes
+ * now costs one fsync instead of one fsync each, which is the difference between
+ * the durable path scaling with concurrency and serialising behind it.
+ *
  * The DynamoDB implementation lands later behind the SAME ConfigStore seam.
  */
 export class FileStore extends MemoryStore {
@@ -48,6 +55,10 @@ export class FileStore extends MemoryStore {
    * a corrupt snapshot.
    */
   private fault: string | null = null;
+  /** Callers awaiting durability who are not yet covered by a completed write. */
+  private waiters: Array<{ resolve: () => void; reject: (e: unknown) => void }> = [];
+  /** True once a flush is queued on `writeChain` but has not yet claimed `waiters`. */
+  private flushQueued = false;
 
   constructor(private readonly file: string) {
     super();
@@ -120,24 +131,55 @@ export class FileStore extends MemoryStore {
   }
 
   /**
-   * Snapshot the current state and durably write it. The JSON is captured now
-   * (synchronously) so the enqueued write reflects state at THIS mutation; writes
-   * are serialized so they apply in order. The returned promise resolves once this
-   * snapshot (or a later one) is on disk, so callers `await` real durability.
+   * Register this mutation's durability promise and make sure a write is coming.
+   *
+   * The caller's mutation has ALREADY landed in the in-memory index synchronously
+   * (super.put/transact returned before we were called), so any snapshot taken
+   * from here on contains it — which is why several callers can share one write.
+   * The returned promise resolves once such a snapshot is on disk, and rejects
+   * only if the write that was meant to cover it failed.
    */
   private persist(): Promise<void> {
-    const json = JSON.stringify(this.exportItems());
-    const done = this.writeChain.then(() => this.writeAtomic(json)).catch((e: unknown) => {
-      // The Map already holds this mutation and cannot be safely un-held (see `fault`).
-      // Record that the store is no longer authoritative, then rethrow so THIS caller
-      // still learns its own write failed. First failure wins: the original cause is the
-      // useful one for an operator, and later failures are just its consequences.
-      this.fault ??= `snapshot write to ${this.file} failed: ${e instanceof Error ? e.message : String(e)}. In-memory state has diverged from disk by an unknown amount; this instance is no longer authoritative.`;
-      throw e;
+    const done = new Promise<void>((resolve, reject) => {
+      this.waiters.push({ resolve, reject });
     });
-    // Keep the chain alive even if one write rejects, but surface the error to THIS caller.
-    this.writeChain = done.catch(() => undefined);
+    if (!this.flushQueued) {
+      this.flushQueued = true;
+      const run = this.writeChain.then(() => this.flush());
+      // Keep the chain alive even if one write rejects; the error still reaches the
+      // waiters that write was covering (below).
+      this.writeChain = run.catch(() => undefined);
+    }
     return done;
+  }
+
+  /**
+   * Write one snapshot covering every waiter registered so far. Claiming `waiters`
+   * and serializing happen in the SAME synchronous step, so no mutation can slip
+   * between "these callers are covered" and "this is the state we are writing" —
+   * a mutation that lands during the await simply queues the next flush.
+   */
+  private async flush(): Promise<void> {
+    this.flushQueued = false;
+    const covered = this.waiters;
+    this.waiters = [];
+    if (covered.length === 0) return;
+    const json = this.serializeItems();
+    try {
+      await this.writeAtomic(json);
+    } catch (e) {
+      // DATA-3 — the batching makes this MORE important, not less: one failed snapshot
+      // now covers every mutation that joined it, so a single failure can leave many
+      // writes in memory and none on disk. The Map already holds all of them and cannot
+      // be safely un-held (see `fault`), so the store stops claiming to be authoritative.
+      // First failure wins: the original cause is what an operator needs.
+      this.fault ??=
+        `snapshot write to ${this.file} failed: ${e instanceof Error ? e.message : String(e)}. ` +
+        'In-memory state has diverged from disk by an unknown amount; this instance is no longer authoritative.';
+      for (const w of covered) w.reject(e);
+      return;
+    }
+    for (const w of covered) w.resolve();
   }
 
   private async writeAtomic(json: string): Promise<void> {

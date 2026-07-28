@@ -1,6 +1,6 @@
 import type { ConfigStore } from '../store/configStore';
 import { loadAccounts } from './config';
-import { exportAuditChain } from './auditQuery';
+import { verifyProjectChain } from './auditQuery';
 import { CONTROL_SCOPE, knownProjects } from '../projects';
 
 /**
@@ -47,9 +47,14 @@ export async function readiness(store: ConfigStore): Promise<Readiness> {
 
     const chains: ChainReadiness[] = [];
     for (const projectId of projects) {
-      const doc = await exportAuditChain(store, projectId);
-      chains.push({ projectId, count: doc.count, verified: doc.verified, message: doc.verification.message });
-      if (!doc.verified) reasons.push(`audit chain for project '${projectId}' does not verify: ${doc.verification.message}`);
+      // `verifyProjectChain`, not `exportAuditChain`: the probe needs a verdict, not
+      // the evidence document. Building the full `AuditEntry[]` projection only to
+      // throw it away made every probe cost the whole chain, and a readiness probe
+      // is the one endpoint that runs forever on a timer. The export endpoint and
+      // the offline verifier still do the full, uncached walk.
+      const chain = await verifyProjectChain(store, projectId);
+      chains.push({ projectId, count: chain.count, verified: chain.verified, message: chain.message });
+      if (!chain.verified) reasons.push(`audit chain for project '${projectId}' does not verify: ${chain.message}`);
     }
 
     if (accounts === 0) reasons.push('store holds 0 accounts — an emptied/wiped store is not ready (a bootstrapped store has ≥1 admin).');
