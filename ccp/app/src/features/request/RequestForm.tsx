@@ -15,6 +15,7 @@ import { SchemaForm } from '@/components/SchemaForm/SchemaForm';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { LoadError } from '@/components/LoadError';
 import { submitRequestVia } from './submitFlow';
+import { activeRefusal, draftKey, type DraftRefusal } from './refusalFlow';
 import { Button } from '@/components/ui/Button';
 import { RiskBadge } from '@/components/ui/RiskBadge';
 import { resolveRisk } from '@/lib/riskOverrides';
@@ -106,16 +107,28 @@ export function RequestForm(): JSX.Element {
   const [replaceConfirmation, setReplaceConfirmation] = useState('');
   const [revealErrors, setRevealErrors] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [blockedReason, setBlockedReason] = useState<string | null>(null);
+  // A server REFUSAL of THIS draft, stored WITH the state it judged (FE-3).
+  //
+  // Blocking on it is right — the server decided, and re-sending an identical draft would
+  // only be refused again. The bug was that nothing ever cleared it, so the verdict
+  // outlived what it judged: an OUT_OF_BOUNDS refusal survived the requester going back,
+  // fixing the parameter and returning, leaving the button dead over a value no longer in
+  // the form — and the only escape, leaving the route, discards the whole draft.
+  //
+  // It is not cleared, it EXPIRES: `activeRefusal` yields it only while the draft (and the
+  // live settings it may have been about) still match. Clearing was never an action anyone
+  // took, which is exactly why it never happened; being out of date is a consequence of
+  // editing, so the rule belongs in the derivation. See features/request/refusalFlow.ts.
+  const [refusal, setRefusal] = useState<DraftRefusal | null>(null);
   // A submit that never reached the server (FE-1). Kept SEPARATE from
-  // blockedReason on purpose: that one is a server REFUSAL and correctly
+  // the refusal above on purpose: that one is a server REFUSAL and correctly
   // disables the button, whereas this one means nothing was decided at all,
   // so the button must stay live for the retry.
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Live settings — dims the Review step's submit control the
   // moment an admin freezes changes or disables this op (this tab or
   // another), even before the requester has attempted to submit once
-  // (blockedReason above only ever gets set AFTER a failed attempt). The
+  // (the refusal above only ever gets set AFTER a failed attempt). The
   // submit-time re-check in onSubmit below is unchanged and stays the
   // actual authority — this is a proactive, honest preview of that same gate.
   const settings = useSettings();
@@ -189,7 +202,10 @@ export function RequestForm(): JSX.Element {
     setReplaceConfirmation(''); // the destroy+recreate confirmation is never pre-filled
     setRevealErrors(false);
     setStep('configure');
+    setRefusal(null); // a different draft entirely — the old verdict cannot apply
+    setSubmitting(false); // and it is certainly not still in flight
   }, [op, inventory, target, fromLoaded, reuse]);
+
 
   const validation = useMemo(
     () => (op && inventory ? validateParams(op, values, inventory) : { ok: false, errors: {} }),
@@ -289,16 +305,24 @@ export function RequestForm(): JSX.Element {
     window.scrollTo({ top: 0 });
   };
 
+  // The identity of the state the server is being asked to judge. Recomputed on every
+  // render — cheap, and it must never lag the draft it describes, or a refusal would go
+  // on blocking an edit the requester has already made (FE-3).
+  const currentDraftKey = draftKey({ values, schedule, justification, replaceConfirmation, settings });
+
+  /** Pair a refusal with the draft it is a verdict about, so it can expire on its own. */
+  const refuse = (reason: string): DraftRefusal => ({ reason, forKey: currentDraftKey });
+
   const onSubmit = (): void => {
     // Admin gates re-checked at submit. A real backend re-enforces both.
     if (isChangeFrozen()) {
-      setBlockedReason(
-        'Change requests are frozen by an administrator right now. Try again once the freeze is lifted.',
+      setRefusal(
+        refuse('Change requests are frozen by an administrator right now. Try again once the freeze is lifted.'),
       );
       return;
     }
     if (isOpDisabled(op.id)) {
-      setBlockedReason('This operation has been disabled by an administrator.');
+      setRefusal(refuse('This operation has been disabled by an administrator.'));
       return;
     }
     setSubmitting(true);
@@ -319,7 +343,7 @@ export function RequestForm(): JSX.Element {
       // draft and keeps disabling submit. A never-reached server is not a
       // refusal — nothing was created — so it goes to the retryable slot.
       if (result.code === 'UNREACHABLE') setSubmitError(result.reason);
-      else setBlockedReason(result.reason);
+      else setRefusal(refuse(result.reason));
     });
   };
 
@@ -353,7 +377,7 @@ export function RequestForm(): JSX.Element {
           justification={justification}
           targetAddress={targetAddress}
           submitting={submitting}
-          blocked={blockedReason ?? liveBlockedReason ?? undefined}
+          blocked={activeRefusal(refusal, currentDraftKey) ?? liveBlockedReason ?? undefined}
           submitError={submitError ?? undefined}
           schedule={schedule}
           onScheduleChange={setSchedule}
