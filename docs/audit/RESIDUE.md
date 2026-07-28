@@ -349,3 +349,30 @@ Python suite joins, the workflow should be renamed rather than accreting.
 *Residue on **PERF-2**.* Two applies still cannot run concurrently, for other reasons. The
 fix stops an in-flight child blocking *unrelated* traffic and `/readyz`; it does not make
 applies parallel.
+
+### R-35 · PERF-5 moved the catalog parse; it did not make it cheaper
+*Residue on **PERF-5**.* The zod deep-parse of all 115 manifests still runs in full — now on
+the first `listManifests()` for a sample-estate session instead of before first paint. That
+relocation *is* the fix (nothing on the login path pays for a catalog it cannot use), but a
+sample-estate user's first catalog read still stalls the main thread for the whole parse.
+
+Making the parse itself cheaper — per-manifest on access, or trusting a build-time-validated
+payload — was deliberately not done. The eager whole-catalog parse is what makes a malformed
+manifest fail loudly at one known point rather than as a runtime cast error three screens
+later, and that property is worth more than the stall. PERF-5 is a first-paint finding; the
+parse cost is a different question and is not pretended to be closed here.
+
+### R-36 · The entry chunk is still 855 kB (248 kB gzip), and `manualChunks` would not shrink it
+*Residue on **PERF-5**.* After the catalog and the eleven heavy leaf routes came out, what
+remains on the entry graph is React, react-router, zod, and the shared component/lib layer.
+That is the app's floor, not an oversight — it is above Vite's 500 kB warning and will stay
+there.
+
+The finding's third suggestion, `manualChunks` to separate vendor React from catalog data,
+was **not** taken, and the reason is that it does not do what the finding's framing implies:
+the catalog is already its own chunk, and splitting vendor out of the entry changes the
+first-paint byte count by zero while adding a second blocking request. Its real benefit is
+cache granularity across deploys — a returning visitor re-downloading ~45 kB of app code
+instead of 248 kB. That is worth having and is not why PERF-5 was filed, so it is recorded
+here rather than folded in silently. Chunk-init ordering is the risk that makes it worth
+doing on purpose rather than as a footnote to a performance fix.

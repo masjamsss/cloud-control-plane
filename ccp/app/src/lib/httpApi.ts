@@ -20,7 +20,7 @@ import { noCapabilities, type ServerInfo } from '@/lib/serverInfo';
 import { currentProjectId, SAMPLE_ESTATE_ID } from '@/lib/projectScope';
 import { clearApiSession } from '@/lib/apiSession';
 import { parseManifests } from '@/types/manifestSchema';
-import { manifests as bundledManifests } from '@/data/manifests';
+import { loadBundledManifests } from '@/lib/bundledCatalog';
 import inventoryData from '@/data/inventory.json';
 
 /**
@@ -68,8 +68,15 @@ export interface HttpApiOptions {
    * Tests inject a cookie-jar wrapper so the same flow works under Node.
    */
   fetch?: typeof fetch;
-  /** Project-scoped catalog getters injected by the selector; default to bundled. */
-  getManifests?: () => ServiceManifest[];
+  /**
+   * Project-scoped catalog getters injected by the selector; default to bundled.
+   *
+   * `getManifests` may return a promise: the bundled sample catalog is loaded on
+   * first use rather than at module evaluation (PERF-5), and both call sites below
+   * are already inside `async` methods. The synchronous form still type-checks, so
+   * an injector with its catalog already in hand needn't wrap it.
+   */
+  getManifests?: () => ServiceManifest[] | Promise<ServiceManifest[]>;
   getInventory?: () => Inventory;
 }
 
@@ -1090,7 +1097,7 @@ function submitCodeFor(code: string): 'FROZEN' | 'OP_DISABLED' | 'OUT_OF_BOUNDS'
  */
 export function createHttpApiClient(baseUrl: string, opts?: HttpApiOptions): HttpApiClient {
   const doFetch: typeof fetch = opts?.fetch ?? globalThis.fetch.bind(globalThis);
-  const resolveManifests = opts?.getManifests ?? ((): ServiceManifest[] => bundledManifests);
+  const resolveManifests = opts?.getManifests ?? loadBundledManifests;
   const resolveInventory =
     opts?.getInventory ?? ((): Inventory => inventoryData as unknown as Inventory);
 

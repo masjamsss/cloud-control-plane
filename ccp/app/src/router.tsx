@@ -8,23 +8,64 @@ import { RouteSkeleton } from '@/components/RouteSkeleton';
 import { AdminGate, RequireAuth, RoleGate } from '@/components/guards';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { ServiceCatalog } from '@/features/catalog/ServiceCatalog';
-import { ServiceConsole } from '@/features/services/ServiceConsole';
-import { ResourceDetail } from '@/features/services/ResourceDetail';
-import { RequestForm } from '@/features/request/RequestForm';
-import { BulkRequestForm } from '@/features/request/BulkRequestForm';
-import { BeyondCatalogForm } from '@/features/request/BeyondCatalogForm';
-import { ProvisionService } from '@/features/request/ProvisionService';
 import { MyRequests } from '@/features/requests/MyRequests';
-import { RequestDetail } from '@/features/requests/RequestDetail';
 import { NotInControlPlane } from '@/features/help/NotInControlPlane';
-import { ApprovalsQueue } from '@/features/approvals/ApprovalsQueue';
-import { LeadDashboard } from '@/features/dashboard/LeadDashboard';
-import { DriftPage } from '@/features/drift/DriftPage';
-import { AccountSecurityPage } from '@/features/account/AccountSecurityPage';
 import { ProjectProvider } from '@/lib/ProjectContext';
 import { FIRST_RUN_PATH, legacyPathToProjectPath } from '@/lib/legacyRoute';
 
 export { legacyPathToProjectPath };
+
+/**
+ * PERF-5 — every heavy leaf route is code-split, not just the admin subtree.
+ *
+ * The split points are chosen by what the FIRST paint actually needs. Two routes
+ * stay eager on purpose: `ServiceCatalog` is the index route (splitting it would
+ * add a load waterfall to the most common authenticated landing), and the small
+ * leaves below it aren't worth a request of their own. Everything else here is a
+ * 350–950 line page that most sessions never open — a Requester never opens
+ * Approvals or the Dashboard, an Approver never opens the provision forms — and
+ * each was being downloaded, parsed, and evaluated by all of them anyway.
+ *
+ * These are named exports, so the promise is mapped to the `{ default }` shape
+ * `lazy` requires. AppShell's `<Suspense fallback={<RouteSkeleton/>}>` wraps the
+ * `<Outlet/>`, so every one of these renders inside an existing boundary — none
+ * of them needs one of its own.
+ */
+const ServiceConsole = lazy(() =>
+  import('@/features/services/ServiceConsole').then((m) => ({ default: m.ServiceConsole })),
+);
+const ResourceDetail = lazy(() =>
+  import('@/features/services/ResourceDetail').then((m) => ({ default: m.ResourceDetail })),
+);
+const RequestForm = lazy(() =>
+  import('@/features/request/RequestForm').then((m) => ({ default: m.RequestForm })),
+);
+const BulkRequestForm = lazy(() =>
+  import('@/features/request/BulkRequestForm').then((m) => ({ default: m.BulkRequestForm })),
+);
+const BeyondCatalogForm = lazy(() =>
+  import('@/features/request/BeyondCatalogForm').then((m) => ({ default: m.BeyondCatalogForm })),
+);
+const ProvisionService = lazy(() =>
+  import('@/features/request/ProvisionService').then((m) => ({ default: m.ProvisionService })),
+);
+const RequestDetail = lazy(() =>
+  import('@/features/requests/RequestDetail').then((m) => ({ default: m.RequestDetail })),
+);
+const ApprovalsQueue = lazy(() =>
+  import('@/features/approvals/ApprovalsQueue').then((m) => ({ default: m.ApprovalsQueue })),
+);
+const LeadDashboard = lazy(() =>
+  import('@/features/dashboard/LeadDashboard').then((m) => ({ default: m.LeadDashboard })),
+);
+const DriftPage = lazy(() =>
+  import('@/features/drift/DriftPage').then((m) => ({ default: m.DriftPage })),
+);
+const AccountSecurityPage = lazy(() =>
+  import('@/features/account/AccountSecurityPage').then((m) => ({
+    default: m.AccountSecurityPage,
+  })),
+);
 
 // The Lead-only admin subtree is code-split — it's the largest, least-frequently
 // visited area, so it need not weigh down the initial bundle. A Suspense boundary

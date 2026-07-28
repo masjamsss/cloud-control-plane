@@ -1878,3 +1878,66 @@ already-verified prefix. `GET /admin/audit/export` and `scripts/verify-audit-cha
 verify every entry every time, and a test pins that they catch what the memo path does not.
 That is a stated trade, not an oversight — but it does mean `/readyz` alone is not a
 tamper-detector.
+
+## PERF-5
+
+*Frontend main bundle is 3.76 MB (663 KB gzip) with all 115 manifest JSONs inlined and
+zod-parsed at module init.*
+
+`src/data/manifests/index.ts` eagerly globs 115 manifest JSONs — 3.9 MB on disk — and runs
+`parseManifests` (a full zod deep-parse) at module-evaluation time. That module is the right
+shape: picking files up automatically is what lets `catalogctl` drop a manifest in with no
+edit here, and validating loudly is what stops a malformed manifest becoming a blind
+`as unknown as` cast. The defect was **who paid for it**. `lib/api.ts` and `lib/httpApi.ts`
+both imported it statically, and both are on the entry graph, so the whole catalog was
+downloaded, parsed, and evaluated before anything rendered — for every visitor, including
+the **login page**, which cannot use a catalog it has no session for.
+
+The module is unchanged. What changed is that the two entry-graph consumers reach it through
+`lib/bundledCatalog.ts`, which dynamic-imports it and memoises **the promise** (so concurrent
+callers share one load and get the same array identity). All three consumers were already
+inside `async` methods; `activeManifests()` became async and `HttpApiOptions.getManifests`
+now accepts a promise, which is the whole of the seam change. The 45 test files that import
+`{ manifests }` directly are untouched — it is still a plain synchronous export.
+
+Second half: the router's heavy leaves are code-split the way the admin subtree already was.
+`ServiceCatalog` stays eager because it is the index route and splitting it would put a load
+waterfall on the most common authenticated landing; the eleven pages behind it (350–950 lines
+each — DriftPage, RequestDetail, ApprovalsQueue, ResourceDetail, ServiceConsole, the four
+request forms, LeadDashboard, AccountSecurityPage) were being shipped to every session
+regardless of role. A Requester never opens Approvals; an Approver never opens the provision
+forms. They render inside AppShell's existing `<Suspense fallback={<RouteSkeleton/>}>`, so
+none needed a boundary of its own.
+
+Measured on the built output, not inferred:
+
+| | entry chunk | gzip |
+| --- | --- | --- |
+| before | 3,767.00 kB | 665.32 kB |
+| after lazy catalog | 1,137.04 kB | 327.48 kB |
+| after route split | **855.03 kB** | **248.13 kB** |
+
+**−77% raw, −63% gzip** on the bytes between a cold visit and first paint. The catalog is now
+a 2,629 kB chunk that is not preloaded and is fetched only when a sample-estate catalog read
+happens.
+
+**The guard matters more than the fix.** Re-adding one `import { manifests } from
+'@/data/manifests'` anywhere on the entry graph silently puts all 3.9 MB back — the app still
+works, still typechecks, still passes every other test, just three times heavier. So
+`src/test/entryGraph.test.ts` walks the static import graph from `main.tsx` (static
+`import`/`export … from` plus **eager** `import.meta.glob` — precisely what Rollup folds into
+the importing chunk; `import()` and lazy globs are deliberately not followed, being the
+mechanism of the fix rather than a leak in it) and asserts the catalog is absent, the eleven
+leaf routes are absent, and entry-graph JSON stays under a 400 kB budget. The budget is the
+general form: it would catch a *new* 3 MB eager import that a named-file check would miss.
+
+- [x] **Negative test** — re-adding the static import and un-splitting `DriftPage` fails
+      three of the four assertions, reporting `data/manifests/index.ts` +114 siblings,
+      `features/drift/DriftPage.tsx`, and `entry-graph JSON is 3706 kB, over the 400 kB
+      budget`. Confirms the eager-glob resolution works and the walk is not vacuous (L-1).
+- [x] **Evidence in the status line** — 2,738 app tests pass; `typecheck`, `build`,
+      `contrast`, `help:check`, `verify:safety` all green.
+
+**Residue:** the parse was relocated, not made cheaper (**R-35**), and the entry chunk is
+still 855 kB — the finding's `manualChunks` suggestion would not change that number
+(**R-36**).
