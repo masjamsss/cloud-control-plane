@@ -6,8 +6,8 @@ import { canApprove, canRequest } from '@app-lib/permissions';
 import { PlanSummarySchema, type PlanCounts } from '../store/planSummarySchema';
 import { initialStatusFor, ladderFor, nextLadderStep, reviewTierFor, strictestTier, tierOf, type LadderStep, type ReviewTier } from '../domain/exposure';
 import type { AppEnv } from '../appEnv';
-import type { ChainHeadItem, RequestItem, RequestSetItem } from '../store/schema';
-import { approvalKey, chainHead, requestCollectionGsi, requestIdempotencyKey, requestKey } from '../store/schema';
+import type { ChainHeadItem, ProjectItem, RequestItem, RequestSetItem } from '../store/schema';
+import { approvalKey, chainHead, projectKey, requestCollectionGsi, requestIdempotencyKey, requestKey } from '../store/schema';
 import { itemsOf } from '../domain/changeset';
 import type { TransactWrite } from '../store/configStore';
 import { ConditionError } from '../store/configStore';
@@ -22,7 +22,9 @@ import { isSystemDriftOp } from '../domain/systemOps';
 import { disabledOps, isFrozen, loadPolicy, loadTeams, resolveRisk } from '../domain/config';
 import { checkSubmitRateLimit } from '../middleware/rateLimit';
 import { recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
-import { bundleConfig, realSteps, runBundle } from '../domain/bundle';
+import { bundleArmed, bundleConfig, realSteps, runBundle } from '../domain/bundle';
+import { resolveLaneRemote, type LaneProject } from '../domain/laneRepo';
+import { resolveKnob } from '../domain/deploymentSettings';
 import { coolingElapsed, settleCooling } from '../domain/cooling';
 import { canSignStep } from '../domain/eligibility';
 import { totpDevicesOf } from '../auth/totp';
@@ -1089,8 +1091,12 @@ export function requestRoutes(): Hono<AppEnv> {
     const store = c.get('store');
     const projectId = c.get('projectId');
     const account = c.get('account')!;
-    const cfg = bundleConfig();
-    if (!cfg) return c.json({ code: 'BUNDLE_DISARMED', reason: 'The approval-to-apply bundle is not armed on this deployment (CCP_BUNDLE + git/gate/trigger config).' }, 409);
+
+    // Arming first, from the environment alone — the cheapest, most caller-independent
+    // answer there is. A deployment that never armed the bundle replies identically to
+    // every caller without touching the store, which is the property that kept ARCH-2's
+    // per-estate resolution (two reads, below) off the disarmed path.
+    if (!bundleArmed()) return c.json({ code: 'BUNDLE_DISARMED', reason: 'The approval-to-apply bundle is not armed on this deployment (CCP_BUNDLE + git/gate/trigger config).' }, 409);
 
     const k = requestKey(projectId, c.req.param('id'));
     let req = (await store.get(k.PK, k.SK)) as RequestItem | null;
@@ -1175,6 +1181,32 @@ export function requestRoutes(): Hono<AppEnv> {
     }
     if (takeoverEvent.length > 0) req = { ...req, events: [...req.events, ...takeoverEvent] };
 
+    // ARCH-2 — WHICH estate's repository this run clones. The remote used to come from
+    // one deployment-global `CCP_GIT_REMOTE` regardless of the acting project, so the
+    // moment a second estate was onboarded an armed deployment cloned estate A's repo
+    // for estate B's requests. The registry has stored each project's repo all along.
+    //
+    // Resolved HERE — after role, freeze, status and quorum — so a caller who is not
+    // entitled to run a bundle never causes a registry read, and the disarmed answer
+    // above stays store-free.
+    const pk = projectKey(projectId);
+    const project = (await store.get(pk.PK, pk.SK)) as ProjectItem | null;
+    // A project row that has vanished is not a licence to clone somebody else's repo:
+    // it resolves as "registers nothing", which the CCP_GIT_PROJECT pin then refuses.
+    const laneProject: LaneProject = project ?? { id: projectId };
+    const extraHosts = ((await resolveKnob(store, 'scanner.forgeHosts')).value ?? []) as string[];
+    const cfg = bundleConfig(process.env, laneProject, extraHosts);
+    if (!cfg) {
+      // Armed (checked above) and still no config ⇒ the remote is what failed, for THIS
+      // estate. Reporting that as "disarmed" is what made the cross-estate clone
+      // invisible: the operator would go looking at flags that were set correctly.
+      const remote = resolveLaneRemote(laneProject, process.env, extraHosts);
+      return c.json(
+        { code: 'BUNDLE_REPO_UNRESOLVED', reason: `The apply bundle cannot resolve a repository for this estate: ${remote.ok ? 'unknown' : remote.detail}` },
+        409,
+      );
+    }
+
     // The bundle itself (gate → CAS commit → trigger). Never terraform apply here.
     const outcome = await runBundle(
       realSteps(cfg),
@@ -1197,7 +1229,11 @@ export function requestRoutes(): Hono<AppEnv> {
       targetId: req.id,
       requestId: req.id,
       before: { status: req.status, bundle: req.bundle ?? null },
-      after: { status: req.status, bundle, steps: outcome.steps },
+      // ARCH-2 — WHICH estate's repository this run acted on, in the audit trail of
+      // record. The cross-estate clone was possible for years because the answer lived
+      // only in one process's environment; a reader of this chain could not have told
+      // that a request for estate B landed in estate A's repo.
+      after: { status: req.status, bundle, steps: outcome.steps, remote: { source: cfg.remoteSource, detail: cfg.remoteDetail, branch: cfg.branch } },
     };
     const hKey = chainHead(projectId);
     for (let attempt = 0; attempt < 2; attempt++) {

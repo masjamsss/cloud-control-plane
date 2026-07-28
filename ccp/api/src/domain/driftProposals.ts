@@ -9,6 +9,7 @@ import type { ConfigStore, TransactWrite } from '../store/configStore';
 import type { DriftProposalItem } from '../store/schema';
 import { DRIFT_PROPOSAL_SK_PREFIX, driftProposalKey } from '../store/schema';
 import { record, transactWithAudit } from './audit';
+import { resolveLaneRemote, type LaneProject, type LaneRemoteSource } from './laneRepo';
 import type { DriftFinding, DriftVerdict } from './drift';
 import { isSecurityPosture, parseStoredEnvelope, readDriftReport } from './drift';
 import { nowIso } from '../clock';
@@ -731,8 +732,12 @@ export function driftProposalsArmed(env: Env = process.env): boolean {
 }
 
 export interface DriftGenConfig {
-  /** Pushable/clonable checkout URL — shared with the bundle (CCP_GIT_REMOTE). */
+  /** Clonable checkout URL — the acting project's own repo, else CCP_GIT_REMOTE. */
   remote: string;
+  /** Where {@link remote} came from (ARCH-2) — recorded in the run's evidence. */
+  remoteSource: LaneRemoteSource;
+  /** Human-readable form of the same, for the audit payload. */
+  remoteDetail: string;
   /** Branch to check out — shared with the bundle; default 'main'. */
   branch: string;
   /** Operator command: runs `catalogctl drift-propose` inside $DRIFT_CHECKOUT,
@@ -740,12 +745,39 @@ export interface DriftGenConfig {
   genCmd: string;
 }
 
-export function driftGenConfig(env: Env = process.env): DriftGenConfig | null {
-  if (!driftProposalsArmed(env)) return null;
-  const remote = env.CCP_GIT_REMOTE;
-  const genCmd = env.CCP_DRIFT_GEN_CMD;
-  if (!remote || !genCmd) return null;
-  return { remote, branch: env.CCP_GIT_BRANCH || 'main', genCmd };
+/**
+ * ARCH-2: the checkout is the ACTING project's repository when it registers one, and
+ * the deployment-global `CCP_GIT_REMOTE` only as the single-estate fallback. Generating
+ * estate B's fix proposals from a clone of estate A's Terraform is the same defect as the
+ * bundle's, with the same cause — one global remote in a multi-account product.
+ * `project` is optional so the legacy call shape still type-checks; both routes pass it.
+ */
+/**
+ * Is generation armed AT ALL — flag plus the operator command, from the environment
+ * alone? The bundle's `bundleArmed` twin, for the same reason: "never armed" and
+ * "armed but no repository resolves for YOUR estate" are different operator problems,
+ * and only the first can be answered without reading the registry.
+ */
+export function driftGenArmed(env: Env = process.env): boolean {
+  return driftProposalsArmed(env) && !!env.CCP_DRIFT_GEN_CMD;
+}
+
+export function driftGenConfig(
+  env: Env = process.env,
+  project?: LaneProject,
+  extraHosts: readonly string[] = [],
+): DriftGenConfig | null {
+  if (!driftGenArmed(env)) return null;
+  const genCmd = env.CCP_DRIFT_GEN_CMD!;
+  const remote = resolveLaneRemote(project, env, extraHosts);
+  if (!remote.ok) return null;
+  return {
+    remote: remote.remote,
+    remoteSource: remote.source,
+    remoteDetail: remote.detail,
+    branch: env.CCP_GIT_BRANCH || 'main',
+    genCmd,
+  };
 }
 
 export interface DriftGenStepResult {
@@ -813,7 +845,9 @@ export async function runDriftGen(
 const tail = (s: string, n = 400): string => (s.length > n ? `…${s.slice(-n)}` : s);
 
 /** Production steps: a shallow git clone + the operator's shell command. */
-export function realDriftGenSteps(cfg: DriftGenConfig): DriftGenSteps {
+export function realDriftGenSteps(
+  cfg: Pick<DriftGenConfig, 'remote' | 'branch' | 'genCmd'>,
+): DriftGenSteps {
   return {
     async prepare() {
       const dir = mkdtempSync(join(tmpdir(), 'ccp-driftgen-'));

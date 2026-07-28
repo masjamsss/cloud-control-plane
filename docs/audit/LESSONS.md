@@ -733,3 +733,41 @@ The same pass turned up a raw NUL byte used as a key separator, which made the f
 rather than text — invisible to content search. It also made the file unmergeable: git
 produced no conflict markers, silently kept one side, and the loss surfaced only because a
 type signature stopped matching.
+
+### L-27 — A per-tenant seam needs the tenant's *credential* story, not just its identifier
+
+Findings: ARCH-2
+
+ARCH-2 looked like a lookup bug: two lanes read one global `CCP_GIT_REMOTE` instead of the
+acting project's registered repository, in a product that sells "one control plane, many
+accounts". The registry already stored the repository. The newer scanner lane already
+resolved it per project. The fix looked like wiring one to the other.
+
+It was not, and the test suite is what said so. The first version had the registered
+repository win unconditionally and broke two existing suites — both of which register a
+repository *and* point the deployment at a local git origin. The obvious reading was "stale
+fixtures". The actual reading was that the two things called "the project's repository" are
+not the same object:
+
+- the **registered `RepoRef`** is a *scanner* reference — read-only, and the URL builder
+  refuses embedded credentials **by construction**, which is correct for a lane that clones;
+- the **armed lanes push**, and their credential is whatever the operator put in the env
+  value or a credential helper.
+
+Resolving per project therefore does not just change *which* repository a lane touches; it
+changes *how the lane authenticates*. Shipping the obvious fix would have swapped a working
+credentialed remote for a credential-free URL and broken the one deployment shape that was
+never broken — and broken it **after the gate ran**, which is worse than the defect.
+
+The same trap sits one step further out. The finding's own recommendation names the
+already-built forge-credential broker as the credential half. Wiring it in would have felt
+like completing the fix; its GitHub App path mints `contents:read`, so it cannot serve a lane
+that pushes. Recommendations describe the shape of a fix, not its constraints.
+
+**Transferable:** when you make a global resource per-tenant, enumerate what *else* that
+global carried. An identifier retrofits cleanly; a credential, a scope, a rate limit, or a
+trust boundary riding along with it does not. Give the incumbent configuration an explicit
+way to claim what it already owns (here: `CCP_GIT_PROJECT` naming the estate the global
+remote belongs to) — that one variable is what turns a breaking change into an upgrade path.
+And treat a fixture that breaks under a correctness fix as evidence to read, not noise to
+update: both of these suites were telling the truth about a deployment shape.

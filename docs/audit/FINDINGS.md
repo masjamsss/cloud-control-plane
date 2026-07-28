@@ -189,7 +189,7 @@ States nothing can leave: wedged jobs, dead-end requests, permanently disabled c
 Roles, sessions, TOTP, dual control, quorum and idempotency.
 
 - [x] ARCH-1 | high | authz-identity | fixed:4af8a46 | 01-architecture.md | Bundle apply route accepts pre-quorum requests, contradicting ADR-0016's "fully approved" contract
-- [ ] ARCH-2 | high | authz-identity | open | 01-architecture.md | The armed apply/drift-generation lanes are single-estate by construction in a multi-account product
+- [x] ARCH-2 | high | authz-identity | fixed:d5d9467 | 01-architecture.md | The armed apply/drift-generation lanes are single-estate by construction in a multi-account product
 - [x] FE-5 | high | authz-identity | fixed:85f2980 | 05-frontend-flows.md | Api-mode session expiry is never detected in-app — the UI stays "signed in" while every call fails
 - [ ] API-6 | medium | authz-identity | open | 02-api-correctness.md | The 72-hour dual-control expiry is dead code: `sweepExpired` has no callers and `ackPending` never checks `expiresAt`
 - [ ] ARCH-4 | medium | authz-identity | open | 01-architecture.md | No mutual exclusion between the two apply lanes; both act on `AWAITING_DEPLOY_APPROVAL`

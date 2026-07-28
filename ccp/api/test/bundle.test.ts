@@ -42,7 +42,10 @@ describe('bundleConfig — off by default (the load-bearing invariant)', () => {
     expect(bundleConfig({ CCP_BUNDLE: '1' })).toBeNull();
     expect(bundleConfig({ CCP_BUNDLE: '1', CCP_GIT_REMOTE: 'r', CCP_BUNDLE_GATE_CMD: 'true' })).toBeNull();
     const cfg = bundleConfig({ CCP_BUNDLE: '1', CCP_GIT_REMOTE: 'r', CCP_BUNDLE_GATE_CMD: 'g', CCP_BUNDLE_TRIGGER_CMD: 't' });
-    expect(cfg).toEqual({ remote: 'r', branch: 'main', gateCmd: 'g', triggerCmd: 't' });
+    // `remoteSource`/`remoteDetail` are ARCH-2: WHICH estate's repository resolved, and
+    // how. With no project passed there is nothing registered to prefer, so the
+    // deployment-global remote serves it — the single-estate fallback, unchanged.
+    expect(cfg).toEqual({ remote: 'r', remoteSource: 'env-global', remoteDetail: 'CCP_GIT_REMOTE', branch: 'main', gateCmd: 'g', triggerCmd: 't' });
   });
 });
 
@@ -176,6 +179,48 @@ describe('POST /requests/:id/apply — the route surface', () => {
     await store.transact([{ kind: 'update', pk: k.PK, sk: k.SK, set: { status: 'NEEDS_ENGINEER' }, ifEquals: { attr: 'status', value: 'AWAITING_CODE_REVIEW' } }]);
     const res = await post(app, await sessionCookieFor(store, 'lina'), id);
     expect(res.status).toBe(409);
+    rmSync(join(bare, '..'), { recursive: true, force: true });
+  });
+
+  it('ARCH-2: an estate whose OWN repo will not resolve is refused — it never borrows the global remote', async () => {
+    // The finding's exact impact, offline: the deployment's `CCP_GIT_REMOTE` is a
+    // perfectly good checkout, and this estate must still NOT be applied from it.
+    // Before the fix the bundle would have cloned it happily and gated inside another
+    // estate's Terraform.
+    const { bare } = makeOrigin();
+    Object.assign(process.env, {
+      CCP_BUNDLE: '1',
+      CCP_GIT_REMOTE: bare,
+      CCP_BUNDLE_GATE_CMD: 'echo should-never-run > "$BUNDLE_CHECKOUT/leaked.txt"',
+      CCP_BUNDLE_TRIGGER_CMD: 'true',
+    });
+    const { store, app, id } = await seededApp('AWAITING_DEPLOY_APPROVAL');
+    // This estate registers a repo on a forge host the deployment does not allow.
+    // Let the app settle/retro-register `sample` the way a real deployment does, THEN
+    // give that row a repository of its own. Fabricating the row here instead would
+    // bypass the known-project registry and 422 before the handler ever ran.
+    const { projectKey } = await import('../src/store/schema');
+    const cookie = await sessionCookieFor(store, 'lina');
+    await app.request('/requests', { headers: { cookie, 'x-ccp-project': 'sample' } });
+    const pk = projectKey('sample');
+    const project = (await store.get(pk.PK, pk.SK)) as Record<string, unknown> | null;
+    // The check must be able to fail: with no row the route takes the env-global arm and
+    // every assertion below would pass for the wrong reason (L-1).
+    expect(project, 'the sample project row must exist for this test to mean anything').not.toBeNull();
+    await store.put({
+      ...project!,
+      // A forge host this deployment does not allowlist — stands in for "this estate's
+      // repo is not the deployment's repo", which is the property under test.
+      repo: { host: 'gitlab', baseUrl: 'https://git.internal.example', owner: 'infra', name: 'estate-b' },
+    } as never);
+
+    const res = await post(app, cookie, id);
+    const body = await res.json();
+    expect(res.status).toBe(409);
+    expect(body.code).toBe('BUNDLE_REPO_UNRESOLVED');
+    expect(body.reason).toMatch(/deliberately NOT used as a fallback/);
+    // Nothing ran against the deployment's remote — the gate would have left this file.
+    expect(g(bare, 'ls-tree', '--name-only', '-r', 'main')).not.toContain('leaked.txt');
     rmSync(join(bare, '..'), { recursive: true, force: true });
   });
 

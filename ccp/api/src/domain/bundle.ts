@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execCapture } from './exec';
+import { resolveLaneRemote, type LaneProject, type LaneRemoteSource } from './laneRepo';
 
 /**
  * ADR-0016 — the approval-to-apply bundle: local gate → direct commit to `main`
@@ -34,6 +35,15 @@ type Env = Record<string, string | undefined>;
 export interface BundleConfig {
   /** Pushable clone URL (bot credential embedded or via credential helper). */
   remote: string;
+  /**
+   * Where {@link remote} came from (ARCH-2) — `project-repo` when the acting estate
+   * registered its own repository, `env-global` when the deployment's single-estate
+   * `CCP_GIT_REMOTE` served it. Recorded in the run's audit evidence, because the
+   * defect this closes was invisible precisely because nothing wrote the answer down.
+   */
+  remoteSource: LaneRemoteSource;
+  /** Human-readable form of the same, for the audit payload. */
+  remoteDetail: string;
   /** Target branch — `main`. */
   branch: string;
   /** Gate command: edits + verifies inside $BUNDLE_CHECKOUT; exit 0 = green. */
@@ -42,14 +52,47 @@ export interface BundleConfig {
   triggerCmd: string;
 }
 
-/** Armed only when the flag AND every effect are explicitly configured. */
-export function bundleConfig(env: Env = process.env): BundleConfig | null {
-  if (env.CCP_BUNDLE !== '1') return null;
-  const remote = env.CCP_GIT_REMOTE;
-  const gateCmd = env.CCP_BUNDLE_GATE_CMD;
-  const triggerCmd = env.CCP_BUNDLE_TRIGGER_CMD;
-  if (!remote || !gateCmd || !triggerCmd) return null;
-  return { remote, branch: env.CCP_GIT_BRANCH || 'main', gateCmd, triggerCmd };
+/**
+ * Is the lane armed AT ALL — flag plus both operator commands, from the environment
+ * alone? Deliberately separate from {@link bundleConfig}: "this deployment never armed
+ * the bundle" and "this deployment armed it but cannot resolve a repository for YOUR
+ * estate" are different operator problems, and the route must answer the first without
+ * reading the store (a disarmed deployment replies identically to every caller).
+ *
+ * Collapsing the two is how ARCH-2 stayed invisible — an operator hitting a
+ * cross-estate misconfiguration was told the flags were off, and the flags were on.
+ */
+export function bundleArmed(env: Env = process.env): boolean {
+  return env.CCP_BUNDLE === '1' && !!env.CCP_BUNDLE_GATE_CMD && !!env.CCP_BUNDLE_TRIGGER_CMD;
+}
+
+/**
+ * Armed only when the flag AND every effect are explicitly configured.
+ *
+ * ARCH-2: the remote is resolved for `project` — its own registered repository when it
+ * has one, the deployment-global `CCP_GIT_REMOTE` only as the single-estate fallback.
+ * `project` is optional so the legacy call shape still type-checks; the route passes the
+ * acting estate. A project whose registered repo is refused yields `null` here and a
+ * specific reason from {@link resolveLaneRemote} — never a fallback to another estate.
+ */
+export function bundleConfig(
+  env: Env = process.env,
+  project?: LaneProject,
+  extraHosts: readonly string[] = [],
+): BundleConfig | null {
+  if (!bundleArmed(env)) return null;
+  const gateCmd = env.CCP_BUNDLE_GATE_CMD!;
+  const triggerCmd = env.CCP_BUNDLE_TRIGGER_CMD!;
+  const remote = resolveLaneRemote(project, env, extraHosts);
+  if (!remote.ok) return null;
+  return {
+    remote: remote.remote,
+    remoteSource: remote.source,
+    remoteDetail: remote.detail,
+    branch: env.CCP_GIT_BRANCH || 'main',
+    gateCmd,
+    triggerCmd,
+  };
 }
 
 export interface StepResult {
@@ -225,8 +268,17 @@ async function git(args: string[], cwd: string): Promise<{ status: number; out: 
   return { status: r.status, out: tail(r.out.trim()) };
 }
 
-/** Production steps: git workspace (CAS push, never force) + operator commands. */
-export function realSteps(cfg: BundleConfig): BundleSteps {
+/**
+ * Production steps: git workspace (CAS push, never force) + operator commands.
+ *
+ * Takes only the four fields it actually uses, not the whole {@link BundleConfig}:
+ * `remoteSource`/`remoteDetail` are audit metadata for the route, and requiring a
+ * caller to invent them just to build a workspace would be the type asking for
+ * something it does not need.
+ */
+export function realSteps(
+  cfg: Pick<BundleConfig, 'remote' | 'branch' | 'gateCmd' | 'triggerCmd'>,
+): BundleSteps {
   return {
     async prepare() {
       const dir = mkdtempSync(join(tmpdir(), 'ccp-bundle-'));

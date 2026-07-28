@@ -1941,3 +1941,68 @@ general form: it would catch a *new* 3 MB eager import that a named-file check w
 **Residue:** the parse was relocated, not made cheaper (**R-35**), and the entry chunk is
 still 855 kB — the finding's `manualChunks` suggestion would not change that number
 (**R-36**).
+
+## ARCH-2
+
+*The armed apply/drift-generation lanes are single-estate by construction in a
+multi-account product.*
+
+The bundle and the drift-proposal generator both resolved their checkout from one
+deployment-global `CCP_GIT_REMOTE` — "one credential, two lanes" — with no reference to
+which project the work belonged to. The moment a second estate is onboarded, an armed
+deployment clones estate A's repository for estate B's requests and drift reports. It
+fails closed in practice (the gate refuses inside the wrong checkout), so nothing
+corrupts — but ADR-0015's binding rule 6 named this exact retrofit *"the single most
+expensive avoidable mistake"*, and the registry has stored each project's repository all
+along (`ProjectItem.repo`, plus the legacy `github` mirror), while the newer ADR-0033
+scanner lane already resolves per project through `buildCloneUrl`.
+
+`domain/laneRepo.ts` is now the one place either lane asks which repository it acts on,
+and both configs take the acting project. Resolution, fail-closed at every step:
+
+1. `CCP_GIT_PROJECT` names the estate `CCP_GIT_REMOTE` belongs to → that estate uses the
+   env value verbatim, registered repo or not.
+2. Otherwise the project's registered repo wins, through the same `buildCloneUrl` the
+   scanner uses — inheriting its host allowlist, https-only rule, and refusal of embedded
+   credentials and explicit ports.
+3. A registered repo that `buildCloneUrl` refuses is **a refusal, not a fallback**.
+4. A pin naming a *different* estate refuses.
+5. No pin and no registered repo → `CCP_GIT_REMOTE`, the single-estate fallback,
+   byte-identical to before.
+
+**Arm 1 is not a convenience — it came out of the test suite and it changed the design.**
+The first version had the registered repo win unconditionally, which broke two existing
+suites: they register a repo *and* point `CCP_GIT_REMOTE` at a local origin. Chasing that
+down surfaced the real constraint. A registered `RepoRef` is a **scanner** reference —
+ADR-0033, read-only, and `buildCloneUrl` refuses embedded credentials *by construction* —
+whereas these lanes **push**. Unconditional per-project resolution would silently swap a
+working credentialed remote for a credential-free URL and break the one deployment shape
+that was never broken. Naming the estate is how an operator says "that remote is mine".
+
+`BUNDLE_REPO_UNRESOLVED` / `DRIFT_REPO_UNRESOLVED` are new and separate from
+`*_DISARMED`. Both routes now answer *armed?* from the environment alone — before any
+registry read, so a deployment that never armed the lane still replies identically to
+every caller — and only then resolve the estate's repository, after role/freeze/status/
+quorum, so an unentitled caller never causes a registry read. Collapsing the two is how
+this stayed invisible: an operator hitting a cross-estate misconfiguration was told the
+flags were off, and the flags were on.
+
+The bundle's audit entry now carries `remote: { source, detail, branch }`. The defect
+survived as long as it did because the answer to *which estate's repository did this run
+touch* lived only in one process's environment.
+
+- [x] **Negative test** — reverting `resolveLaneRemote` to ignore the project fails 10
+      tests, including the route-level one: `POST /requests/:id/apply` for an estate whose
+      own repo will not resolve must refuse rather than clone the deployment's remote, and
+      the gate's marker file must not appear on that origin.
+- [x] **Regression tests** — `test/laneRepo.test.ts` (16), covering both estates side by
+      side, the legacy `github` shape, the refusal-is-not-a-fallback rule, the pin in both
+      directions, the upgrade path, and that off-by-default still holds.
+- [x] **Evidence in the status line** — 1,336 api tests pass.
+- [x] **Lesson recorded** — L-27.
+
+**Residue:** the ADR-0033 credential broker is not wired in — its GitHub App path mints
+`contents:read` and these lanes push (**R-37**); and with no pin and no registered repo a
+multi-estate deployment still shares one remote, which is now at least visible in the audit
+entry (**R-38**). R-30 and R-31 were tracked against this finding and are re-homed: neither
+was ever ARCH-2's to carry, which closing it settles.

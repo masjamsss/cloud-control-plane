@@ -145,34 +145,7 @@ guarantee.
 transition this ledger's `tracked` rule exists to catch. No open finding covers general
 import-graph coverage.
 
-### R-30 · The built-in gate runner was not shipped
-*Residue on **ARCH-3**.*
-**Tracked by: ARCH-2.**
 
-ARCH-3's primary recommendation is a built-in gate runner invoking a pinned `catalogctl`
-with fixed arguments, demoting the free-form command to a labelled escape hatch. What landed
-is the "at minimum" clause: the api verifies the plan digest rather than assuming it. A
-deployment can still run any tool it likes as the gate.
-
-Tracked against ARCH-2 because that finding owns the same seam — the armed lanes' single
-deployment-global command/credential set — and a built-in runner is the same change ARCH-2's
-per-project resolution needs.
-
-Note also that the verification is **inert on every real request today**: no request carries
-a plan pin, because the pin-writer does not exist (R-21 / API-3).
-
-### R-31 · The reference apply lane's apply step is a stub
-*Residue on **CI-4**.*
-**Tracked by: ARCH-2.**
-
-`ccp-apply.yml` wires, orders and tests every gate; the irreversible step deliberately
-ships no credential wiring. An estate adds its own cloud auth and `terraform apply`. A
-credential pattern in a template invites copying one that does not match the estate's
-threat model, and this is the step where that would matter most — but it does mean the
-template is not runnable as-is.
-
-Tracked against ARCH-2, which owns the same seam: how an armed lane resolves per-estate
-credentials and configuration rather than one deployment-global set.
 
 ### R-32 · Sequential write latency is still O(store size)
 *Residue on **DATA-4**.*
@@ -264,6 +237,26 @@ they can silently diverge again. The divergence was fixed; the guard against rec
 not.
 
 ---
+
+### R-30 · The built-in gate runner was not shipped
+*Residue on **ARCH-3**.*
+
+ARCH-3's primary recommendation is a built-in gate runner invoking a pinned `catalogctl`
+with fixed arguments, demoting the free-form command to a labelled escape hatch. What landed
+is the "at minimum" clause: the api verifies the plan digest rather than assuming it. A
+deployment can still run any tool it likes as the gate.
+
+**Untracked.** It was tracked against ARCH-2 on the reasoning that the two share a seam —
+the armed lanes' single deployment-global command/credential set — and that a built-in runner
+was "the same change" as per-project resolution. ARCH-2 has now closed and shipped no such
+runner, which settles the question: it was never the same change, and the tracker was
+assigned by adjacency rather than by coverage. That is the second time in this ledger (see
+**R-1**) that a residue was parked against a finding that did not actually cover it, and it
+is precisely what the gate's *tracked-must-cite-an-open-finding* rule exists to surface.
+Nothing open covers the free-form gate command today.
+
+Note also that the verification is **inert on every real request today**: no request carries
+a plan pin, because the pin-writer does not exist (R-21 / API-3).
 
 ## accepted — deliberately permanent
 
@@ -376,3 +369,58 @@ cache granularity across deploys — a returning visitor re-downloading ~45 kB o
 instead of 248 kB. That is worth having and is not why PERF-5 was filed, so it is recorded
 here rather than folded in silently. Chunk-init ordering is the risk that makes it worth
 doing on purpose rather than as a footnote to a performance fix.
+
+### R-37 · The forge-credential broker is not wired into the armed lanes
+*Residue on **ARCH-2**.*
+
+ARCH-2's recommendation names "the ADR-0033 forge-credential broker already built for the
+scanner" as the credential half of per-project resolution. It was deliberately **not** wired
+in, because the two lanes need different things and the mismatch is not cosmetic: the broker's
+GitHub App path mints an installation token scoped `contents:read`, for one repository, for
+one hour — exactly right for a scanner that clones, and unusable for a bundle that **pushes**.
+Wiring it would have produced a lane that clones the right estate and then fails at the push,
+which is a worse failure than the one being fixed because it fails after the gate has run.
+
+So a per-project remote is a credential-free URL (`buildCloneUrl` refuses embedded credentials
+by construction) and the deployment supplies the credential through git's own credential
+helper — one of the two mechanisms `CCP_GIT_REMOTE` already documented. An estate whose push
+credential cannot be expressed that way names itself in `CCP_GIT_PROJECT` and keeps using the
+env remote verbatim. Both paths work; neither is the broker.
+
+The broker becomes the right answer when it can mint a write-scoped, per-project, short-lived
+token. That is a change to the broker, not to these lanes.
+
+### R-38 · With no pin and no registered repo, a multi-estate deployment still shares one remote
+*Residue on **ARCH-2**.*
+
+The fix closes the cross-estate clone for every project that registers a repository, and gives
+a deployment an explicit way to say which estate the global remote is (`CCP_GIT_PROJECT`, after
+which every other estate must bring its own or be refused). What it cannot do is detect the
+remaining case from inside the process: `CCP_GIT_REMOTE` set, no pin, and two estates that have
+both registered nothing. Those two still share a checkout, exactly as before.
+
+Closing that arm by default would mean either counting registered projects at config time — a
+store read inside what is deliberately a pure function over the environment — or breaking every
+single-estate deployment that never registered a repo, which is the shape the finding explicitly
+asks to keep working ("keeping the env vars as a single-estate fallback"). Neither is worth it
+for a case an operator resolves by registering the repository they already have, or by naming
+their estate in one variable.
+
+What did change is that the arm is now **nameable**: the resolution's source travels into the
+bundle's audit entry (`remote.source` / `remote.detail`), so a reader of the chain can see that
+a run used the deployment-global remote rather than the estate's own. The defect was invisible
+for as long as it was because that answer lived only in one process's environment.
+
+### R-31 · The reference apply lane's apply step is a stub
+*Residue on **CI-4**.*
+
+`ccp-apply.yml` wires, orders and tests every gate; the irreversible step deliberately
+ships no credential wiring. An estate adds its own cloud auth and `terraform apply`. A
+credential pattern in a template invites copying one that does not match the estate's
+threat model, and this is the step where that would matter most — but it does mean the
+template is not runnable as-is.
+
+**Accepted**, and re-stated now that ARCH-2 has closed without shipping credential wiring
+either. This is not a gap waiting on a finding — it is a decision: a template that ships a
+credential pattern gets that pattern copied into estates whose threat model it does not fit,
+and this is the one step where that would matter most. The stub is the deliverable.
