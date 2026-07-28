@@ -135,7 +135,7 @@ OpenAPI vs reality, and docs citing things that do not exist.
 - [ ] TEST-7 | medium | contracts-docs | open | 12-testing-quality.md | The SPA has no DOM/interaction testing; ~25 test files pin UI by source-string inspection
 - [ ] API-12 | low | contracts-docs | open | 02-api-correctness.md | `prNumberFromUrl` extracts a "PR number" from any URL ending in digits
 - [ ] ARCH-14 | low | contracts-docs | open | 01-architecture.md | The OpenAPI "parity test" is string containment, not parity
-- [ ] DOC-15 | low | contracts-docs | open | 14-contracts-docs.md | MAINTAINING-THE-CATALOG.md points at a generated-output directory that does not exist in the tree
+- [x] DOC-15 | low | contracts-docs | fixed:ec95bd2 | 14-contracts-docs.md | MAINTAINING-THE-CATALOG.md points at a generated-output directory that does not exist in the tree
 - [ ] DOC-16 | low | contracts-docs | open | 14-contracts-docs.md | Assorted OpenAPI request/response gaps against route behavior
 - [ ] DOC-17 | low | contracts-docs | open | 14-contracts-docs.md | The code-derived docs' line citations have drifted from HEAD
 - [ ] TEST-11 | low | contracts-docs | open | 12-testing-quality.md | OpenAPI contract test is substring matching, not conformance

@@ -1620,3 +1620,34 @@ leaving the 194 real cases unverified — which is how the defect survived havin
 
 **Also pinned:** a bare manifest slug navigated directly must still resolve. Dropping that
 branch would break every real manifest slug while "fixing" the named ones.
+
+## DOC-15
+
+*`MAINTAINING-THE-CATALOG.md` points at a generated-output directory that does not exist in
+the tree.*
+
+- [x] **Defect reproduced first** — and reproduced by accident, which is the useful part:
+      running `gen-azure-capability-reference.mjs` while fixing **IMP-4** recreated
+      `docs/operations/terraform-capability-reference-azure/` and left it untracked. `git log`
+      confirms the path has never been tracked in this repo, while the doc's "produced by
+      scripts **and committed**" list named it.
+- [x] **Cause, not symptom** — the doc asserted a property (committed) that was never true
+      here. The finding offers two remedies; **annotating** was chosen over committing,
+      because the tree is fully derivable from the committed generator plus the committed
+      schemadump, so tracking it would add a **regeneration obligation with nothing
+      enforcing it** — the same class this audit has already produced findings about
+      (CTL-10's duplicated walkers, R-11's duplicated helper).
+- [x] **Regression test** — none, and none is possible: this is prose accuracy about what a
+      repo contains. What replaces it is `.gitignore`, which makes the doc's new claim
+      *structurally* true rather than merely asserted — the directory cannot be committed by
+      accident.
+- [x] **Failure is loud** — n/a; no runtime path. The relevant change is that running the
+      generator no longer leaves a tempting untracked diff for someone to commit "to be
+      helpful".
+- [x] **Evidence in the status line** — `ec95bd2`.
+- [x] **Lesson recorded** — no separate lesson; this is **L-10**'s family (a document
+      asserting something about a file nobody checked) and the remedy is the same one DOC-4
+      used: re-measure, then make the corrected claim checkable.
+
+**Ignored rather than merely absent**, deliberately. "Absent" is a state that lasts until
+the next person runs the generator; "ignored" is a decision that survives it.
