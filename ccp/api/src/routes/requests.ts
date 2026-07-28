@@ -442,6 +442,18 @@ export function requestRoutes(): Hono<AppEnv> {
       ],
       policyVersion,
       riskOverrideVersion,
+      // DATA-1: born WITH the attribute its own concurrency guard compares.
+      //
+      // Every full-replacement write below guards on `ifEquals: {attr:'eventSeq', …}`, and
+      // `ifEquals` compares the stored value to the captured one. On a row that has no
+      // `eventSeq` at all, that comparison is `undefined !== undefined` — false — so the
+      // guard PASSES for every concurrent writer at once. The guard existed and protected
+      // nothing, for exactly the window that matters most: the FIRST pair of concurrent
+      // approvals on a freshly-submitted request, before any write has bumped the counter.
+      //
+      // REM-1's boot stamp back-fills rows that predate the field; this is the other half,
+      // so a row created after boot is never in that state either.
+      eventSeq: 0,
       ...feasibility,
       GSI1PK: requestCollectionGsi(projectId),
       GSI1SK: id,
