@@ -8,6 +8,7 @@ import { renderHclSkeleton } from '@/lib/hclSkeleton';
 import type { ManifestOperation } from '@/types';
 import { BASELINE_VALUES, BASELINE_VARIANTS } from '@/test/fixtures/skeletons/baselines/values';
 import { getOperation, loadManifests } from '../src/manifests';
+import { skipUnless } from './helpers/requireToolchain';
 
 /**
  * 0036 T4 — THE MANDATORY GATE: the TS↔Go byte-parity harness (mirror of
@@ -152,7 +153,7 @@ const BASELINE_IDS = [
   'rds-provision-instance', 'backup-create-vault', 'backup-create-plan', 'sns-create-topic', 'lambda-create-function',
 ];
 
-describe.skipIf(!CATALOGCTL_BIN)('create_resource — TS renderer vs the real catalogctl verb (byte-for-byte)', () => {
+describe.skipIf(skipUnless('a buildable tools/catalogctl (needs Go)', CATALOGCTL_BIN !== null, 'install Go so `go build ./cmd/catalogctl` succeeds'))('create_resource — TS renderer vs the real catalogctl verb (byte-for-byte)', () => {
   for (const id of BASELINE_IDS) {
     it(`${id} authors the banner-stripped skeleton`, () => {
       const op = opById(id);

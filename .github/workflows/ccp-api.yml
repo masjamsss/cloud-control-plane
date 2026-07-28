@@ -49,7 +49,27 @@ jobs:
           assert spec['paths'], 'no paths declared — the parse succeeded but found nothing'
           print(f\"contract parses: {len(spec['paths'])} paths, {len(spec['components']['schemas'])} schemas\")
           "
+      # TEST-4 — the integration proofs' toolchain, DECLARED.
+      #
+      # The LIVE terraform plan→pin→apply→halt-on-drift proof and both TS↔Go parity
+      # harnesses ran here only because ubuntu-latest happens to preinstall Go and
+      # Terraform. That is an undeclared dependency on a runner image: a runner change or
+      # a self-hosted runner turns the highest-value proofs in the repo off, and every one
+      # of them degrades to a SILENT SKIP, so the build stays green while proving less.
+      # Naming them here is half the fix; CCP_REQUIRE_INTEGRATION below is the other half.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/catalogctl/go.mod
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false # the executor spawns `terraform` directly, not a wrapper script
       - name: Typecheck
         run: npm run typecheck
       - name: Tests
+        # CCP_REQUIRE_INTEGRATION=1 turns "this suite would skip" into a hard failure that
+        # names what is missing (test/helpers/requireToolchain.ts). Unset locally, so a
+        # developer without terraform still gets a clean skip — the guarantee is about CI,
+        # where a skipped proof is indistinguishable from a passing one.
         run: npm test
+        env:
+          CCP_REQUIRE_INTEGRATION: '1'

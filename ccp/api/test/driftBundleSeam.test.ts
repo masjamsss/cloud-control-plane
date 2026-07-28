@@ -19,6 +19,7 @@ import { writeDriftProposalBody } from '../src/domain/driftProposals';
 import type { DriftProposalDoc } from '../src/domain/driftProposals';
 import { bundleRequestPayload } from '../src/routes/requests';
 import { seed, seedAccount, sessionCookieFor } from './helpers/seed';
+import { skipUnless } from './helpers/requireToolchain';
 
 /**
  * F1(d) — the cross-layer seam proof (plan §2-F1, "the F1 failure mode
@@ -128,7 +129,7 @@ if (!seamFixturesPresent) {
   console.warn(`[driftBundleSeam layer 1] SKIPPING: ${SEAM_FIXTURE_DIR} does not exist yet (Lane A's A2) — the always-on layer-1 contract until then is eligibility-cases.json.`);
 }
 
-describe.skipIf(!seamFixturesPresent)('F1(d) layer 1 — bundleRequestPayload canonical-JSON parity with tools/catalogctl/testdata/driftpropose/seam/*.json', () => {
+describe.skipIf(skipUnless('the driftpropose seam fixtures', seamFixturesPresent, 'restore tools/catalogctl/testdata/driftpropose/seam/*.json'))('F1(d) layer 1 — bundleRequestPayload canonical-JSON parity with tools/catalogctl/testdata/driftpropose/seam/*.json', () => {
   for (const file of seamFixtureFiles) {
     it(`${file} — bundleRequestPayload(reconstructed) === the fixture, byte-for-byte`, () => {
       const fixture = JSON.parse(readFileSync(join(SEAM_FIXTURE_DIR, file), 'utf8')) as SeamFixtureRequest;
@@ -171,7 +172,7 @@ if (!l29FixturesPresent) {
   );
 }
 
-describe.skipIf(!l29FixturesPresent)('L29/L32 — bundleRequestPayload canonical-JSON parity with the restore/legitimize seam fixtures', () => {
+describe.skipIf(skipUnless('the L29/L32 restore/legitimize seam fixtures', l29FixturesPresent, 'restore the seam fixtures under tools/catalogctl/testdata'))('L29/L32 — bundleRequestPayload canonical-JSON parity with the restore/legitimize seam fixtures', () => {
   for (const file of l29FixtureFiles) {
     it(`${file} — bundleRequestPayload(reconstructed) === the fixture, byte-for-byte`, () => {
       const fixture = JSON.parse(readFileSync(join(SEAM_FIXTURE_DIR, file), 'utf8')) as SeamFixtureRequest;

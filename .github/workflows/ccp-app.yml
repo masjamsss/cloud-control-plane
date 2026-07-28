@@ -36,10 +36,23 @@ jobs:
           cache: npm
           cache-dependency-path: ccp/app/package-lock.json
       - run: npm ci
+      # TEST-4 — the SPA↔API bridge proof (src/test/httpApi.integration.test.ts) boots the
+      # REAL ccp-api over HTTP and drives login → TOTP enroll → me through the actual
+      # cookie/session flow. It needs ccp/api's deps for `tsx`, and this job installed only
+      # ccp/app's — so it SKIPPED on every CI run since it was written, as its own comment
+      # said ("CI's ccp-app job installs only ccp/app deps"). The one proof that the client
+      # and the server agree ran nowhere but on developer machines.
+      - name: Install ccp/api deps (the bridge proof boots the real api)
+        run: npm ci
+        working-directory: ccp/api
       - name: Typecheck
         run: npm run typecheck
       - name: Tests
         run: npm test
+        env:
+          # Turns "the bridge proof would skip" into a hard failure naming what is missing,
+          # so this can never silently revert to not running (TEST-4).
+          CCP_REQUIRE_INTEGRATION: '1'
       - name: Build
         run: npm run build
       - name: Contrast (WCAG AA tokens)
