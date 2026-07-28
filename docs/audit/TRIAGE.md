@@ -643,3 +643,278 @@ A reasonable shape:
 Each on its own branch off the same base, each skipping the baseline file, merged in any
 order, with one reconciliation commit at the end.
 
+
+---
+
+# Appendix — every finding, and where to read it
+
+One row per open finding. `report` is the file in `docs/audit/` whose `### <ID>` section
+holds the full text: the location lines, the impact, and the original recommendation.
+**Read that before starting** — the expected result in this file says what "done" looks
+like, not what is wrong.
+
+`lane` is only filled in for Sonnet findings, where the lane regrouping moved some of them
+out of their batch. Opus findings use the batch id directly.
+
+| finding | sev | batch | lane | full text |
+| --- | --- | --- | --- | --- |
+| **API-4** | medium | `B-O1` | — | [`02-api-correctness.md`](02-api-correctness.md) § API-4 |
+| **API-5** | medium | `B-O1` | — | [`02-api-correctness.md`](02-api-correctness.md) § API-5 |
+| **API-6** | medium | `B-S7` | L2 | [`02-api-correctness.md`](02-api-correctness.md) § API-6 |
+| **API-8** | medium | `B-O2` | — | [`02-api-correctness.md`](02-api-correctness.md) § API-8 |
+| **API-9** | medium | `B-O7` | — | [`02-api-correctness.md`](02-api-correctness.md) § API-9 |
+| **API-11** | low | `B-S9` | L2 | [`02-api-correctness.md`](02-api-correctness.md) § API-11 |
+| **API-12** | low | `B-S4` | L7 | [`02-api-correctness.md`](02-api-correctness.md) § API-12 |
+| **API-13** | low | `B-S1` | last | [`02-api-correctness.md`](02-api-correctness.md) § API-13 |
+| **API-14** | low | `B-O12` | — | [`02-api-correctness.md`](02-api-correctness.md) § API-14 |
+| **API-15** | low | `B-O7` | — | [`02-api-correctness.md`](02-api-correctness.md) § API-15 |
+| **API-16** | low | `B-S7` | L2 | [`02-api-correctness.md`](02-api-correctness.md) § API-16 |
+| **API-17** | low | `B-O3` | — | [`02-api-correctness.md`](02-api-correctness.md) § API-17 |
+| **API-18** | low | `B-O7` | — | [`02-api-correctness.md`](02-api-correctness.md) § API-18 |
+| **ARCH-5** | medium | `B-O5` | — | [`01-architecture.md`](01-architecture.md) § ARCH-5 |
+| **ARCH-6** | medium | `B-O5` | — | [`01-architecture.md`](01-architecture.md) § ARCH-6 |
+| **ARCH-8** | medium | `B-O5` | — | [`01-architecture.md`](01-architecture.md) § ARCH-8 |
+| **ARCH-9** | medium | `B-O13` | — | [`01-architecture.md`](01-architecture.md) § ARCH-9 |
+| **ARCH-10** | medium | `B-S7` | L2 | [`01-architecture.md`](01-architecture.md) § ARCH-10 |
+| **ARCH-11** | low | `B-O13` | — | [`01-architecture.md`](01-architecture.md) § ARCH-11 |
+| **ARCH-12** | low | `B-S3` | L4 | [`01-architecture.md`](01-architecture.md) § ARCH-12 |
+| **ARCH-13** | low | `B-S9` | L7 | [`01-architecture.md`](01-architecture.md) § ARCH-13 |
+| **ARCH-14** | low | `B-O8` | — | [`01-architecture.md`](01-architecture.md) § ARCH-14 |
+| **ARCH-15** | low | `B-S3` | L4 | [`01-architecture.md`](01-architecture.md) § ARCH-15 |
+| **ARCH-16** | low | `B-S9` | alone | [`01-architecture.md`](01-architecture.md) § ARCH-16 |
+| **CI-5** | medium | `B-O8` | — | [`13-ci-cd.md`](13-ci-cd.md) § CI-5 |
+| **CI-6** | medium | `B-O8` | — | [`13-ci-cd.md`](13-ci-cd.md) § CI-6 |
+| **CI-7** | medium | `B-S8` | L3 | [`13-ci-cd.md`](13-ci-cd.md) § CI-7 |
+| **CI-8** | medium | `B-O8` | — | [`13-ci-cd.md`](13-ci-cd.md) § CI-8 |
+| **CI-9** | medium | `B-O8` | — | [`13-ci-cd.md`](13-ci-cd.md) § CI-9 |
+| **CI-10** | low | `B-S8` | L3 | [`13-ci-cd.md`](13-ci-cd.md) § CI-10 |
+| **CI-11** | low | `B-S8` | L3 | [`13-ci-cd.md`](13-ci-cd.md) § CI-11 |
+| **CI-12** | low | `B-S8` | L3 | [`13-ci-cd.md`](13-ci-cd.md) § CI-12 |
+| **CI-13** | low | `B-O8` | — | [`13-ci-cd.md`](13-ci-cd.md) § CI-13 |
+| **CONC-6** | medium | `B-O1` | — | [`04-concurrency.md`](04-concurrency.md) § CONC-6 |
+| **CONC-8** | medium | `B-O3` | — | [`04-concurrency.md`](04-concurrency.md) § CONC-8 |
+| **CONC-10** | medium | `B-O2` | — | [`04-concurrency.md`](04-concurrency.md) § CONC-10 |
+| **CONC-12** | low | `B-O12` | — | [`04-concurrency.md`](04-concurrency.md) § CONC-12 |
+| **CONC-13** | low | `B-O12` | — | [`04-concurrency.md`](04-concurrency.md) § CONC-13 |
+| **CONC-15** | low | `B-O12` | — | [`04-concurrency.md`](04-concurrency.md) § CONC-15 |
+| **CTL-2** | medium | `B-O9` | — | [`07-catalogctl.md`](07-catalogctl.md) § CTL-2 |
+| **CTL-3** | medium | `B-O9` | — | [`07-catalogctl.md`](07-catalogctl.md) § CTL-3 |
+| **CTL-4** | medium | `B-O9` | — | [`07-catalogctl.md`](07-catalogctl.md) § CTL-4 |
+| **CTL-5** | medium | `B-O13` | — | [`07-catalogctl.md`](07-catalogctl.md) § CTL-5 |
+| **CTL-6** | medium | `B-S9` | L5 | [`07-catalogctl.md`](07-catalogctl.md) § CTL-6 |
+| **CTL-7** | low | `B-S9` | L5 | [`07-catalogctl.md`](07-catalogctl.md) § CTL-7 |
+| **CTL-8** | low | `B-S9` | L5 | [`07-catalogctl.md`](07-catalogctl.md) § CTL-8 |
+| **CTL-9** | low | `B-O9` | — | [`07-catalogctl.md`](07-catalogctl.md) § CTL-9 |
+| **CTL-10** | low | `B-O9` | — | [`07-catalogctl.md`](07-catalogctl.md) § CTL-10 |
+| **CTL-11** | medium | `B-O9` | — | [`07-catalogctl.md`](07-catalogctl.md) § CTL-11 |
+| **DATA-5** | medium | `B-O3` | — | [`03-data-integrity.md`](03-data-integrity.md) § DATA-5 |
+| **DATA-6** | medium | `B-S1` | last | [`03-data-integrity.md`](03-data-integrity.md) § DATA-6 |
+| **DATA-7** | medium | `B-S7` | L2 | [`03-data-integrity.md`](03-data-integrity.md) § DATA-7 |
+| **DATA-10** | medium | `B-O13` | — | [`03-data-integrity.md`](03-data-integrity.md) § DATA-10 |
+| **DATA-11** | medium | `B-O7` | — | [`03-data-integrity.md`](03-data-integrity.md) § DATA-11 |
+| **DATA-12** | low | `B-O7` | — | [`03-data-integrity.md`](03-data-integrity.md) § DATA-12 |
+| **DATA-13** | low | `B-S1` | last | [`03-data-integrity.md`](03-data-integrity.md) § DATA-13 |
+| **DATA-14** | low | `B-O3` | — | [`03-data-integrity.md`](03-data-integrity.md) § DATA-14 |
+| **DATA-15** | low | `B-O3` | — | [`03-data-integrity.md`](03-data-integrity.md) § DATA-15 |
+| **DATA-16** | low | `B-O3` | — | [`03-data-integrity.md`](03-data-integrity.md) § DATA-16 |
+| **DATA-17** | low | `B-S9` | L7 | [`03-data-integrity.md`](03-data-integrity.md) § DATA-17 |
+| **DOC-6** | medium | `B-S3` | L4 | [`14-contracts-docs.md`](14-contracts-docs.md) § DOC-6 |
+| **DOC-7** | medium | `B-O5` | — | [`14-contracts-docs.md`](14-contracts-docs.md) § DOC-7 |
+| **DOC-8** | medium | `B-S3` | L4 | [`14-contracts-docs.md`](14-contracts-docs.md) § DOC-8 |
+| **DOC-9** | medium | `B-S3` | L4 | [`14-contracts-docs.md`](14-contracts-docs.md) § DOC-9 |
+| **DOC-10** | medium | `B-S3` | L4 | [`14-contracts-docs.md`](14-contracts-docs.md) § DOC-10 |
+| **DOC-11** | medium | `B-S4` | L7 | [`14-contracts-docs.md`](14-contracts-docs.md) § DOC-11 |
+| **DOC-12** | medium | `B-S3` | L4 | [`14-contracts-docs.md`](14-contracts-docs.md) § DOC-12 |
+| **DOC-13** | medium | `B-S2` | L1 | [`14-contracts-docs.md`](14-contracts-docs.md) § DOC-13 |
+| **DOC-14** | low | `B-S3` | L4 | [`14-contracts-docs.md`](14-contracts-docs.md) § DOC-14 |
+| **DOC-16** | low | `B-S3` | L4 | [`14-contracts-docs.md`](14-contracts-docs.md) § DOC-16 |
+| **DOC-17** | low | `B-S3` | L4 | [`14-contracts-docs.md`](14-contracts-docs.md) § DOC-17 |
+| **ERR-5** | medium | `B-O2` | — | [`09-error-handling.md`](09-error-handling.md) § ERR-5 |
+| **ERR-6** | medium | `B-O2` | — | [`09-error-handling.md`](09-error-handling.md) § ERR-6 |
+| **ERR-7** | medium | `B-S1` | last | [`09-error-handling.md`](09-error-handling.md) § ERR-7 |
+| **ERR-8** | medium | `B-O6` | — | [`09-error-handling.md`](09-error-handling.md) § ERR-8 |
+| **ERR-9** | medium | `B-O13` | — | [`09-error-handling.md`](09-error-handling.md) § ERR-9 |
+| **ERR-12** | medium | `B-O1` | — | [`09-error-handling.md`](09-error-handling.md) § ERR-12 |
+| **ERR-13** | low | `B-S7` | L2 | [`09-error-handling.md`](09-error-handling.md) § ERR-13 |
+| **ERR-14** | low | `B-O13` | — | [`09-error-handling.md`](09-error-handling.md) § ERR-14 |
+| **ERR-15** | low | `B-S7` | L2 | [`09-error-handling.md`](09-error-handling.md) § ERR-15 |
+| **ERR-16** | low | `B-S8` | L3 | [`09-error-handling.md`](09-error-handling.md) § ERR-16 |
+| **FE-6** | medium | `B-O13` | — | [`05-frontend-flows.md`](05-frontend-flows.md) § FE-6 |
+| **FE-7** | medium | `B-S5` | L1 | [`05-frontend-flows.md`](05-frontend-flows.md) § FE-7 |
+| **FE-8** | medium | `B-S5` | L1 | [`05-frontend-flows.md`](05-frontend-flows.md) § FE-8 |
+| **FE-9** | medium | `B-O7` | — | [`05-frontend-flows.md`](05-frontend-flows.md) § FE-9 |
+| **FE-10** | low | `B-S5` | L1 | [`05-frontend-flows.md`](05-frontend-flows.md) § FE-10 |
+| **FE-11** | low | `B-S2` | L1 | [`05-frontend-flows.md`](05-frontend-flows.md) § FE-11 |
+| **FE-12** | low | `B-S5` | L1 | [`05-frontend-flows.md`](05-frontend-flows.md) § FE-12 |
+| **FE-13** | low | `B-S5` | L1 | [`05-frontend-flows.md`](05-frontend-flows.md) § FE-13 |
+| **FE-14** | low | `B-S5` | L1 | [`05-frontend-flows.md`](05-frontend-flows.md) § FE-14 |
+| **IMP-5** | medium | `B-S9` | L6 | [`08-importer-schemadump.md`](08-importer-schemadump.md) § IMP-5 |
+| **IMP-6** | medium | `B-O10` | — | [`08-importer-schemadump.md`](08-importer-schemadump.md) § IMP-6 |
+| **IMP-8** | medium | `B-O10` | — | [`08-importer-schemadump.md`](08-importer-schemadump.md) § IMP-8 |
+| **IMP-9** | low | `B-S9` | L6 | [`08-importer-schemadump.md`](08-importer-schemadump.md) § IMP-9 |
+| **IMP-10** | low | `B-S9` | L6 | [`08-importer-schemadump.md`](08-importer-schemadump.md) § IMP-10 |
+| **IMP-11** | low | `B-S9` | L6 | [`08-importer-schemadump.md`](08-importer-schemadump.md) § IMP-11 |
+| **IMP-12** | low | `B-S9` | L6 | [`08-importer-schemadump.md`](08-importer-schemadump.md) § IMP-12 |
+| **IMP-13** | low | `B-S9` | L6 | [`08-importer-schemadump.md`](08-importer-schemadump.md) § IMP-13 |
+| **IMP-14** | low | `B-S3` | L4 | [`08-importer-schemadump.md`](08-importer-schemadump.md) § IMP-14 |
+| **IMP-15** | low | `B-O10` | — | [`08-importer-schemadump.md`](08-importer-schemadump.md) § IMP-15 |
+| **OPS-6** | medium | `B-O6` | — | [`10-reliability-operations.md`](10-reliability-operations.md) § OPS-6 |
+| **OPS-7** | medium | `B-O6` | — | [`10-reliability-operations.md`](10-reliability-operations.md) § OPS-7 |
+| **OPS-8** | medium | `B-O6` | — | [`10-reliability-operations.md`](10-reliability-operations.md) § OPS-8 |
+| **OPS-9** | medium | `B-S8` | L3 | [`10-reliability-operations.md`](10-reliability-operations.md) § OPS-9 |
+| **OPS-10** | medium | `B-S9` | L3 | [`10-reliability-operations.md`](10-reliability-operations.md) § OPS-10 |
+| **OPS-11** | medium | `B-S1` | last | [`10-reliability-operations.md`](10-reliability-operations.md) § OPS-11 |
+| **OPS-12** | low | `B-S7` | L2 | [`10-reliability-operations.md`](10-reliability-operations.md) § OPS-12 |
+| **OPS-13** | low | `B-S9` | L3 | [`10-reliability-operations.md`](10-reliability-operations.md) § OPS-13 |
+| **OPS-15** | low | `B-S9` | L3 | [`10-reliability-operations.md`](10-reliability-operations.md) § OPS-15 |
+| **PERF-6** | medium | `B-S6` | L1 | [`11-performance-scalability.md`](11-performance-scalability.md) § PERF-6 |
+| **PERF-7** | medium | `B-O4` | — | [`11-performance-scalability.md`](11-performance-scalability.md) § PERF-7 |
+| **PERF-8** | medium | `B-O4` | — | [`11-performance-scalability.md`](11-performance-scalability.md) § PERF-8 |
+| **PERF-9** | medium | `B-S6` | L1 | [`11-performance-scalability.md`](11-performance-scalability.md) § PERF-9 |
+| **PERF-10** | medium | `B-O11` | — | [`11-performance-scalability.md`](11-performance-scalability.md) § PERF-10 |
+| **PERF-11** | medium | `B-O4` | — | [`11-performance-scalability.md`](11-performance-scalability.md) § PERF-11 |
+| **PERF-12** | medium | `B-O11` | — | [`11-performance-scalability.md`](11-performance-scalability.md) § PERF-12 |
+| **PERF-13** | low | `B-S6` | L1 | [`11-performance-scalability.md`](11-performance-scalability.md) § PERF-13 |
+| **PERF-14** | low | `B-O2` | — | [`11-performance-scalability.md`](11-performance-scalability.md) § PERF-14 |
+| **PERF-15** | low | `B-S6` | L1 | [`11-performance-scalability.md`](11-performance-scalability.md) § PERF-15 |
+| **REM-2** | low | `B-S7` | L2 | [`15-remediation.md`](15-remediation.md) § REM-2 |
+| **TEST-5** | medium | `B-O8` | — | [`12-testing-quality.md`](12-testing-quality.md) § TEST-5 |
+| **TEST-6** | medium | `B-O12` | — | [`12-testing-quality.md`](12-testing-quality.md) § TEST-6 |
+| **TEST-7** | medium | `B-O13` | — | [`12-testing-quality.md`](12-testing-quality.md) § TEST-7 |
+| **TEST-8** | medium | `B-S8` | L3 | [`12-testing-quality.md`](12-testing-quality.md) § TEST-8 |
+| **TEST-9** | low | `B-S8` | L3 | [`12-testing-quality.md`](12-testing-quality.md) § TEST-9 |
+| **TEST-10** | low | `B-S8` | L3 | [`12-testing-quality.md`](12-testing-quality.md) § TEST-10 |
+| **TEST-11** | low | `B-O8` | — | [`12-testing-quality.md`](12-testing-quality.md) § TEST-11 |
+| **TEST-12** | low | `B-S8` | L3 | [`12-testing-quality.md`](12-testing-quality.md) § TEST-12 |
+| **UI-5** | medium | `B-S5` | L1 | [`06-frontend-ui-robustness.md`](06-frontend-ui-robustness.md) § UI-5 |
+| **UI-6** | medium | `B-S5` | L1 | [`06-frontend-ui-robustness.md`](06-frontend-ui-robustness.md) § UI-6 |
+| **UI-7** | medium | `B-S5` | L1 | [`06-frontend-ui-robustness.md`](06-frontend-ui-robustness.md) § UI-7 |
+| **UI-8** | medium | `B-S5` | L1 | [`06-frontend-ui-robustness.md`](06-frontend-ui-robustness.md) § UI-8 |
+| **UI-9** | medium | `B-S5` | L1 | [`06-frontend-ui-robustness.md`](06-frontend-ui-robustness.md) § UI-9 |
+| **UI-10** | low | `B-S2` | L1 | [`06-frontend-ui-robustness.md`](06-frontend-ui-robustness.md) § UI-10 |
+| **UI-11** | low | `B-S5` | L1 | [`06-frontend-ui-robustness.md`](06-frontend-ui-robustness.md) § UI-11 |
+| **UI-12** | low | `B-S5` | L1 | [`06-frontend-ui-robustness.md`](06-frontend-ui-robustness.md) § UI-12 |
+| **UI-13** | low | `B-S5` | L1 | [`06-frontend-ui-robustness.md`](06-frontend-ui-robustness.md) § UI-13 |
+| **UI-14** | low | `B-S5` | L1 | [`06-frontend-ui-robustness.md`](06-frontend-ui-robustness.md) § UI-14 |
+| **UI-15** | low | `B-S5` | L1 | [`06-frontend-ui-robustness.md`](06-frontend-ui-robustness.md) § UI-15 |
+
+---
+
+# Worker runbook
+
+Everything below was learned by getting it wrong in this repo. None of it is discoverable
+from the finding text.
+
+## Setup, once per session
+
+```bash
+cd ccp/api && npm ci
+cd ../app && npm ci          # NOT optional — see the trap below
+```
+
+**Trap:** if `ccp/app/node_modules` is empty, `npm run typecheck` silently falls back to a
+globally-installed `tsc` and reports errors CI will never see (a `TS5101` about a deprecated
+flag, for instance). If typecheck output looks unrelated to your change, check this first.
+
+**Install `gitleaks` and put it on `PATH`.** `scripts/publish-gate.sh` runs check PG-9
+through it, and **with no binary present PG-9 SKIPS with a warning and the gate still says
+PASS**. That is how a token-shaped string literal in a test reached CI on this branch. A
+pinned 8.21.2 binary is enough.
+
+## The loop, per finding
+
+1. **Read the finding's full text** — the appendix above gives the file and section.
+2. **Reproduce it.** Watch it fail. A fix for a defect you only reasoned about is a claim.
+3. Fix the cause. If the finding's own recommendation looks wrong, **say so in the fix entry
+   and do the right thing** — that happened repeatedly here and is expected, not a problem.
+4. **Write the regression test, then run it against the UNFIXED code and watch it fail.**
+   Stash your fix, run, restore. Skipping this is the single highest-yield mistake to avoid:
+   three tests already in this repo were green for the wrong reason until their negative run
+   was done, and one of them was matching the prose of the very fix it protected.
+5. **Assert the setup fired.** If the test needs a race, assert the race happened. If it
+   scans files, assert it found some. See `L-1`.
+6. Run the gates (below).
+7. Update the ledger (below).
+8. Commit and push.
+
+## Gates
+
+Run the ones your change touches; run all of them before pushing.
+
+```bash
+# api
+cd ccp/api && npx tsc --noEmit -p tsconfig.json && npm test
+
+# app  — the CI order
+cd ccp/app && npm run typecheck && npm test && npm run build \
+  && npm run contrast && npm run help:check && npm run verify:safety
+
+# repo-wide
+bash scripts/findings-gate.sh
+bash scripts/publish-gate.sh              # needs gitleaks on PATH, see above
+python3 scripts/docs-link-check.py
+bash scripts/ci/check-path-filters.sh
+bash scripts/ci/check-shipped-lanes.sh
+
+# everything CI runs, in one shot
+bash scripts/gate.sh
+```
+
+**`npm run lint` and `npm run format:check` in `ccp/app` are informational** —
+`continue-on-error: true` in the workflow, tracked as pre-existing debt (MAINT-6 / MAINT-9).
+711 files are already unformatted. Do not chase them; just don't make your own files worse.
+
+**Iterate with `npx vitest run <file>`.** The full api suite is ~80s and the app suite ~60s;
+run them in full before pushing, not on every edit.
+
+## Ledger — the exact procedure the gate enforces
+
+For each finding you close:
+
+1. **`docs/audit/FINDINGS.md`** — flip the line to `- [x] … | fixed:<short-sha> | …`.
+   The evidence field must be a commit sha, PR ref, or test name; `fixed:` with nothing is
+   rejected. Commit first, then amend the sha in.
+2. **`docs/audit/FIXES.md`** — append a section. **The heading must be exactly `## <ID>`,
+   one per finding.** A combined `## API-10 / CONC-4` header FAILS the gate — when two
+   findings are the same defect, write the reasoning under one and a short cross-reference
+   under the other.
+3. **`docs/audit/RESIDUE.md`** — if your `FIXES.md` section carries a `**Residue:**` note,
+   it must have a matching `### R-<n>` entry here, or the gate fails. An item claiming
+   `**Tracked by: X**` must cite a finding that is still **open**.
+4. **`docs/audit/LESSONS.md`** — only if the finding taught something that generalises. A
+   lesson needs a `Findings: <ID>` line or the gate rejects it.
+5. **`scripts/findings-baseline.txt` — DO NOT TOUCH IT** if you are one of several parallel
+   lanes. It is a ceiling, not an exact match; leaving it high still passes. One
+   reconciliation commit at the end tightens it.
+
+## Commits and PRs
+
+- Branch: work off the current head of `claude/cloud-control-plane-audit-v516ug`, or your
+  own branch from the same base.
+- Commit messages: explain **what was actually wrong and why the fix is shaped that way**,
+  not what files changed. State the negative-test result.
+- Never put a model identifier in a commit message, PR title/body, or code comment.
+- GitHub comments carry the Claude Code attribution footer.
+
+## Fixture traps that will bite you
+
+- **`publish-gate.sh` PG-6 flags email-shaped strings.** A credentialed URL like
+  `https://bot:tok@github.com/...` in a fixture reads as an email. Use an RFC 2606 host —
+  `forge.example`, `example.com`.
+- **Build keys from the real key functions**, never hand-typed. A fixture that hand-typed a
+  GSI partition name made a sweep find nothing, and the test passed because the code under
+  test never looked at the row.
+- **Seeded accounts do not have `sessionVersion: 0`.** Read it from the account row;
+  guessing makes every session fail its version check and the test pass for the wrong
+  reason.
+- **`ccp/app` has no jsdom**, and `test/standalone.test.ts` enforces a dependency allowlist.
+  Extract the rule into a pure function and test that instead (`R-22`).
+
+## When to stop and escalate rather than push through
+
+- The finding's recommendation is wrong **and** the right fix crosses into another batch's
+  files. Say so; do not widen your lane.
+- A fix would need a product decision — retention policy, what a status means, whether a
+  capability should exist. `PERF-7` and `R-42` are examples. Write the options, don't pick.
+- Your negative test cannot be made to fail. That usually means the defect is already
+  fixed (check the verify-before-you-fix list) or you are testing the wrong thing.
