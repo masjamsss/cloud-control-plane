@@ -124,6 +124,22 @@ Also untouched: `GET /admin/audit/export` still builds the entire self-verifying
 in memory for one `c.json`, which the finding notes as an additional problem and which
 needs a streaming response rather than a faster read.
 
+### R-52 · The raised retry budget does not close API-20's settlement race
+*Residue on **PERF-11**.*
+**Tracked by: API-20.**
+
+The route-level test for PERF-11 failed at first for a reason that had nothing to do with
+approve: six concurrent authenticated requests against a cold store all race the ONE-TIME
+legacy settlement, and the raised budget does not save them. A single write that N callers
+must each win needs roughly N rounds, and at the low attempts the jitter ceiling is only a
+few milliseconds — too coarse to separate six racers reliably.
+
+So PERF-11 makes API-20 less likely without closing it, and the test now warms the
+settlement before the burst so it measures what it claims to. API-20's own recommendation is
+the structural one and still stands: serialize settlement behind a single in-process promise
+so concurrent callers await one attempt instead of racing N, which is the same
+"one in-flight attempt, shared" shape `TerraformExecutor.init` took for ERR-5.
+
 ---
 
 ## untracked — nothing covers these

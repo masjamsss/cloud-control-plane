@@ -45,7 +45,7 @@ import { verifyPassword } from '../auth/credentials';
 import { toUser } from '../auth/account';
 import type { TransactWrite } from '../store/configStore';
 import { ConditionError } from '../store/configStore';
-import { recordIn, record, transactWithAudit } from '../domain/audit';
+import { CHAIN_RETRY_ATTEMPTS, chainRetryBackoff, recordIn, record, transactWithAudit } from '../domain/audit';
 import type { DriftFinding, DriftVerdict } from '../domain/drift';
 import {
   DriftEnvelope,
@@ -350,7 +350,7 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
     //    (one retry on CHAIN_CONTENTION, exactly the projectData loop).
     const pKeyObj = driftPointerKey(id);
     const uploadedVia = `upload-token:${tokenId}`;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < CHAIN_RETRY_ATTEMPTS; attempt++) {
       const currentPointer = (await store.get(pKeyObj.PK, pKeyObj.SK)) as DriftPointerItem | null;
       if (currentPointer) {
         const latestKey = driftVersionKey(id, currentPointer.version);
@@ -878,7 +878,7 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
     };
 
     const hKey = chainHead(id);
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < CHAIN_RETRY_ATTEMPTS; attempt++) {
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
       const { writes: auditWrites } = recordIn(id, head, entry);
       try {
@@ -886,11 +886,12 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
         break;
       } catch (e) {
         if (e instanceof ConditionError) {
-          if (attempt === 0) {
+          if (attempt < CHAIN_RETRY_ATTEMPTS - 1) {
             const fresh = await Promise.all(rows.map((row) => store.get(row.PK, row.SK)));
             const stillOpen = fresh.every((f) => (f as DriftProposalItem | null)?.status === 'open');
             if (!stillOpen) return apiError(c, 'DRIFT_PROPOSAL_STALE'); // a real race, not chain contention
-            continue; // chain contention → retry once against the fresh head
+            await chainRetryBackoff(attempt);
+            continue; // chain contention → retry with backoff (PERF-11) against the fresh head
           }
           throw new ApiError('CHAIN_CONTENTION');
         }

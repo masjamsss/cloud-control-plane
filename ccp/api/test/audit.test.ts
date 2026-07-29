@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { MemoryStore } from '../src/store/memoryStore';
 import { ConditionError, type TransactWrite } from '../src/store/configStore';
 import { ApiError } from '../src/errors';
-import { auditEntryHash, canonicalJson, record, type AuditEntryInput } from '../src/domain/audit';
+import { auditEntryHash, canonicalJson, CHAIN_RETRY_ATTEMPTS, record, type AuditEntryInput } from '../src/domain/audit';
 import { verifyChain, type ChainEntry } from '../scripts/verify-audit-chain';
 import { generateGoldenItems } from './fixtures/gen-golden';
 import type { AuditItem } from '../src/store/schema';
@@ -57,7 +57,7 @@ describe('§7 hash-chained audit', () => {
     expect(verifyChain(entries, { head: 'not-the-head' }).code).toBe(2);
   });
 
-  it('(e) chain contention retries once then succeeds; persistent contention → 409 CHAIN_CONTENTION', async () => {
+  it('(e) chain contention retries with backoff then succeeds; persistent contention → 409 CHAIN_CONTENTION', async () => {
     // A store whose transact fails a fixed number of times, simulating a lost race.
     class FlakyStore extends MemoryStore {
       constructor(private failsLeft: number) {
@@ -78,8 +78,17 @@ describe('§7 hash-chained audit', () => {
     await expect(record(onceFlaky, 'sample', entry)).resolves.toBeTruthy();
     expect(await onceFlaky.query('P#sample#AUDIT#202607')).toHaveLength(1);
 
-    const alwaysFlaky = new FlakyStore(2); // both attempts race → CHAIN_CONTENTION
+    // PERF-11 raised the budget from 2 attempts to CHAIN_RETRY_ATTEMPTS with jittered
+    // backoff. This assertion is written against the CONSTANT rather than a literal, so it
+    // states the contract ("all but the last attempt may race and the write still lands")
+    // instead of re-encoding a number that has now changed once and may change again.
+    const nearlyAlways = new FlakyStore(CHAIN_RETRY_ATTEMPTS - 1);
+    await expect(record(nearlyAlways, 'sample', entry), 'the LAST attempt still gets through').resolves.toBeTruthy();
+    expect(await nearlyAlways.query('P#sample#AUDIT#202607')).toHaveLength(1);
+
+    // And the budget is genuinely bounded: one more failure than it allows is a 409.
+    const alwaysFlaky = new FlakyStore(CHAIN_RETRY_ATTEMPTS);
     await expect(record(alwaysFlaky, 'sample', entry)).rejects.toBeInstanceOf(ApiError);
-    await expect(record(new FlakyStore(2), 'sample', entry)).rejects.toMatchObject({ code: 'CHAIN_CONTENTION' });
+    await expect(record(new FlakyStore(CHAIN_RETRY_ATTEMPTS), 'sample', entry)).rejects.toMatchObject({ code: 'CHAIN_CONTENTION' });
   });
 });

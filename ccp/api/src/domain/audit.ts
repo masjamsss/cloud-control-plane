@@ -150,6 +150,57 @@ function buildAuditItem(
  * into the CALLER's domain transaction. Callers concat `writes` with their own and
  * run ONE transact. `head` is the current CHAINHEAD (or null at genesis).
  */
+/**
+ * How many times a chain-head CAS is retried before the caller is told the chain is busy
+ * (PERF-11).
+ *
+ * EVERY mutation in a project CASes the same `CHAINHEAD` row — that is the integrity
+ * choice, and it is the right one: a hash chain that could fork would not be evidence.
+ * The cost is that concurrent mutations in one project collide routinely, because between
+ * the head read and the transact there are several awaits and, on `FileStore`, a full
+ * snapshot write. Two attempts is a very small budget against a window that wide: three
+ * ordinary actors — two approvers and the settle loop of somebody's `GET /requests` — were
+ * enough for the third writer to lose twice and be handed a 409 for a normal approve click.
+ *
+ * That is an availability ceiling, not a speed one, and the finding is explicit about which
+ * direction to fail in: the chain is the product's evidence store, so a fix that DROPPED
+ * entries under load would be worse than the 409. Retrying more is the safe direction —
+ * every one of these loops re-reads the head and rebuilds its writes from scratch, so an
+ * extra attempt costs a read, never a duplicate or a stale write.
+ */
+export const CHAIN_RETRY_ATTEMPTS = 5;
+
+/** Base backoff, doubling per attempt, capped — see {@link chainRetryDelayMs}. */
+const CHAIN_BACKOFF_BASE_MS = 4;
+const CHAIN_BACKOFF_CAP_MS = 120;
+
+/**
+ * FULL jitter, not a fixed sleep: `random(0, min(cap, base * 2^attempt))`.
+ *
+ * The losers of a collision are, by construction, all awake at the same instant. Backing
+ * off by a FIXED amount marches them into the next collision together — the retry storm the
+ * backoff was supposed to prevent, just one tick later. Randomising the whole interval is
+ * what actually spreads them, and it is the difference between a retry budget that helps
+ * and one that only makes the 409 arrive later.
+ */
+export function chainRetryDelayMs(attempt: number, rand: () => number = Math.random): number {
+  return Math.floor(rand() * Math.min(CHAIN_BACKOFF_CAP_MS, CHAIN_BACKOFF_BASE_MS * 2 ** attempt));
+}
+
+/**
+ * Await the jittered backoff for `attempt` (0-based).
+ *
+ * Exported because the chain-head retry loop is HAND-ROLLED at a dozen call sites — every
+ * verb that folds its own domain writes in beside the audit append. Raising the budget only
+ * in `record`/`transactWithAudit` fixed nothing a user would notice: the approve handler,
+ * which is the finding's own example of a 409 on an ordinary click, has its own loop. A
+ * route-level test is what caught that; five of six concurrent approvals still failed.
+ */
+export async function chainRetryBackoff(attempt: number): Promise<void> {
+  const ms = chainRetryDelayMs(attempt);
+  if (ms > 0) await new Promise<void>((r) => setTimeout(r, ms));
+}
+
 export function recordIn(
   projectId: string,
   head: ChainHeadItem | null,
@@ -181,7 +232,7 @@ export async function record(
   opts?: RecordOpts,
 ): Promise<{ id: string; hash: string }> {
   const hKey = chainHead(projectId);
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < CHAIN_RETRY_ATTEMPTS; attempt++) {
     const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
     const { writes, newHash, id } = recordIn(projectId, head, entry, opts);
     try {
@@ -189,7 +240,12 @@ export async function record(
       return { id, hash: newHash };
     } catch (e) {
       if (e instanceof ConditionError) {
-        if (attempt === 0) continue; // one retry against the fresh head
+        // PERF-11 — retry against a FRESH head, backing off with full jitter so the
+        // losers of one collision do not march into the next one together.
+        if (attempt < CHAIN_RETRY_ATTEMPTS - 1) {
+          await chainRetryBackoff(attempt);
+          continue;
+        }
         throw new ApiError('CHAIN_CONTENTION');
       }
       throw e;
@@ -216,7 +272,7 @@ export async function transactWithAudit(
 ): Promise<{ id: string; hash: string }> {
   const hKey = chainHead(projectId);
   const guarded = domainWrites.some((w) => 'ifEquals' in w && w.ifEquals !== undefined);
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < CHAIN_RETRY_ATTEMPTS; attempt++) {
     const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
     const { writes, newHash, id } = recordIn(projectId, head, entry, opts);
     try {
@@ -236,7 +292,14 @@ export async function transactWithAudit(
         // helper was built for, and if the key now exists it is a genuine duplicate that
         // the second attempt reports correctly.
         if (guarded) throw new ApiError('STATE_CONFLICT');
-        if (attempt === 0) continue;
+        // PERF-11 — same raised budget and jittered backoff as `record`. The `guarded`
+        // refusal above is UNCHANGED and must stay above this: replaying a caller's stale
+        // value guard is the lost update CONC-1 was about, and retrying it more times
+        // would only make that worse.
+        if (attempt < CHAIN_RETRY_ATTEMPTS - 1) {
+          await chainRetryBackoff(attempt);
+          continue;
+        }
         throw new ApiError('CHAIN_CONTENTION');
       }
       throw e;

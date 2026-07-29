@@ -4,7 +4,7 @@ import type { ChainHeadItem, RequestItem } from '../../store/schema';
 import { chainHead, requestCollectionGsi, requestKey } from '../../store/schema';
 import { ApiError } from '../../errors';
 import type { AuditEntryInput } from '../audit';
-import { record, recordIn } from '../audit';
+import { CHAIN_RETRY_ATTEMPTS, chainRetryBackoff,record, recordIn } from '../audit';
 import { isFrozen } from '../config';
 import { evaluateTime } from '../schedule';
 import { bundleClaimLive } from '../bundleClaim';
@@ -642,7 +642,7 @@ async function writeStatusWithAudit(
   const events = [...req.events, event];
   const recordOpts = { nowFn: () => nowIsoStr, ...(idFn ? { idFn } : {}) };
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < CHAIN_RETRY_ATTEMPTS; attempt++) {
     const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
     const { writes } = recordIn(projectId, head, entry, recordOpts);
     const domain: TransactWrite[] = [
@@ -661,7 +661,7 @@ async function writeStatusWithAudit(
       if (e instanceof ConditionError) {
         const fresh = (await store.get(k.PK, k.SK)) as RequestItem | null;
         if (fresh && fresh.status !== fromStatus) return { committed: false, fresh }; // claimed/moved by someone else
-        if (attempt === 0) continue; // chain contention (a DIFFERENT request's write) → retry once
+        if (attempt < CHAIN_RETRY_ATTEMPTS - 1) { await chainRetryBackoff(attempt); continue; } // chain contention (a DIFFERENT request's write) → retry with backoff (PERF-11)
         throw new ApiError('CHAIN_CONTENTION');
       }
       throw e;

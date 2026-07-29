@@ -21,7 +21,7 @@ import type { ManifestOperation } from '@/types';
 import { isSystemDriftOp } from '../domain/systemOps';
 import { disabledOps, isFrozen, loadPolicy, loadTeams, resolveRisk } from '../domain/config';
 import { checkSubmitRateLimit } from '../middleware/rateLimit';
-import { recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
+import { CHAIN_RETRY_ATTEMPTS, chainRetryBackoff, recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
 import { bundleArmed, bundleClaimLive, bundleConfig, realSteps, runBundle, runTriggerOnly, type BundleOutcome } from '../domain/bundle';
 import { resolveLaneRemote, type LaneProject } from '../domain/laneRepo';
 import { resolveKnob } from '../domain/deploymentSettings';
@@ -551,7 +551,7 @@ export function requestRoutes(): Hono<AppEnv> {
         ? { ...requestIdempotencyKey(projectId, account.id, draft.idempotencyKey), requestId: id }
         : undefined;
     const hKey = chainHead(projectId);
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < CHAIN_RETRY_ATTEMPTS; attempt++) {
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
       const { writes: auditWrites } = recordIn(projectId, head, entry);
       const domain: TransactWrite[] = [
@@ -572,7 +572,7 @@ export function requestRoutes(): Hono<AppEnv> {
               if (prior) return c.json(toChangeRequest(prior, projectId), 200);
             }
           }
-          if (attempt === 0) continue; // else it was chain contention → retry once
+          if (attempt < CHAIN_RETRY_ATTEMPTS - 1) { await chainRetryBackoff(attempt); continue; } // else it was chain contention → retry with backoff (PERF-11)
           throw new ApiError('CHAIN_CONTENTION');
         }
         throw e;
@@ -856,7 +856,7 @@ export function requestRoutes(): Hono<AppEnv> {
     };
 
     const hKey = chainHead(projectId);
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < CHAIN_RETRY_ATTEMPTS; attempt++) {
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
       const { writes: auditWrites } = recordIn(projectId, head, entry);
       const domain: TransactWrite[] = [
@@ -880,7 +880,7 @@ export function requestRoutes(): Hono<AppEnv> {
           // and re-submits against the state that actually landed.
           const fresh = (await store.get(k.PK, k.SK)) as RequestItem | null;
           if (!fresh || fresh.eventSeq !== req.eventSeq) return apiError(c, 'STATE_CONFLICT');
-          if (attempt === 0) continue; // chain contention only → retry once, still fresh
+          if (attempt < CHAIN_RETRY_ATTEMPTS - 1) { await chainRetryBackoff(attempt); continue; } // chain contention only → retry with backoff (PERF-11), still fresh
           throw new ApiError('CHAIN_CONTENTION');
         }
         throw e;
@@ -1300,7 +1300,7 @@ export function requestRoutes(): Hono<AppEnv> {
     let rowUpdated = false;
     /** The row as it stood when the outcome was written — the honest `after` status. */
     let settled: RequestItem = req;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < CHAIN_RETRY_ATTEMPTS; attempt++) {
       // CONC-6 gap 2 — THE TIMELINE IS APPENDED TO, NOT REPLACED.
       //
       // `AWAITING_DEPLOY_APPROVAL` is cancellable and the claim deliberately does not
@@ -1352,7 +1352,7 @@ export function requestRoutes(): Hono<AppEnv> {
         rowUpdated = true;
         break;
       } catch (e) {
-        if (e instanceof ConditionError && attempt === 0) continue; // chain contention → retry once
+        if (e instanceof ConditionError && attempt === 0) continue; // chain contention → retry with backoff (PERF-11)
         if (!(e instanceof ConditionError)) throw e;
         break; // the row moved under us — fall through and record the outcome anyway
       }
@@ -1391,7 +1391,7 @@ export function requestRoutes(): Hono<AppEnv> {
           note: 'the request row moved past this bundle’s claim while it ran (a lease takeover, or another writer), so the row’s bundle/timeline fields were NOT updated — but these effects did happen',
         },
       };
-      for (let attempt = 0; attempt < 2; attempt++) {
+      for (let attempt = 0; attempt < CHAIN_RETRY_ATTEMPTS; attempt++) {
         const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
         const { writes } = recordIn(projectId, head, orphan);
         try {
@@ -1548,7 +1548,7 @@ export function requestRoutes(): Hono<AppEnv> {
     // this verb now has more than one valid prior status.
     const priorStatus = req.status;
     const hKey = chainHead(projectId);
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < CHAIN_RETRY_ATTEMPTS; attempt++) {
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
       const { writes } = recordIn(projectId, head, entry);
       const domain: TransactWrite[] = [
@@ -1562,10 +1562,11 @@ export function requestRoutes(): Hono<AppEnv> {
           // Idempotent-safe: a losing race (a concurrent cancel/rewindow, or a
           // window elapsing and settling underneath us) is reported honestly,
           // never double-applied.
-          if (attempt === 0) {
+          if (attempt < CHAIN_RETRY_ATTEMPTS - 1) {
             const fresh = (await store.get(k.PK, k.SK)) as RequestItem | null;
             if (fresh && fresh.status !== priorStatus) return apiError(c, 'STATE_CONFLICT');
-            continue; // else it was chain contention (a DIFFERENT request) → retry once
+            await chainRetryBackoff(attempt);
+            continue; // else it was chain contention (a DIFFERENT request) → retry with backoff (PERF-11)
           }
           throw new ApiError('CHAIN_CONTENTION');
         }
@@ -1656,7 +1657,7 @@ export function requestRoutes(): Hono<AppEnv> {
     };
 
     const hKey = chainHead(projectId);
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < CHAIN_RETRY_ATTEMPTS; attempt++) {
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
       const { writes } = recordIn(projectId, head, entry);
       const domain: TransactWrite[] = [
@@ -1673,10 +1674,11 @@ export function requestRoutes(): Hono<AppEnv> {
         return c.json(toChangeRequest(updated, projectId));
       } catch (e) {
         if (e instanceof ConditionError) {
-          if (attempt === 0) {
+          if (attempt < CHAIN_RETRY_ATTEMPTS - 1) {
             const fresh = (await store.get(k.PK, k.SK)) as RequestItem | null;
             if (fresh && fresh.status !== priorStatus) return apiError(c, 'STATE_CONFLICT');
-            continue; // else it was chain contention (a DIFFERENT request) → retry once
+            await chainRetryBackoff(attempt);
+            continue; // else it was chain contention (a DIFFERENT request) → retry with backoff (PERF-11)
           }
           throw new ApiError('CHAIN_CONTENTION');
         }

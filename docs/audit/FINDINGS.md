@@ -362,7 +362,7 @@ The evidence chain: month walk, export, verification.
 - [x] DATA-2 | high | audit-chain | fixed:813a6d9 | 03-data-integrity.md | Audit month-walk duplicates the current month at month ends: audit export corrupts and `/readyz` goes red on ~7 days a year
 - [x] PERF-4 | high | audit-chain | fixed:813a6d9 | 11-performance-scalability.md | `/readyz` re-verifies every audit chain hash on every probe: O(total audit entries) CPU per health check
 - [ ] OPS-11 | medium | audit-chain | open | 10-reliability-operations.md | `/readyz` re-verifies every audit chain on every probe; cost grows unboundedly with history
-- [ ] PERF-11 | medium | audit-chain | open | 11-performance-scalability.md | Per-project audit chain head serializes all writes and surfaces contention as user-facing 409s after one retry
+- [x] PERF-11 | medium | audit-chain | fixed:PENDING | 11-performance-scalability.md | Per-project audit chain head serializes all writes and surfaces contention as user-facing 409s after one retry
 - [ ] PERF-7 | medium | audit-chain | open | 11-performance-scalability.md | Nothing in the store is ever purged: sessions, idempotency markers, and the audit chain grow forever (and every byte is re-serialized per request)
 - [ ] DATA-17 | low | audit-chain | open | 03-data-integrity.md | Calendar-dependent test: the FileStore audit-durability test hardcodes month `202607`
 

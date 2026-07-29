@@ -4,7 +4,7 @@ import type { ChainHeadItem, ProjectScanJobItem } from "../store/schema";
 import { chainHead, scanJobKey } from "../store/schema";
 import { ApiError } from "../errors";
 import type { AuditEntryInput } from "./audit";
-import { recordIn } from "./audit";
+import { CHAIN_RETRY_ATTEMPTS, chainRetryBackoff, recordIn } from "./audit";
 import { isTerminalScanStatus, sanitizeScanError } from "./scanner";
 import { nowIso, nowMs } from "../clock";
 
@@ -105,7 +105,7 @@ export async function settleScanJobLease(
 
   const k = scanJobKey(job.projectId, job.jobId);
   const hKey = chainHead(job.projectId);
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < CHAIN_RETRY_ATTEMPTS; attempt++) {
     const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
     const { writes } = recordIn(job.projectId, head, entry);
     const domain: TransactWrite[] = [
@@ -124,7 +124,7 @@ export async function settleScanJobLease(
       if (e instanceof ConditionError) {
         const fresh = (await store.get(k.PK, k.SK)) as ProjectScanJobItem | null;
         if (fresh && fresh.status !== from) return fresh; // the worker reported, or another reader settled it
-        if (attempt === 0) continue; // chain contention (a DIFFERENT write) → retry once
+        if (attempt < CHAIN_RETRY_ATTEMPTS - 1) { await chainRetryBackoff(attempt); continue; } // chain contention (a DIFFERENT write) → retry with backoff (PERF-11)
         throw new ApiError("CHAIN_CONTENTION");
       }
       throw e;

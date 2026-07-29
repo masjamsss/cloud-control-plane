@@ -4,7 +4,7 @@ import { ConditionError } from '../store/configStore';
 import type { ApplySpec, ChainHeadItem, PendingConfigChangeItem } from '../store/schema';
 import { configChangeKey, pendingConfigGsi } from '../store/schema';
 import { ApiError } from '../errors';
-import { recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
+import { CHAIN_RETRY_ATTEMPTS, chainRetryBackoff, recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
 import { nowIso, nowMs } from '../clock';
 import { loadAccounts } from './config';
 import { roleFor } from '../projects';
@@ -309,7 +309,7 @@ export async function ackPending(
   // project's, when the proposal carried one — data-plane verbs do).
   const auditChain = pending.auditProjectId ?? projectId;
   const hKey = { PK: `P#${auditChain}#AUDIT`, SK: 'CHAINHEAD' };
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < CHAIN_RETRY_ATTEMPTS; attempt++) {
     const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
     const { writes } = recordIn(auditChain, head, audit);
     try {
@@ -332,7 +332,7 @@ export async function ackPending(
         // gets CHAIN_CONTENTION ("try again") for something no retry can fix.
         const nowPending = (await store.get(k.PK, k.SK)) as PendingConfigChangeItem | null;
         if (!nowPending || nowPending.status !== 'PENDING') throw new ApiError('STATE_CONFLICT');
-        if (attempt === 0) continue;
+        if (attempt < CHAIN_RETRY_ATTEMPTS - 1) { await chainRetryBackoff(attempt); continue; }
         throw new ApiError('CHAIN_CONTENTION');
       }
       throw e;

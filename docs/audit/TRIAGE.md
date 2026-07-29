@@ -185,10 +185,17 @@ do not break that property — and one parser validates every snapshot on the wa
 
 **Model:** opus · **Findings:** 3 · **Touches:** `ccp/api/src/domain/audit.ts, routes/audit`
 
+**Status: 1 of 3 closed** (PERF-11). **PERF-8** had partial work — its page walk is now
+bounded per partition (R-51 records what is left and why the finding's proposed cursor
+mechanism does not work here). **PERF-7 IS BLOCKED ON A PRODUCT DECISION** and should not be
+picked up by a worker: audit-chain retention is a policy question for the owner, not a
+cleanup task. Its session-sweep and idempotency-marker halves are ordinary work and can be
+done independently.
+
 
 | finding | sev | expected result |
 | --- | --- | --- |
-| **PERF-11** | medium | Chain-head contention stops surfacing as user-facing 409s after one retry. The chain is the product's evidence store — a fix that drops entries under load is worse than the 409. |
+| ~~**PERF-11**~~ | medium | **DONE.** Budget raised to `CHAIN_RETRY_ATTEMPTS` with FULL-jitter backoff, applied to all fifteen hand-rolled chain-head loops — raising it only in `record`/`transactWithAudit` changed nothing a user would notice, which a route-level test caught. `transactWithAudit`'s value-guard refusal is deliberately still immediate (CONC-1). Does not close API-20 — see R-52. |
 | **PERF-7** | medium | A retention story exists for sessions, idempotency markers and the chain. RETENTION OF AN AUDIT CHAIN IS A PRODUCT DECISION, not a cleanup task — state the policy explicitly and get it agreed before implementing. |
 | **PERF-8** | medium | Admin audit paging stops materializing and re-sorting the whole chain per page, and the cursor lookup stops being a linear scan. Same family as PERF-3 (done) — reuse its cursor semantics. |
 

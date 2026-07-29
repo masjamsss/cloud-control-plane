@@ -1,7 +1,7 @@
 import type { ConfigStore, TransactWrite } from '../store/configStore';
 import { ConditionError } from '../store/configStore';
 import type { AuditEntryInput } from './audit';
-import { recordIn } from './audit';
+import { CHAIN_RETRY_ATTEMPTS, chainRetryBackoff, recordIn } from './audit';
 import type { ChainHeadItem, RequestItem } from '../store/schema';
 import { chainHead, requestKey } from '../store/schema';
 import { ApiError } from '../errors';
@@ -330,7 +330,7 @@ export async function settleWindow(store: ConfigStore, projectId: string, req: R
 
   const k = requestKey(projectId, req.id);
   const hKey = chainHead(projectId);
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < CHAIN_RETRY_ATTEMPTS; attempt++) {
     const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
     const { writes } = recordIn(projectId, head, entry);
     const domain: TransactWrite[] = [
@@ -343,7 +343,7 @@ export async function settleWindow(store: ConfigStore, projectId: string, req: R
       if (e instanceof ConditionError) {
         const fresh = (await store.get(k.PK, k.SK)) as RequestItem | null;
         if (fresh && fresh.status !== 'AWAITING_DEPLOY_APPROVAL') return fresh; // already settled/cancelled/rewound by someone else
-        if (attempt === 0) continue; // chain contention (a DIFFERENT request's write) → retry once
+        if (attempt < CHAIN_RETRY_ATTEMPTS - 1) { await chainRetryBackoff(attempt); continue; } // chain contention (a DIFFERENT request's write) → retry with backoff (PERF-11)
         throw new ApiError('CHAIN_CONTENTION');
       }
       throw e;

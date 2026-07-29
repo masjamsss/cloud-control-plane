@@ -3069,3 +3069,52 @@ would be safe to do.
       only that something throws, and a tightening that rejected valid stores would be a
       far worse defect than the one being fixed.
 - [x] **Evidence in the status line** — see **DATA-16**.
+
+## PERF-11
+
+*Per-project audit chain head serializes all writes and surfaces contention as user-facing
+409s after one retry.*
+
+Every mutation in a project CASes the same `CHAINHEAD` row. That is the integrity choice and
+it is the right one — a hash chain that could fork would not be evidence — but it means
+concurrent mutations in one project collide routinely: between the head read and the
+transact there are several awaits and, on `FileStore`, a whole snapshot write. Two attempts
+is a very small budget against a window that wide. Three ordinary actors were enough for the
+third writer to lose twice and be handed a 409 for a normal approve click.
+
+The direction to fail in was never in doubt — the finding says it and the triage repeats it:
+the chain is the product's evidence store, so a fix that DROPPED entries under load would be
+worse than the 409. Retrying more is the safe direction, because every one of these loops
+re-reads the head and rebuilds its writes from scratch; an extra attempt costs one read and
+can never produce a duplicate or a stale write.
+
+Budget raised to `CHAIN_RETRY_ATTEMPTS` with **full jitter** backoff —
+`random(0, min(cap, base * 2^attempt))`. Full, not fixed, and that is the load-bearing
+detail: the losers of a collision are all awake at the same instant by construction, so a
+fixed backoff marches them into the next collision together — the retry storm the backoff
+exists to prevent, one tick later.
+
+**One refusal is deliberately NOT retried more.** `transactWithAudit` still refuses
+immediately when the caller carries its own value guard: replaying a stale `ifEquals` is the
+lost update CONC-1 was about, and a bigger budget there would only make it worse. That check
+stays above the backoff.
+
+- [x] **A route-level test caught an incomplete fix.** Raising the budget in `record` and
+      `transactWithAudit` alone changed nothing a user would notice: the chain-head retry
+      loop is HAND-ROLLED at fifteen call sites — every verb that folds its own domain
+      writes in beside the audit append — and the approve handler, which is the finding's
+      own example of a 409 on an ordinary click, has its own. Five of six concurrent
+      approvals still failed. The unit test passed throughout.
+- [x] **Negative test** — `test/audit.test.ts` pins the boundary against the CONSTANT rather
+      than a literal, so it states the contract ("all but the last attempt may race and the
+      write still lands; one more failure than the budget is a 409") instead of re-encoding
+      a number that has now changed once.
+- [x] **A test for the SUBTLY wrong fix** — a fixed backoff, or one that ignores its random
+      source, fails the jitter test. That is the version that looks right.
+- [x] **Regression tests** — 7 in `test/chainContention.test.ts`, including the property a
+      retry budget could plausibly break: every write must land EXACTLY once, with the chain
+      head's count agreeing with the entries. A duplicate from a replay would be a worse
+      defect than the 409.
+- [x] **Evidence in the status line** — 1,498 api tests pass (110 files).
+
+**Residue:** the fix does not close **API-20**, and writing the test proved it. See **R-52**.

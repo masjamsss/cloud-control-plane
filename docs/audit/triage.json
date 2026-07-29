@@ -1,7 +1,7 @@
 {
   "generated_from": "docs/audit/FINDINGS.md + docs/audit/TRIAGE.md",
   "authoritative_source": "docs/audit/FINDINGS.md \u2014 if this file disagrees, FINDINGS.md wins",
-  "open_findings": 125,
+  "open_findings": 124,
   "rules": {
     "take": "a whole batch id, not individual findings \u2014 batches are grouped by files touched",
     "baseline": "parallel lanes must NOT touch scripts/findings-baseline.txt; it is a ceiling, not an exact match. One reconciliation commit at the end.",
@@ -282,7 +282,8 @@
           "title": "Per-project audit chain head serializes all writes and surfaces contention as user-facing 409s after one retry",
           "lane": null,
           "expected_result": "Chain-head contention stops surfacing as user-facing 409s after one retry. The chain is the product's evidence store \u2014 a fix that drops entries under load is worse than the 409.",
-          "verify_first": false
+          "verify_first": false,
+          "status": "closed"
         },
         {
           "id": "PERF-7",
@@ -292,7 +293,8 @@
           "title": "Nothing in the store is ever purged: sessions, idempotency markers, and the audit chain grow forever (and every byte is re-serialized per request)",
           "lane": null,
           "expected_result": "A retention story exists for sessions, idempotency markers and the chain. RETENTION OF AN AUDIT CHAIN IS A PRODUCT DECISION, not a cleanup task \u2014 state the policy explicitly and get it agreed before implementing.",
-          "verify_first": false
+          "verify_first": false,
+          "status": "blocked_on_owner_decision"
         },
         {
           "id": "PERF-8",

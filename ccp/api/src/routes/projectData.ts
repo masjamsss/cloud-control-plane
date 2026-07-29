@@ -11,6 +11,7 @@ import { requireAdmin, requireRole } from '../middleware/authz';
 import { checkUploadRateLimit } from '../middleware/rateLimit';
 import { isBoundToProject, refreshKnownProjects } from '../projects';
 import { hashPassword, verifyPassword } from '../auth/credentials';
+import { CHAIN_RETRY_ATTEMPTS, chainRetryBackoff } from '../domain/audit';
 import { commitOrPropose, publicPendingChange } from '../domain/dualControl';
 import { transactWithAudit } from '../domain/audit';
 import {
@@ -271,7 +272,7 @@ export function projectDataRoutes(dataRoot: string): Hono<AppEnv> {
     //    deletes the row — either way nothing half-exists, and a version row is
     //    only ever trusted when its files landed (serve fails closed regardless).
     const uploadedVia = `upload-token:${tokenId}`;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < CHAIN_RETRY_ATTEMPTS; attempt++) {
       const existing = await listVersionRows(store, id);
       const version = (existing.length > 0 ? existing[existing.length - 1]!.version : 0) + 1;
       const item: ProjectDataVersionItem = {
