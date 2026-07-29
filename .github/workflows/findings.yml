@@ -26,5 +26,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history, deliberately. The gate verifies that every `fixed:<sha>` in
+          # FINDINGS.md is an ancestor of HEAD (L-28), and it can only verify a sha this
+          # clone can SEE — on the default depth-1 checkout every one is invisible, every
+          # one is skipped, and the check passes having dereferenced nothing. That is the
+          # same defect the check exists to catch, one level up.
+          fetch-depth: 0
       - name: findings ledger is complete and ratcheting
         run: bash scripts/findings-gate.sh

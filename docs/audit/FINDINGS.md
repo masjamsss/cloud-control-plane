@@ -18,7 +18,9 @@ to `fixed:`, all six must hold:
 - [ ] **The failure mode is loud.** A check that cannot run must never be
       indistinguishable from a check that passed — that is CI-2's whole lesson.
 - [ ] **Evidence is in the status line**: a commit sha, PR ref, or test name. `fixed:` with
-      no evidence is rejected by the gate.
+      no evidence is rejected by the gate. **If it is a sha, take it AFTER your last
+      `--amend`** — recording it before folding the ledger edit in leaves a sha the amend
+      destroys, which is how eight entries here came to point at nothing (L-28).
 - [ ] **A lesson is recorded in [`LESSONS.md`](LESSONS.md)** if the finding taught something
       that generalises beyond the one line changed.
 
@@ -102,15 +104,15 @@ Unguarded full-row writes and lost updates. Largely one root cause — the store
 - [x] CONC-2 | high | concurrency | fixed:eventSeq guards on reject/link-pr/plan-summary + transactWithAudit refuses to replay a guarded write; test/transactWithAuditReplay.test.ts | 04-concurrency.md | Reject, link-pr and plan-summary use unguarded full-row puts through `transactWithAudit`, which retries with the stale snapshot; this also defeats the scheduler's `APPLYING` claim
 - [x] CONC-3 | high | concurrency | fixed:ifEquals on standalone put + accountVersion guard on every account write in auth/account/admin; test/loginDisableRace.test.ts | 04-concurrency.md | The entire auth/self-service lane writes the account row with blind full-row puts, clobbering concurrent admin mutations and undermining the `accountVersion` drift-guard doctrine
 - [x] DATA-1 | high | concurrency | fixed:887746c | 03-data-integrity.md | Request-row writes lack optimistic concurrency: concurrent approvals/rejections silently lose updates and can corrupt the quorum ledger
-- [x] API-10 | medium | concurrency | fixed:86d3e4e | 02-api-correctness.md | Session revocation can be silently undone by the idle-slide write-back race
+- [x] API-10 | medium | concurrency | fixed:3b243aa | 02-api-correctness.md | Session revocation can be silently undone by the idle-slide write-back race
 - [ ] API-5 | medium | concurrency | open | 02-api-correctness.md | Cancel can race an in-flight bundle: the change applies but the request reads CANCELLED
-- [x] CONC-11 | medium | concurrency | fixed:152fece | 04-concurrency.md | Registry writes that bump `version` without guarding it (trust-request upload, identity confirm) can clobber concurrent registry ops and rewind the dual-control version guard
-- [x] CONC-4 | medium | concurrency | fixed:86d3e4e | 04-concurrency.md | A revoked session can be resurrected by the concurrent idle-window slide
+- [x] CONC-11 | medium | concurrency | fixed:951aaf9 | 04-concurrency.md | Registry writes that bump `version` without guarding it (trust-request upload, identity confirm) can clobber concurrent registry ops and rewind the dual-control version guard
+- [x] CONC-4 | medium | concurrency | fixed:3b243aa | 04-concurrency.md | A revoked session can be resurrected by the concurrent idle-window slide
 - [ ] CONC-6 | medium | concurrency | open | 04-concurrency.md | The bundle claim has no crash/exception/race recovery: `bundle.state:'running'` can stick forever, and a raced outcome write loses the record of a fired deploy
-- [x] CONC-7 | medium | concurrency | fixed:ed369dc | 04-concurrency.md | `FileStore` has no single-writer enforcement: two processes on the same data file silently destroy each other's writes
-- [x] CONC-9 | medium | concurrency | fixed:d81741a | 04-concurrency.md | Dual-control ack does not guard the pending row's status: a concurrently rejected proposal can still apply
-- [x] DATA-8 | medium | concurrency | fixed:d81741a | 03-data-integrity.md | Pending-change status transitions have no CAS: concurrent ack + reject can apply a change and record it as REJECTED
-- [x] DATA-9 | medium | concurrency | fixed:ed369dc | 03-data-integrity.md | No single-writer guard: restore can be silently clobbered by a running server; nothing prevents two processes on one file
+- [x] CONC-7 | medium | concurrency | fixed:9dce28b | 04-concurrency.md | `FileStore` has no single-writer enforcement: two processes on the same data file silently destroy each other's writes
+- [x] CONC-9 | medium | concurrency | fixed:b3d34f5 | 04-concurrency.md | Dual-control ack does not guard the pending row's status: a concurrently rejected proposal can still apply
+- [x] DATA-8 | medium | concurrency | fixed:b3d34f5 | 03-data-integrity.md | Pending-change status transitions have no CAS: concurrent ack + reject can apply a change and record it as REJECTED
+- [x] DATA-9 | medium | concurrency | fixed:9dce28b | 03-data-integrity.md | No single-writer guard: restore can be silently clobbered by a running server; nothing prevents two processes on one file
 - [x] ERR-11 | medium | concurrency | fixed:09fb510 | 09-error-handling.md | The bundle idempotency claim guards on `status`, not `bundle.state`: concurrent applies can both run
 - [ ] ERR-8 | medium | concurrency | open | 09-error-handling.md | No process-level failure handling: no graceful shutdown, no rejection/exception handlers, npm-as-PID-1
 - [ ] OPS-8 | medium | concurrency | open | 10-reliability-operations.md | No graceful shutdown: `npm` as PID 1, no SIGTERM handling, default 10 s grace on the api
@@ -195,10 +197,10 @@ States nothing can leave: wedged jobs, dead-end requests, permanently disabled c
 Roles, sessions, TOTP, dual control, quorum and idempotency.
 
 - [x] ARCH-1 | high | authz-identity | fixed:4af8a46 | 01-architecture.md | Bundle apply route accepts pre-quorum requests, contradicting ADR-0016's "fully approved" contract
-- [x] ARCH-2 | high | authz-identity | fixed:d5d9467 | 01-architecture.md | The armed apply/drift-generation lanes are single-estate by construction in a multi-account product
+- [x] ARCH-2 | high | authz-identity | fixed:b7059cd | 01-architecture.md | The armed apply/drift-generation lanes are single-estate by construction in a multi-account product
 - [x] FE-5 | high | authz-identity | fixed:85f2980 | 05-frontend-flows.md | Api-mode session expiry is never detected in-app — the UI stays "signed in" while every call fails
 - [ ] API-6 | medium | authz-identity | open | 02-api-correctness.md | The 72-hour dual-control expiry is dead code: `sweepExpired` has no callers and `ackPending` never checks `expiresAt`
-- [x] ARCH-4 | medium | authz-identity | fixed:0e225e5 | 01-architecture.md | No mutual exclusion between the two apply lanes; both act on `AWAITING_DEPLOY_APPROVAL`
+- [x] ARCH-4 | medium | authz-identity | fixed:80f024e | 01-architecture.md | No mutual exclusion between the two apply lanes; both act on `AWAITING_DEPLOY_APPROVAL`
 - [ ] DATA-11 | medium | authz-identity | open | 03-data-integrity.md | v1 migration writes rows that violate the store schemas, including an `id`≠`username` shape that breaks session resolution
 - [ ] DATA-7 | medium | authz-identity | open | 03-data-integrity.md | The 72-hour dual-control expiry is unenforced: `sweepExpired` is dead code and `ackPending` never checks `expiresAt`
 - [x] FE-4 | medium | authz-identity | fixed:b5b703b | 05-frontend-flows.md | ApprovalsQueue's stale-response guard is dead code — overlapping project-switch fetches can commit the wrong project's queue
@@ -247,7 +249,7 @@ Durability, rollback, schema validation on load, and store-seam fidelity against
 The same rule implemented in two places, free to drift.
 
 - [ ] ARCH-5 | medium | duplication | open | 01-architecture.md | Two sources of truth for the catalog: the server validates against the image-baked catalog, the SPA renders the per-project uploaded one
-- [x] ARCH-7 | medium | duplication | fixed:28c7fac | 01-architecture.md | The request-status vocabulary is an unowned, drifted contract
+- [x] ARCH-7 | medium | duplication | fixed:3cf798c | 01-architecture.md | The request-status vocabulary is an unowned, drifted contract
 - [ ] ARCH-8 | medium | duplication | open | 01-architecture.md | The governance domain is implemented twice (server + browser mock) with acknowledged behavioral divergence
 - [ ] DOC-13 | medium | duplication | open | 14-contracts-docs.md | Request-status vocabulary is three-way inconsistent (SPA union vs server writes vs YAML prose)
 - [ ] ARCH-11 | low | duplication | open | 01-architecture.md | Arming-flag sprawl with no whole-config validation
@@ -344,7 +346,7 @@ Bootstrap, install, migration, compose and overlays.
 Full scans, unpaged reads, work proportional to total data.
 
 - [x] PERF-3 | high | scale-and-paging | fixed:813a6d9 | 11-performance-scalability.md | `GET /requests` has no pagination and ships full rows (events, params, plan summaries, pinned plan text), with an O(n) write-capable settle loop per call
-- [x] PERF-5 | high | scale-and-paging | fixed:ea170d0 | 11-performance-scalability.md | Frontend main bundle is 3.76 MB (663 KB gzip) with all 115 manifest JSONs inlined and zod-parsed at module init
+- [x] PERF-5 | high | scale-and-paging | fixed:2fd1794 | 11-performance-scalability.md | Frontend main bundle is 3.76 MB (663 KB gzip) with all 115 manifest JSONs inlined and zod-parsed at module init
 - [ ] PERF-10 | medium | scale-and-paging | open | 11-performance-scalability.md | Submit-path full scans: rate-limit check and feasibility each re-scan whole collections per submission
 - [ ] PERF-8 | medium | scale-and-paging | open | 11-performance-scalability.md | Admin audit "pagination" materializes and re-sorts the whole chain per page; cursor lookup is a linear scan
 - [ ] PERF-9 | medium | scale-and-paging | open | 11-performance-scalability.md | `ServiceConsole` loads the entire block-source corpus on every service page mount, fetching server chunks sequentially
