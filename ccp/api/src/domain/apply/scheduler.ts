@@ -8,7 +8,7 @@ import { record, recordIn } from '../audit';
 import { isFrozen } from '../config';
 import { evaluateTime } from '../schedule';
 import { bundleClaimLive } from '../bundleClaim';
-import { digestOf, type ApplyExecutor, type ApplyResult } from './executor';
+import { digestOf, type ApplyExecutor, type ApplyResult, type PlanResult } from './executor';
 import { nullNotifier, type NotificationKind, type Notifier } from './notify';
 
 /**
@@ -71,13 +71,31 @@ const AWAITING = 'AWAITING_DEPLOY_APPROVAL';
 export const HALTED_DRIFT = 'HALTED_DRIFT';
 export const HALTED_APPLY_FAILED = 'HALTED_APPLY_FAILED';
 
-export type HaltReason = 'NO_PINNED_PLAN' | 'QUORUM_LOST' | 'DRIFT' | 'APPLY_FAILED' | 'APPLY_LEASE_EXPIRED';
+export type HaltReason = 'NO_PINNED_PLAN' | 'QUORUM_LOST' | 'DRIFT' | 'APPLY_FAILED' | 'APPLY_LEASE_EXPIRED' | 'REPLAN_FAILED';
 
 export interface ApplyOutcome {
   requestId: string;
-  result: 'applied' | 'halted' | 'skipped-frozen' | 'skipped-moved' | 'held-no-plan';
+  result: 'applied' | 'halted' | 'skipped-frozen' | 'skipped-moved' | 'held-no-plan' | 'replan-error' | 'error';
   haltReason?: HaltReason;
+  /** Why, for the two outcomes that carry a failure the caller did not already know. */
+  detail?: string;
 }
+
+/**
+ * How many consecutive `executor.replan()` FAILURES a request may accumulate before the
+ * scheduler stops retrying and halts it (ERR-6).
+ *
+ * A replan failure is not drift — it is the re-plan failing to be produced at all
+ * (backend unreachable, bad credentials, a config error). Most instances are transient,
+ * which is why the first few are retried rather than halted: halting is expensive in
+ * HUMAN terms, since the only exit from a halt is cancel + resubmit through the approval
+ * ladder, and paying that for a thirty-second network fault would be its own defect.
+ *
+ * But retrying forever is what the finding is about. Five ticks — five minutes at the
+ * default cadence — is long enough that a blip has cleared and short enough that a real
+ * misconfiguration reaches a human while the maintenance window is still open.
+ */
+export const REPLAN_FAILURE_LIMIT = 5;
 
 /**
  * How long a worker may own an `APPLYING` claim before the scheduler treats it as dead
@@ -245,6 +263,13 @@ const HALT_SPECS: Record<HaltReason, HaltSpec> = {
     notifyKind: 'apply-failed',
     message: 'Apply failed after one retry — halted; a human has been alerted',
   },
+  REPLAN_FAILED: {
+    status: HALTED_DRIFT,
+    action: 'scheduler-halt-replan',
+    eventType: 'halted',
+    notifyKind: 'halted-replan',
+    message: `Re-plan could not be produced after ${REPLAN_FAILURE_LIMIT} consecutive attempts — halted; routed to a fresh plan/review`,
+  },
   APPLY_LEASE_EXPIRED: {
     status: HALTED_APPLY_FAILED,
     action: 'scheduler-apply-lease-expired',
@@ -338,7 +363,40 @@ export async function runDueApplies(
   // chain head would only self-contend — the exact reasoning `routes/requests.ts`'s
   // list-settle loop documents.
   for (const req of due) {
-    outcomes.push(await processOne(store, projectId, now, req, executor, opts));
+    // ERR-6 — ONE REQUEST CANNOT STARVE ITS SIBLINGS. `processOne` used to be called bare
+    // inside this loop, so any throw from it — `executor.replan` was the reachable one,
+    // but a store fault or a bug is the same shape — aborted the whole loop and every
+    // LATER due request in this project was skipped for that tick. Repeated every tick,
+    // that is a request silently missing its maintenance window because a different
+    // request is broken, with nothing in the portal to say so.
+    //
+    // The per-request catch is deliberately a BACKSTOP and not the handler: a throw
+    // reaching here is a bug, and the modelled failures (replan, apply) are handled where
+    // they happen, with their own halts, events and alerts. What this guarantees is only
+    // that the blast radius of an unhandled one is a single request.
+    try {
+      outcomes.push(await processOne(store, projectId, now, req, executor, opts));
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      console.error(`[scheduler] unhandled error processing ${projectId}/${req.id}: ${detail}`);
+      // Best-effort, and that matters: `processOne` AWAITS the notifier, so a failing
+      // alert channel is itself one of the throws that lands here. Alerting about it
+      // through the same channel would rethrow out of the handler and re-open exactly the
+      // starvation this catch exists to close — the bug this backstop had until a test
+      // that used a throwing notifier to reach it found it.
+      try {
+        await notifier.notify({
+          kind: 'apply-failed',
+          projectId,
+          requestId: req.id,
+          message: `scheduler hit an unhandled error on ${req.targetAddress}; other due requests were NOT affected: ${detail}`,
+          at: nowIsoStr,
+        });
+      } catch (notifyErr) {
+        console.error(`[scheduler] notifier ALSO failed for ${projectId}/${req.id}: ${notifyErr instanceof Error ? notifyErr.message : String(notifyErr)}`);
+      }
+      outcomes.push({ requestId: req.id, result: 'error', detail });
+    }
   }
   return outcomes;
 }
@@ -370,7 +428,33 @@ async function processOne(
   // RE-PLAN — compare to the approved plan by DIGEST. Only an exact match (the reviewed
   // change, nothing else) may proceed; any drift HALTS to a fresh plan/review. Re-plan is
   // read-only, so an overlapping worker doing it twice is wasteful but harmless.
-  const replan = await executor.replan(req);
+  //
+  // ERR-6 — A REPLAN THAT THROWS IS AN OUTCOME, NOT AN ESCAPE HATCH. `executor.apply` was
+  // already wrapped (`tryApply`); this call was bare. `TerraformExecutor.replan` throws on
+  // any plan failure — backend unreachable, bad credentials, a config error, ERR-5's
+  // cached init rejection — and the exception propagated out of `processOne`, out of
+  // `runDueApplies`, and into a per-project `console.error` in loop.ts. Two consequences,
+  // and the second was the quiet one: the failing request was retried every tick forever
+  // with no halt, no timeline event and no alert (stdout was the only trace, so in the
+  // portal it looked like the scheduler had simply never run), AND every later due request
+  // in the same project was skipped for that tick, every tick, as collateral.
+  //
+  // Failing to PRODUCE a plan is not the same as producing one that drifted, so it is not
+  // the DRIFT halt: nothing here says the change is wrong, only that it could not be
+  // checked. Most instances are transient, and the only exit from a halt is cancel +
+  // resubmit through the approval ladder — an expensive answer to a thirty-second network
+  // fault. So it retries, but boundedly and visibly: the first failure of an episode is
+  // recorded and alerted once, further failures are counted silently rather than spamming
+  // the timeline every minute, and at REPLAN_FAILURE_LIMIT it halts for a human.
+  let replan: PlanResult;
+  try {
+    replan = await executor.replan(req);
+  } catch (e) {
+    return replanFailed(store, projectId, req, e, nowIsoStr, opts);
+  }
+  // The episode is over. Cleared here rather than left to age out, so that a NEW fault
+  // weeks later is reported as a new episode instead of arriving one tick from the halt.
+  if ((req.replanFailures ?? 0) > 0) req = await clearReplanFailures(store, projectId, req, nowIsoStr);
   if (replan.digest !== req.planDigest) return halt(store, projectId, req, 'DRIFT', AWAITING, nowIsoStr, opts);
 
   // CLAIM — the atomic single-apply gate AND the start-of-apply marker (Finding 1). Flip
@@ -562,6 +646,105 @@ async function writeStatusWithAudit(
     }
   }
   throw new ApiError('CHAIN_CONTENTION');
+}
+
+/**
+ * ERR-6 — a `replan()` throw, turned into a modelled outcome.
+ *
+ * Three behaviours in one place, because they are one decision:
+ *
+ *  - COUNT every consecutive failure on the row, so the retry is bounded rather than
+ *    eternal. The counter is the only durable trace between ticks; without it the
+ *    scheduler cannot tell the first failure from the four-hundredth.
+ *  - REPORT the FIRST failure of an episode — timeline event, audit entry, notifier — and
+ *    stay quiet afterwards. Reporting every tick would append to the request's timeline
+ *    once a minute forever, which is the shape `holdNoPlan` already refuses; an alert
+ *    that repeats identically every minute is one people filter.
+ *  - HALT at {@link REPLAN_FAILURE_LIMIT}, so "we could not check this change" eventually
+ *    reaches a human instead of being retried until someone reads stdout.
+ *
+ * The counter bump on quiet ticks is a plain guarded update: no audit entry, because an
+ * audit chain that grows a link per minute per broken request is a cost with no reader.
+ * A lost race on that guard is ignored on purpose — the row moved (cancelled, claimed,
+ * re-windowed), and it will be re-evaluated from its new state on the next tick.
+ */
+async function replanFailed(
+  store: ConfigStore,
+  projectId: string,
+  req: RequestItem,
+  err: unknown,
+  nowIsoStr: string,
+  opts: RunOptions,
+): Promise<ApplyOutcome> {
+  const notifier = opts.notifier ?? nullNotifier;
+  const detail = err instanceof Error ? err.message : String(err);
+  const failures = (req.replanFailures ?? 0) + 1;
+
+  if (failures >= REPLAN_FAILURE_LIMIT) {
+    const outcome = await halt(store, projectId, req, 'REPLAN_FAILED', AWAITING, nowIsoStr, opts);
+    return { ...outcome, detail };
+  }
+
+  if (failures === 1) {
+    // First of an episode: make it visible exactly once.
+    const event = {
+      at: nowIsoStr,
+      type: 'replan_failed',
+      label: `Re-plan could not be produced — retrying (attempt 1 of ${REPLAN_FAILURE_LIMIT}): ${detail}`,
+      actor: SCHEDULER_ACTOR,
+    };
+    const entry: AuditEntryInput = {
+      action: 'scheduler-replan-failed',
+      actor: SCHEDULER_ACTOR,
+      targetType: 'request',
+      targetId: req.id,
+      requestId: req.id,
+      before: { status: req.status, replanFailures: req.replanFailures ?? 0 },
+      after: { status: req.status, replanFailures: failures, detail, limit: REPLAN_FAILURE_LIMIT },
+    };
+    // Status AWAITING → AWAITING: this is not a transition, it is a guarded annotation.
+    // Guarding on `status` still does the job — if the row left AWAITING under us, the
+    // write is refused and the next tick re-reads it.
+    await writeStatusWithAudit(store, projectId, req, AWAITING, { replanFailures: failures }, event, entry, AWAITING, nowIsoStr, opts.idFn);
+    await notifier.notify({
+      kind: 'replan-failed',
+      projectId,
+      requestId: req.id,
+      message: `re-plan failed for ${req.targetAddress} — retrying up to ${REPLAN_FAILURE_LIMIT} times: ${detail}`,
+      at: nowIsoStr,
+    });
+    return { requestId: req.id, result: 'replan-error', detail };
+  }
+
+  // Quiet tick: count, say nothing.
+  await bumpReplanFailures(store, projectId, req, failures, nowIsoStr);
+  return { requestId: req.id, result: 'replan-error', detail };
+}
+
+/** Guarded counter write with no audit/timeline cost. A lost guard is a moved row. */
+async function bumpReplanFailures(store: ConfigStore, projectId: string, req: RequestItem, failures: number, nowIsoStr: string): Promise<void> {
+  const k = requestKey(projectId, req.id);
+  try {
+    await store.transact([
+      { kind: 'update', pk: k.PK, sk: k.SK, set: { replanFailures: failures, updatedAt: nowIsoStr }, ifEquals: { attr: 'status', value: AWAITING } },
+    ]);
+  } catch (e) {
+    if (!(e instanceof ConditionError)) throw e;
+  }
+}
+
+/** A re-plan succeeded, so the episode is over — a later fault is a NEW episode. */
+async function clearReplanFailures(store: ConfigStore, projectId: string, req: RequestItem, nowIsoStr: string): Promise<RequestItem> {
+  const k = requestKey(projectId, req.id);
+  try {
+    await store.transact([
+      { kind: 'update', pk: k.PK, sk: k.SK, set: { replanFailures: 0, updatedAt: nowIsoStr }, ifEquals: { attr: 'status', value: AWAITING } },
+    ]);
+    return { ...req, replanFailures: 0 };
+  } catch (e) {
+    if (!(e instanceof ConditionError)) throw e;
+    return req; // the row moved; the next tick reads it fresh
+  }
 }
 
 /** Standalone hash-chained append (frozen / revert markers) under the scheduler actor. */

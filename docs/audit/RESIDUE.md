@@ -505,3 +505,20 @@ exist yet and should be designed against the real backend rather than guessed at
 cost if it is ever hit is one lost `cancelled` timeline entry on a request whose `status`
 still correctly reads `CANCELLED` and whose audit chain still records both the cancel and
 the bundle — a degraded timeline, not a lost decision.
+
+### R-44 · The replan-failure halt threshold is a constant, not per-project policy
+*Residue on **ERR-6**.*
+
+`REPLAN_FAILURE_LIMIT = 5` is one number for every estate. Five ticks is a reasonable
+default — long enough for a blip to clear, short enough to reach a human while the
+maintenance window is usually still open — but the right value genuinely differs by
+deployment: a project whose terraform backend is a flaky VPN hop away wants more patience
+than one whose backend is in the same VPC, and a project with two-hour windows can afford
+to wait where a fifteen-minute window cannot.
+
+Accepted as a constant for now rather than made a knob. The knob is cheap to add
+(`deploymentSettings` already has the shape for it) and the reason not to is that there is
+no operational experience yet to set it from: shipping a tunable whose correct value nobody
+knows invites it being set to something worse than the default, and the failure mode of
+tuning it too high is the finding's own defect wearing a configuration hat. Revisit when a
+real deployment has hit the limit and can say whether it fired too early.

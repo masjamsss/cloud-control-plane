@@ -2540,3 +2540,102 @@ as any other claim.
       including that a resume lands *nothing new* and that a genuinely failed run (red gate,
       nothing committed) is still plain `failed` with no remediation offered.
 - [x] **Evidence in the status line** — 1,413 api tests pass (101 files), 2,745 app tests.
+
+## ERR-5
+
+*`TerraformExecutor.init()` caches a rejected promise: one transient init failure bricks
+the executor until restart.*
+
+```ts
+this.initDone ??= this.tf(['init', …]).then(() => undefined);
+```
+
+`??=` caches whatever the promise settles to. A first `terraform init` that failed for any
+transient reason — a registry blip, a momentary state lock, DNS not up yet on a cold boot —
+was cached as a **rejection**, and every later `plan`/`replan`/`apply` re-awaited that same
+stale rejection. The executor is constructed once at loop start, so the whole auto-apply
+lane stayed dead until someone restarted the process, and the only symptom was the
+identical boot-time error repeating every tick (through ERR-6's silent path, which is why
+these two were batched together).
+
+Memoize the SUCCESS, never the failure: the field is cleared in a rejection handler
+registered at creation, so the next caller starts a fresh init. Concurrent callers still
+share the one in-flight attempt — one blip stays one failure rather than becoming N
+simultaneous `terraform init` runs fighting over the same root, which would be a new defect
+introduced by fixing this one.
+
+Retrying without limit is correct *here* — `init` is idempotent and only runs when
+something asks for work — and deliberately not the whole answer. Making a persistently
+failing init visible instead of a silent loop is ERR-6's job, at the scheduler, where the
+request that keeps failing actually lives.
+
+- [x] **Negative test** — reverting to `??=` fails 4 of the 5 tests. The one that survives
+      is the over-fix guard (a successful init must still be memoized), which is the point
+      of having it.
+- [x] **Regression tests** — 5 in `test/executorInitRetry.test.ts`, driving the REAL
+      executor with a stub `terraform` binary rather than mocking `init`. That matters: the
+      defect is in the caching, so a mock of the thing being cached could not tell a re-run
+      from a replayed rejection. The stub counts its own invocations on disk, so "did init
+      actually run again?" is answered by evidence, and one test asserts the ORDER of
+      subcommands — a fix that cleared the memo but skipped straight to `plan` would
+      otherwise pass by accident. No real terraform, no network, no estate.
+- [x] **Evidence in the status line** — 1,428 api tests pass (103 files).
+
+## ERR-6
+
+*`executor.replan()` failures are an unmodeled halt: unbounded silent retry, and they abort
+the rest of the project's due list.*
+
+`processOne` wrapped `executor.apply` in `tryApply` and called `executor.replan(req)` bare.
+`TerraformExecutor.replan` throws on any plan failure — backend unreachable, bad
+credentials, a config error, ERR-5's cached init rejection — and the exception propagated
+out of `processOne`, out of `runDueApplies`, and into a per-project `console.error` in
+`loop.ts`. Two consequences, and the second is the one nobody would ever trace back:
+
+1. The failing request was retried **every tick forever** with no halt, no timeline event
+   and no alert. Stdout was the only trace, so in the portal it looked exactly as though
+   the scheduler had never run.
+2. Every **later** due request in the same project was skipped for that tick, every tick. A
+   perfectly healthy change silently missed its maintenance window because a *different*
+   request was broken.
+
+**Not "halt on the first failure".** Failing to PRODUCE a plan is not the same as producing
+one that drifted — nothing about the change is known to be wrong, only unverified — and the
+sole exit from a halt is cancel + resubmit through the approval ladder. Paying that human
+cost for a thirty-second network fault would be its own defect. So the retry is kept, and
+made bounded and visible instead:
+
+- **Counted** on the row (`replanFailures`), which is the only durable trace between ticks;
+  without it the scheduler cannot tell the first failure from the four-hundredth.
+- **Reported once per episode** — timeline event, audit entry, notifier — and silent
+  afterwards. Appending to a request's timeline once a minute forever is the shape
+  `holdNoPlan` already refuses, and an alert that repeats identically every minute is one
+  people filter.
+- **Halted at `REPLAN_FAILURE_LIMIT`** (5 ticks) with its own `REPLAN_FAILED` reason, so
+  "we could not check this change" eventually reaches a human.
+- **Cleared on recovery**, so a fault weeks later is a new episode that alerts again rather
+  than arriving one tick from a halt.
+
+Plus a per-request catch in the due loop. That one is deliberately a BACKSTOP, not the
+handler — the modelled failures are handled where they happen — and it guarantees only that
+the blast radius of an unhandled throw is a single request.
+
+- [x] **The defect was reproduced first.** With both parts reverted, 9 of the 10 tests fail
+      with the raw `terraform plan failed: Error: backend unreachable` escaping
+      `runDueApplies` — the finding's behaviour, observed.
+- [x] **Negative test** — run twice, separately. Reverting only the replan guard fails 7
+      (the backstop catches the throw, so the outcomes become `error` instead of the
+      modelled `replan-error`, and nothing is counted or halted); reverting the backstop as
+      well produces the escape above. The one test green under both is the healthy-project
+      guard against a fix that taxes the normal path.
+- [x] **A test found a bug in the fix.** Reaching the backstop needs a throw from a path
+      neither `tryApply` nor the replan guard wraps, and `processOne` AWAITS
+      `notifier.notify` — so a failing alert channel is exactly such a path. The backstop
+      then reported *through the same channel*, rethrowing out of its own handler and
+      re-opening the starvation it exists to close. Its notify is now best-effort, and the
+      test that found it (a notifier that throws on every request) is kept.
+- [x] **Regression tests** — 10 in `test/schedulerReplanFailure.test.ts`, including that
+      the halt lands on neither the tick before nor the tick after the limit.
+- [x] **Evidence in the status line** — 1,428 api tests pass, 2,745 app tests.
+
+**Residue:** the halt threshold is a constant, not per-project policy. See **R-44**.

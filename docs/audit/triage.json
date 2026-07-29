@@ -1,7 +1,7 @@
 {
   "generated_from": "docs/audit/FINDINGS.md + docs/audit/TRIAGE.md",
   "authoritative_source": "docs/audit/FINDINGS.md \u2014 if this file disagrees, FINDINGS.md wins",
-  "open_findings": 135,
+  "open_findings": 133,
   "rules": {
     "take": "a whole batch id, not individual findings \u2014 batches are grouped by files touched",
     "baseline": "parallel lanes must NOT touch scripts/findings-baseline.txt; it is a ceiling, not an exact match. One reconciliation commit at the end.",
@@ -141,7 +141,8 @@
           "title": "`executor.replan()` failures are an unmodeled halt: unbounded silent retry, and they abort the rest of the project's due list",
           "lane": null,
           "expected_result": "`executor.replan()` failure is a modelled outcome, not an unbounded silent retry, and one project's failure no longer aborts the rest of the due list.",
-          "verify_first": false
+          "verify_first": false,
+          "status": "closed"
         },
         {
           "id": "ERR-5",
@@ -151,7 +152,8 @@
           "title": "`TerraformExecutor.init()` caches a rejected promise: one transient init failure bricks the executor until restart",
           "lane": null,
           "expected_result": "One transient `init()` failure no longer bricks the executor until restart \u2014 the rejected promise is not cached, and a retry can succeed.",
-          "verify_first": false
+          "verify_first": false,
+          "status": "closed"
         },
         {
           "id": "CONC-10",
@@ -1666,5 +1668,5 @@
       ]
     }
   ],
-  "note_on_open_findings": "Count at the time TRIAGE.md was written was 139. Batch B-O1 is now COMPLETE (CONC-6, API-5, API-4, ERR-12 all carry \"status\": \"closed\"). FINDINGS.md is authoritative."
+  "note_on_open_findings": "Count at the time TRIAGE.md was written was 139. Batch B-O1 is COMPLETE; B-O2 has ERR-5 and ERR-6 closed, with CONC-10, API-8 and PERF-14 still open. Findings carrying \"status\": \"closed\" here are done. FINDINGS.md is authoritative."
 }

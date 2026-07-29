@@ -478,6 +478,17 @@ export const RequestItem = z.object({
   interimProfileWillApply: z.boolean().optional(),
   eventSeq: z.number().int().optional(),
   /**
+   * Consecutive `executor.replan()` FAILURES for this request (ERR-6) — throws, not
+   * drift. Absent/0 = the last re-plan produced a plan (or none has been attempted).
+   *
+   * It exists so the scheduler can do two things a stateless retry cannot: report the
+   * failure ONCE when an episode starts rather than every tick forever, and stop after a
+   * bounded number of attempts instead of retrying silently until someone reads stdout.
+   * Cleared the moment a re-plan succeeds, so a later fault is a NEW episode and is
+   * reported again.
+   */
+  replanFailures: z.number().int().optional(),
+  /**
    * ADR-0016 approval-to-apply bundle progress (POST /requests/:id/apply).
    * Additive-optional (deploy-inert): 'running' claims the bundle (idempotency
    * guard), 'triggered' = landed on main + gated-apply approval fired (sha set),

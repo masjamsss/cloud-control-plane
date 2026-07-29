@@ -137,11 +137,15 @@ failed one so a retry resumes at the trigger (ERR-12).
 
 **Model:** opus · **Findings:** 5 · **Touches:** `ccp/api/src/domain/apply/*`
 
+**Status: 2 of 5 closed** (ERR-5, ERR-6). CONC-10, API-8 and PERF-14 remain. Useful
+context for whoever takes them: the scheduler now has `replanFailures` on the request row
+and a per-request catch around `processOne`, so a throw no longer aborts the due list.
+
 
 | finding | sev | expected result |
 | --- | --- | --- |
-| **ERR-6** | medium | `executor.replan()` failure is a modelled outcome, not an unbounded silent retry, and one project's failure no longer aborts the rest of the due list. |
-| **ERR-5** | medium | One transient `init()` failure no longer bricks the executor until restart — the rejected promise is not cached, and a retry can succeed. |
+| ~~**ERR-6**~~ | medium | **DONE.** Replan throws are caught in `processOne`: counted on the row, reported once per episode (timeline + audit + notifier), halted at `REPLAN_FAILURE_LIMIT`, cleared on recovery — plus a per-request backstop in the due loop so no single throw can starve siblings. |
+| ~~**ERR-5**~~ | medium | **DONE.** `init()` memoizes the success and clears the field on rejection, so a transient first init is retried; concurrent callers still share one attempt. |
 | **CONC-10** | medium | VERIFY FIRST: API-2's `APPLY_LEASE_MS` + halt-on-expiry, plus cancel accepting the halt statuses, may already close this. Confirm the operator path end to end; close with evidence, or fix only the remaining gap. |
 | **PERF-14** | low | The tick stops re-scanning every project's full request collection every minute. Needs an index or a due-set the write path maintains — a design decision, not a loop tweak. |
 | **API-8** | medium | A freeze-held `kind:'now'` request has a defined path once the freeze lifts, instead of dead-ending in AWAITING_DEPLOY_APPROVAL. |

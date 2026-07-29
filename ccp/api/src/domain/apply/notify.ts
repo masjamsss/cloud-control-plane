@@ -26,6 +26,15 @@ export type NotificationKind =
   | 'apply-failed'
   /** An `APPLYING` claim outlived its lease: the worker that took it never came back (API-2). */
   | 'apply-lease-expired'
+  /**
+   * `executor.replan()` threw — the re-plan could not be PRODUCED, which is not the same
+   * as a re-plan that drifted (ERR-6). Fired once when an episode of consecutive failures
+   * begins, not per tick: the point is that a human learns the lane is stuck, and a
+   * per-minute repeat of the same alert forever is how an alert stops being read.
+   */
+  | 'replan-failed'
+  /** Consecutive replan failures hit the limit and the request was halted (ERR-6). */
+  | 'halted-replan'
   | 'reverted'
   | 'frozen';
 

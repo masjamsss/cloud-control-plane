@@ -126,9 +126,35 @@ export class TerraformExecutor implements ApplyExecutor {
   }
 
   /** `terraform init` once per executor instance (idempotent, local-state roots only
-   * in this proof — a backend/credential story is production-executor work). */
+   * in this proof — a backend/credential story is production-executor work).
+   *
+   * ERR-5 — MEMOIZE THE SUCCESS, NEVER THE FAILURE. `??=` cached the promise whatever it
+   * settled to, so a single transient first init — a registry blip, a momentary lock, a
+   * DNS hiccup at boot — was cached as a REJECTION, and every later `plan`/`replan`/
+   * `apply` re-awaited that same stale rejection. The executor is constructed once at
+   * loop start, so the auto-apply lane stayed dead until someone restarted the process,
+   * while the loop re-reported the identical boot-time error every tick forever. A
+   * one-second network fault became a permanent outage of scheduled applies.
+   *
+   * Clearing the field on rejection is what makes the memo a CACHE rather than a verdict:
+   * the next caller starts a fresh init and can succeed. Concurrent callers still share
+   * the one in-flight attempt (they hold this same promise, and all of them fail together
+   * — one blip is one failure, not N); the clearing runs in a handler registered here at
+   * creation, so it happens before any awaiting caller resumes, and no caller can observe
+   * or reuse the dead promise afterwards.
+   *
+   * Retrying without limit is correct HERE and deliberately not the whole story: `init` is
+   * idempotent and this only retries when something asks for work. Making the retries
+   * visible — so a persistently failing init is not a silent loop — is ERR-6's job at the
+   * scheduler, which is where the request that keeps failing actually lives.
+   */
   private init(): Promise<void> {
-    this.initDone ??= this.tf(['init', '-input=false', '-no-color']).then(() => undefined);
+    this.initDone ??= this.tf(['init', '-input=false', '-no-color'])
+      .then(() => undefined)
+      .catch((e: unknown) => {
+        this.initDone = null;
+        throw e;
+      });
     return this.initDone;
   }
 
