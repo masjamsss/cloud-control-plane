@@ -1,0 +1,37 @@
+name: findings
+# Keeps docs/audit/FINDINGS.md honest: every finding the audit reports declare has
+# a tracked status, and the open count only ever goes down.
+#
+# This runs the RATCHET mode on every PR, not --strict. The backlog is large and
+# has to be worked down incrementally; blocking every merge until all of it is
+# closed would just get the gate removed. What this does enforce is that a finding
+# cannot be quietly dropped from the ledger, cannot sit with a malformed or absent
+# status, and cannot regress once closed.
+#
+# Before declaring the audit work finished, run `scripts/findings-gate.sh --strict`
+# — it fails while any finding is still open — and make that the required check on
+# the PR that closes it out.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['docs/audit/**', 'scripts/findings-gate.sh', 'scripts/findings-baseline.txt', 'scripts/findings-topics.txt', '.github/workflows/findings.yml']
+  push:
+    branches: [main]
+    paths: ['docs/audit/**', 'scripts/findings-gate.sh', 'scripts/findings-baseline.txt', 'scripts/findings-topics.txt', '.github/workflows/findings.yml']
+permissions:
+  contents: read
+
+jobs:
+  ledger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history, deliberately. The gate verifies that every `fixed:<sha>` in
+          # FINDINGS.md is an ancestor of HEAD (L-28), and it can only verify a sha this
+          # clone can SEE — on the default depth-1 checkout every one is invisible, every
+          # one is skipped, and the check passes having dereferenced nothing. That is the
+          # same defect the check exists to catch, one level up.
+          fetch-depth: 0
+      - name: findings ledger is complete and ratcheting
+        run: bash scripts/findings-gate.sh

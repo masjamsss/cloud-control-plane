@@ -129,13 +129,52 @@ const familyMap = {
   lock: 'governance',
 };
 
-function getFamily(resourceType) {
-  // Extract second token: azurerm_<X>_...
-  const parts = resourceType.split('_');
-  if (parts.length < 2) return 'other';
+// familyMap keys sorted LONGEST-FIRST, so `virtual_machine` is tried before `virtual`
+// and `application_gateway` before `application`. Computed once, not per call.
+const familyKeysByLength = Object.keys(familyMap).sort((a, b) => b.length - a.length);
 
-  const secondToken = parts[1];
-  return familyMap[secondToken] || 'other';
+/**
+ * Classify a resource type into a family (IMP-4).
+ *
+ * This used to read the SECOND UNDERSCORE TOKEN only — `resourceType.split('_')[1]` —
+ * while familyMap is keyed by multi-token names: virtual_machine, key_vault,
+ * managed_disk, resource_group, user_assigned, app_service, application_gateway,
+ * log_analytics, express_route, private_dns, data_factory, machine_learning,
+ * management_group and more. A second token can never contain an underscore, so every
+ * one of those keys was DEAD CODE and its types fell through to 'other'.
+ *
+ * That silently corrupted committed data: 662 of 1141 types landed in 'other', including
+ * azurerm_key_vault, azurerm_linux_virtual_machine, azurerm_resource_group and
+ * azurerm_managed_disk. Two gates downstream read the family, so both were wrong —
+ * `resize` requires family 'compute' and was emitted ZERO times across 1141 types, and
+ * the engineer_only family gate never fired for the identity/governance types the map was
+ * written to catch, so azurerm_user_assigned_identity and azurerm_resource_group shipped
+ * as catalog_candidate.
+ *
+ * Matching is on a contiguous TOKEN SUBSEQUENCE, longest key first — not a prefix.
+ * Prefix matching alone still misses the qualifier-prefixed types the finding names:
+ * `azurerm_linux_virtual_machine` and `azurerm_windows_web_app` carry the family key in
+ * the middle, not at the front. Token-boundary matching (rather than a bare substring)
+ * keeps `virtual_network` from being claimed by a hypothetical `virtual_net` key.
+ *
+ * Longest-first is load-bearing: `linux_web` must be tried before `web`, and
+ * `virtual_machine` before `virtual`, or the shorter key wins and the classification is
+ * wrong in a way that still looks plausible.
+ */
+function getFamily(resourceType) {
+  const rest = resourceType.startsWith('azurerm_') ? resourceType.slice('azurerm_'.length) : resourceType;
+  const tokens = rest.split('_');
+  for (const key of familyKeysByLength) {
+    const kt = key.split('_');
+    for (let i = 0; i + kt.length <= tokens.length; i++) {
+      let hit = true;
+      for (let j = 0; j < kt.length; j++) {
+        if (tokens[i + j] !== kt[j]) { hit = false; break; }
+      }
+      if (hit) return familyMap[key];
+    }
+  }
+  return 'other';
 }
 
 function countForceNew(attributes) {
@@ -295,6 +334,55 @@ console.log(`✓ Ledger generated: ${totalTypes} resource types`);
 ledger.sort((a, b) => a.type.localeCompare(b.type));
 
 // Write ledger JSON
+// IMP-4 SELF-CHECK — refuse to write rather than ship a silently-dead family map.
+//
+// The original defect produced a perfectly well-formed ledger: valid JSON, every row
+// present, 662 of 1141 types quietly classified 'other'. Nothing downstream could tell,
+// and the corrupted data was committed and consumed. So the generator now proves the map
+// is REACHABLE before it writes anything.
+//
+// Anchors are types whose family is not a matter of opinion. `resize > 0` is the
+// consequence check: that safe-op class requires family 'compute', and the dead map
+// emitted it ZERO times across 1141 types — a uniform result, which is the same tell as a
+// grep against a missing file (L-10). A count of zero here means the gate is unreachable
+// again, whatever the anchors say.
+{
+  const anchors = {
+    azurerm_linux_virtual_machine: 'compute',
+    azurerm_windows_virtual_machine: 'compute',
+    azurerm_managed_disk: 'compute',
+    azurerm_key_vault: 'keyvault',
+    azurerm_resource_group: 'governance',
+    azurerm_user_assigned_identity: 'identity',
+    azurerm_application_gateway: 'network',
+    azurerm_virtual_network: 'network',
+  };
+  const wrong = Object.entries(anchors)
+    .map(([t, want]) => [t, want, getFamily(t)])
+    .filter(([, want, got]) => want !== got);
+  if (wrong.length > 0) {
+    console.error('✗ family classification is broken — refusing to write the ledger (IMP-4):');
+    for (const [t, want, got] of wrong) console.error(`    ${t}: got '${got}', want '${want}'`);
+    process.exit(1);
+  }
+
+  const unreachable = Object.keys(familyMap).filter((k) => getFamily('azurerm_' + k) !== familyMap[k]);
+  if (unreachable.length > 0) {
+    console.error(`✗ ${unreachable.length} familyMap key(s) are UNREACHABLE — refusing to write (IMP-4):`);
+    console.error('    ' + unreachable.join(', '));
+    process.exit(1);
+  }
+
+  const resizeCount = ledger.filter((r) => (r.safeOpClasses || []).includes('resize')).length;
+  if (resizeCount === 0) {
+    console.error("✗ zero types carry the 'resize' safe-op class — it requires family 'compute',");
+    console.error('  so a count of zero means the family gate is unreachable again (IMP-4).');
+    process.exit(1);
+  }
+  const otherCount = ledger.filter((r) => r.family === 'other').length;
+  console.log(`✓ family map verified: ${Object.keys(familyMap).length} keys all reachable · ${resizeCount} resize · ${otherCount}/${ledger.length} 'other'`);
+}
+
 fs.writeFileSync(ledgerPath, JSON.stringify(ledger, null, 2));
 console.log(`✓ Ledger written to ${ledgerPath}`);
 

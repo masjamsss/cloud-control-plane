@@ -3,7 +3,16 @@ info:
   title: ccp-api
   version: 2.0.0
   description: Authoritative Cloud Control Plane backend (Fork A1, ADR-0005). Actor is always the session; bodies never carry identity.
-servers: [{ url: /v2 }]
+# DOC-3: the api mounts every route at the ROOT (src/index.ts#createApp) — there is no
+# `/v2` segment in any handler, in the SPA client (`${baseUrl}${path}`, httpApi.ts), or in
+# any proxy config this repo ships, so a spec-generated client addressing /v2/... 404s on
+# every topology. The two bases below are the two that actually exist:
+#   /     — the api process itself (dev, and what nginx forwards to after stripping /api/)
+#   /api  — the browser-facing base of the shipped reverse-proxy topology
+#           (ccp/docs/go-live.md's nginx block, ccp/.env.example VITE_API_BASE)
+servers:
+  - { url: /, description: 'The api process itself — dev (localhost:8801) and the proxy''s upstream' }
+  - { url: /api, description: 'Browser-facing base behind the shipped nginx topology, which strips /api/ before forwarding (ccp/docs/go-live.md)' }
 security: [{ session: [] }]
 components:
   securitySchemes:
@@ -13,6 +22,7 @@ components:
     client: { name: X-Ccp-Client, in: header, required: true, schema: { type: string, const: ccp-spa } }
     id: { name: id, in: path, required: true, schema: { type: string } }
     cursor: { name: cursor, in: query, schema: { type: string } }
+    limit: { name: limit, in: query, description: 'Page size. Omit for the whole collection (unpaged); a cursor without a limit is a 422.', schema: { type: integer, minimum: 1, maximum: 1000 } }
     digest: { name: digest, in: path, required: true, description: 'proposalDigest — sha256 hex (drift-portal spec §2.4)', schema: { type: string, pattern: '^[0-9a-f]{64}$' } }
   responses:
     E401: { description: No/expired/invalidated session, content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } }
@@ -97,6 +107,86 @@ components:
       properties: { id: {type: string}, at: {type: string}, actor: {type: string}, action: {type: string},
         targetType: {type: string}, targetId: {type: string}, before: {}, after: {}, requestId: {type: string},
         interimProfile: {type: boolean}, prevHash: {type: string}, hash: {type: string} } }
+    DeploymentKnob:   # DOC-2 — GET /admin/deployment element, domain/deploymentSettings.ts#KnobView
+      type: object
+      required: [id, label, help, group, kind, env, editable, source]
+      properties:
+        id: {type: string, description: 'stable id — the settings-store key AND the PUT path segment'}
+        label: {type: string}
+        help: {type: string, description: 'one or two plain sentences: what it does, and what happens either way'}
+        group: {type: string, enum: [scanner, drift, apply, git, identity, session, storage, process]}
+        kind: {type: string, enum: [toggle, text, list, number]}
+        env: {type: string, description: 'the environment variable this falls back to'}
+        editable: {type: boolean, description: 'true = portal-managed (PUT /admin/deployment/{id} will accept it)'}
+        notEditable: { type: object, required: [reason, instead], description: 'present ONLY when editable is false',
+          properties: { reason: {type: string}, instead: {type: string} } }
+        source: {type: string, enum: [portal, environment, default], description: 'where the effective value came from'}
+        secret: {type: boolean, const: true, description: 'present only on a secret; its VALUE never leaves the server'}
+        value: {description: 'the effective value; ABSENT on a secret'}
+        configured: {type: boolean, description: 'secrets only — whether anything is set at all'}
+    PlanSummary:   # DOC-2 — the POST /requests/{id}/plan-summary body, src/store/planSummarySchema.ts
+      type: object
+      required: [resourceChanges, counts]
+      description: "The structured `terraform plan` summary CI records onto a request. NOTE: the
+        ChangeRequest.planSummary property below is still typed `string` and does NOT match this —
+        that mismatch is tracked separately as DOC-11 and is deliberately not touched here."
+      properties:
+        resourceChanges: { type: array, maxItems: 400, items: { type: object, required: [address, type, action],
+          properties: { address: {type: string, minLength: 1, maxLength: 512}, type: {type: string, minLength: 1, maxLength: 512},
+            action: {type: string, enum: [create, update, replace, delete]},
+            forcedBy: {type: array, maxItems: 40, items: {type: string, maxLength: 512}},
+            changed: { type: array, maxItems: 80, items: { type: object, required: [attr, before, after],
+              properties: { attr: {type: string, minLength: 1, maxLength: 512}, before: {type: string, maxLength: 160}, after: {type: string, maxLength: 160} } } } } } }
+        counts: { type: object, required: [create, update, replace, delete, noop],
+          properties: { create: {type: integer, minimum: 0}, update: {type: integer, minimum: 0},
+            replace: {type: integer, minimum: 0}, delete: {type: integer, minimum: 0}, noop: {type: integer, minimum: 0} } }
+        recordedAt: {type: string, maxLength: 40}
+        runUrl: {type: string, format: uri, maxLength: 500, description: 'must be https://'}
+    BundleOutcome:   # DOC-2 — the POST /requests/{id}/apply response, ADR-0016
+      type: object
+      required: [ok, status, bundle, steps]
+      description: 'Per-step evidence for one bundle run. The SAME body shape is returned on 200 and on
+        502 — only `ok` and the status code differ, so a failed bundle is never indistinguishable from
+        a successful one, and the failing step is always named.'
+      properties:
+        ok: {type: boolean}
+        status: {type: string, description: "the request's status, UNCHANGED by the bundle — apply does not advance the ladder"}
+        bundle: { type: object, required: [state, at],
+          properties: { state: {type: string, enum: [running, triggered, failed]},
+            sha: {type: string, description: 'the landed commit; present iff state=triggered'},
+            at: {type: string, format: date-time} } }
+        steps: { type: array, description: 'step log in execution order (sequential, stop-on-red)',
+          items: { type: object, required: [step, ok, detail],
+            properties: { step: {type: string, enum: [prepare, gate, commit, trigger]}, ok: {type: boolean},
+              detail: {type: string, description: 'captured stdout/stderr tail or the refusal reason — audit evidence'} } } }
+    AuditExport:   # DOC-2 — GET /admin/audit/export, domain/auditQuery.ts#AuditExport
+      type: object
+      required: [projectId, head, count, verified, verification, entries]
+      description: 'The WHOLE chain as a self-verifying evidence document: chronological (oldest first,
+        the reverse of GET /admin/audit), head-checked, uncapped and uncursored. `verified` is the
+        recomputation''s verdict, not a stored flag — a tampered export fails verification in the
+        reader''s hands. Served with Content-Disposition: attachment.'
+      properties:
+        projectId: {type: string}
+        head: {type: string, description: "the chain head hash; '' on an empty chain"}
+        count: {type: integer}
+        verified: {type: boolean, description: 'true iff verification.code === 0'}
+        verification: { type: object, required: [code, message],
+          properties: { code: {type: integer}, message: {type: string} } }
+        entries: { type: array, items: { $ref: '#/components/schemas/AuditEntry' } }
+    Readiness:   # DOC-2 — GET /readyz, domain/readiness.ts#Readiness
+      type: object
+      required: [ready, storeLoaded, accounts, estates, chains, reasons]
+      description: 'Same body on 200 and 503 — only `ready` and the HTTP status differ, so a probe that
+        reads the body and a probe that reads the status agree.'
+      properties:
+        ready: {type: boolean, description: 'storeLoaded AND accounts >= 1 AND every chain verifies'}
+        storeLoaded: {type: boolean}
+        accounts: {type: integer, description: 'GLOBAL account directory size; 0 = emptied/wiped store -> not ready'}
+        estates: {type: integer, description: "knownProjects() minus the reserved '@control' scope; 0 is a VALID ready state (founded, freshly-blank instance)"}
+        chains: { type: array, items: { type: object, required: [projectId, count, verified, message],
+          properties: { projectId: {type: string}, count: {type: integer}, verified: {type: boolean}, message: {type: string} } } }
+        reasons: { type: array, items: {type: string}, description: 'human-readable not-ready reasons; empty when ready' }
     Feasibility:   # 0021 G5 — LIVE-recomputed (GET /requests/{id}/feasibility), not the ChangeRequest snapshot
       type: object
       required: [requestId, status, approvals, approvalsRequired, eligibleApprovers, feasible, interimProfileWillApply]
@@ -298,6 +388,30 @@ components:
         archived: { type: object, required: [archivedBy, archivedAt],
           properties: { archivedBy: {type: string}, archivedAt: {type: string} } } }
 paths:
+  # DOC-2: the infra probes. Previously code-only (index.ts#createApp) and declared in no
+  # contract — API-SPEC.md merely noted they were "code-only; not in the YAML". They are
+  # part of the served surface an operator wires a load balancer to, so they are declared.
+  /healthz:
+    get:
+      security: []   # unauthenticated infra probe — same tier as GET /instance
+      tags: [infra]
+      summary: 'Liveness: the process is up and serving. Deliberately SHALLOW — it stays 200 even
+        against an empty or corrupt store, which is precisely why /readyz exists. Never use this
+        to gate traffic; use /readyz.'
+      responses:
+        '200': { description: Alive, content: { application/json: { schema: { type: object,
+          required: [ok], properties: { ok: { type: boolean, const: true } } } } } }
+  /readyz:
+    get:
+      security: []   # unauthenticated infra probe
+      tags: [infra]
+      summary: 'Readiness that does not lie (domain/readiness.ts): store loaded + account count +
+        audit-chain verification. An emptied or chain-corrupt store is visibly NOT ready and answers
+        503 with the SAME body shape — a check that cannot pass must never look like one that did.'
+      responses:
+        '200': { description: Ready, content: { application/json: { schema: { $ref: '#/components/schemas/Readiness' } } } }
+        '503': { description: 'Not ready — store unloaded, no accounts, or the audit chain failed verification',
+          content: { application/json: { schema: { $ref: '#/components/schemas/Readiness' } } } }
   /instance:
     get:
       security: []   # ADR-0023 — unauthenticated: the login page renders the instance name pre-auth
@@ -336,7 +450,15 @@ paths:
       responses:
         '200': { description: Session set (or totpRequired=true with a short-lived pre-session), content: { application/json: {
           schema: { allOf: [{ $ref: '#/components/schemas/Me' }, { type: object, properties: { totpRequired: {type: boolean} } }] } } } }
-        '401': { $ref: '#/components/responses/E401' }
+        # DOC-2/DOC-4 residue: `BAD_CREDENTIALS` appeared NOWHERE in this file, even though
+        # errors.ts and ERROR-STATES.md both asserted the contract pinned its reason. The
+        # no-enumeration property is real and enforced in auth.ts — it is now also PINNED HERE,
+        # so a client or a future edit cannot quietly split it into "no such user" vs "wrong
+        # password". Emitted at auth.ts:183,201 (login), :424 (reauth), :497,:503 (change-password).
+        '401': { description: 'BAD_CREDENTIALS — "Wrong username or password." ONE code and ONE reason for
+            an unknown username AND for a wrong password: the response must never let a prober enumerate
+            which accounts exist. TOTP_REQUIRED is the separate 401 for a valid password awaiting its code.',
+          content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } }
         '423': { $ref: '#/components/responses/E423' }
         '429': { $ref: '#/components/responses/E429' }
   /auth/totp:
@@ -436,7 +558,7 @@ paths:
   /requests:
     get: { summary: List requests. scope=mine|pending|all; pending/all require approver|lead (server-filtered by canApprove),
       parameters: [{ name: scope, in: query, required: true, schema: { type: string, enum: [mine, pending, all] } },
-        { $ref: '#/components/parameters/cursor' }],
+        { $ref: '#/components/parameters/limit' }, { $ref: '#/components/parameters/cursor' }],
       responses: { '200': { description: OK, content: { application/json: { schema: { type: object,
         properties: { items: {type: array, items: {$ref: '#/components/schemas/ChangeRequest'}}, cursor: {type: string} } } } } },
         '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' } } }
@@ -529,10 +651,69 @@ paths:
       parameters: [{ $ref: '#/components/parameters/id' }],
       responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Feasibility' } } } },
         '401': { $ref: '#/components/responses/E401' }, '404': { description: Not found } } }
-  /catalog/manifests:
-    get: { summary: Bundled manifest set + catalogVersion (disabled ops filtered out), responses: { '200': { description: OK } } }
-  /catalog/inventory:
-    get: { summary: Inventory snapshot, responses: { '200': { description: OK } } }
+  # DOC-2: shipped since the plan-visibility lane, declared in no contract until now.
+  /requests/{id}/plan-summary:
+    post:
+      summary: 'Record the structured `terraform plan` summary onto a request, so the requester and the
+        reviewer see what the change does to the LIVE estate — every replace annotated with what it costs
+        — BEFORE any apply. LEAD-ONLY, mirroring link-pr: a plan summary is a trusted artifact the reviewer
+        weighs, so a plain requester or approver must never be able to post a benign-looking summary over a
+        destructive plan (the CI poster authenticates as a provisioned lead-role service identity).
+        Mass-assignment-safe: ONLY the validated summary is stored — status, approvals, prNumber and events
+        are never taken from the body. A re-plan supersedes an earlier summary (idempotent overwrite).
+        Refused with 409 STATE_CONFLICT on a terminally-refused or withdrawn request. Audited as
+        request-plan-summary (counts delta only; the full object lives on the request).'
+      parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PlanSummary' } } } }
+      responses:
+        '200': { description: Recorded, content: { application/json: { schema: { $ref: '#/components/schemas/ChangeRequest' } } } }
+        '401': { $ref: '#/components/responses/E401' }
+        '403': { $ref: '#/components/responses/E403' }
+        '404': { description: Not found }
+        '409': { description: 'STATE_CONFLICT — the request is terminally refused or withdrawn',
+          content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } }
+        '422': { $ref: '#/components/responses/E422' }
+  /requests/{id}/apply:
+    post:
+      summary: 'ADR-0016 — the approval-to-apply bundle: the most privileged verb on the requests surface,
+        and previously described by no contract document at all. One click on a fully approved request runs,
+        server-side and in order: local gate (the plan must equal the approved change and NOTHING else) ->
+        CAS commit to the configured branch -> satisfy the gated CI apply. It NEVER runs `terraform apply`
+        itself. OFF BY DEFAULT: with the bundle env unset (CCP_BUNDLE + git/gate/trigger config) it answers
+        409 BUNDLE_DISARMED and the deploy is inert.
+        Auth: SENIOR-ONLY (lead on the acting project, or isAdmin) — the same tier as the deploy approval it
+        satisfies; anyone else gets 403 APPLY_FORBIDDEN. Eligible statuses: AWAITING_CODE_REVIEW,
+        AWAITING_DEPLOY_APPROVAL — a pre-quorum, cooling, terminal, or already-applied request is refused
+        409 STATE_CONFLICT. A cooling window and an elapsed maintenance window are settled first.
+        Concurrency: the run is CLAIMED by a compare-and-swap on the observed status, so a lost race is
+        reported (409 STATE_CONFLICT) rather than double-run; an in-flight bundle answers 409 BUNDLE_RUNNING.
+        Audited as request-bundle, one chained entry carrying the full per-step evidence.'
+      parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }]
+      responses:
+        '200': { description: 'Bundle ran green — the commit landed and the CI apply gate was satisfied',
+          content: { application/json: { schema: { $ref: '#/components/schemas/BundleOutcome' } } } }
+        '401': { $ref: '#/components/responses/E401' }
+        '403': { description: 'APPLY_FORBIDDEN — only a Lead or admin may run the apply bundle',
+          content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } }
+        '404': { description: Not found }
+        '409': { description: 'BUNDLE_DISARMED (the bundle is not armed on this deployment) | BUNDLE_RUNNING
+            (a bundle for this request is already in flight) | STATE_CONFLICT (status not bundle-eligible,
+            already triggered, or the claim lost its race) | CHAIN_CONTENTION',
+          content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } }
+        '423': { description: 'GLOBAL_FREEZE — the estate is frozen', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } }
+        '502': { description: 'A step failed — SAME body as 200 with ok:false; `steps` names the failing step',
+          content: { application/json: { schema: { $ref: '#/components/schemas/BundleOutcome' } } } }
+  # DOC-1: `/catalog/manifests` and `/catalog/inventory` were declared here and served
+  # nowhere — there is no /catalog route group in ccp/api/src, so both 404'd. They were
+  # a pre-data-birth leftover: the real, shipped reads are the project-scoped
+  # `/projects/{id}/manifests` and `/projects/{id}/inventory` below, which the SPA calls
+  # (app/src/lib/httpApi.ts) and which this contract already declares. Deleted rather
+  # than implemented: an unscoped catalog read is exactly the estate surface the
+  # `@control` scope rule forbids (see securitySchemes.session — "every estate-only
+  # surface (request submission/approval, catalog reads) refuses it with 403
+  # CONTROL_SCOPE"), so implementing them would have contradicted the security model.
+  # test/openapi.test.ts now diffs this file against the live Hono route table in BOTH
+  # directions, so a phantom path cannot be re-added without failing the build.
   /admin/accounts:
     get: { summary: List accounts (isAdmin), responses: { '200': { description: OK, content: { application/json: {
         schema: { type: array, items: { $ref: '#/components/schemas/Account' } } } } }, '403': { $ref: '#/components/responses/E403' } } }
@@ -598,11 +779,22 @@ paths:
         required: [ok, sessionsRevoked], properties: { ok: {type: boolean, const: true}, sessionsRevoked: {type: integer} } } } } },
         '403': { $ref: '#/components/responses/E403' }, '404': { description: Not found } } }
   /admin/teams:
-    get: { summary: List teams, responses: { '200': { description: OK } } }
-    post: { summary: Create team (teams.ts:78-93 validation), parameters: [{ $ref: '#/components/parameters/client' }],
-      responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/E409' }, '422': { $ref: '#/components/responses/E422' } } }
+    get: { summary: List teams, responses: { '200': { description: OK, content: { application/json: { schema: { type: array,
+        items: { $ref: '#/components/schemas/Team' } } } } } } }
+    # DOC-2/DOC-4 residue: DUPLICATE_TEAM is one of the two codes genuinely absent from this
+    # contract (admin.ts:1257 on create, :1311 on rename). Named on both verbs that emit it.
+    post: { summary: 'Create team (name trimmed, at least 2 chars; case-insensitive uniqueness within the project)',
+      parameters: [{ $ref: '#/components/parameters/client' }],
+      responses: { '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Team' } } } },
+        '409': { description: 'DUPLICATE_TEAM — that team name is already taken (case-insensitive, per project)',
+          content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } },
+        '422': { $ref: '#/components/responses/E422' } } }
   /admin/teams/{id}:
-    patch: { summary: Rename, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+    patch: { summary: Rename, parameters: [{ $ref: '#/components/parameters/id' }],
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Team' } } } },
+        '409': { description: 'DUPLICATE_TEAM — that team name is already taken (case-insensitive, per project)',
+          content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } },
+        '422': { $ref: '#/components/responses/E422' } } }
     delete: { summary: Delete (refused while members/services exist — teams.ts:132-142),
       parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/E409' } } }
   /admin/teams/{id}/services:
@@ -633,6 +825,46 @@ paths:
     put: { summary: Put a setting (freeze on / allowlist narrow apply now; freeze off / allowlist widen → 202),
       parameters: [{ name: key, in: path, required: true, schema: { type: string } }],
       responses: { '200': { description: Applied }, '202': { description: Pending }, '422': { $ref: '#/components/responses/E422' } } }
+  # DOC-2: the portal-managed deployment settings pair — shipped, and absent from this
+  # contract until now (the parity test did not catch it because it only asserted that a
+  # hand-written list of strings was PRESENT, never that the served surface was covered).
+  /admin/deployment:
+    get:
+      summary: 'Every knob the server reads, on one screen — including the ones the portal CANNOT edit,
+        each carrying a plain sentence about why and what to do instead, so an operator never has to open
+        a config file to SEE how the deployment is set up. Deployment settings are GLOBAL: they are stored
+        and read on the reserved control scope regardless of which project the admin is looking at.
+        SECRETS NEVER CARRY A VALUE here — only `configured: true|false` — so this response is safe to put
+        in a screenshot or a bug report.'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, required: [settings],
+          properties: { settings: { type: array, items: { $ref: '#/components/schemas/DeploymentKnob' } } } } } } }
+        '401': { $ref: '#/components/responses/E401' }
+        '403': { $ref: '#/components/responses/E403' }
+  /admin/deployment/{id}:
+    put:
+      summary: 'Set one knob. THE GATE: a knob is writable here only if the registry says so — the
+        command-running knobs and the store''s own keys are refused 422 OP_DISABLED by the same check that
+        carries the reason and the `instead`, so the refusal can never drift from its explanation. The value
+        is shape-checked against the knob''s own kind, so a string "false" can never land on a toggle and
+        read as truthy later.
+        LOOSENING IS DUAL-CONTROLLED: arming the scanner, widening the host allowlist, or lifting the apply
+        freeze all widen what this deployment may do, so they are PROPOSED (202, second admin required).
+        Tightening applies at once (200) — a safety brake must never wait. Audited as
+        deployment-setting-change.'
+      parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [value],
+        properties: { value: { description: 'boolean for a toggle, finite number for a number, array of strings for a list, string otherwise' } } } } } }
+      responses:
+        '200': { description: 'Applied immediately (tightening)', content: { application/json: { schema: { type: object,
+          required: [ok, id, value], properties: { ok: {type: boolean, const: true}, id: {type: string}, value: {} } } } } }
+        '202': { description: 'Proposed (loosening) — awaits a second distinct admin''s ack',
+          content: { application/json: { schema: { $ref: '#/components/schemas/PendingConfigChange' } } } }
+        '401': { $ref: '#/components/responses/E401' }
+        '403': { $ref: '#/components/responses/E403' }
+        '404': { description: 'NOT_FOUND — no such setting', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } }
+        '422': { description: 'OP_DISABLED (not portal-editable; details carry `problem` + `instead`) | VALIDATION_FAILED (missing `value`, or wrong shape for the knob kind)',
+          content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } }
   /admin/catalog/{opId}:
     put: { summary: Enable/disable an operation (disable now; re-enable → 202). Disabled ops 422 at submit,
       parameters: [{ name: opId, in: path, required: true, schema: { type: string } }],
@@ -640,7 +872,10 @@ paths:
         properties: { enabled: {type: boolean} } } } } },
       responses: { '200': { description: Applied }, '202': { description: Pending } } }
   /admin/config-changes:
-    get: { summary: Pending/dispositioned dual-control items, parameters: [{ $ref: '#/components/parameters/cursor' }],
+    get: { summary: 'Dual-control items AWAITING a second admin. Unpaged, and bounded by construction rather
+        than by a page size: ack, reject and expiry each clear the row GSI1PK, so this partition only ever holds
+        proposals that are still open. (It previously also declared a cursor parameter, which nothing implemented
+        and which the bare-array response has nowhere to return.)',
       responses: { '200': { description: OK, content: { application/json: { schema: { type: array,
         items: { $ref: '#/components/schemas/PendingConfigChange' } } } } } } }
   /admin/config-changes/{id}/ack:
@@ -656,6 +891,20 @@ paths:
       parameters: [{ $ref: '#/components/parameters/cursor' }],
       responses: { '200': { description: OK, content: { application/json: { schema: { type: object,
         properties: { items: { type: array, items: { $ref: '#/components/schemas/AuditEntry' } }, cursor: {type: string} } } } } } } }
+  # DOC-2: shipped (admin.ts) and declared in no contract until now.
+  /admin/audit/export:
+    get:
+      summary: 'The WHOLE chain for the acting project as a self-verifying evidence document — chronological
+        (the reverse of GET /admin/audit), head-checked, uncapped and uncursored. Served as a download
+        (Content-Disposition: attachment; filename="ccp-audit-<projectId>.json"). Admin capability +
+        project membership, like every /admin route. `verified` is recomputed at export time, so a
+        tampered file fails verification in the reader''s hands rather than carrying a stored claim.'
+      responses:
+        '200': { description: OK, headers: { Content-Disposition: { schema: {type: string},
+            description: 'attachment; filename="ccp-audit-<projectId>.json"' } },
+          content: { application/json: { schema: { $ref: '#/components/schemas/AuditExport' } } } }
+        '401': { $ref: '#/components/responses/E401' }
+        '403': { $ref: '#/components/responses/E403' }
   /admin/migrate/v1:
     post: { summary: One-shot import of the SPA's localStorage v1 stores (§9); only while the backend is empty,
       parameters: [{ $ref: '#/components/parameters/client' }],

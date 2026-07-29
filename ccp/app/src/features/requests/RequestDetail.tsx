@@ -10,6 +10,7 @@ import type {
   User,
 } from '@/types';
 import { api, authClient } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
 import { canRequestAgain, requestAgainPath } from '@/lib/requestAgain';
 import type { RequestFeasibility } from '@/lib/httpApi';
@@ -65,6 +66,7 @@ import {
   windowGateSummary,
 } from './windowFlow';
 import { Timeline } from './Timeline';
+import { LoadError } from '@/components/LoadError';
 import './requests.css';
 
 /** Deterministic phase tracks — the horizontal stepper above the timeline. */
@@ -104,6 +106,11 @@ const NORMAL_MAP: Record<RequestStatus, { i: number; failed?: boolean }> = {
   // Cooling-off (api-mode only): fully approved, holding
   // before it applies — closest existing phase is "Awaiting deploy" (i:5);
   // there is no dedicated "cooling" phase in this fixed 8-step track.
+  // ARCH-7: halted by the scheduler at the apply step. Both sit at the apply phase and
+  // are marked failed — the request stopped there and needs a human, which is exactly
+  // what this track's `failed` flag means.
+  HALTED_DRIFT: { i: 6, failed: true },
+  HALTED_APPLY_FAILED: { i: 6, failed: true },
   APPROVED_COOLING: { i: 5 },
   // Stopped during that cooling window, or during/after a maintenance window.
   CANCELLED: { i: 5, failed: true },
@@ -485,6 +492,8 @@ export function RequestDetail(): JSX.Element {
   const [manifests, setManifests] = useState<ServiceManifest[]>([]);
   const [inventory, setInventory] = useState<Inventory | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   // The LIVE-recomputed feasibility (api-mode only; undefined in
   // mock-mode, where the endpoint doesn't exist and authClient is null).
   const [feasibility, setFeasibility] = useState<RequestFeasibility | undefined>(undefined);
@@ -500,18 +509,32 @@ export function RequestDetail(): JSX.Element {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([
-      id ? api.getRequest(id) : Promise.resolve(undefined),
-      api.listManifests(),
-      api.getInventory(),
-      // Best-effort: a failed live fetch (e.g. a request the account can no
-      // longer see) just falls back to the submit-time snapshot already on
-      // the ChangeRequest itself, never a page-level error.
-      id && authClient
-        ? authClient.getRequestFeasibility(id).catch(() => undefined)
-        : Promise.resolve(undefined),
-    ]).then(([r, m, inv, feas]) => {
+    setLoadError(null);
+    // FE-2/UI-1: getRequest throws on ANY non-404 error and listManifests/
+    // getInventory throw on any non-2xx, so a 401/500/network blip used to
+    // leave this page on "Loading…" for ever with an unhandled rejection.
+    // A genuinely missing request (404) still resolves to `undefined` and
+    // renders the existing "Request not found." — that is not an error.
+    void attempt(() =>
+      Promise.all([
+        id ? api.getRequest(id) : Promise.resolve(undefined),
+        api.listManifests(),
+        api.getInventory(),
+        // Best-effort: a failed live fetch (e.g. a request the account can no
+        // longer see) just falls back to the submit-time snapshot already on
+        // the ChangeRequest itself, never a page-level error.
+        id && authClient
+          ? authClient.getRequestFeasibility(id).catch(() => undefined)
+          : Promise.resolve(undefined),
+      ]),
+    ).then((outcome) => {
       if (!active) return;
+      if (!outcome.ok) {
+        setLoadError(outcome.reason);
+        setLoading(false);
+        return;
+      }
+      const [r, m, inv, feas] = outcome.value;
       setRequest(r);
       setManifests(m);
       setInventory(inv);
@@ -521,7 +544,7 @@ export function RequestDetail(): JSX.Element {
     return () => {
       active = false;
     };
-  }, [id, projectId]);
+  }, [id, projectId, reloadToken]);
 
   const handleCancel = async (): Promise<void> => {
     if (!request || !authClient) return;
@@ -576,12 +599,16 @@ export function RequestDetail(): JSX.Element {
   // authority (lead-only, https-only, refused on terminal statuses) — this
   // just surfaces its answer.
   const handleLinkPr = async (prUrl: string): Promise<void> => {
-    if (!request || !authClient) return;
+    const client = authClient;
+    if (!request || !client) return;
     setLinkBusy(true);
     setLinkError(null);
-    const outcome = await authClient.linkRequestPr(request.id, { prUrl });
-    if (outcome.ok) setRequest(outcome.request);
-    else setLinkError(outcome.reason);
+    // FE-1/UI-4: a rejected fetch here used to skip setLinkBusy(false) and
+    // wedge the Link-PR form's button for the rest of the page's life.
+    const attempted = await attempt(() => client.linkRequestPr(request.id, { prUrl }));
+    if (!attempted.ok) setLinkError(attempted.reason);
+    else if (attempted.value.ok) setRequest(attempted.value.request);
+    else setLinkError(attempted.value.reason);
     setLinkBusy(false);
   };
 
@@ -589,6 +616,15 @@ export function RequestDetail(): JSX.Element {
   const op = request ? getOperation(request.operationId, manifests) : undefined;
   const blockDiff = useFullBlockDiff(op, request?.params ?? {}, request?.targetAddress ?? '');
 
+  if (loadError !== null) {
+    return (
+      <LoadError
+        message={loadError}
+        what="this request"
+        onRetry={() => setReloadToken((n) => n + 1)}
+      />
+    );
+  }
   if (loading) {
     return <p className="reqs__empty">Loading…</p>;
   }

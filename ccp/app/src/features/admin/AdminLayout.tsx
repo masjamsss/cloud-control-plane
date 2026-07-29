@@ -1,23 +1,16 @@
 import type { JSX } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { Outlet } from 'react-router-dom';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { PendingChangesBanner } from '@/components/PendingChangesBanner';
+import { AdminTabs } from '@/components/ShellNav';
+import { useActiveProjectId } from '@/lib/ProjectContext';
 import './admin.css';
-
-const TABS = [
-  { to: '/admin/users', label: 'Users' },
-  { to: '/admin/teams', label: 'Teams' },
-  { to: '/admin/policy', label: 'Approval policy' },
-  { to: '/admin/risk', label: 'Activity risk' },
-  { to: '/admin/settings', label: 'Settings' },
-  { to: '/admin/deployment', label: 'Deployment' },
-  { to: '/admin/history', label: 'History' },
-  { to: '/admin/projects', label: 'Projects' },
-  { to: '/admin/pending-changes', label: 'Pending changes' },
-];
 
 /** Lead-only governance hub: accounts, team → service ownership, and the risk-based approval policy. */
 export function AdminLayout(): JSX.Element {
+  // UI-3: the tab bar's targets must be project-scoped, or `isActive` never
+  // fires and `.admin__tab--active` is dead code.
+  const projectId = useActiveProjectId();
   return (
     <div className="admin">
       <Breadcrumbs items={[{ label: 'Home', to: '/' }, { label: 'Admin' }]} />
@@ -36,19 +29,7 @@ export function AdminLayout(): JSX.Element {
           the Pending changes tab itself. */}
       <PendingChangesBanner />
 
-      <nav className="admin__tabs" aria-label="Admin sections">
-        {TABS.map((t) => (
-          <NavLink
-            key={t.to}
-            to={t.to}
-            className={({ isActive }) =>
-              isActive ? 'admin__tab admin__tab--active' : 'admin__tab'
-            }
-          >
-            {t.label}
-          </NavLink>
-        ))}
-      </nav>
+      <AdminTabs projectId={projectId} />
 
       <div className="admin__panel">
         <Outlet />

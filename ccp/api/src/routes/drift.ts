@@ -66,6 +66,7 @@ import {
 import {
   addressEligibleFor,
   classifyFinding,
+  driftGenArmed,
   driftGenConfig,
   driftImportArmed,
   driftRestoreArmed,
@@ -78,6 +79,8 @@ import {
 } from '../domain/driftProposals';
 import type { DriftProposalDoc } from '../domain/driftProposals';
 import { driftCheckConfig, realDriftCheckSteps, runDriftCheck } from '../domain/driftCheck';
+import { resolveLaneRemote, type LaneProject } from '../domain/laneRepo';
+import { resolveKnob } from '../domain/deploymentSettings';
 import { SYSTEM_DRIFT_ADOPT, SYSTEM_DRIFT_IMPORT, SYSTEM_DRIFT_LEGITIMIZE, SYSTEM_DRIFT_RESTORE, SYSTEM_DRIFT_REVERT } from '../domain/systemOps';
 import { getOperation } from '../manifests';
 import { initialStatusFor, ladderFor, reviewTierFor } from '../domain/exposure';
@@ -424,8 +427,18 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
       // so the CI PUT never blocks on a git clone; a generation failure never
       // un-stages the report already committed above (fail-open, slice 2).
       // Off by default: driftGenConfig() is null unless CCP_DRIFT_PROPOSALS
-      // + CCP_DRIFT_GEN_CMD + CCP_GIT_REMOTE are ALL set (§10).
-      const genCfg = driftGenConfig();
+      // + CCP_DRIFT_GEN_CMD are set (§10) AND a remote resolves for THIS project.
+      // ARCH-2: the checkout is the uploading estate's own repository when it has
+      // registered one — generating estate B's fix proposals from a clone of estate
+      // A's Terraform is the same defect as the bundle's, with the same cause.
+      const genProjectKey = projectKey(id);
+      const genProject = driftGenArmed()
+        ? ((await store.get(genProjectKey.PK, genProjectKey.SK)) as ProjectItem | null)
+        : null;
+      const genHosts = driftGenArmed()
+        ? (((await resolveKnob(store, 'scanner.forgeHosts')).value ?? []) as string[])
+        : [];
+      const genCfg = driftGenConfig(process.env, genProject ?? { id }, genHosts);
       if (genCfg) {
         scheduleDriftGeneration({ store, dataRoot, steps: realDriftGenSteps(genCfg) }, id, version);
       }
@@ -1146,14 +1159,34 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
       return c.json({ code: 'DRIFT_GENERATE_FORBIDDEN', reason: 'Only a Lead or admin may refresh drift fix proposals.' }, 403);
     }
 
-    // 4. Generation armed — CCP_DRIFT_PROPOSALS + CCP_DRIFT_GEN_CMD +
-    //    CCP_GIT_REMOTE all set (§10), else 409 DRIFT_DISARMED naming them.
-    const genCfg = driftGenConfig();
-    if (!genCfg) {
+    // 4. Generation armed — CCP_DRIFT_PROPOSALS + CCP_DRIFT_GEN_CMD set (§10), else 409
+    //    DRIFT_DISARMED naming them. Answered from the environment alone, before any
+    //    registry read, so a deployment that never armed this replies identically to
+    //    every caller.
+    if (!driftGenArmed()) {
       return c.json(
         {
           code: 'DRIFT_DISARMED',
           reason: 'Drift fix generation is not armed on this deployment (CCP_DRIFT_PROPOSALS + CCP_DRIFT_GEN_CMD + CCP_GIT_REMOTE unset).',
+        },
+        409,
+      );
+    }
+
+    // 4b. ARCH-2 — and a repository resolvable for THIS estate. Generating estate B's
+    //     fix proposals from a clone of estate A's Terraform is the bundle's defect with
+    //     a different name, and it had the same cause: one deployment-global remote in a
+    //     multi-account product. Reported separately from "disarmed" — an operator whose
+    //     flags are set correctly must not be sent to look at flags.
+    const genHosts = ((await resolveKnob(store, 'scanner.forgeHosts')).value ?? []) as string[];
+    const laneProject: LaneProject = project ?? { id };
+    const genCfg = driftGenConfig(process.env, laneProject, genHosts);
+    if (!genCfg) {
+      const remote = resolveLaneRemote(laneProject, process.env, genHosts);
+      return c.json(
+        {
+          code: 'DRIFT_REPO_UNRESOLVED',
+          reason: `Drift fix generation cannot resolve a repository for this estate: ${remote.ok ? 'unknown' : remote.detail}`,
         },
         409,
       );

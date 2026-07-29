@@ -19,9 +19,13 @@ export type NotificationKind =
   | 'apply-started'
   | 'applied'
   | 'halted-no-plan'
+  /** The pin was never written at all — the request is HELD where it is, not halted (API-3). */
+  | 'held-no-plan'
   | 'halted-quorum'
   | 'halted-drift'
   | 'apply-failed'
+  /** An `APPLYING` claim outlived its lease: the worker that took it never came back (API-2). */
+  | 'apply-lease-expired'
   | 'reverted'
   | 'frozen';
 

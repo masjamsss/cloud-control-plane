@@ -1,49 +1,17 @@
 import type { Macd, Exposure, RiskFloor } from './manifest';
 import type { PlanSummary } from '@/types/planSummary';
 
-export type RequestStatus =
-  | 'DRAFT'
-  | 'SUBMITTED'
-  | 'GENERATING'
-  | 'CHECKS_RUNNING'
-  | 'PLAN_READY'
-  | 'AWAITING_CODE_REVIEW'
-  | 'CHANGES_REQUESTED'
-  | 'CODE_APPROVED'
-  | 'MERGED'
-  | 'AWAITING_DEPLOY_APPROVAL'
-  | 'APPLYING'
-  | 'APPLIED'
-  | 'NOOP'
-  | 'APPLY_FAILED'
-  | 'DIGEST_MISMATCH'
-  | 'REJECTED'
-  | 'NEEDS_ENGINEER'
-  | 'WITHDRAWN'
-  /**
-   * Interim-profile cooling-off (api-mode only — the mock
-   * has no cooling state machine and never produces this). Interim quorum
-   * (fewer eligible approvers than required) was met, but the change does
-   * not go live until `earliestApplyAt`; settles LAZILY to APPLIED or
-   * AWAITING_DEPLOY_APPROVAL server-side on the next read/mutation (no
-   * background timer). Cancellable during the window via POST
-   * /requests/:id/cancel.
-   */
-  | 'APPROVED_COOLING'
-  /** Cancelled during the APPROVED_COOLING window, or during/after a
-   * maintenance window (api-mode only) — by the requester or a Lead/admin. */
-  | 'CANCELLED'
-  /**
-   * (api-mode only — the mock has no window enforcement and
-   * never produces this, same "no mock equivalent" posture as
-   * APPROVED_COOLING). A maintenance window closed with no apply, either
-   * lazily (the next read after `windowEndOf(schedule)` passes — no
-   * background timer) or eagerly at quorum-met when already infeasible
-   * (a cooling-off that would outlast its own window, or a window
-   * already wholly past). Parked, not terminal: exits are
-   * POST /requests/:id/rewindow and POST /requests/:id/cancel.
-   */
-  | 'WINDOW_EXPIRED';
+/**
+ * ARCH-7: the status vocabulary now lives in ONE closed set (`lib/requestStatus.ts`),
+ * shared with `ccp/api` through the `@app-lib` alias. It used to be declared here as a
+ * 21-value union while the server stored `z.string()`, and the two had drifted in both
+ * directions — the scheduler wrote two halt statuses this union did not contain, so the
+ * client rendered statuses it could not type. Re-exported here so every existing
+ * `from '@/types/request'` import is unchanged.
+ */
+import type { RequestStatus } from '@/lib/requestStatus';
+export type { RequestStatus };
+export { REQUEST_STATUSES, isKnownRequestStatus, occupiesQuotaSlot } from '@/lib/requestStatus';
 
 export interface RequestEvent {
   at: string;

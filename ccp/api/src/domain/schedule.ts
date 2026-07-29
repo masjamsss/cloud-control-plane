@@ -282,13 +282,38 @@ export function isWindowInfeasible(schedule: Schedule, earliestApplyAt: string |
  * rewindow, or a concurrent settle) re-reads and returns the row's TRUE current
  * state instead of erroring.
  */
+
+/**
+ * {@link settleWindow}'s own precondition, hoisted into a cheap SYNCHRONOUS
+ * predicate and exported so a list read can decide whether to call the settler at
+ * all. A list endpoint settles every row it returns, but on any real corpus almost
+ * no row needs it — and an `await` on a function that immediately returns its
+ * argument still costs a promise plus a microtask turn PER ROW. Screening with
+ * this first is what lets the common case pay nothing.
+ *
+ * It is the settler's literal guard, not a second copy of the rule: `settleWindow`
+ * calls THIS, so the screen and the settler cannot disagree about which rows need
+ * work (the failure mode a hand-copied guard invites).
+ */
+export function needsWindowSettlement(
+  req: Pick<RequestItem, 'status' | 'schedule' | 'earliestApplyAt'>,
+  nowMsValue: number,
+): boolean {
+  if (req.status !== 'AWAITING_DEPLOY_APPROVAL' || req.schedule.kind !== 'window') return false;
+  // frozen is irrelevant to EXPIRY specifically (freeze never masks it, but never causes it either)
+  return applyGate(req, false, nowMsValue).reasons.includes('WINDOW_EXPIRED');
+}
+
 export async function settleWindow(store: ConfigStore, projectId: string, req: RequestItem): Promise<RequestItem> {
-  if (req.status !== 'AWAITING_DEPLOY_APPROVAL' || req.schedule.kind !== 'window') return req;
-  const verdict = applyGate(req, false, nowMs()); // frozen is irrelevant to EXPIRY specifically (freeze never masks it, but never causes it either)
-  if (!verdict.reasons.includes('WINDOW_EXPIRED')) return req;
+  // Bound once so the compiler can narrow it: `needsWindowSettlement` already
+  // established `kind === 'window'`, but that fact does not travel back out of a
+  // function call, and the second check below is what re-establishes it for
+  // `closedAt`. Unreachable at runtime, free, and keeps the union honest.
+  const schedule = req.schedule;
+  if (!needsWindowSettlement(req, nowMs()) || schedule.kind !== 'window') return req;
 
   const now = nowIso();
-  const closedAt = windowEndOf(req.schedule) ?? req.schedule.at;
+  const closedAt = windowEndOf(schedule) ?? schedule.at;
   const events = [
     ...req.events,
     { at: now, type: 'window_expired', label: `Maintenance window closed at ${closedAt} — re-window or cancel` },

@@ -3,6 +3,7 @@ import type { JSX } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { ChangeRequest, Inventory, RequestStatus, ServiceManifest } from '@/types';
 import { api } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
 import { getCurrentUser } from '@/lib/session';
 import { getOperation } from '@/lib/interpreter';
@@ -15,6 +16,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { MacdTag } from '@/components/ui/MacdTag';
 import { ApprovalLadder } from '@/components/ui/ApprovalLadder';
 import { SearchBar } from '@/components/SearchBar';
+import { LoadError } from '@/components/LoadError';
 import './requests.css';
 
 /** Every RequestStatus value, for the status filter's option list (Task 3) —
@@ -211,17 +213,27 @@ export function MyRequests(): JSX.Element {
   const [manifests, setManifests] = useState<ServiceManifest[]>([]);
   const [inventory, setInventory] = useState<Inventory | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
   const projectId = useActiveProjectId();
 
   useEffect(() => {
     let active = true;
-    void Promise.all([
-      api.listRequests(getCurrentUser().id),
-      api.listManifests(),
-      api.getInventory(),
-    ]).then(([r, m, inv]) => {
+    setLoadError(null);
+    // FE-2/UI-1: in api mode listRequests THROWS on any non-2xx and a
+    // rejected fetch throws too, so the old success-only `.then` left
+    // `loading` true for ever on the requester's primary screen.
+    void attempt(() =>
+      Promise.all([api.listRequests(getCurrentUser().id), api.listManifests(), api.getInventory()]),
+    ).then((outcome) => {
       if (!active) return;
+      if (!outcome.ok) {
+        setLoadError(outcome.reason);
+        setLoading(false);
+        return;
+      }
+      const [r, m, inv] = outcome.value;
       setRequests(r);
       setManifests(m);
       setInventory(inv);
@@ -230,7 +242,7 @@ export function MyRequests(): JSX.Element {
     return () => {
       active = false;
     };
-  }, [projectId]);
+  }, [projectId, reloadToken]);
 
   /** address → human name, so rows read a real host rather than a Terraform address. */
   const nameByAddress = useMemo(() => {
@@ -315,7 +327,13 @@ export function MyRequests(): JSX.Element {
         </div>
       )}
 
-      {loading ? (
+      {loadError !== null ? (
+        <LoadError
+          message={loadError}
+          what="your requests"
+          onRetry={() => setReloadToken((n) => n + 1)}
+        />
+      ) : loading ? (
         <p className="reqs__empty">Loading…</p>
       ) : requests.length === 0 ? (
         <p className="reqs__empty">

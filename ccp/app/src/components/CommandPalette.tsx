@@ -5,6 +5,7 @@ import { Command } from 'cmdk';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ChangeRequest, InventoryResource, ServiceManifest, User } from '@/types';
 import { api } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId, useProject } from '@/lib/ProjectContext';
 import { useSettings } from '@/lib/settings';
 import { OpChips } from '@/components/ui/OpChips';
@@ -108,20 +109,27 @@ export function CommandPalette({
 
   useEffect(() => {
     let alive = true;
-    void api.listManifests().then((m) => {
-      if (alive) setManifests(m);
+    // FE-2/UI-1/FE-15: every one of these throws in api mode. The palette
+    // is an ambient surface with no page-level error slot, so a failed
+    // group degrades to "absent" — but it must not be an unhandled
+    // rejection, and a stale group must not silently replace a fresh one.
+    void attempt(() => api.listManifests()).then((outcome) => {
+      if (alive && outcome.ok) setManifests(outcome.value);
     });
-    void api.getInventory().then((inv) => {
-      if (alive) setResources(inv.resources);
+    void attempt(() => api.getInventory()).then((outcome) => {
+      if (alive && outcome.ok) setResources(outcome.value.resources);
     });
     // Approvers/leads additionally see requests pending THEIR approval — which
     // may belong to other people — merged into the same "My requests" group.
     const canApproveRole = user.role === 'approver' || user.role === 'lead';
-    void Promise.all([
-      api.listRequests(user.id),
-      canApproveRole ? api.listPendingApprovals(user) : Promise.resolve([]),
-    ]).then(([mine, pending]) => {
-      if (!alive) return;
+    void attempt(() =>
+      Promise.all([
+        api.listRequests(user.id),
+        canApproveRole ? api.listPendingApprovals(user) : Promise.resolve([]),
+      ]),
+    ).then((outcome) => {
+      if (!alive || !outcome.ok) return;
+      const [mine, pending] = outcome.value;
       const byId = new Map<string, ChangeRequest>();
       for (const r of [...mine, ...pending]) byId.set(r.id, r);
       setMyRequests([...byId.values()]);

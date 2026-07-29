@@ -1,5 +1,6 @@
 import type { ChangeRequest } from '@/types';
 import type { HttpApiClient } from '@/lib/httpApi';
+import { attempt } from '@/lib/asyncGuard';
 
 /**
  * Cooling-off, SPA half. Pure, React-free so every rule is
@@ -42,12 +43,22 @@ export type CancelOutcome =
  * looking wrong (still "cooling" with a live Cancel button, when the request
  * actually already applied). Any other rejection (CANCEL_FORBIDDEN, a
  * vanished request) is returned as-is — no refetch needed to explain those.
+ *
+ * NEVER REJECTS (FE-1). Two rejection paths existed and both stranded
+ * `cancelBusy` in RequestDetail: the cancel call itself, and — subtler —
+ * the honesty REFETCH below, which throws on any non-404 error, so the very
+ * path that exists to tell the truth about a 409 could itself kill the
+ * handler. The refetch is now best-effort: a failed one still returns the
+ * server's own STATE_CONFLICT reason, just without the fresher row.
  */
 export async function cancelRequestVia(client: HttpApiClient, id: string): Promise<CancelOutcome> {
-  const result = await client.cancelRequest(id);
+  const outcome = await attempt(() => client.cancelRequest(id));
+  if (!outcome.ok) return { ok: false, reason: outcome.reason, code: 'UNREACHABLE' };
+  const result = outcome.value;
   if (result.ok) return result;
   if (result.code === 'STATE_CONFLICT') {
-    const refetched = await client.getRequest(id);
+    const refetch = await attempt(() => client.getRequest(id));
+    const refetched = refetch.ok ? refetch.value : undefined;
     return { ok: false, reason: result.reason, code: result.code, refetched };
   }
   return result;

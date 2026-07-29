@@ -3,6 +3,7 @@ import type { JSX } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { ChangeRequest, ServiceManifest } from '@/types';
 import { api } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId, useProject } from '@/lib/ProjectContext';
 import { useSettings } from '@/lib/settings';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
@@ -253,11 +254,16 @@ export function BeyondCatalogForm(): JSX.Element {
 
   useEffect(() => {
     let alive = true;
-    void api.listManifests().then((m) => {
-      if (alive) setManifests(m);
+    // FE-1/FE-2: both throw on failure. This form's own fields do not depend on
+    // either — the manifests drive the "is this already in the catalog?" hint and
+    // the provider index drives type-ahead — so a failed read degrades each to
+    // absent rather than blocking a requester from describing what they need.
+    // Guarded so that degrading is a decision, not an unhandled rejection.
+    void attempt(() => api.listManifests()).then((outcome) => {
+      if (alive && outcome.ok) setManifests(outcome.value);
     });
-    void loadProviderIndex(provider).then((idx) => {
-      if (alive) setProviderIndex(idx);
+    void attempt(() => loadProviderIndex(provider)).then((outcome) => {
+      if (alive && outcome.ok) setProviderIndex(outcome.value);
     });
     return () => {
       alive = false;
@@ -267,8 +273,12 @@ export function BeyondCatalogForm(): JSX.Element {
   useEffect(() => {
     if (!from) return;
     let alive = true;
-    void api.getRequest(from).then((request) => {
-      if (!alive || !request) return;
+    // FE-1/FE-2: optional tail prefill — blank fields on failure, never a
+    // rejection and never a blocked form.
+    void attempt(() => api.getRequest(from)).then((outcome) => {
+      if (!alive || !outcome.ok) return;
+      const request = outcome.value;
+      if (!request) return;
       const prefill = tailPrefillFrom(request);
       if (!prefill) return;
       setTail((t) => ({ ...t, ...prefill }));

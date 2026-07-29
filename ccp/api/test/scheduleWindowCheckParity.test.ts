@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { evaluateTime, type Schedule, type TimeVerdict } from '../src/domain/schedule';
+import { skipUnless } from './helpers/requireToolchain';
 
 /**
  * The LIVE half of T-S1's "matches window-check verdict-for-verdict" proof: this
@@ -132,7 +133,7 @@ const INSTANTS: Record<string, string[]> = {
   'garbled-window.yaml': ['2026-07-12T19:00:00Z'],
 };
 
-describe.skipIf(!CATALOGCTL_BIN)('evaluateTime vs. the real catalogctl window-check binary — verdict-for-verdict', () => {
+describe.skipIf(skipUnless('a buildable tools/catalogctl (needs Go)', CATALOGCTL_BIN !== null, 'install Go so `go build ./cmd/catalogctl` succeeds'))('evaluateTime vs. the real catalogctl window-check binary — verdict-for-verdict', () => {
   for (const [fixture, { schedule, earliestApplyAt }] of Object.entries(FIXTURES)) {
     for (const at of INSTANTS[fixture]!) {
       it(`${fixture} @ ${at}`, () => {

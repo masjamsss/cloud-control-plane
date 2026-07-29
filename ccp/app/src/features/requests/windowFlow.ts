@@ -1,5 +1,6 @@
 import type { ChangeRequest, Schedule } from '@/types';
 import type { HttpApiClient } from '@/lib/httpApi';
+import { attempt } from '@/lib/asyncGuard';
 
 /**
  * SPA half. Pure, React-free so every rule is unit-testable
@@ -72,13 +73,16 @@ export type CancelOutcome =
  * click; re-fetch so the caller can show the TRUE current state). Re-implemented
  * here rather than imported so this file has no dependency on coolingFlow.ts at
  * all (the two panels stay fully decoupled); the logic is intentionally
- * byte-identical.
+ * byte-identical — including its never-rejects guarantee (FE-1).
  */
 export async function cancelWindowedRequestVia(client: HttpApiClient, id: string): Promise<CancelOutcome> {
-  const result = await client.cancelRequest(id);
+  const outcome = await attempt(() => client.cancelRequest(id));
+  if (!outcome.ok) return { ok: false, reason: outcome.reason, code: 'UNREACHABLE' };
+  const result = outcome.value;
   if (result.ok) return result;
   if (result.code === 'STATE_CONFLICT') {
-    const refetched = await client.getRequest(id);
+    const refetch = await attempt(() => client.getRequest(id));
+    const refetched = refetch.ok ? refetch.value : undefined;
     return { ok: false, reason: result.reason, code: result.code, refetched };
   }
   return result;
@@ -88,12 +92,16 @@ export type RewindowOutcome =
   | { ok: true; request: ChangeRequest }
   | { ok: false; reason: string; code?: string; refetched?: ChangeRequest };
 
-/** Re-window via ccp-api. Same STATE_CONFLICT-refetches-honestly policy as cancel. */
+/** Re-window via ccp-api. Same STATE_CONFLICT-refetches-honestly policy as
+ * cancel, and the same never-rejects guarantee (FE-1). */
 export async function rewindowRequestVia(client: HttpApiClient, id: string, at: string, endAt?: string): Promise<RewindowOutcome> {
-  const result = await client.rewindowRequest(id, { at, endAt });
+  const outcome = await attempt(() => client.rewindowRequest(id, { at, endAt }));
+  if (!outcome.ok) return { ok: false, reason: outcome.reason, code: 'UNREACHABLE' };
+  const result = outcome.value;
   if (result.ok) return result;
   if (result.code === 'STATE_CONFLICT') {
-    const refetched = await client.getRequest(id);
+    const refetch = await attempt(() => client.getRequest(id));
+    const refetched = refetch.ok ? refetch.value : undefined;
     return { ok: false, reason: result.reason, code: result.code, refetched };
   }
   return result;

@@ -378,9 +378,21 @@ export const RequestItem = z.object({
    *       → AWAITING_DEPLOY_APPROVAL (POST /requests/:id/rewindow)
    *       → CANCELLED (POST /requests/:id/cancel)
    *     → CANCELLED (before or during the window — POST /requests/:id/cancel)
+   *     → APPLYING → APPLIED (the auto-apply scheduler's claim-then-outcome pair,
+   *       `domain/apply/scheduler.ts`; only when CCP_SCHEDULER=1)
    *   → APPLIED (non-interim, schedule.kind:'now' quorum met — instant, unchanged;
    *     the Stage-0/1 "nothing has really applied yet" fiction, T-S6 retires it)
    *   → REJECTED (terminal)
+   *
+   * Scheduler statuses and their EXITS (API-2 — each of these was a dead end):
+   *   APPLYING
+   *     → APPLIED | HALTED_APPLY_FAILED (the claiming worker's own outcome write)
+   *     → HALTED_APPLY_FAILED (claim lease expired — the worker never came back;
+   *       `scheduler.ts#APPLY_LEASE_MS`, swept by a later tick, no operator action)
+   *   HALTED_DRIFT | HALTED_APPLY_FAILED
+   *     → CANCELLED (POST /requests/:id/cancel). Deliberately the ONLY exit: a halt
+   *       means the reviewed plan is not trustworthy, so the way forward is a fresh
+   *       request, not a re-window of the plan the halt refused.
    */
   status: z.string(),
   approvalsRequired: z.number().int(),
@@ -429,12 +441,26 @@ export const RequestItem = z.object({
    * are stamped by the scheduler on a (dry-run) apply — `DRYRUN-…`/`dryrun://…` sentinels
    * today, real values once the terraform executor lands. ALL FOUR are ADDITIVE and
    * OPTIONAL: absent on every existing row, so nothing changes on deploy, and a request
-   * with no pin can NEVER be auto-applied (isPinIntact fails closed → HALT).
+   * with no pin can NEVER be auto-applied.
+   *
+   * "The LATER step" is still not built, so in practice NO row carries a pin — which is
+   * why an ABSENT pair now HOLDS the request rather than halting it
+   * (`scheduler.ts#pinStateOf`, API-3). A pin that is present but does not hold up
+   * (half-written, or digest ≠ sha256(diff)) still halts: that is damage, not absence.
    */
   pinnedDiff: z.string().optional(),
   planDigest: z.string().optional(),
   appliedSha: z.string().optional(),
   evidenceUrl: z.string().optional(),
+  /**
+   * When the scheduler CLAIMED this request for apply (`AWAITING_DEPLOY_APPROVAL →
+   * APPLYING`). The claim lease reads it: a claim older than
+   * `domain/apply/scheduler.ts#APPLY_LEASE_MS` belongs to a worker that died, and the
+   * next tick halts the row instead of leaving it `APPLYING` forever (API-2). ADDITIVE
+   * and OPTIONAL — a row claimed by an older build has none, and the lease falls back to
+   * `updatedAt`, which the claim has always written.
+   */
+  applyClaimedAt: z.string().optional(),
   events: z.array(RequestEvent),
   policyVersion: z.number().int(),
   riskOverrideVersion: z.number().int().optional(),
@@ -524,6 +550,21 @@ export const PendingConfigChangeItem = z.object({
   GSI1SK: z.string().optional(),
 });
 export type PendingConfigChangeItem = z.infer<typeof PendingConfigChangeItem>;
+
+/**
+ * The pending-change status vocabulary, named (ARCH-7). It was already CLOSED — the zod
+ * enum above is the authority — but it had no name, so nothing outside this file could
+ * say "these five, and no others". It shares the literal `APPLIED` with the request
+ * vocabulary while meaning something different (a config change was acked and applied,
+ * not a Terraform change landed), which is why "a SCREAMING_SNAKE status literal" is not
+ * by itself enough to tell the two apart.
+ *
+ * Derived from `.options` rather than restated, so it cannot drift from the schema it
+ * describes. `test/statusVocabulary.test.ts` reads it to assert the real property: every
+ * status literal in the api belongs to SOME declared closed set. A new entity with its
+ * own statuses has to declare them.
+ */
+export const PENDING_CHANGE_STATUSES = PendingConfigChangeItem.shape.status.options;
 
 export const AuditItem = z.object({
   PK: z.string(),

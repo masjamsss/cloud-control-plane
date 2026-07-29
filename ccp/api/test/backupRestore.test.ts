@@ -38,6 +38,11 @@ async function seedStore(): Promise<{ head: string; count: number; accountIds: s
   const chain = await exportAuditChain(store, 'sample');
   const accounts = (await store.queryGSI1(accountsGsi())) as AccountItem[];
   expect(chain.verified).toBe(true);
+  // The seeding "server" goes away before anything else opens this file. CONC-7/DATA-9
+  // gave the data file a single-writer lock, and a restore landing under a LIVE server is
+  // the exact defect it closes: the atomic write installs the backup, and the server's
+  // next persist rewrites the file from its own memory and silently discards it.
+  store.close();
   return { head: chain.head, count: chain.count, accountIds: accounts.map((a) => a.id) };
 }
 

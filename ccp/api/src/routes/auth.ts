@@ -29,6 +29,7 @@ import { record } from '../domain/audit';
 import { nowIso, nowMs } from '../clock';
 import type { ConfigStore } from '../store/configStore';
 import type { SessionItem } from '../store/schema';
+import { ConditionError } from '../store/configStore';
 
 const LoginBody = z.object({ username: z.string().min(1), password: z.string().min(1) });
 const ChangePwBody = z.object({
@@ -80,6 +81,40 @@ async function verifyCredential(account: AccountItem, password: string): Promise
   return { ok, pbkdf2: ok };
 }
 
+/**
+ * Write an account row only if it has not moved since `prev` was read (CONC-3).
+ *
+ * Every handler in this lane does `read account → await something slow (an argon2id
+ * verify or hash, 50-200 ms of deliberate yield) → write the whole row back`. Without a
+ * condition, anything that lands in that window is silently overwritten — including an
+ * admin disable, whose `status`, `sessionVersion` and `accountVersion` all get restored
+ * to their pre-disable values by a write that knows nothing about it.
+ *
+ * The guard is `accountVersion`, which `store/schema.ts:181-196` already requires every
+ * account mutation to bump so a stale dual-control ack fails STALE_PROPOSAL. Bumping it
+ * here in one place is also what stops handlers forgetting to.
+ *
+ * Returns false on conflict rather than throwing, because callers differ on what a
+ * conflict means: a best-effort counter drops its update, while anything security-bearing
+ * must refuse.
+ */
+async function putAccountGuarded(
+  store: ConfigStore,
+  prev: AccountItem,
+  updated: AccountItem,
+): Promise<boolean> {
+  try {
+    await store.put(
+      { ...updated, accountVersion: nextAccountVersion(prev) },
+      { ifEquals: { attr: 'accountVersion', value: prev.accountVersion } },
+    );
+    return true;
+  } catch (e) {
+    if (e instanceof ConditionError) return false;
+    throw e;
+  }
+}
+
 export function authRoutes(): Hono<AppEnv> {
   const auth = new Hono<AppEnv>();
 
@@ -106,14 +141,31 @@ export function authRoutes(): Hono<AppEnv> {
       // Failure: bump lockout on an active account; audit; generic 401 (never distinguishable).
       if (account?.status === 'active') {
         const failedAttempts = (account.failedAttempts ?? 0) + 1;
-        const patch: AccountItem = { ...account, failedAttempts };
+        // Every account mutation bumps accountVersion (store/schema.ts:181-196). This path
+        // never did, which is half of why a stale login write could restore a pre-disable
+        // row wholesale.
+        const patch: AccountItem = {
+          ...account,
+          failedAttempts,
+          accountVersion: (account.accountVersion ?? 0) + 1,
+        };
         let lockedNow = false;
         if (failedAttempts >= 5) {
           const mins = Math.min(60, 2 ** (failedAttempts - 5));
           patch.lockedUntil = new Date(nowMs() + mins * 60_000).toISOString();
           lockedNow = true;
         }
-        await store.put(patch);
+        // Guarded on the row this handler read. The argon2id verify above is a deliberate
+        // ~50-200 ms yield, wide enough for an admin disable to commit in the middle; an
+        // unguarded put would write `status:'active'` and the old sessionVersion straight
+        // back over it (CONC-3). The lockout counter is best-effort — if the row moved,
+        // the attempt is still audited and still refused, so we drop the counter bump
+        // rather than clobber whatever landed.
+        try {
+          await store.put(patch, { ifEquals: { attr: 'accountVersion', value: account.accountVersion } });
+        } catch (e) {
+          if (!(e instanceof ConditionError)) throw e;
+        }
         await record(store, projectId, {
           action: lockedNow ? 'login-lockout' : 'login-failure',
           actor: account.id,
@@ -132,10 +184,23 @@ export function authRoutes(): Hono<AppEnv> {
     }
 
     // 1FA passed: reset lockout; transparently re-hash pbkdf2 → argon2id.
-    const updated: AccountItem = { ...account, failedAttempts: 0 };
+    const updated: AccountItem = {
+      ...account,
+      failedAttempts: 0,
+      accountVersion: (account.accountVersion ?? 0) + 1,
+    };
     delete updated.lockedUntil;
     if (verdict.pbkdf2) updated.credential = { algo: 'argon2id', hash: await hashPassword(password) };
-    await store.put(updated);
+    // Same guard, and here a conflict must ABORT the login rather than be swallowed: the
+    // account changed while we were verifying, and the likeliest change is the disable
+    // this write would otherwise undo. Fail closed with the same generic 401 every other
+    // failure returns — a distinguishable error here would leak that the account exists.
+    try {
+      await store.put(updated, { ifEquals: { attr: 'accountVersion', value: account.accountVersion } });
+    } catch (e) {
+      if (e instanceof ConditionError) return apiError(c, 'BAD_CREDENTIALS');
+      throw e;
+    }
 
     // TOTP step. Challenge condition widened (ADR-0024 clause 4): an ENROLLED
     // factor is ALWAYS challenged, even when `needsTotp` alone would say no
@@ -198,7 +263,7 @@ export function authRoutes(): Hono<AppEnv> {
     // `totpDevices` (idempotent lazy migration, ADR-0024 clause 2) the first
     // time a legacy single-secret account ever verifies.
     const updatedAccount = withDeviceUseStamped(pre.account, matched.id, nowIso());
-    await store.put(updatedAccount);
+    if (!(await putAccountGuarded(store, pre.account, updatedAccount))) return apiError(c, 'STATE_CONFLICT');
     await store.delete(pre.session.PK, pre.session.SK);
     const full = await mintSession(store, updatedAccount.id, updatedAccount.sessionVersion);
     setSessionCookie(c, full);
@@ -240,7 +305,7 @@ export function authRoutes(): Hono<AppEnv> {
       enrolled = { ...enrolled, recoveryCodes: { codes: generated.hashed, generatedAt: nowIso() } };
     }
 
-    await store.put(enrolled);
+    if (!(await putAccountGuarded(store, pre.account, enrolled))) return apiError(c, 'STATE_CONFLICT');
     await store.delete(pre.session.PK, pre.session.SK);
     const full = await mintSession(store, enrolled.id, enrolled.sessionVersion);
     setSessionCookie(c, full);
@@ -286,7 +351,9 @@ export function authRoutes(): Hono<AppEnv> {
         const mins = Math.min(60, 2 ** (failedAttempts - 5));
         patch.lockedUntil = new Date(nowMs() + mins * 60_000).toISOString();
       }
-      await store.put(patch);
+      // Best-effort, as on the login path: if the row moved, drop the counter bump
+      // rather than clobber what landed. The attempt is still audited and still refused.
+      await putAccountGuarded(store, account, patch);
       await record(store, projectId, { action: 'login-failure', actor: account.id, targetType: 'session', targetId: account.id });
       return apiError(c, 'TOTP_REQUIRED');
     }
@@ -300,7 +367,7 @@ export function authRoutes(): Hono<AppEnv> {
       accountVersion: nextAccountVersion(account),
     };
     delete updated.lockedUntil;
-    await store.put(updated);
+    if (!(await putAccountGuarded(store, account, updated))) return apiError(c, 'STATE_CONFLICT');
     await store.delete(pre.session.PK, pre.session.SK);
     const full = await mintSession(store, updated.id, updated.sessionVersion);
     setSessionCookie(c, full);
@@ -370,7 +437,7 @@ export function authRoutes(): Hono<AppEnv> {
       accountVersion: nextAccountVersion(account),
     };
     delete updated.lockedUntil;
-    await store.put(updated);
+    if (!(await putAccountGuarded(store, account, updated))) return apiError(c, 'STATE_CONFLICT');
 
     if (!keepOtherSessions) {
       // Re-mint the caller's session at the new version so the OLD cookie 401s (SESSION_INVALIDATED).
@@ -423,7 +490,9 @@ export function authRoutes(): Hono<AppEnv> {
         const mins = Math.min(60, 2 ** (failedAttempts - 5));
         patch.lockedUntil = new Date(nowMs() + mins * 60_000).toISOString();
       }
-      await store.put(patch);
+      // Best-effort, as on the login path: if the row moved, drop the counter bump
+      // rather than clobber what landed. The attempt is still audited and still refused.
+      await putAccountGuarded(store, account, patch);
       await record(store, projectId, { action: 'reauth-failure', actor: account.id, targetType: 'session', targetId: account.id });
       return apiError(c, byPassword ? 'BAD_CREDENTIALS' : 'TOTP_REQUIRED');
     }
@@ -431,7 +500,7 @@ export function authRoutes(): Hono<AppEnv> {
     // Success mirrors login's own reset-on-success (same counter, same rule).
     const updatedAccount: AccountItem = { ...account, failedAttempts: 0 };
     delete updatedAccount.lockedUntil;
-    await store.put(updatedAccount);
+    if (!(await putAccountGuarded(store, account, updatedAccount))) return apiError(c, 'BAD_CREDENTIALS');
 
     const reauthAt = nowIso();
     const updatedSession: SessionItem = { ...session, reauthAt };

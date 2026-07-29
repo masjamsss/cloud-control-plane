@@ -50,6 +50,32 @@ export function unscopedLandingPath(
  * (`document`), so it cannot be imported from a plain-Node test — this sibling
  * module has no such dependency and is what projectRoutes.test.ts imports.
  */
+/**
+ * The FORWARD direction of {@link legacyPathToProjectPath}, for links the app
+ * renders itself (UI-3).
+ *
+ * Every nav target used to be written unscoped (`/requests`, `/admin/users`)
+ * and relied on `LegacyRedirect` to rewrite it at click time. That had two
+ * costs: React Router matched `isActive` against the UNSCOPED target while the
+ * location was always `/p/<id>/…`, so no NavLink was ever active —
+ * `aria-current="page"` was never emitted and the active-state CSS was dead —
+ * and every click unmounted the whole `/p` tree, redirected, and remounted it.
+ * Rendering the scoped path up front fixes both at once.
+ *
+ * Pure and DOM-free (same reason as `legacyPathToProjectPath`: this module is
+ * importable from a plain-Node test, `router.tsx` is not). An empty
+ * `projectId` returns the path untouched, so a render before any scope exists
+ * degrades to exactly the old behaviour rather than emitting `/p//requests`.
+ */
+export function projectScopedPath(projectId: string, to: string): string {
+  if (!projectId) return to;
+  if (to.startsWith('/p/')) return to; // already scoped — unchanged
+  const suffix = to.startsWith('/') ? to : `/${to}`;
+  // No trailing slash for the index route: `/p/<id>/` would not match a
+  // NavLink with `end`, which is the whole point of scoping it.
+  return suffix === '/' ? `/p/${projectId}` : `/p/${projectId}${suffix}`;
+}
+
 export function legacyPathToProjectPath(path: string): string {
   if (path.startsWith('/p/')) return path; // already scoped — unchanged
   const suffix = path.startsWith('/') ? path : `/${path}`;

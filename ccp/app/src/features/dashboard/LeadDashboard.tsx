@@ -3,6 +3,7 @@ import type { JSX } from 'react';
 import { Link } from 'react-router-dom';
 import type { ChangeRequest, RequestStatus, ServiceManifest } from '@/types';
 import { api } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
 import { getTeam, useTeams } from '@/lib/teams';
 import { resolveName } from '@/lib/accounts';
@@ -12,6 +13,7 @@ import { formatProjectDate } from '@/lib/datetime';
 import { RiskBadge } from '@/components/ui/RiskBadge';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { DriftPanel } from '@/features/drift/DriftPanel';
+import { LoadError } from '@/components/LoadError';
 import './dashboard.css';
 
 function userName(id: string): string {
@@ -74,6 +76,8 @@ export function LeadDashboard(): JSX.Element {
   const [requests, setRequests] = useState<ChangeRequest[]>([]);
   const [manifests, setManifests] = useState<ServiceManifest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [team, setTeam] = useState<TeamFilter>('all');
   const [status, setStatus] = useState<StatusFilter>('all');
   // Live — a team created/renamed elsewhere fills this filter
@@ -83,16 +87,27 @@ export function LeadDashboard(): JSX.Element {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([api.listAllRequests(), api.listManifests()]).then(([r, m]) => {
-      if (!active) return;
-      setRequests(r);
-      setManifests(m);
-      setLoading(false);
-    });
+    setLoadError(null);
+    // FE-2/UI-1: listAllRequests throws on any non-2xx in api mode, so the
+    // success-only `.then` left the Lead's dashboard on "Loading…" for ever.
+    void attempt(() => Promise.all([api.listAllRequests(), api.listManifests()])).then(
+      (outcome) => {
+        if (!active) return;
+        if (!outcome.ok) {
+          setLoadError(outcome.reason);
+          setLoading(false);
+          return;
+        }
+        const [r, m] = outcome.value;
+        setRequests(r);
+        setManifests(m);
+        setLoading(false);
+      },
+    );
     return () => {
       active = false;
     };
-  }, [projectId]);
+  }, [projectId, reloadToken]);
 
   const summary = useMemo(() => {
     let awaiting = 0;
@@ -190,7 +205,13 @@ export function LeadDashboard(): JSX.Element {
 
       <DriftPanel />
 
-      {loading ? (
+      {loadError !== null ? (
+        <LoadError
+          message={loadError}
+          what="the dashboard"
+          onRetry={() => setReloadToken((n) => n + 1)}
+        />
+      ) : loading ? (
         <p className="dash__empty">Loading…</p>
       ) : (
         <>

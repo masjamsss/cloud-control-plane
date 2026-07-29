@@ -665,7 +665,22 @@ ok "$REAL_ENV: instance=\"$INSTANCE_NAME\", VITE_API_BASE=$API_BASE, ${TOPOLOGY}
 
 say "5/6  app: rebuild (bakes in VITE_API_BASE) · api: refresh (picks up ports/topology/cookies)"
 ( cd "$CCP_DIR" && docker compose up -d --build app ) || die "docker compose up failed (app)"
-( cd "$CCP_DIR" && docker compose up -d api )         || die "docker compose up failed (api)"
+
+# Same decision install.sh makes, for the same reason (OPS-1). The api refuses
+# CCP_BOOTSTRAP=1 once the store file exists, and merely starting the api creates it.
+# This step used to bring the api up unconditionally without bootstrap, and go-live then
+# told the operator to "pick back up at Step 3" and set CCP_BOOTSTRAP=1 — by which point
+# the store existed, the api exited 1, and `restart: unless-stopped` made it a crash loop.
+# So if there is no store yet, this first api boot is the first boot: bootstrap on it.
+STORE_FILE="${CCP_STORE_FILE:-/data/ccp/store/ccp.json}"
+if [ -e "$STORE_FILE" ]; then
+  ( cd "$CCP_DIR" && docker compose up -d api )       || die "docker compose up failed (api)"
+else
+  say "      no store at $STORE_FILE — this is a first install, so first-boot is ON for this 'up' only"
+  ( cd "$CCP_DIR" && CCP_BOOTSTRAP=1 docker compose up -d api ) || die "docker compose up failed (api, first boot)"
+  ( cd "$CCP_DIR" && docker compose up -d api )       || warn "re-up without bootstrap failed — run 'docker compose up -d api' in ccp/ to clear it"
+  ok "first admin seeded — read its one-time password with: cd ccp && docker compose logs api | grep -A3 bootstrap"
+fi
 
 say "6/6  nginx vhost"
 VHOST_ARGS=(--host "$HOST" --alias "$IP" --app-port "$APP_PORT" --api-port "$API_PORT" --force)

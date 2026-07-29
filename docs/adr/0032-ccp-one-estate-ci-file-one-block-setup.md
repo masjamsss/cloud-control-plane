@@ -36,8 +36,9 @@ cross-usable", `projects.ts:373`).
 
 Collapse the estate-side surface, touching no API route, no CLI, and no trust code:
 
-1. **One CI file per host.** `.github/workflows/ccp.yml` (and
-   `.gitlab/ci/ccp.gitlab-ci.yml`) replaces the onboard/data file pair: a dispatch-only
+1. **One CI file per host.** A single `ccp.yml` estate workflow (and its
+   `ccp.gitlab-ci.yml` twin) replaces the onboard/data file pair — PROPOSED, not yet
+   shipped, which is why neither is written here as a repo path: a dispatch-only
    `onboard` job behind a `lane` choice input (default `onboard`), and the `data` job on
    the default-branch push trigger plus `lane=data` dispatch. Byte-pinned to the wizard
    verbatim, as today (`ccp/app/src/test/projectsLifecycle.test.ts:511-558`). The
@@ -131,7 +132,7 @@ surface ADR-0031's option B rejected, against the never-checkout posture's spiri
 
 1. [ ] Owner go/no-go on the merged-file + one-block direction (and the two plain-words
        questions: the polite pre-trust skip, and "run it now" as a link only).
-2. [ ] Phase A: `ccp.yml` + GitLab twin; delete the four old lane files;
+2. [ ] Phase A: the consolidated estate workflow + GitLab twin; delete the four old lane files;
        `ciTemplates.ts` collapse; `projectsLifecycle.test.ts` reshape; 13-file
        reference sweep (incl. `gate.sh`, `gen-project-data.sh`, both runbooks,
        `onboarding-security.md`).

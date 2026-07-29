@@ -1,0 +1,32 @@
+name: path-filters
+# CI-3 — verifies that every workflow's `paths:` filter still mirrors the IMPORT GRAPH.
+#
+# NO PATH FILTER OF ITS OWN, deliberately. A check whose job is to catch an under-scoped
+# path filter must not be gated by one: the PR that breaks the relationship is exactly the
+# PR whose files a narrow filter would exclude, so the check would go quiet at the moment
+# it was needed. This lane is seconds long, which is what makes running it on everything
+# affordable.
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+
+jobs:
+  filters:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install --quiet pyyaml
+      - name: workflow path filters mirror the import graph
+        run: bash scripts/ci/check-path-filters.sh
+      # CI-4 — the apply-lane gates must keep a workflow consumer, and no shipped file may
+      # point at a workflow that does not exist. Same reason this lane has no path filter:
+      # the change that breaks either relationship is the change a narrow filter excludes.
+      - name: shipped lanes have consumers and every workflow reference resolves
+        run: bash scripts/ci/check-shipped-lanes.sh

@@ -43,3 +43,9 @@ AGENTS.md
 # Python bytecode
 __pycache__/
 *.pyc
+
+# DOC-15 — generated on demand, deliberately not committed. Fully derivable from
+# tools/schemadump/gen-azure-capability-reference.mjs plus the committed schemadump, so
+# tracking it would create a regeneration obligation with nothing enforcing it. Ignored
+# rather than merely absent, so running the generator does not leave a tempting diff.
+docs/operations/terraform-capability-reference-azure/

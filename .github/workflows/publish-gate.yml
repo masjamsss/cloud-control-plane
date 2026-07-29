@@ -29,11 +29,21 @@ jobs:
           # no useful log — observed exactly once, then passing unchanged on
           # re-run. A red gate should mean "the gate found something", never
           # "GitHub's CDN hiccuped", so the fetch retries before giving up.
+          # The pin MUST be >= v8.19.0: the gate invokes `gitleaks dir`, and that
+          # subcommand does not exist before v8.19.0. v8.18.4 was pinned here while the
+          # script discarded gitleaks' output and never read its exit status, so PG-9
+          # recorded PASS on every CI run without scanning a single file. The script now
+          # fails loudly when the invocation fails, which makes a wrong pin here a red
+          # gate rather than a silent one — but keep the two in step regardless.
           curl -sSfL --retry 5 --retry-delay 3 --retry-all-errors \
             --connect-timeout 15 --max-time 180 -o /tmp/gitleaks.tar.gz \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz
+            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
           sudo install /tmp/gitleaks /usr/local/bin/gitleaks
           gitleaks version
+          # Fail the step now, with a clear message, rather than letting a gitleaks that
+          # cannot run reach PG-9 at all.
+          gitleaks dir --help >/dev/null 2>&1 || {
+            echo "::error::the pinned gitleaks has no 'dir' subcommand — PG-9 would scan nothing"; exit 1; }
       - name: Run publish gate (generic mode)
         run: bash scripts/publish-gate.sh

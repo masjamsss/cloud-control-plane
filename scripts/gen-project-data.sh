@@ -61,7 +61,9 @@
 set -euo pipefail
 
 # ─── Version pins — the ONE place. Templates consume via --print-pins. ───────
-# Mirrors .github/workflows/terraform.yml portal-data-freshness exactly:
+# Mirrors the portal-data-freshness job exactly. (CI-4/OPS-14: this used to cite a CI
+# workflow that does not exist in this repo; the pins live HERE, and
+# .github/workflows/ccp-data.yml reads them out of this file.)
 #   python 3.12 + python-hcl2==5.1.1 (5.1.1 is the newest python-hcl2 that
 #   reproduces the committed inventory byte-for-byte; 6.x changes string
 #   escapes, 8.x quotes block-type keys and drops every resource), node 20
@@ -208,7 +210,8 @@ python3 "$INVENTORY_PY" \
 # Must run FROM ccp/app: vite-node resolves the "@" alias (and the pinned
 # local vite-node itself) from its own vite.config.ts — invoked from elsewhere
 # it silently falls back to a global vite-node and then fails to resolve
-# "@/lib/hclScan". Same invocation as terraform.yml portal-data-freshness.
+# "@/lib/hclScan". Same invocation the portal-data-freshness job uses (see the pin note
+# above — the workflow this line used to name was never shipped).
 note "blocks: extract-blocks.ts --root $TF_ROOT"
 (cd "$APP_DIR" && npx vite-node scripts/extract-blocks.ts --root "$TF_ROOT" --out "$GEN_DIR/blocks")
 

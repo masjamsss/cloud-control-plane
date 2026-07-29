@@ -60,10 +60,15 @@ Run the whole set with `./scripts/gate.sh` from the repo root. **Green gate = co
 5. `./scripts/gate.sh` green.
 
 ### Generated catalog data — regenerate, never hand-edit
-These are produced by scripts and committed; if you change the inputs, **re-run the script**,
-don't hand-patch the output:
+These are produced by scripts; if you change the inputs, **re-run the script**, don't
+hand-patch the output. Most are committed — the one exception is called out below (DOC-15):
 - `catalog/azure-capability-ledger.json` ← `tools/schemadump/gen-azure-ledger.mjs`
-- `docs/operations/terraform-capability-reference-azure/` ← `tools/schemadump/gen-azure-capability-reference.mjs`
+- `docs/operations/terraform-capability-reference-azure/` ←
+  `tools/schemadump/gen-azure-capability-reference.mjs` —
+  **generated on demand, NOT committed in this tree.** The public split excludes it, and it
+  stays excluded deliberately: it is fully derivable from the committed generator plus the
+  committed schemadump, so committing it would add a sync obligation with nothing enforcing
+  it. Run the generator when you need it; `.gitignore` keeps an accidental commit out.
 - `src/data/manifests/azure-*.json` tag ops ← `ccp/app/scripts/gen-azure-tag-catalog.mjs`
 - `src/data/forcenew-map*.json` ← `ccp/app/scripts/build-forcenew-map.ts`
 - `tools/schemadump/<provider>-<tag>-schema.json` ← `tools/schemadump/gen.sh PROVIDER=<…>`

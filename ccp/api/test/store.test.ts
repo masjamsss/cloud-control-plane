@@ -277,3 +277,71 @@ describe('multi-project keying isolates everything except identity', () => {
     expect((await store.get('ACCOUNT#putra', 'META'))?.isAdmin).toBe(true);
   });
 });
+
+/**
+ * The GSI1 index, which is what makes `queryGSI1` a partition read rather than a
+ * table scan. Two behaviours the rest of the system quietly depends on:
+ *
+ *   · Clearing `GSI1PK` REMOVES a row from the index. This is how the whole
+ *     dual-control lifecycle works — ack, reject and expiry each set
+ *     `GSI1PK: undefined`, which is what keeps `GET /admin/config-changes`
+ *     bounded to proposals that are still open.
+ *   · Changing `GSI1PK` MOVES a row, rather than leaving it in both partitions.
+ */
+describe('GSI1 membership follows GSI1PK', () => {
+  const row = (id: string, gsi?: string): Item => ({
+    PK: `THING#${id}`,
+    SK: 'META',
+    id,
+    ...(gsi !== undefined ? { GSI1PK: gsi, GSI1SK: id } : {}),
+  });
+
+  it('drops a row from its partition when GSI1PK is cleared', async () => {
+    const store = new MemoryStore();
+    await store.put(row('a', 'OPEN'));
+    await store.put(row('b', 'OPEN'));
+    expect((await store.queryGSI1('OPEN')).map((i) => i.id)).toEqual(['a', 'b']);
+
+    // The exact shape dualControl.ts writes on ack/reject/expire.
+    await store.put({ ...row('a', 'OPEN'), GSI1PK: undefined });
+    expect((await store.queryGSI1('OPEN')).map((i) => i.id)).toEqual(['b']);
+    // ...and the row itself is untouched and still directly readable.
+    expect((await store.get('THING#a', 'META'))?.id).toBe('a');
+  });
+
+  it('drops it via a transact update too, not just a put', async () => {
+    const store = new MemoryStore();
+    await store.put(row('a', 'OPEN'));
+    await store.transact([{ kind: 'update', pk: 'THING#a', sk: 'META', set: { status: 'APPLIED', GSI1PK: undefined } }]);
+    expect(await store.queryGSI1('OPEN')).toEqual([]);
+    expect((await store.get('THING#a', 'META'))?.status).toBe('APPLIED');
+  });
+
+  it('moves a row between partitions instead of leaving it in both', async () => {
+    const store = new MemoryStore();
+    await store.put(row('a', 'OPEN'));
+    await store.put(row('a', 'CLOSED'));
+    expect(await store.queryGSI1('OPEN')).toEqual([]);
+    expect((await store.queryGSI1('CLOSED')).map((i) => i.id)).toEqual(['a']);
+  });
+
+  it('survives the snapshot round trip that FileStore performs on every boot', async () => {
+    const store = new MemoryStore();
+    await store.put(row('a', 'OPEN'));
+    await store.put({ ...row('a', 'OPEN'), GSI1PK: undefined });
+    await store.put(row('b', 'OPEN'));
+
+    // JSON.stringify drops an `undefined` value, so the key is simply absent on
+    // reload — the de-indexed row must stay de-indexed.
+    const reloaded = new MemoryStore();
+    reloaded.importItems(JSON.parse(store.serializeItems()) as Item[]);
+    expect((await reloaded.queryGSI1('OPEN')).map((i) => i.id)).toEqual(['b']);
+  });
+
+  it('deleting a row removes it from GSI1 as well', async () => {
+    const store = new MemoryStore();
+    await store.put(row('a', 'OPEN'));
+    await store.delete('THING#a', 'META');
+    expect(await store.queryGSI1('OPEN')).toEqual([]);
+  });
+});

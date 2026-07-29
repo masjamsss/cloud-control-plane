@@ -21,8 +21,19 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-/** Simulate a process restart: a brand-new store instance loading the same file from disk. */
-async function restart(): Promise<FileStore> {
+/**
+ * Simulate a process restart: the old instance goes away, then a brand-new one loads the
+ * same file from disk.
+ *
+ * `prev.close()` is not ceremony — it is what makes this a RESTART rather than two live
+ * writers. CONC-7/DATA-9 gave the data file a single-writer lock precisely because a
+ * second `FileStore` on one path silently destroys the first one's writes, so these
+ * fixtures had to stop doing the thing the lock now refuses. That every one of them
+ * needed the change is the finding in miniature: the shape was so easy to write that the
+ * test suite had been writing it for as long as the store existed.
+ */
+async function restart(prev?: FileStore): Promise<FileStore> {
+  prev?.close();
   return FileStore.open(file);
 }
 
@@ -34,7 +45,7 @@ describe('FileStore durability (simulated restart = new instance reading disk)',
     const item: Item = { ...S.accountKey('sari'), id: 'sari', GSI1PK: S.accountsGsi(), GSI1SK: 'sari' };
     await a.put(item);
 
-    const b = await restart();
+    const b = await restart(a);
     expect(await b.get('ACCOUNT#sari', 'META')).toEqual(item);
   });
 
@@ -47,7 +58,7 @@ describe('FileStore durability (simulated restart = new instance reading disk)',
     await a.put({ ...S.requestKey('sample', 'b'), GSI1PK: gsi, GSI1SK: 'b' });
     await a.put({ ...S.requestKey('sample', 'a'), GSI1PK: gsi, GSI1SK: 'a' });
 
-    const b = await restart();
+    const b = await restart(a);
     expect((await b.query(pk, 'EVT#')).map((e) => e.SK)).toEqual(['EVT#000001', 'EVT#000002']);
     expect((await b.queryGSI1(gsi)).map((i) => i.GSI1SK)).toEqual(['a', 'b']);
   });
@@ -58,7 +69,7 @@ describe('FileStore durability (simulated restart = new instance reading disk)',
     await a.put({ ...k, id: 'budi' });
     await expect(a.put({ ...k, id: 'IMPOSTER' }, { ifNotExists: true })).rejects.toBeInstanceOf(ConditionError);
 
-    const b = await restart();
+    const b = await restart(a);
     expect((await b.get(k.PK, k.SK))?.id).toBe('budi'); // the imposter never landed
   });
 
@@ -74,7 +85,7 @@ describe('FileStore durability (simulated restart = new instance reading disk)',
       ]),
     ).rejects.toBeInstanceOf(ConditionError);
 
-    const b = await restart();
+    const b = await restart(a);
     expect(await b.get(other.PK, other.SK)).toBeNull(); // put rolled back
     expect((await b.get(head.PK, head.SK))?.hash).toBe('GENESIS'); // head untouched
   });
@@ -89,7 +100,7 @@ describe('FileStore durability (simulated restart = new instance reading disk)',
       { kind: 'update', pk: head.PK, sk: head.SK, set: { hash: 'H1', count: 1 }, ifEquals: { attr: 'hash', value: 'GENESIS' } },
     ]);
 
-    const b = await restart();
+    const b = await restart(a);
     expect((await b.get(audit.PK, audit.SK))?.hash).toBe('H1');
     expect(await b.get(head.PK, head.SK)).toMatchObject({ hash: 'H1', count: 1 });
   });
@@ -100,7 +111,7 @@ describe('FileStore durability (simulated restart = new instance reading disk)',
     await Promise.all(
       Array.from({ length: N }, (_, i) => a.put({ ...S.requestKey('sample', `r${i}`), GSI1PK: S.requestCollectionGsi('sample'), GSI1SK: `r${String(i).padStart(3, '0')}` })),
     );
-    const b = await restart();
+    const b = await restart(a);
     expect(await b.queryGSI1(S.requestCollectionGsi('sample'))).toHaveLength(N);
   });
 
@@ -111,7 +122,7 @@ describe('FileStore durability (simulated restart = new instance reading disk)',
     }
     const headBefore = (await a.get(S.chainHead('sample').PK, 'CHAINHEAD')) as ChainHeadItem;
 
-    const b = await restart();
+    const b = await restart(a);
     const entries = (await b.query('P#sample#AUDIT#202607')) as AuditItem[];
     expect(entries).toHaveLength(5);
     const headAfter = (await b.get(S.chainHead('sample').PK, 'CHAINHEAD')) as ChainHeadItem;
@@ -131,12 +142,12 @@ describe('bootstrap refuses to re-provision a populated durable store', () => {
     expect(accountsBefore).toHaveLength(1);
 
     // Restart, then attempt to bootstrap again against the durable data.
-    const b = await restart();
+    const b = await restart(a);
     const second = await bootstrap(b, { print: () => {} });
     expect(second.ok).toBe(false);
     if (!second.ok) expect(second.reason).toBe('BACKEND_NOT_EMPTY');
 
-    const c = await restart();
+    const c = await restart(b);
     const accountsAfter = (await c.queryGSI1(S.accountsGsi())) as AccountItem[];
     expect(accountsAfter).toEqual(accountsBefore); // no fresh admin, no reset
   });

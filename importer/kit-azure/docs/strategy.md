@@ -3,16 +3,16 @@
 **Approach: import-first.** We bring existing Azure resources under Terraform management
 *without recreating them*, in phases ordered by risk. Recreation is the exception
 (disposition = Replace), never the default. This mirrors the AWS import-first strategy
-([importer/docs/strategy.md](../../../importer/docs/strategy.md)), translated to Azure —
+(`importer/docs/strategy.md` (not written)), translated to Azure —
 where one unified read-only inventory API (Azure Resource Graph) replaces AWS's many
 per-service describe calls.
 
 This is a **live** strategy for adopting an Azure estate with [the kit](..). Azure is the
 **accepted** second cloud provider: see
 [ADR-0015](../../../docs/adr/0015-ccp-azure-second-provider.md) and the concept
-[proposal 0039](../../../docs/proposals/0039-azure-second-provider-concept.md). The step-by-step
+proposal 0039 (`docs/proposals/0039-azure-second-provider-concept.md`, private planning archive — not published). The step-by-step
 operator procedure is
-[docs/runbooks/azure-subscription-import.md](../../../docs/runbooks/azure-subscription-import.md).
+`docs/runbooks/azure-subscription-import.md` (not written).
 
 ## Guiding rules
 
@@ -53,7 +53,7 @@ applies Terraform.
   state container so it can read and write state, plus whatever contributor scope the
   managed resources genuinely require.
 - Repo + branch protection + CODEOWNERS + gated `prod` environment already exist
-  ([../../../docs/cicd.md](../../../docs/cicd.md)); wire the Azure env root's backend to the new
+  (../../../docs/cicd.md (`docs/cicd.md` — not written)); wire the Azure env root's backend to the new
   Storage Account.
 
 ### Phase 1 — Discovery & classification
@@ -111,7 +111,7 @@ MySQL flexible servers, Cosmos DB accounts, Recovery Services vaults.
 
 - Restrict portal write access for imported services (Azure RBAC scoped to Reader for most
   humans, deny-assignments / management locks where appropriate).
-- Scheduled drift detection ([runbook](../../../docs/runbooks/drift-detection.md)); wire the
+- Scheduled drift detection (runbook (`docs/runbooks/drift-detection.md` — not written)); wire the
   Azure env root into the drift job. Security-posture drift is surfaced and **reverted**,
   never adopted.
 - Deprecate-disposition resources cleaned up (backup → owner sign-off → delete).

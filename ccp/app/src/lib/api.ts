@@ -29,7 +29,7 @@ import {
   SYSTEM_OPERATIONS,
   isSystemDriftOp,
 } from '@/lib/systemOps';
-import { manifests as bundledManifests } from '@/data/manifests';
+import { loadBundledManifests } from '@/lib/bundledCatalog';
 import inventoryData from '@/data/inventory.json';
 import {
   currentProjectId,
@@ -119,9 +119,9 @@ const EMPTY_INVENTORY: Inventory = { generatedAt: null, resources: [] };
  * name (an injected/registered project with no vendored data). Resolution
  * rule: sample id → bundled; vendored id → vendored; anything else → empty
  * (projectRegistry.test.ts pins all three arms). */
-function activeManifests(): ServiceManifest[] {
+async function activeManifests(): Promise<ServiceManifest[]> {
   const id = currentProjectId();
-  if (id === SAMPLE_ESTATE_ID) return bundledManifests;
+  if (id === SAMPLE_ESTATE_ID) return loadBundledManifests();
   return vendoredManifestsFor(id);
 }
 
@@ -159,10 +159,21 @@ export { SERVER_FLOWS, noCapabilities };
  * reason inline. `code` buckets the taxonomy the real API returns: `FROZEN`
  * (estate frozen → HTTP 423), `OP_DISABLED`/`OUT_OF_BOUNDS` (→ 422), `FORBIDDEN`
  * (any other refusal — team scope, role, no session).
+ *
+ * `UNREACHABLE` is the one code the SERVER never produces: it means the call
+ * never got an answer at all (a rejected fetch — dropped link, api restart,
+ * proxy error). It is a distinct code rather than being folded into
+ * `FORBIDDEN` because the two mean opposite things to a requester — a
+ * refusal is final and needs a different draft, an unreachable server needs
+ * the same draft sent again (FE-1). Nothing was submitted either way.
  */
 export type SubmitResult =
   | { ok: true; request: ChangeRequest }
-  | { ok: false; reason: string; code: 'FROZEN' | 'OP_DISABLED' | 'OUT_OF_BOUNDS' | 'FORBIDDEN' };
+  | {
+      ok: false;
+      reason: string;
+      code: 'FROZEN' | 'OP_DISABLED' | 'OUT_OF_BOUNDS' | 'FORBIDDEN' | 'UNREACHABLE';
+    };
 
 /**
  * The outcome of "Start drift check" (spec addendum A7 / plan B1,
@@ -1418,7 +1429,7 @@ export function createMockApiClient(): ApiClient {
         };
       }
       const now = new Date().toISOString();
-      const op = getOperation(draft.operationId, bundledManifests);
+      const op = getOperation(draft.operationId, await loadBundledManifests());
       // Pin the generated diff to the request now: approvers render this
       // exact artifact, not one regenerated later from mutable inventory. Redacted.
       // When the op is not in the bundled catalog (the generic "provision any
@@ -1502,6 +1513,7 @@ export function createMockApiClient(): ApiClient {
       // ATOMIC: resolve + gate EVERY item before building anything — one bad item rejects
       // the whole set and nothing is added.
       const resolved: Array<{ op: ManifestOperation; item: ChangeSetDraft['items'][number] }> = [];
+      const catalog = await loadBundledManifests();
       for (const it of draft.items) {
         // The direct lane is closed for a drift system op — checked BEFORE
         // getOperation's catalog-miss branch below, since getOperation now
@@ -1514,7 +1526,7 @@ export function createMockApiClient(): ApiClient {
             reason: 'Drift-fix requests are submitted only from the Drift page, never a manual request.',
           };
         }
-        const op = getOperation(it.operationId, bundledManifests);
+        const op = getOperation(it.operationId, catalog);
         if (!op)
           return {
             ok: false,
@@ -1640,7 +1652,7 @@ export function createMockApiClient(): ApiClient {
       // Tighten-only re-gate: if the operation was reclassified to a
       // higher risk (or the policy tightened) after submit, the request needs the
       // higher count now — a later downgrade can never lower an open request's bar.
-      const op = getOperation(req.operationId, bundledManifests);
+      const op = getOperation(req.operationId, await loadBundledManifests());
       const currentRequired = op ? approvalsRequiredFor(op) : (req.approvalsRequired ?? 1);
       const required = Math.max(req.approvalsRequired ?? 1, currentRequired);
       req.approvalsRequired = required;
