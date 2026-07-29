@@ -119,13 +119,16 @@ at HEAD first, and if it is closed, close it with evidence rather than a patch.
 
 **Model:** opus · **Findings:** 4 · **Touches:** `ccp/api/src/routes/requests.ts, ccp/api/src/domain/bundle.ts`
 
+**Status: 3 of 4 closed.** Only **ERR-12** is left, and it is self-contained — it needs no
+context from the three below beyond knowing that the bundle's outcome path is now
+merge-into-the-timeline rather than replace-it.
 
 | finding | sev | expected result |
 | --- | --- | --- |
-| **CONC-6** | medium | A throwing `runBundle` reaches a terminal `bundle` state instead of leaving `running`; the outcome's AUDIT ENTRY lands even when the request row refuses the update (a cancel won), because a fired deploy is a fact and not a state transition; the caller gets a specific code, not CHAIN_CONTENTION with nothing written. |
-| **API-5** | medium | A cancel committed during a bundle can no longer produce `CANCELLED` on a request whose change applied: either the cancel refuses while a live claim exists, or the timeline records both truthfully. Decide which, and say why in the fix entry. |
+| ~~**CONC-6**~~ | medium | **DONE.** A throwing `runBundle` reaches a terminal `bundle` state instead of leaving `running`; the outcome's AUDIT ENTRY lands even when the request row refuses the update, because a fired deploy is a fact and not a state transition; the caller gets a specific code, not CHAIN_CONTENTION with nothing written. **Note for whoever reads this next:** gap 2 had *moved* since the finding was written — ERR-11's guard change closed it as literally stated and opened a quieter variant (the timeline being replaced rather than lost). See L-29. |
+| ~~**API-5**~~ | medium | **DONE.** Answered with *refuse at the front door* — cancel returns `BUNDLE_RUNNING` while a claim is live and `BUNDLE_TRIGGERED` once the commit landed — with CONC-6's truthful-timeline merge as the backstop for the residual read-then-act sliver. Reasoning in the fix entry. |
 | **ERR-12** | medium | A trigger failure after a landed commit stops being a dead end: the request reaches a state with an exit, and a spawn TIMEOUT is distinguishable from `exit 1` in the recorded evidence. |
-| **API-4** | medium | VERIFY, DO NOT RE-FIX. Both defects look closed already — ERR-11 made the claim guard `eventSeq` (which the claim advances), and ERR-2 added the lease + takeover. Confirm against the code, add a regression test if none pins it, then close with evidence. If any part survives, fix only that part. |
+| ~~**API-4**~~ | medium | **DONE — verified closed, no code changed.** ERR-11 made the claim guard `eventSeq` (which the claim advances) and ERR-2 added the lease + takeover; `test/bundleClaimLease.test.ts` already pins both. Confirmed against the current code. |
 
 
 ## B-O2 — Scheduler & executor semantics

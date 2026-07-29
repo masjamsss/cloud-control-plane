@@ -1,9 +1,9 @@
 {
   "generated_from": "docs/audit/FINDINGS.md + docs/audit/TRIAGE.md",
-  "authoritative_source": "docs/audit/FINDINGS.md — if this file disagrees, FINDINGS.md wins",
-  "open_findings": 139,
+  "authoritative_source": "docs/audit/FINDINGS.md \u2014 if this file disagrees, FINDINGS.md wins",
+  "open_findings": 136,
   "rules": {
-    "take": "a whole batch id, not individual findings — batches are grouped by files touched",
+    "take": "a whole batch id, not individual findings \u2014 batches are grouped by files touched",
     "baseline": "parallel lanes must NOT touch scripts/findings-baseline.txt; it is a ceiling, not an exact match. One reconciliation commit at the end.",
     "runbook": "docs/audit/TRIAGE.md#worker-runbook"
   },
@@ -87,7 +87,8 @@
           "title": "The bundle claim has no crash/exception/race recovery: `bundle.state:'running'` can stick forever, and a raced outcome write loses the record of a fired deploy",
           "lane": null,
           "expected_result": "A throwing `runBundle` reaches a terminal `bundle` state instead of leaving `running`; the outcome's AUDIT ENTRY lands even when the request row refuses the update (a cancel won), because a fired deploy is a fact and not a state transition; the caller gets a specific code, not CHAIN_CONTENTION with nothing written.",
-          "verify_first": false
+          "verify_first": false,
+          "status": "closed"
         },
         {
           "id": "API-5",
@@ -97,7 +98,8 @@
           "title": "Cancel can race an in-flight bundle: the change applies but the request reads CANCELLED",
           "lane": null,
           "expected_result": "A cancel committed during a bundle can no longer produce `CANCELLED` on a request whose change applied: either the cancel refuses while a live claim exists, or the timeline records both truthfully. Decide which, and say why in the fix entry.",
-          "verify_first": false
+          "verify_first": false,
+          "status": "closed"
         },
         {
           "id": "ERR-12",
@@ -116,8 +118,9 @@
           "report": "docs/audit/02-api-correctness.md",
           "title": "The bundle \"claim\" is not a mutual-exclusion, and a crashed bundle wedges the request at `running`",
           "lane": null,
-          "expected_result": "VERIFY, DO NOT RE-FIX. Both defects look closed already — ERR-11 made the claim guard `eventSeq` (which the claim advances), and ERR-2 added the lease + takeover. Confirm against the code, add a regression test if none pins it, then close with evidence. If any part survives, fix only that part.",
-          "verify_first": true
+          "expected_result": "VERIFY, DO NOT RE-FIX. Both defects look closed already \u2014 ERR-11 made the claim guard `eventSeq` (which the claim advances), and ERR-2 added the lease + takeover. Confirm against the code, add a regression test if none pins it, then close with evidence. If any part survives, fix only that part.",
+          "verify_first": false,
+          "status": "closed"
         }
       ]
     },
@@ -145,7 +148,7 @@
           "report": "docs/audit/09-error-handling.md",
           "title": "`TerraformExecutor.init()` caches a rejected promise: one transient init failure bricks the executor until restart",
           "lane": null,
-          "expected_result": "One transient `init()` failure no longer bricks the executor until restart — the rejected promise is not cached, and a retry can succeed.",
+          "expected_result": "One transient `init()` failure no longer bricks the executor until restart \u2014 the rejected promise is not cached, and a retry can succeed.",
           "verify_first": false
         },
         {
@@ -165,7 +168,7 @@
           "report": "docs/audit/11-performance-scalability.md",
           "title": "Scheduler tick re-scans every project's full request collection every minute",
           "lane": null,
-          "expected_result": "The tick stops re-scanning every project's full request collection every minute. Needs an index or a due-set the write path maintains — a design decision, not a loop tweak.",
+          "expected_result": "The tick stops re-scanning every project's full request collection every minute. Needs an index or a due-set the write path maintains \u2014 a design decision, not a loop tweak.",
           "verify_first": false
         },
         {
@@ -194,7 +197,7 @@
           "report": "docs/audit/03-data-integrity.md",
           "title": "Store rows are not validated against the schemas on load: corrupt-but-parseable state is accepted silently",
           "lane": null,
-          "expected_result": "Corrupt-but-parseable rows stop loading silently. WARNING: the wrong shim fails a BOOT, not a test (see R-41) — design the legacy-passthrough against real stored shapes, and make refusing loud and specific about which row.",
+          "expected_result": "Corrupt-but-parseable rows stop loading silently. WARNING: the wrong shim fails a BOOT, not a test (see R-41) \u2014 design the legacy-passthrough against real stored shapes, and make refusing loud and specific about which row.",
           "verify_first": false
         },
         {
@@ -234,7 +237,7 @@
           "report": "docs/audit/03-data-integrity.md",
           "title": "Seam-fidelity gaps between MemoryStore and the promised DynamoDB semantics",
           "lane": null,
-          "expected_result": "As API-17 — batch them; they are the same list from two reports.",
+          "expected_result": "As API-17 \u2014 batch them; they are the same list from two reports.",
           "verify_first": false
         },
         {
@@ -263,7 +266,7 @@
           "report": "docs/audit/11-performance-scalability.md",
           "title": "Per-project audit chain head serializes all writes and surfaces contention as user-facing 409s after one retry",
           "lane": null,
-          "expected_result": "Chain-head contention stops surfacing as user-facing 409s after one retry. The chain is the product's evidence store — a fix that drops entries under load is worse than the 409.",
+          "expected_result": "Chain-head contention stops surfacing as user-facing 409s after one retry. The chain is the product's evidence store \u2014 a fix that drops entries under load is worse than the 409.",
           "verify_first": false
         },
         {
@@ -273,7 +276,7 @@
           "report": "docs/audit/11-performance-scalability.md",
           "title": "Nothing in the store is ever purged: sessions, idempotency markers, and the audit chain grow forever (and every byte is re-serialized per request)",
           "lane": null,
-          "expected_result": "A retention story exists for sessions, idempotency markers and the chain. RETENTION OF AN AUDIT CHAIN IS A PRODUCT DECISION, not a cleanup task — state the policy explicitly and get it agreed before implementing.",
+          "expected_result": "A retention story exists for sessions, idempotency markers and the chain. RETENTION OF AN AUDIT CHAIN IS A PRODUCT DECISION, not a cleanup task \u2014 state the policy explicitly and get it agreed before implementing.",
           "verify_first": false
         },
         {
@@ -283,7 +286,7 @@
           "report": "docs/audit/11-performance-scalability.md",
           "title": "Admin audit \"pagination\" materializes and re-sorts the whole chain per page; cursor lookup is a linear scan",
           "lane": null,
-          "expected_result": "Admin audit paging stops materializing and re-sorting the whole chain per page, and the cursor lookup stops being a linear scan. Same family as PERF-3 (done) — reuse its cursor semantics.",
+          "expected_result": "Admin audit paging stops materializing and re-sorting the whole chain per page, and the cursor lookup stops being a linear scan. Same family as PERF-3 (done) \u2014 reuse its cursor semantics.",
           "verify_first": false
         }
       ]
@@ -302,7 +305,7 @@
           "report": "docs/audit/01-architecture.md",
           "title": "The backend depends on frontend-package internals; the shared-contract layer is a path alias plus a hand-synced copy",
           "lane": null,
-          "expected_result": "A real shared package replaces the `@app-lib` path alias + hand-synced `planSummary` copy, installed by both CI jobs. HAZARD: a zod VALUE import through the alias silently collapses the api's types to `unknown` in CI — that is why the copy exists. Until the package lands, an allowlist lint + a copy-parity test is the acceptable partial.",
+          "expected_result": "A real shared package replaces the `@app-lib` path alias + hand-synced `planSummary` copy, installed by both CI jobs. HAZARD: a zod VALUE import through the alias silently collapses the api's types to `unknown` in CI \u2014 that is why the copy exists. Until the package lands, an allowlist lint + a copy-parity test is the acceptable partial.",
           "verify_first": false
         },
         {
@@ -312,7 +315,7 @@
           "report": "docs/audit/01-architecture.md",
           "title": "The governance domain is implemented twice (server + browser mock) with acknowledged behavioral divergence",
           "lane": null,
-          "expected_result": "The mock's surface shrinks toward 'the http client over an in-browser toy store', and the mock-vs-api behavioural gaps are enumerated in ONE table instead of scattered comments. Note ARCH-7 already moved the status vocabulary into the shared seam — follow that shape.",
+          "expected_result": "The mock's surface shrinks toward 'the http client over an in-browser toy store', and the mock-vs-api behavioural gaps are enumerated in ONE table instead of scattered comments. Note ARCH-7 already moved the status vocabulary into the shared seam \u2014 follow that shape.",
           "verify_first": false
         },
         {
@@ -351,7 +354,7 @@
           "report": "docs/audit/09-error-handling.md",
           "title": "No process-level failure handling: no graceful shutdown, no rejection/exception handlers, npm-as-PID-1",
           "lane": null,
-          "expected_result": "The api is not `npm` as PID 1; SIGTERM is handled; rejection/exception handlers exist and do the right thing. PARTIAL ALREADY: OPS-2 installed handlers and CONC-7 added SIGTERM/SIGINT lock release — build on those, and note R-16 (neither process error handler exits).",
+          "expected_result": "The api is not `npm` as PID 1; SIGTERM is handled; rejection/exception handlers exist and do the right thing. PARTIAL ALREADY: OPS-2 installed handlers and CONC-7 added SIGTERM/SIGINT lock release \u2014 build on those, and note R-16 (neither process error handler exits).",
           "verify_first": false
         },
         {
@@ -361,7 +364,7 @@
           "report": "docs/audit/10-reliability-operations.md",
           "title": "No graceful shutdown: `npm` as PID 1, no SIGTERM handling, default 10 s grace on the api",
           "lane": null,
-          "expected_result": "As ERR-8 — the same defect from the ops report. Fix once, close both.",
+          "expected_result": "As ERR-8 \u2014 the same defect from the ops report. Fix once, close both.",
           "verify_first": false
         },
         {
@@ -371,7 +374,7 @@
           "report": "docs/audit/10-reliability-operations.md",
           "title": "Plain `compose up` (including every self-update cycle) silently strips the armed overlay",
           "lane": null,
-          "expected_result": "A plain `compose up` can no longer silently strip the armed overlay, including on every self-update cycle. The fix shape is contested: refuse, warn, or make arming sticky — pick one and justify it.",
+          "expected_result": "A plain `compose up` can no longer silently strip the armed overlay, including on every self-update cycle. The fix shape is contested: refuse, warn, or make arming sticky \u2014 pick one and justify it.",
           "verify_first": false
         },
         {
@@ -408,7 +411,7 @@
           "severity": "medium",
           "topic": "authz-identity",
           "report": "docs/audit/03-data-integrity.md",
-          "title": "v1 migration writes rows that violate the store schemas, including an `id`≠`username` shape that breaks session resolution",
+          "title": "v1 migration writes rows that violate the store schemas, including an `id`\u2260`username` shape that breaks session resolution",
           "lane": null,
           "expected_result": "The v1 migration stops writing schema-violating rows; the `id` != `username` shape that breaks session resolution is corrected, with a path for rows already written.",
           "verify_first": false
@@ -420,7 +423,7 @@
           "report": "docs/audit/05-frontend-flows.md",
           "title": "apiSession role resolution falls back to another scope's role when the user has no binding on the active project",
           "lane": null,
-          "expected_result": "Role resolution never falls back to another scope's role when the user has no binding on the active project. Fail closed — this is an authz fail-open.",
+          "expected_result": "Role resolution never falls back to another scope's role when the user has no binding on the active project. Fail closed \u2014 this is an authz fail-open.",
           "verify_first": false
         },
         {
@@ -469,7 +472,7 @@
           "report": "docs/audit/13-ci-cd.md",
           "title": "PG-5's secret heuristic misses the most common real-world shapes, and its designated backstop is dead in CI",
           "lane": null,
-          "expected_result": "PG-5 catches the common real-world secret shapes, and its designated backstop actually runs in CI. THE CLASS: a check that cannot run must be indistinguishable from nothing, never from a pass (this session hit exactly that — PG-9 skipped locally with no gitleaks and a token-shaped literal reached CI).",
+          "expected_result": "PG-5 catches the common real-world secret shapes, and its designated backstop actually runs in CI. THE CLASS: a check that cannot run must be indistinguishable from nothing, never from a pass (this session hit exactly that \u2014 PG-9 skipped locally with no gitleaks and a token-shaped literal reached CI).",
           "verify_first": false
         },
         {
@@ -479,7 +482,7 @@
           "report": "docs/audit/13-ci-cd.md",
           "title": "Whether the api's live parity/integration suites run in CI depends on unpinned runner-preinstalled toolchains; nothing asserts they ran",
           "lane": null,
-          "expected_result": "Whether the live parity/integration suites ran is asserted, not inferred from an unpinned preinstalled toolchain. `CCP_REQUIRE_INTEGRATION=1` (TEST-4) is the established shape — extend it.",
+          "expected_result": "Whether the live parity/integration suites ran is asserted, not inferred from an unpinned preinstalled toolchain. `CCP_REQUIRE_INTEGRATION=1` (TEST-4) is the established shape \u2014 extend it.",
           "verify_first": false
         },
         {
@@ -509,7 +512,7 @@
           "report": "docs/audit/13-ci-cd.md",
           "title": "release-images publishes on any tag with no quality gate, mutable version stamping, and an unconditional `latest`",
           "lane": null,
-          "expected_result": "release-images gets a quality gate, immutable version stamping, and a conditional `latest`. Release safety — a wrong fix ships a bad image under a good tag.",
+          "expected_result": "release-images gets a quality gate, immutable version stamping, and a conditional `latest`. Release safety \u2014 a wrong fix ships a bad image under a good tag.",
           "verify_first": false
         },
         {
@@ -529,7 +532,7 @@
           "report": "docs/audit/12-testing-quality.md",
           "title": "OpenAPI contract test is substring matching, not conformance",
           "lane": null,
-          "expected_result": "As ARCH-14 — same defect, two reports. Fix once.",
+          "expected_result": "As ARCH-14 \u2014 same defect, two reports. Fix once.",
           "verify_first": false
         },
         {
@@ -558,7 +561,7 @@
           "report": "docs/audit/07-catalogctl.md",
           "title": "plan-check R1 structurally vetoes every legitimate plan for a `local.`-targeted foreach op",
           "lane": null,
-          "expected_result": "plan-check R1 stops structurally vetoing every legitimate plan for a `local.`-targeted foreach op. WARNING: this is a SAFETY GATE — a loosening that is too broad is a silent security regression, so pin the newly-accepted shapes with fixtures.",
+          "expected_result": "plan-check R1 stops structurally vetoing every legitimate plan for a `local.`-targeted foreach op. WARNING: this is a SAFETY GATE \u2014 a loosening that is too broad is a silent security regression, so pin the newly-accepted shapes with fixtures.",
           "verify_first": false
         },
         {
@@ -578,7 +581,7 @@
           "report": "docs/audit/07-catalogctl.md",
           "title": "Duplicated literal-object token-walkers (edit vs driftpropose) have already diverged in behavior",
           "lane": null,
-          "expected_result": "The two literal-object token-walkers (edit vs driftpropose) stop diverging. They ALREADY have — reconciling means deciding which behaviour is correct, not merging the code.",
+          "expected_result": "The two literal-object token-walkers (edit vs driftpropose) stop diverging. They ALREADY have \u2014 reconciling means deciding which behaviour is correct, not merging the code.",
           "verify_first": false
         },
         {
@@ -598,7 +601,7 @@
           "report": "docs/audit/07-catalogctl.md",
           "title": "Shipped catalog op `waf-add-ip-set-entry` can never execute (exit 1 internal error); the corrected manifest exists only in test fixtures",
           "lane": null,
-          "expected_result": "`waf-add-ip-set-entry` executes, and the corrected manifest lives in the shipped catalog rather than only in test fixtures. Batch with CTL-11 — same root cause.",
+          "expected_result": "`waf-add-ip-set-entry` executes, and the corrected manifest lives in the shipped catalog rather than only in test fixtures. Batch with CTL-11 \u2014 same root cause.",
           "verify_first": false
         },
         {
@@ -637,7 +640,7 @@
           "report": "docs/audit/08-importer-schemadump.md",
           "title": "Committed schemadump artifacts are not reproducible via the documented `gen.sh` pipeline; generated-catalog staleness detection is entirely manual",
           "lane": null,
-          "expected_result": "Committed schemadump artifacts are reproducible via the documented `gen.sh`, and staleness detection is mechanical rather than manual. NOTE: IMP-4 (done) added a self-check that REFUSES TO WRITE on anchor mismatch — extend that discipline, and read its lesson about a field-name typo producing a uniform zero.",
+          "expected_result": "Committed schemadump artifacts are reproducible via the documented `gen.sh`, and staleness detection is mechanical rather than manual. NOTE: IMP-4 (done) added a self-check that REFUSES TO WRITE on anchor mismatch \u2014 extend that discipline, and read its lesson about a field-name typo producing a uniform zero.",
           "verify_first": false
         },
         {
@@ -647,7 +650,7 @@
           "report": "docs/audit/08-importer-schemadump.md",
           "title": "Coverage-sweep family granularity marks undiscoverable resources as \"covered\" (documented, but with a concrete silent case)",
           "lane": null,
-          "expected_result": "Coverage-sweep family granularity stops marking undiscoverable resources as covered. IMP-4's family matcher is the adjacent code and was subtle — read it first.",
+          "expected_result": "Coverage-sweep family granularity stops marking undiscoverable resources as covered. IMP-4's family matcher is the adjacent code and was subtle \u2014 read it first.",
           "verify_first": false
         }
       ]
@@ -666,7 +669,7 @@
           "report": "docs/audit/11-performance-scalability.md",
           "title": "Submit-path full scans: rate-limit check and feasibility each re-scan whole collections per submission",
           "lane": null,
-          "expected_result": "The submit path stops re-scanning whole collections per submission for the rate-limit and feasibility checks. Needs an index or a maintained counter — and NOTE the counter must stay correct under the concurrency CONC-12 describes.",
+          "expected_result": "The submit path stops re-scanning whole collections per submission for the rate-limit and feasibility checks. Needs an index or a maintained counter \u2014 and NOTE the counter must stay correct under the concurrency CONC-12 describes.",
           "verify_first": false
         },
         {
@@ -695,7 +698,7 @@
           "report": "docs/audit/04-concurrency.md",
           "title": "`transactWithAudit` conflates a caller's domain guard failure with chain contention, producing dead error paths and mislabeled conflicts",
           "lane": null,
-          "expected_result": "`transactWithAudit` stops conflating a caller's domain guard failure with chain contention. NOTE: this session's CONC-9 fix leans on the current behaviour (a guarded write is refused rather than replayed) — do not break that property while separating the error paths.",
+          "expected_result": "`transactWithAudit` stops conflating a caller's domain guard failure with chain contention. NOTE: this session's CONC-9 fix leans on the current behaviour (a guarded write is refused rather than replayed) \u2014 do not break that property while separating the error paths.",
           "verify_first": false
         },
         {
@@ -705,7 +708,7 @@
           "report": "docs/audit/02-api-correctness.md",
           "title": "Conditional-write collisions inside `transactWithAudit` surface as the wrong error",
           "lane": null,
-          "expected_result": "As CONC-15 — the same defect from the API report. Fix once, close both.",
+          "expected_result": "As CONC-15 \u2014 the same defect from the API report. Fix once, close both.",
           "verify_first": false
         },
         {
@@ -772,7 +775,7 @@
           "severity": "medium",
           "topic": "duplication",
           "report": "docs/audit/05-frontend-flows.md",
-          "title": "Api-mode submit gates read the advisory localStorage settings, not the server's — the freeze preview is dead and a stale local freeze silently blocks valid submits",
+          "title": "Api-mode submit gates read the advisory localStorage settings, not the server's \u2014 the freeze preview is dead and a stale local freeze silently blocks valid submits",
           "lane": null,
           "expected_result": "Api-mode submit gates read the SERVER's settings, not advisory localStorage. Two bugs to close: the dead freeze preview, and a stale local freeze silently blocking submits.",
           "verify_first": false
@@ -784,7 +787,7 @@
           "report": "docs/audit/12-testing-quality.md",
           "title": "The SPA has no DOM/interaction testing; ~25 test files pin UI by source-string inspection",
           "lane": null,
-          "expected_result": "The SPA gets interaction testing, OR a written decision that it will not. NOTE R-22: this repo has NO jsdom and `test/standalone.test.ts` enforces a dependency allowlist — 'add jsdom' is a real architectural change, not a dependency bump.",
+          "expected_result": "The SPA gets interaction testing, OR a written decision that it will not. NOTE R-22: this repo has NO jsdom and `test/standalone.test.ts` enforces a dependency allowlist \u2014 'add jsdom' is a real architectural change, not a dependency bump.",
           "verify_first": false
         },
         {
@@ -814,7 +817,7 @@
           "report": "docs/audit/03-data-integrity.md",
           "title": "Backup/restore covers only the store JSON; the on-disk project-data/drift root it references is out of scope, with no consistency check",
           "lane": null,
-          "expected_result": "Backup/restore covers the on-disk project-data/drift root it references, with a consistency check. NOTE: CONC-7/DATA-9 (done) added a writer lock that restore now takes — build on it.",
+          "expected_result": "Backup/restore covers the on-disk project-data/drift root it references, with a consistency check. NOTE: CONC-7/DATA-9 (done) added a writer lock that restore now takes \u2014 build on it.",
           "verify_first": false
         },
         {
@@ -853,7 +856,7 @@
           "report": "docs/audit/09-error-handling.md",
           "title": "Unexpected errors become `{code:'INTERNAL'}` 500 with zero server-side logging",
           "lane": "run-last",
-          "expected_result": "VERIFY ONLY. OPS-2 added server-side logging for unexpected errors. Confirm every 500 path logs, then close — or fix only the paths that do not.",
+          "expected_result": "VERIFY ONLY. OPS-2 added server-side logging for unexpected errors. Confirm every 500 path logs, then close \u2014 or fix only the paths that do not.",
           "verify_first": true
         },
         {
@@ -902,7 +905,7 @@
           "report": "docs/audit/14-contracts-docs.md",
           "title": "Request-status vocabulary is three-way inconsistent (SPA union vs server writes vs YAML prose)",
           "lane": "L1",
-          "expected_result": "The YAML prose, the SPA union and the server writes agree. DEPENDS ON ARCH-7 (done): the closed set now lives in `ccp/app/src/lib/requestStatus.ts` — point the docs at it and add a check that keeps them agreeing.",
+          "expected_result": "The YAML prose, the SPA union and the server writes agree. DEPENDS ON ARCH-7 (done): the closed set now lives in `ccp/app/src/lib/requestStatus.ts` \u2014 point the docs at it and add a check that keeps them agreeing.",
           "verify_first": false
         },
         {
@@ -941,7 +944,7 @@
           "report": "docs/audit/14-contracts-docs.md",
           "title": "ERROR-STATES.md's \"every error code the API can return\" is missing 8 taxonomy codes and 6 inline literals",
           "lane": "L4",
-          "expected_result": "ERROR-STATES.md lists every error code the API can return — all 8 missing taxonomy codes and 6 inline literals. ADD A GENERATED CHECK so it cannot drift again; a hand-updated list is the defect.",
+          "expected_result": "ERROR-STATES.md lists every error code the API can return \u2014 all 8 missing taxonomy codes and 6 inline literals. ADD A GENERATED CHECK so it cannot drift again; a hand-updated list is the defect.",
           "verify_first": false
         },
         {
@@ -971,7 +974,7 @@
           "report": "docs/audit/14-contracts-docs.md",
           "title": "catalogctl README makes two explicit completeness claims that are false",
           "lane": "L4",
-          "expected_result": "catalogctl README's two completeness claims are true, or removed. Same shape as ARCH-12 — batch them.",
+          "expected_result": "catalogctl README's two completeness claims are true, or removed. Same shape as ARCH-12 \u2014 batch them.",
           "verify_first": false
         },
         {
@@ -981,7 +984,7 @@
           "report": "docs/audit/14-contracts-docs.md",
           "title": "Four operator-facing env vars are undocumented (two of them documented nowhere at all)",
           "lane": "L4",
-          "expected_result": "All four operator-facing env vars are documented. NOTE: `CCP_GIT_PROJECT` and `CCP_DATA_LOCK_TAKEOVER` were added this session and ARE documented — check the finding's list against HEAD before writing.",
+          "expected_result": "All four operator-facing env vars are documented. NOTE: `CCP_GIT_PROJECT` and `CCP_DATA_LOCK_TAKEOVER` were added this session and ARE documented \u2014 check the finding's list against HEAD before writing.",
           "verify_first": false
         },
         {
@@ -989,9 +992,9 @@
           "severity": "low",
           "topic": "authz-identity",
           "report": "docs/audit/14-contracts-docs.md",
-          "title": "PERMISSIONS.md §9 cites a \"§2 apply row\" that does not exist",
+          "title": "PERMISSIONS.md \u00a79 cites a \"\u00a72 apply row\" that does not exist",
           "lane": "L4",
-          "expected_result": "PERMISSIONS.md no longer cites a '§2 apply row' that does not exist.",
+          "expected_result": "PERMISSIONS.md no longer cites a '\u00a72 apply row' that does not exist.",
           "verify_first": false
         },
         {
@@ -1070,7 +1073,7 @@
           "report": "docs/audit/02-api-correctness.md",
           "title": "`prNumberFromUrl` extracts a \"PR number\" from any URL ending in digits",
           "lane": "L7",
-          "expected_result": "`prNumberFromUrl` no longer extracts a 'PR number' from any URL ending in digits — it validates the shape.",
+          "expected_result": "`prNumberFromUrl` no longer extracts a 'PR number' from any URL ending in digits \u2014 it validates the shape.",
           "verify_first": false
         }
       ]
@@ -1157,7 +1160,7 @@
           "severity": "low",
           "topic": "silent-failure",
           "report": "docs/audit/06-frontend-ui-robustness.md",
-          "title": "Configure ⇄ Review step transitions never move focus, and the Suspense skeleton is silent for assistive tech",
+          "title": "Configure \u21c4 Review step transitions never move focus, and the Suspense skeleton is silent for assistive tech",
           "lane": "L1",
           "expected_result": "Configure <-> Review transitions move focus, and the Suspense skeleton announces itself.",
           "verify_first": false
@@ -1217,7 +1220,7 @@
           "severity": "medium",
           "topic": "authz-identity",
           "report": "docs/audit/05-frontend-flows.md",
-          "title": "PendingChangesBanner count goes stale after any dual-control activity — and the mock branch reads an unsubscribed store",
+          "title": "PendingChangesBanner count goes stale after any dual-control activity \u2014 and the mock branch reads an unsubscribed store",
           "lane": "L1",
           "expected_result": "PendingChangesBanner's count stays fresh after dual-control activity, and the mock branch subscribes to the store it reads.",
           "verify_first": false
@@ -1227,9 +1230,9 @@
           "severity": "medium",
           "topic": "silent-failure",
           "report": "docs/audit/05-frontend-flows.md",
-          "title": "AuditHistory silently truncates to the first page (100 entries) — the cursor is fetched and thrown away",
+          "title": "AuditHistory silently truncates to the first page (100 entries) \u2014 the cursor is fetched and thrown away",
           "lane": "L1",
-          "expected_result": "AuditHistory pages instead of silently truncating at 100 — the cursor it already fetches is used. PERF-3 (done) built the server side.",
+          "expected_result": "AuditHistory pages instead of silently truncating at 100 \u2014 the cursor it already fetches is used. PERF-3 (done) built the server side.",
           "verify_first": false
         },
         {
@@ -1258,7 +1261,7 @@
           "report": "docs/audit/11-performance-scalability.md",
           "title": "`ServiceConsole` loads the entire block-source corpus on every service page mount, fetching server chunks sequentially",
           "lane": "L1",
-          "expected_result": "`ServiceConsole` stops loading the entire block-source corpus on every mount. THE PATTERN EXISTS: `lib/providerCatalog.ts` uses non-eager `import.meta.glob`, and PERF-5 (done) applied the same idea to the manifests — copy it.",
+          "expected_result": "`ServiceConsole` stops loading the entire block-source corpus on every mount. THE PATTERN EXISTS: `lib/providerCatalog.ts` uses non-eager `import.meta.glob`, and PERF-5 (done) applied the same idea to the manifests \u2014 copy it.",
           "verify_first": false
         },
         {
@@ -1278,7 +1281,7 @@
           "report": "docs/audit/11-performance-scalability.md",
           "title": "Request-history views render unbounded lists without windowing",
           "lane": "L1",
-          "expected_result": "Request-history views window their lists. Virtualization already exists in this codebase — reuse it.",
+          "expected_result": "Request-history views window their lists. Virtualization already exists in this codebase \u2014 reuse it.",
           "verify_first": false
         },
         {
@@ -1307,7 +1310,7 @@
           "report": "docs/audit/02-api-correctness.md",
           "title": "The 72-hour dual-control expiry is dead code: `sweepExpired` has no callers and `ackPending` never checks `expiresAt`",
           "lane": "L2",
-          "expected_result": "The 72-hour dual-control expiry is enforced: `sweepExpired` has a caller and `ackPending` checks `expiresAt`. THE PATTERN IS SETTLE-ON-READ, used four times already (APPLYING, scan jobs, bundle claims) — follow it rather than adding a timer. NOTE: CONC-9 (this session) already made `sweepExpired` guarded and idempotent.",
+          "expected_result": "The 72-hour dual-control expiry is enforced: `sweepExpired` has a caller and `ackPending` checks `expiresAt`. THE PATTERN IS SETTLE-ON-READ, used four times already (APPLYING, scan jobs, bundle claims) \u2014 follow it rather than adding a timer. NOTE: CONC-9 (this session) already made `sweepExpired` guarded and idempotent.",
           "verify_first": false
         },
         {
@@ -1317,7 +1320,7 @@
           "report": "docs/audit/03-data-integrity.md",
           "title": "The 72-hour dual-control expiry is unenforced: `sweepExpired` is dead code and `ackPending` never checks `expiresAt`",
           "lane": "L2",
-          "expected_result": "Identical to API-6 — same defect, two reports. Fix once, close both.",
+          "expected_result": "Identical to API-6 \u2014 same defect, two reports. Fix once, close both.",
           "verify_first": false
         },
         {
@@ -1377,7 +1380,7 @@
           "report": "docs/audit/15-remediation.md",
           "title": "Session rows are still written with blind full-row puts",
           "lane": "L2",
-          "expected_result": "The remaining blind full-row session puts become guarded writes. WORKED EXAMPLE: API-10 (this session) converted the idle slide — copy its shape, INCLUDING its rule that a lost condition means re-read, not log out.",
+          "expected_result": "The remaining blind full-row session puts become guarded writes. WORKED EXAMPLE: API-10 (this session) converted the idle slide \u2014 copy its shape, INCLUDING its rule that a lost condition means re-read, not log out.",
           "verify_first": false
         }
       ]
@@ -1505,7 +1508,7 @@
           "report": "docs/audit/07-catalogctl.md",
           "title": "`danglingRef` substring scan falsely refuses removal when another resource's name extends the target's name",
           "lane": "L5",
-          "expected_result": "`danglingRef` stops falsely refusing removal when another resource's name extends the target's. FLAG: this is a SAFETY GATE — match identifiers exactly, and add a fixture proving the true-positive still refuses.",
+          "expected_result": "`danglingRef` stops falsely refusing removal when another resource's name extends the target's. FLAG: this is a SAFETY GATE \u2014 match identifiers exactly, and add a fixture proving the true-positive still refuses.",
           "verify_first": false
         },
         {
@@ -1545,7 +1548,7 @@
           "report": "docs/audit/03-data-integrity.md",
           "title": "Calendar-dependent test: the FileStore audit-durability test hardcodes month `202607`",
           "lane": "L7",
-          "expected_result": "The FileStore audit-durability test stops hardcoding month `202607` — same clock-seam lesson (L-26).",
+          "expected_result": "The FileStore audit-durability test stops hardcoding month `202607` \u2014 same clock-seam lesson (L-26).",
           "verify_first": false
         },
         {
@@ -1660,5 +1663,6 @@
         }
       ]
     }
-  ]
+  ],
+  "note_on_open_findings": "Count at the time TRIAGE.md was written was 139; three of B-O1's four (CONC-6, API-5, API-4) have since closed and carry \"status\": \"closed\". FINDINGS.md is authoritative."
 }

@@ -836,7 +836,15 @@ export interface HttpApiClient extends ApiClient {
    * requester nor a Lead/admin; `STATE_CONFLICT` — not a cancellable status,
    * which includes an already-elapsed cooling/maintenance window a lazy
    * settle hasn't caught up with yet — widened this beyond just
-   * APPROVED_COOLING). */
+   * APPROVED_COOLING).
+   *
+   * Two further codes come from the apply lane (API-5), both 409 and both
+   * carrying a reason written for the person who just clicked Cancel:
+   * `BUNDLE_RUNNING` — an apply bundle is in flight and may already have
+   * pushed, so this is a wait, not a no (the claim is leased, so it clears);
+   * `BUNDLE_TRIGGERED` — the commit landed and the deploy gate fired, so
+   * there is nothing left to cancel and the exit is a new revert request.
+   * Neither needs special-casing here: the surface renders `reason`. */
   cancelRequest(id: string): Promise<MutationResult>;
   /**
    * POST /requests/:id/rewindow — no mock equivalent either, same

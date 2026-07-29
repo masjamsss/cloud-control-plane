@@ -22,7 +22,7 @@ import { isSystemDriftOp } from '../domain/systemOps';
 import { disabledOps, isFrozen, loadPolicy, loadTeams, resolveRisk } from '../domain/config';
 import { checkSubmitRateLimit } from '../middleware/rateLimit';
 import { recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
-import { bundleArmed, bundleClaimLive, bundleConfig, realSteps, runBundle } from '../domain/bundle';
+import { bundleArmed, bundleClaimLive, bundleConfig, realSteps, runBundle, type BundleOutcome } from '../domain/bundle';
 import { resolveLaneRemote, type LaneProject } from '../domain/laneRepo';
 import { resolveKnob } from '../domain/deploymentSettings';
 import { coolingElapsed, settleCooling } from '../domain/cooling';
@@ -1185,36 +1185,88 @@ export function requestRoutes(): Hono<AppEnv> {
     }
 
     // The bundle itself (gate → CAS commit → trigger). Never terraform apply here.
-    const outcome = await runBundle(
-      realSteps(cfg),
-      JSON.stringify(bundleRequestPayload(req, projectId)),
-      `ccp: apply request ${req.id} (${req.operationId} on ${req.targetAddress})\n\nApproved in the portal (ADR-0016 bundle); plan gated + digest-pinned.\nRequested-by: ${req.requester}; bundle-run-by: ${account.id}`,
-    );
+    //
+    // CONC-6 gap 1 — A THROW MUST STILL TERMINATE THE CLAIM. `runBundle` is stop-on-red
+    // and cleanup-always, but it can still throw: an ENOSPC writing the request-evidence
+    // file, an unexpected error inside a step. There was no catch, so the response was a
+    // 500 and the row kept `bundle.state:'running'`. ERR-2's lease means that now clears
+    // itself after an hour rather than never — a real improvement, and still an hour in
+    // which a fully-approved request answers BUNDLE_RUNNING for a bundle that is not
+    // running. Turning the throw into a failed OUTCOME lets it take the ordinary terminal
+    // path below: the row reaches `failed`, the audit entry records why, and the caller
+    // gets a 502 describing what happened instead of an opaque 500.
+    let outcome: BundleOutcome;
+    try {
+      outcome = await runBundle(
+        realSteps(cfg),
+        JSON.stringify(bundleRequestPayload(req, projectId)),
+        `ccp: apply request ${req.id} (${req.operationId} on ${req.targetAddress})\n\nApproved in the portal (ADR-0016 bundle); plan gated + digest-pinned.\nRequested-by: ${req.requester}; bundle-run-by: ${account.id}`,
+      );
+    } catch (e) {
+      outcome = {
+        ok: false,
+        steps: [
+          {
+            step: 'prepare',
+            ok: false,
+            detail: `the bundle threw before reporting a step: ${e instanceof Error ? e.message : String(e)}`,
+          },
+        ],
+      };
+    }
 
     const done = nowIso();
     const bundle = outcome.ok ? { state: 'triggered' as const, sha: outcome.sha, at: done } : { state: 'failed' as const, at: done };
-    const events = [
-      ...req.events,
-      { at: done, type: outcome.ok ? 'bundle-triggered' : 'bundle-failed', label: outcome.ok ? `Apply bundle landed ${outcome.sha?.slice(0, 9)} and satisfied the deploy gate` : `Apply bundle failed at ${outcome.steps.find((s) => !s.ok)?.step ?? '?'}`, actor: account.id },
-    ];
-    // One chained audit entry carrying the full per-step evidence (gate output tail,
-    // landed SHA, trigger result) — the bundle's audit trail of record.
-    const entry: AuditEntryInput = {
-      action: 'request-bundle',
+    const bundleEvent = {
+      at: done,
+      type: outcome.ok ? 'bundle-triggered' : 'bundle-failed',
+      label: outcome.ok ? `Apply bundle landed ${outcome.sha?.slice(0, 9)} and satisfied the deploy gate` : `Apply bundle failed at ${outcome.steps.find((s) => !s.ok)?.step ?? '?'}`,
       actor: account.id,
-      targetType: 'request',
-      targetId: req.id,
-      requestId: req.id,
-      before: { status: req.status, bundle: req.bundle ?? null },
-      // ARCH-2 — WHICH estate's repository this run acted on, in the audit trail of
-      // record. The cross-estate clone was possible for years because the answer lived
-      // only in one process's environment; a reader of this chain could not have told
-      // that a request for estate B landed in estate A's repo.
-      after: { status: req.status, bundle, steps: outcome.steps, remote: { source: cfg.remoteSource, detail: cfg.remoteDetail, branch: cfg.branch } },
     };
     const hKey = chainHead(projectId);
+    let rowUpdated = false;
+    /** The row as it stood when the outcome was written — the honest `after` status. */
+    let settled: RequestItem = req;
     for (let attempt = 0; attempt < 2; attempt++) {
+      // CONC-6 gap 2 — THE TIMELINE IS APPENDED TO, NOT REPLACED.
+      //
+      // `AWAITING_DEPLOY_APPROVAL` is cancellable and the claim deliberately does not
+      // move `status`, so a cancel commits freely while the bundle runs — and cancel
+      // guards on `status`, advancing no `eventSeq`. The outcome write's ERR-11 guard
+      // therefore still PASSES over a cancel, which is what we want for `bundle` (the
+      // deploy fired; that field must reach a terminal state either way). What it must
+      // not do is carry `events` computed from the pre-bundle snapshot: `set` replaces
+      // the whole attribute, so the `cancelled` entry written minutes ago — during a
+      // bundle that can legitimately run for half an hour — was silently erased, leaving
+      // a CANCELLED request whose timeline never mentions the cancellation.
+      //
+      // The chain head is read FIRST and the row LAST, deliberately: it leaves no `await`
+      // between reading the timeline and writing it back, so on the in-process stores
+      // (`MemoryStore`, `FileStore` — single-threaded, no interleaving without a yield)
+      // the window is not merely narrow but empty. Read in the other order it would be
+      // one microtask wide, which is small but not nothing.
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
+      const fresh = ((await store.get(k.PK, k.SK)) as RequestItem | null) ?? req;
+      settled = fresh;
+      const events = [...fresh.events, bundleEvent];
+      // One chained audit entry carrying the full per-step evidence (gate output tail,
+      // landed SHA, trigger result) — the bundle's audit trail of record.
+      const entry: AuditEntryInput = {
+        action: 'request-bundle',
+        actor: account.id,
+        targetType: 'request',
+        targetId: req.id,
+        requestId: req.id,
+        before: { status: req.status, bundle: req.bundle ?? null },
+        // ARCH-2 — WHICH estate's repository this run acted on, in the audit trail of
+        // record. The cross-estate clone was possible for years because the answer lived
+        // only in one process's environment; a reader of this chain could not have told
+        // that a request for estate B landed in estate A's repo.
+        //
+        // `fresh.status`, not the pre-bundle one: if a cancel landed mid-run, the entry
+        // that records the fired deploy should say so.
+        after: { status: fresh.status, bundle, steps: outcome.steps, remote: { source: cfg.remoteSource, detail: cfg.remoteDetail, branch: cfg.branch } },
+      };
       const { writes } = recordIn(projectId, head, entry);
       try {
         await store.transact([
@@ -1224,14 +1276,73 @@ export function requestRoutes(): Hono<AppEnv> {
           { kind: 'update', pk: k.PK, sk: k.SK, set: { bundle, updatedAt: done, events, eventSeq: claimSeq + 1 }, ifEquals: { attr: 'eventSeq', value: claimSeq } },
           ...writes,
         ]);
+        rowUpdated = true;
         break;
       } catch (e) {
         if (e instanceof ConditionError && attempt === 0) continue; // chain contention → retry once
-        if (e instanceof ConditionError) throw new ApiError('CHAIN_CONTENTION');
-        throw e;
+        if (!(e instanceof ConditionError)) throw e;
+        break; // the row moved under us — fall through and record the outcome anyway
       }
     }
-    return c.json({ ok: outcome.ok, status: req.status, bundle, steps: outcome.steps }, outcome.ok ? 200 : 502);
+
+    // CONC-6 gaps 2 and 3 — THE EVIDENCE MUST LAND EVEN WHEN THE ROW WILL NOT TAKE IT.
+    //
+    // Something moved `eventSeq` past this handler's claim: a lease takeover by a second
+    // apply (ERR-2), or any future writer that advances the row's own sequence. Refusing
+    // the row update there is CORRECT — the claim is no longer ours and overwriting the
+    // winner would be a lost update. But the handler answered that by throwing
+    // CHAIN_CONTENTION with NOTHING written, *after the CI trigger had already fired*:
+    // a live deploy in flight with no recorded evidence anywhere. The same shape
+    // swallowed a fired trigger whenever the audit write failed for any other reason
+    // (gap 3), because the external effects happen before it.
+    //
+    // The two writes are not the same kind of thing and must not share a fate. The row
+    // update is a STATE TRANSITION and may legitimately lose a race. The audit entry is a
+    // RECORD OF WHAT HAPPENED — a commit was pushed, a deploy gate was satisfied — and no
+    // race makes that untrue. So when the row refuses, the entry still goes in, carrying
+    // the fact that it did.
+    if (!rowUpdated) {
+      const orphan: AuditEntryInput = {
+        action: 'request-bundle',
+        actor: account.id,
+        targetType: 'request',
+        targetId: req.id,
+        requestId: req.id,
+        before: { status: req.status, bundle: req.bundle ?? null },
+        after: {
+          status: settled.status,
+          bundle,
+          steps: outcome.steps,
+          remote: { source: cfg.remoteSource, detail: cfg.remoteDetail, branch: cfg.branch },
+          requestRowMoved: true,
+          note: 'the request row moved past this bundle’s claim while it ran (a lease takeover, or another writer), so the row’s bundle/timeline fields were NOT updated — but these effects did happen',
+        },
+      };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
+        const { writes } = recordIn(projectId, head, orphan);
+        try {
+          await store.transact(writes);
+          break;
+        } catch (e) {
+          if (e instanceof ConditionError && attempt === 0) continue;
+          throw e;
+        }
+      }
+      // 409, not 500: nothing is broken and nothing needs retrying. The deploy really did
+      // fire and is recorded; the request row is simply no longer this bundle's to write.
+      return c.json(
+        {
+          code: 'BUNDLE_ROW_MOVED',
+          reason:
+            'The bundle ran to completion and its outcome is recorded in the audit chain, but the request moved past this run’s claim while it was running (a lease takeover, or another writer) so the request row was not updated. Read the audit entry for what actually happened.',
+          ok: outcome.ok,
+          steps: outcome.steps,
+        },
+        409,
+      );
+    }
+    return c.json({ ok: outcome.ok, status: settled.status, bundle, steps: outcome.steps }, outcome.ok ? 200 : 502);
   });
 
   // POST /requests/:id/cancel — the cooling-off cancel verb,
@@ -1256,6 +1367,49 @@ export function requestRoutes(): Hono<AppEnv> {
     req = await settleCooling(store, projectId, req);
     req = await settleWindow(store, projectId, req);
     if (!CANCELLABLE_STATUSES.has(req.status)) return apiError(c, 'STATE_CONFLICT');
+
+    // API-5 — CANCEL CANNOT UN-FIRE A DEPLOY, SO IT MUST NOT PRETEND TO.
+    //
+    // `AWAITING_DEPLOY_APPROVAL` is cancellable and the bundle claim deliberately leaves
+    // `status` alone, so this guard used to pass while a bundle was mid-flight. The
+    // bundle then landed its CAS commit on `main` and satisfied the CI apply gate, and
+    // the durable record said CANCELLED — on exactly the class of request this system
+    // exists to govern. The lead who clicked cancel was told it worked. It had not.
+    //
+    // Refusing is not a smaller cancel; it is the only honest one. Nothing here could
+    // ever have stopped a commit that has already been pushed, so the choice was never
+    // "stop it or don't" — it was "refuse, or claim to have stopped it". Two cases, both
+    // durable facts rather than guesses:
+    //
+    //  - `running` AND the claim is still LIVE — a bundle is executing right now. The
+    //    lease bounds this (ERR-2), so the refusal is minutes-to-an-hour, never forever;
+    //    an EXPIRED claim belongs to a run that died and does not block anything.
+    //  - `triggered` — the commit landed and the deploy gate was satisfied. That is not
+    //    a race at all, it is over, and it stays uncancellable for good. `POST /apply`
+    //    already refuses this row for the same reason.
+    //
+    // The residual read-then-act window (this check passes, then a claim is written) is
+    // covered from the other side: CONC-6 makes the bundle merge into the timeline
+    // rather than replace it, so a cancel that does slip through is recorded alongside
+    // the outcome instead of erasing it or being erased.
+    if (req.bundle?.state === 'triggered') {
+      return c.json(
+        {
+          code: 'BUNDLE_TRIGGERED',
+          reason: `This change has already been applied — its bundle landed ${req.bundle.sha?.slice(0, 9) ?? 'a commit'} on the deploy branch and satisfied the CI apply gate. Cancelling cannot undo that; raise a new request to revert it.`,
+        },
+        409,
+      );
+    }
+    if (req.bundle?.state === 'running' && !bundleClaimExpired(req.bundle, nowMs())) {
+      return c.json(
+        {
+          code: 'BUNDLE_RUNNING',
+          reason: 'An apply bundle for this request is in flight — it may already have pushed a commit, so cancelling now would record a stop that did not happen. Wait for it to report back; if it fails, this request becomes cancellable again.',
+        },
+        409,
+      );
+    }
 
     const isOwner = req.requester === account.id;
     const isSeniorOverride = roleFor(account, projectId) === 'lead' || account.isAdmin === true;

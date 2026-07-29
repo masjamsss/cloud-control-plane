@@ -797,3 +797,39 @@ points anywhere.** The same shape appears in the audit itself — `fixed:` with 
 nobody runs, a residue "tracked by" a finding nobody reopened, a doc citing a line that
 moved. A reference is only evidence if something dereferences it. The check that would have
 caught this is one line: every `fixed:<sha>` must be an ancestor of `HEAD`.
+
+### L-29 — A finding written months ago describes code that no longer exists; re-derive the defect before implementing the recommendation
+
+Findings: CONC-6, API-4
+
+Two findings in one batch, from the same cause and pointing opposite ways.
+
+**API-4** was already closed. Both its defects — the claim not being mutual exclusion, and a
+crashed bundle wedging at `running` — had been fixed while closing ERR-11 and ERR-2, in
+work that never mentioned API-4 because the reports slice the same cause several ways.
+Implementing it would have meant re-fixing working code, and the honest close was a ledger
+entry saying which commits did it and which existing tests pin it.
+
+**CONC-6's gap 2 was the interesting one.** As written it says the outcome write is guarded
+`ifEquals status=<observed>`, so a cancel-during-bundle refuses it and throws
+CHAIN_CONTENTION with nothing recorded. That is no longer true: ERR-11 changed the guard to
+`eventSeq`, and cancel advances no `eventSeq`, so the write now *succeeds*. The finding as
+literally stated was closed — by a fix for a different finding, as a side effect, with
+nobody noticing.
+
+And the defect had not gone away. It had **moved**. The write that now succeeds carries an
+`events` array built from the pre-bundle snapshot, and `set` replaces the whole attribute,
+so a cancel that landed during a half-hour bundle was silently erased from the timeline. A
+`CANCELLED` request whose history never mentions the cancellation — quieter than the
+original, harder to notice, and reachable by exactly the same sequence of user actions.
+
+**The transferable rule: implement the property, not the recommendation.** A finding's
+*recommendation* is a fix for the code as it stood; its *property* ("a cancel during a
+bundle must not lose either party's record") survives the code changing underneath it.
+Reading the recommendation first is how you write a fix for a defect that is already gone
+and miss the one that replaced it — and how a batch that "verified clean" leaves a live
+defect behind, because the check ran against the sentence rather than the behaviour.
+
+Both directions are the same discipline: **re-derive the defect against the code in front of
+you before deciding what to do about it.** It closed one finding with no code at all and
+found a live defect the other finding no longer described.

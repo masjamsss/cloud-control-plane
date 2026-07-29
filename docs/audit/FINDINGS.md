@@ -105,10 +105,10 @@ Unguarded full-row writes and lost updates. Largely one root cause — the store
 - [x] CONC-3 | high | concurrency | fixed:ifEquals on standalone put + accountVersion guard on every account write in auth/account/admin; test/loginDisableRace.test.ts | 04-concurrency.md | The entire auth/self-service lane writes the account row with blind full-row puts, clobbering concurrent admin mutations and undermining the `accountVersion` drift-guard doctrine
 - [x] DATA-1 | high | concurrency | fixed:887746c | 03-data-integrity.md | Request-row writes lack optimistic concurrency: concurrent approvals/rejections silently lose updates and can corrupt the quorum ledger
 - [x] API-10 | medium | concurrency | fixed:3b243aa | 02-api-correctness.md | Session revocation can be silently undone by the idle-slide write-back race
-- [ ] API-5 | medium | concurrency | open | 02-api-correctness.md | Cancel can race an in-flight bundle: the change applies but the request reads CANCELLED
+- [x] API-5 | medium | concurrency | fixed:PENDING | 02-api-correctness.md | Cancel can race an in-flight bundle: the change applies but the request reads CANCELLED
 - [x] CONC-11 | medium | concurrency | fixed:951aaf9 | 04-concurrency.md | Registry writes that bump `version` without guarding it (trust-request upload, identity confirm) can clobber concurrent registry ops and rewind the dual-control version guard
 - [x] CONC-4 | medium | concurrency | fixed:3b243aa | 04-concurrency.md | A revoked session can be resurrected by the concurrent idle-window slide
-- [ ] CONC-6 | medium | concurrency | open | 04-concurrency.md | The bundle claim has no crash/exception/race recovery: `bundle.state:'running'` can stick forever, and a raced outcome write loses the record of a fired deploy
+- [x] CONC-6 | medium | concurrency | fixed:PENDING | 04-concurrency.md | The bundle claim has no crash/exception/race recovery: `bundle.state:'running'` can stick forever, and a raced outcome write loses the record of a fired deploy
 - [x] CONC-7 | medium | concurrency | fixed:9dce28b | 04-concurrency.md | `FileStore` has no single-writer enforcement: two processes on the same data file silently destroy each other's writes
 - [x] CONC-9 | medium | concurrency | fixed:b3d34f5 | 04-concurrency.md | Dual-control ack does not guard the pending row's status: a concurrently rejected proposal can still apply
 - [x] DATA-8 | medium | concurrency | fixed:b3d34f5 | 03-data-integrity.md | Pending-change status transitions have no CAS: concurrent ack + reject can apply a change and record it as REJECTED
@@ -181,7 +181,7 @@ States nothing can leave: wedged jobs, dead-end requests, permanently disabled c
 - [x] FE-3 | high | stuck-state | fixed:0b83aec | 05-frontend-flows.md | RequestForm: one server-side rejection permanently disables submit — the only way out abandons the drafted request
 - [x] OPS-4 | high | stuck-state | fixed:a19e688 | 10-reliability-operations.md | A scan job whose worker dies stays `claimed`/`cloning`/`scanning` forever and permanently wedges that project's onboarding
 - [x] UI-2 | high | stuck-state | fixed:ed4ca42 | 06-frontend-ui-robustness.md | Resource drill-in dead-ends for every "named service" whose slug is not a literal manifest file: all 16 azure-fixture services are broken
-- [ ] API-4 | medium | stuck-state | open | 02-api-correctness.md | The bundle "claim" is not a mutual-exclusion, and a crashed bundle wedges the request at `running`
+- [x] API-4 | medium | stuck-state | fixed:PENDING | 02-api-correctness.md | The bundle "claim" is not a mutual-exclusion, and a crashed bundle wedges the request at `running`
 - [ ] API-9 | medium | stuck-state | open | 02-api-correctness.md | Project deregistration leaves orphaned satellite rows; a reused id inherits the previous tenant's state
 - [ ] CONC-10 | medium | stuck-state | open | 04-concurrency.md | Stuck `APPLYING` after a worker crash has no reclaim or operator path
 - [ ] ERR-12 | medium | stuck-state | open | 09-error-handling.md | Trigger failure after a landed commit: honest-but-dead-end half state, and spawn timeouts are indistinguishable from exit-1

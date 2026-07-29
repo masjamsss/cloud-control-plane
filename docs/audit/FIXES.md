@@ -2361,3 +2361,128 @@ used ±14 lines and reported a correctly-guarded handler as an offender, because
       sanity assertion that it finds the writers at all, the store-level property the
       handlers rely on, and the rewind demonstrated directly rather than described.
 - [x] **Evidence in the status line** — 1,386 api tests pass.
+
+## CONC-6
+
+*The bundle claim has no crash/exception/race recovery: `bundle.state:'running'` can stick
+forever, and a raced outcome write loses the record of a fired deploy.*
+
+Three gaps, all of them on the far side of the external effects — the commit is pushed and
+the deploy gate is satisfied *before* any of this runs, so every one of them loses the
+record of something that really happened.
+
+**1. No exception path.** `runBundle` was awaited bare. A throw — `mkdtempSync` against a
+vanished `TMPDIR`, `writeFileSync` ENOSPC on the request-evidence file, anything unexpected
+inside a step — produced a bare 500 and left the row at `bundle.state:'running'`. ERR-2's
+lease has since made that self-clearing rather than permanent, which is a real improvement
+and still leaves an hour in which a fully approved request answers `BUNDLE_RUNNING` for a
+bundle that is not running. The call is now wrapped, and a throw becomes a **failed
+outcome** rather than a special case: it takes the ordinary terminal path, so the row
+reaches `failed`, the audit entry records the error text, and the caller gets the same 502
+any other failed bundle gets.
+
+**2. The finding's second gap had MOVED, not closed.** As written it says the outcome write
+is guarded `ifEquals status=<observed>`, so a cancel-during-bundle refuses it, retries,
+refuses again and throws `CHAIN_CONTENTION` with nothing written. ERR-11 changed that guard
+to `eventSeq` — and cancel guards on `status` and advances no `eventSeq`, so the write now
+*succeeds*. That closes the finding as literally stated and opens a quieter version of it:
+`set` **replaces** the whole `events` attribute, and the array being written was built from
+the pre-bundle snapshot. A cancel that landed during a bundle that can legitimately run for
+half an hour was silently erased from the timeline — a `CANCELLED` request whose history
+never mentions the cancellation. The outcome write now re-reads the row inside the retry
+loop and appends to the **fresh** timeline, and reports `after.status` as the status the row
+actually settled to rather than the pre-bundle one.
+
+**3. A row that moved past the claim.** A lease takeover by a second apply *does* advance
+`eventSeq`, so the guard refuses — correctly; the claim is no longer ours. But refusing the
+state transition is not a reason to discard the evidence. The two writes are different kinds
+of thing and no longer share a fate: the row update may lose its race, while the audit entry
+records what happened and no race makes that untrue. When the row refuses, the entry lands
+anyway carrying `requestRowMoved: true` and the landed SHA, and the caller gets a specific
+`409 BUNDLE_ROW_MOVED` — not `CHAIN_CONTENTION` with nothing written.
+
+- [x] **Negative test** — run three times, once per gap, each reversal failing exactly the
+      tests that target it and no others: removing the try/catch fails all three gap-1 tests
+      (500 instead of 502, and no audit entry at all); rebuilding `events` from the
+      pre-bundle snapshot fails the erasure test; restoring the `CHAIN_CONTENTION` throw
+      fails the 409 and the chain-continuity test.
+- [x] **Regression tests** — 9 in `test/bundleCrashRecovery.test.ts`. **The interleaving is
+      real, not simulated**: the gate command blocks on a sentinel file, so the cancel is
+      issued while the bundle is provably mid-run, and every test asserts the setup fired
+      (`bundle.state === 'running'` before the cancel, the cancel returning 200, the trigger
+      step green) before asserting the property (L-1). The exception is a genuine throw from
+      `mkdtempSync`, not an injected one.
+- [x] **Evidence in the status line** — 1,395 api tests pass, 99 files.
+
+**Residue:** the timeline merge is a re-read rather than a store-level append, which is
+empty-window on the in-process stores and not on a future DynamoDB backend. See **R-43**.
+
+## API-4
+
+*The bundle "claim" is not a mutual-exclusion, and a crashed bundle wedges the request at
+`running`.*
+
+**Verified closed by earlier work; no code changed.** Both halves were fixed while closing
+adjacent findings, and this entry exists so the next reader does not re-derive that.
+
+Defect 1 (not mutual exclusion) is closed by **ERR-11**: the claim CAS guarded on `status`,
+an attribute the claim does not change, so two near-simultaneous applies both passed the
+read-then-act pre-check *and* both satisfied the guard. It now guards
+`ifEquals: {attr:'eventSeq'}` and **sets** `eventSeq: claimSeq` — it guards the attribute it
+itself advances, which is what makes a claim a claim.
+
+Defect 2 (a crashed bundle wedges at `running`) is closed by **ERR-2**: `BUNDLE_LEASE_MS`
+plus `bundleClaimExpired`, settled lazily on the next apply, with a `bundle-claim-expired`
+event so the takeover is visible rather than silent.
+
+- [x] **Regression tests** — already pinned, no new ones needed: `test/bundleClaimLease.test.ts`
+      covers both directly — *"a second apply against the pre-image row is refused, not run
+      twice"*, *"the claim advances eventSeq, so it can be guarded on at all"*, and *"THE
+      DEFECT: an EXPIRED claim is taken over instead of wedging the request forever"*.
+- [x] **Evidence in the status line** — those 7 tests pass; verified against the current
+      code rather than against the commits that wrote them.
+
+## API-5
+
+*Cancel can race an in-flight bundle: the change applies but the request reads CANCELLED.*
+
+`CANCELLABLE_STATUSES` includes `AWAITING_DEPLOY_APPROVAL` and the bundle claim
+deliberately leaves `status` alone, so cancel's `ifEquals status=…` guard held while a
+bundle was mid-flight. The bundle went on to land its CAS commit on `main` and satisfy the
+CI apply gate. The durable record said `CANCELLED`. The lead who clicked cancel was told it
+had worked — on exactly the class of request this system exists to govern.
+
+**Cancel now refuses, and that is not a smaller cancel; it is the only honest one.** The
+choice was never "stop the bundle or don't" — nothing in this process could ever stop a
+commit that has already been pushed. It was "refuse, or claim to have stopped it". Two
+durable facts gate it rather than a guess:
+
+- `bundle.state === 'running'` **with a live claim** → `409 BUNDLE_RUNNING`. ERR-2's lease
+  bounds it, so a run that died never wedges cancel; an expired claim is not a bundle. That
+  matters more than it looks: cancel is the documented exit from a halted request, so a
+  refusal that could not expire would close the only door out.
+- `bundle.state === 'triggered'` → `409 BUNDLE_TRIGGERED`, permanently. Not a race, just
+  over. `POST /:id/apply` already refuses this row for the same reason, and the message
+  names the landed sha so the operator can go find it.
+
+**What is deliberately not claimed:** this closes the window, it does not make the check
+atomic — between the read and the write a claim can still be taken. That sliver is covered
+from the other end by **CONC-6**, which makes the bundle merge into the timeline instead of
+replacing it, so a cancel that does slip through is recorded *alongside* the outcome rather
+than erasing it or being erased. The two findings are one fix from two directions: refuse at
+the front door, record truthfully if one gets past.
+
+- [x] **The defect was reproduced first**, end to end through the real routes with a real
+      git push: with the guard removed the cancel returns 200 and the row settles at
+      `CANCELLED` while `bundle.state` reads `triggered`. That is the finding's exact
+      sentence, observed rather than reasoned about.
+- [x] **Negative test** — removing both refusals fails exactly the two tests that assert
+      them, and leaves the CONC-6 suite green (they cover different halves on purpose).
+- [x] **Regression tests** — 6 in `test/cancelBundleRace.test.ts`. The race one drives both
+      real routes with the bundle provably blocked inside its gate command, and every
+      refusal has its complement: an expired claim, a failed bundle and a bundle-less
+      request must all still cancel, so the guard cannot quietly widen into "cancel is
+      broken". The last test pins the property `bundleCrashRecovery.test.ts`'s store-level
+      fixture depends on — that cancel advances no `eventSeq` — so that fixture cannot drift
+      into testing nothing.
+- [x] **Evidence in the status line** — 1,401 api tests pass (100 files), 2,745 app tests.

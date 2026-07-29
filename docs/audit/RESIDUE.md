@@ -483,3 +483,22 @@ ambiguous value with no way to tell the two cases apart after the fact, and ever
 the quota list above included, where both readings are correctly terminal — would need
 auditing against the new pair. Recorded here rather than folded into a consistency pass
 that could not have done it honestly.
+
+### R-43 · The bundle timeline merge is a re-read, not a store-level append
+*Residue on **CONC-6**.*
+
+`events` is a whole attribute and the store's `set` replaces it, so appending means reading
+the current array and writing it back. The `ifEquals` guard covers `eventSeq`, and a cancel
+— the writer this race is actually about — advances no `eventSeq`, so the guard cannot
+catch it. What closes the window instead is ordering: the chain head is read first and the
+row last, leaving no `await` between reading the timeline and writing it, which on
+`MemoryStore` and `FileStore` (single-threaded, no interleaving without a yield) makes the
+window empty rather than merely small.
+
+Accepted at that. It stops being empty the day the DynamoDB backend lands, because the two
+reads become two network round-trips with a real gap between them — and the proper fix
+there is a list-append update expression, which is a store-seam capability that does not
+exist yet and should be designed against the real backend rather than guessed at now. The
+cost if it is ever hit is one lost `cancelled` timeline entry on a request whose `status`
+still correctly reads `CANCELLED` and whose audit chain still records both the cancel and
+the bundle — a degraded timeline, not a lost decision.
