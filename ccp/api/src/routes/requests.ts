@@ -102,7 +102,27 @@ const SubmitBody = z.object({
   items: z.array(SubmitItem).min(1).max(MAX_CHANGE_SET_ITEMS).optional(),
   justification: z.string().min(10),
   schedule: ScheduleSchema,
-  idempotencyKey: z.string().min(1).max(200).optional(),
+  /**
+   * DATA-15 — CLIENT BYTES THAT REACH A PARTITION KEY ARE CONSTRAINED AT THE EDGE.
+   *
+   * This value is concatenated into a store PK (`requestIdempotencyKey`). It used to
+   * accept any 1–200 characters, so a caller chose part of a primary key: NUL (the
+   * store's composite-key separator), `#` (its namespace delimiter), newlines, or
+   * anything else. The store's own aliasing hole is closed — the separator is NUL and
+   * cannot appear in a legitimate key — but "no collision is constructible today" is a
+   * property of the current SK vocabulary, not an enforced invariant, and the right place
+   * to enforce it is where the untrusted bytes enter.
+   *
+   * A safe charset rather than an escape: an idempotency key is an opaque token the
+   * CLIENT invents, so there is nothing expressive to preserve, and a rejected key is a
+   * clear 400 at submit time instead of a key that works until the day it aliases.
+   */
+  idempotencyKey: z
+    .string()
+    .min(1)
+    .max(200)
+    .regex(/^[A-Za-z0-9._:-]+$/, 'idempotencyKey must be 1-200 chars of A-Z a-z 0-9 . _ : or -')
+    .optional(),
 });
 
 const RejectBody = z.object({ reason: z.string().optional() });

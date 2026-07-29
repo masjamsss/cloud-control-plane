@@ -1,6 +1,6 @@
 import type { ConfigStore, Item, QueryOptions, TransactWrite } from './configStore';
 import { ConditionError } from './configStore';
-import { cloneValue } from './clone';
+import { cloneValue, deepEquals } from './clone';
 
 /**
  * Composite-key separator. NUL is used deliberately: it is the one character that
@@ -58,6 +58,36 @@ function partitionRemove<K>(index: Map<string, Partition<K>>, pkey: string, k: K
 function partitionKeys<K>(p: Partition<K>, order: (a: K, b: K) => number): K[] {
   if (p.sorted === null) p.sorted = [...p.rows.keys()].sort(order);
   return p.sorted;
+}
+
+/**
+ * DynamoDB `TransactWriteItems` limits: at most 100 actions, and **no two actions may
+ * target the same item**. `MemoryStore` applied duplicates last-wins and had no bound, so
+ * a bug that queued the same key twice — or a batch that grew past 100 as a project's data
+ * grew — passed every local test and would fail in production.
+ *
+ * The duplicate check is the one that matters. Last-wins is not merely "different": it
+ * silently discards one of two writes a caller believed were both applied, which is a lost
+ * update produced by the very mechanism that exists to prevent them.
+ */
+const TRANSACT_MAX_ITEMS = 100;
+
+function assertTransactShape(writes: TransactWrite[]): void {
+  if (writes.length > TRANSACT_MAX_ITEMS) {
+    throw new Error(
+      `transact: ${writes.length} actions exceeds the ${TRANSACT_MAX_ITEMS}-item TransactWriteItems limit — split the batch`,
+    );
+  }
+  const seen = new Set<string>();
+  for (const w of writes) {
+    const k = w.kind === 'put' ? keyOf(w.item.PK, w.item.SK) : keyOf(w.pk, w.sk);
+    if (seen.has(k)) {
+      throw new Error(
+        `transact: two actions target the same item (${k.replace(SEP, ' / ')}) — TransactWriteItems rejects this; combine them into one action`,
+      );
+    }
+    seen.add(k);
+  }
 }
 
 /** The GSI1 sort key: `GSI1SK`, falling back to the item's own `SK` (seam contract). */
@@ -258,7 +288,7 @@ export class MemoryStore implements ConfigStore {
       if (!cur) {
         throw new ConditionError(`ifEquals failed on ${item.PK}/${item.SK}.${opts.ifEquals.attr} (item missing)`);
       }
-      if (cur[opts.ifEquals.attr] !== opts.ifEquals.value) {
+      if (!deepEquals(cur[opts.ifEquals.attr], opts.ifEquals.value)) {
         throw new ConditionError(`ifEquals failed on ${item.PK}/${item.SK}.${opts.ifEquals.attr}`);
       }
     }
@@ -270,6 +300,19 @@ export class MemoryStore implements ConfigStore {
   }
 
   async transact(writes: TransactWrite[]): Promise<void> {
+    // Phase 0: the two things DynamoDB REJECTS OUTRIGHT, rejected here too (API-17 /
+    // DATA-14). Both used to pass locally and would have failed only against the real
+    // backend — the worst possible place to discover them, and the exact way a store seam
+    // stops being a seam: every local test becomes a claim about production that
+    // production does not honour.
+    //
+    // These throw a plain Error, NOT a ConditionError, and that distinction is
+    // load-bearing. A ConditionError means "somebody else got there first" and every
+    // caller in this codebase retries it; a duplicate key or an oversized batch is a
+    // PROGRAMMING error that retrying cannot fix, and dressing it as contention would
+    // bury it in a retry loop forever.
+    assertTransactShape(writes);
+
     // Phase 1: validate ALL conditions against the pre-transaction snapshot.
     for (const w of writes) {
       if (w.kind === 'put') {
@@ -285,7 +328,7 @@ export class MemoryStore implements ConfigStore {
               `ifEquals failed on ${w.item.PK}/${w.item.SK}.${w.ifEquals.attr} (item missing)`,
             );
           }
-          if (cur[w.ifEquals.attr] !== w.ifEquals.value) {
+          if (!deepEquals(cur[w.ifEquals.attr], w.ifEquals.value)) {
             throw new ConditionError(`ifEquals failed on ${w.item.PK}/${w.item.SK}.${w.ifEquals.attr}`);
           }
         }
@@ -297,7 +340,7 @@ export class MemoryStore implements ConfigStore {
         // against a deleted row and the update would resurrect a ghost item.
         if (!cur) throw new ConditionError(`ifEquals failed on ${w.pk}/${w.sk}.${w.ifEquals.attr} (item missing)`);
         const actual = cur[w.ifEquals.attr];
-        if (actual !== w.ifEquals.value) {
+        if (!deepEquals(actual, w.ifEquals.value)) {
           throw new ConditionError(`ifEquals failed on ${w.pk}/${w.sk}.${w.ifEquals.attr}`);
         }
       }

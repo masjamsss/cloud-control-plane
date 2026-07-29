@@ -5,6 +5,40 @@
  * condition evaluated against the pre-transaction snapshot (a failed condition
  * aborts the WHOLE batch). This is what makes the audit chain and approval dedupe
  * byte-for-byte identical between local and deployed.
+ *
+ * ## Where this seam KNOWINGLY differs from DynamoDB (API-17 / DATA-14)
+ *
+ * "Byte-identical semantics" is the promise, and an undocumented gap in it makes every
+ * local test a claim about production that production does not honour. The gaps below are
+ * DELIBERATE and load-bearing: each is a convention this codebase already depends on, so a
+ * DynamoDB adapter MUST implement them, not merely permit them. They are written here —
+ * on the interface an adapter author reads — rather than in the in-memory implementation,
+ * which is the one place such an author will never look.
+ *
+ * 1. **`ifEquals: { value: undefined }` means "the attribute is ABSENT."** DynamoDB has no
+ *    equality against nothing; the adapter must emit `attribute_not_exists(<attr>)` for
+ *    this case, not `<attr> = :v`. Used by `domain/settlement.ts` to bind a legacy account
+ *    row only while it still has no `roles` map — the whole point is that the guard must
+ *    fail once somebody else has written one.
+ *
+ * 2. **`undefined` inside `set` means REMOVE the attribute.** DynamoDB's `SET` cannot take
+ *    undefined; the adapter must route those keys into a `REMOVE` clause of the same update
+ *    expression. `domain/dualControl.ts` uses `set: { GSI1PK: undefined }` to take a row
+ *    OUT of the pending index when a proposal reaches a terminal state — implemented as a
+ *    `SET` of a null, the row would stay in the index forever and every sweep would keep
+ *    finding it.
+ *
+ * 3. **`GSI1SK` falls back to the item's own `SK` when absent.** A real composite-key GSI
+ *    OMITS items that lack the sort key entirely, so an adapter must project a `GSI1SK` for
+ *    every indexed row (writing `SK`'s value when the domain sets none) rather than rely on
+ *    a read-time fallback. Rows written without one are indexed and returned here; on a
+ *    composite GSI they would silently vanish from every list that reads the index.
+ *
+ * Two OTHER divergences named by those findings were closed rather than documented, because
+ * they were traps rather than conventions: `ifEquals` now compares VALUES deep-equal (a
+ * guard on an object could never pass, since the store hands out clones), and `transact`
+ * now rejects duplicate keys in one batch and batches over 100 actions — both of which
+ * DynamoDB rejects outright and this store used to accept.
  */
 
 export type Item = { PK: string; SK: string; GSI1PK?: string; GSI1SK?: string } & Record<string, unknown>;

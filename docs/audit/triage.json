@@ -1,7 +1,7 @@
 {
   "generated_from": "docs/audit/FINDINGS.md + docs/audit/TRIAGE.md",
   "authoritative_source": "docs/audit/FINDINGS.md \u2014 if this file disagrees, FINDINGS.md wins",
-  "open_findings": 131,
+  "open_findings": 128,
   "rules": {
     "take": "a whole batch id, not individual findings \u2014 batches are grouped by files touched",
     "baseline": "parallel lanes must NOT touch scripts/findings-baseline.txt; it is a ceiling, not an exact match. One reconciliation commit at the end.",
@@ -216,7 +216,8 @@
           "title": "Map key concatenation with a space separator is aliasable in principle; client-controlled bytes reach PKs unconstrained",
           "lane": null,
           "expected_result": "Client-controlled bytes can no longer reach a PK unconstrained, and the space-separated map key is no longer aliasable in principle. Security-relevant; assume an adversarial id.",
-          "verify_first": false
+          "verify_first": false,
+          "status": "closed"
         },
         {
           "id": "DATA-16",
@@ -236,7 +237,8 @@
           "title": "Store-seam divergences from the DynamoDB semantics it mirrors",
           "lane": null,
           "expected_result": "Each named seam divergence from DynamoDB is either fixed or documented as deliberate with the reason. A seam that quietly differs makes every local test a lie about production.",
-          "verify_first": false
+          "verify_first": false,
+          "status": "closed"
         },
         {
           "id": "DATA-14",
@@ -246,7 +248,8 @@
           "title": "Seam-fidelity gaps between MemoryStore and the promised DynamoDB semantics",
           "lane": null,
           "expected_result": "As API-17 \u2014 batch them; they are the same list from two reports.",
-          "verify_first": false
+          "verify_first": false,
+          "status": "closed"
         },
         {
           "id": "CONC-8",
@@ -1672,5 +1675,5 @@
       ]
     }
   ],
-  "note_on_open_findings": "Count at the time TRIAGE.md was written was 139 of 212 declared. Now 131 open of 214 declared: batches B-O1 and B-O2 are both COMPLETE, and two findings were RAISED during the work (API-19, fixed; API-20, open). Findings carrying \"status\": \"closed\" here are done. FINDINGS.md is authoritative."
+  "note_on_open_findings": "Count at the time TRIAGE.md was written was 139 of 212 declared. Now 128 open of 214 declared: B-O1 and B-O2 are COMPLETE, B-O3 has its seam-fidelity cluster (API-17, DATA-14, DATA-15) closed with DATA-5, DATA-16 and CONC-8 remaining, and two findings were RAISED during the work (API-19 fixed; API-20 open). FINDINGS.md is authoritative."
 }

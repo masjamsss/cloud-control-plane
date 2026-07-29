@@ -162,14 +162,20 @@ and **API-20** (raised, not fixed: the one-time legacy settlement races itself a
 
 **Model:** opus · **Findings:** 6 · **Touches:** `ccp/api/src/store/*`
 
+**Status: 3 of 6 closed** (API-17, DATA-14, DATA-15 - the seam-fidelity cluster, done as
+one piece as this table advises). **DATA-5, DATA-16 and CONC-8 remain.** Context for whoever
+takes them: `ConfigStore` now carries a documented list of the seam's deliberate DynamoDB
+divergences, `transact` rejects duplicate keys and >100-action batches, `ifEquals` compares
+values deep-equal, and `QueryOptions` has a `where` filter (added for PERF-14).
+
 
 | finding | sev | expected result |
 | --- | --- | --- |
 | **DATA-5** | medium | Corrupt-but-parseable rows stop loading silently. WARNING: the wrong shim fails a BOOT, not a test (see R-41) — design the legacy-passthrough against real stored shapes, and make refusing loud and specific about which row. |
-| **DATA-15** | low | Client-controlled bytes can no longer reach a PK unconstrained, and the space-separated map key is no longer aliasable in principle. Security-relevant; assume an adversarial id. |
+| ~~**DATA-15**~~ | low | **DONE.** The separator half was already closed (NUL). `idempotencyKey` is now constrained to a safe charset at the edge, so client bytes cannot choose part of a PK. |
 | **DATA-16** | low | The snapshot carries a format/version marker, so a future migration does not rest on convention. Must stay readable by the current loader. |
-| **API-17** | low | Each named seam divergence from DynamoDB is either fixed or documented as deliberate with the reason. A seam that quietly differs makes every local test a lie about production. |
-| **DATA-14** | low | As API-17 — batch them; they are the same list from two reports. |
+| ~~**API-17**~~ | low | **DONE.** Two traps FIXED (`ifEquals` now deep-equal - an object guard could never pass; `transact` now rejects duplicate keys and >100 actions, as a plain Error so retry loops do not bury it). Three conventions DOCUMENTED on `ConfigStore` for a future adapter. |
+| ~~**DATA-14**~~ | low | **DONE with API-17.** The three conventions (undefined-guard = attribute-absent, undefined-in-set = REMOVE, GSI1SK-falls-back-to-SK) are now contract, each with a behaviour test an adapter can be held to. |
 | **CONC-8** | medium | Snapshot serialization stops being synchronous O(store) on the event loop. PR #6 coalesced the WRITES; the serialize step itself still blocks. Note R-32: sequential write latency is still O(store size). |
 
 

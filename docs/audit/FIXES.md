@@ -2823,3 +2823,106 @@ Two decisions inside that:
 - [x] **Evidence in the status line** — 1,454 api tests pass (106 files).
 
 **Residue:** the `where`/`limit` interaction diverges from DynamoDB. See **R-46**.
+
+## API-17
+
+*Store-seam divergences from the DynamoDB semantics it mirrors.*
+
+The seam's promise is that a test passing against `MemoryStore` is a true statement about
+the deployed backend. Two traps broke that quietly - both would have passed every local
+test and failed only in production, which is the worst place to find them.
+
+**(a) `ifEquals` compared with `!==`, i.e. reference identity for objects.** The store hands
+out CLONES, so the first caller to guard on an object or array gets a condition that can
+**never** pass: it compares its own copy against the store's original. Nothing is broken
+today because every shipped guard is a scalar or `undefined` - but `domain/settlement.ts`
+already writes exactly that shape (`ifEquals: {attr:'roles', value: account.roles}`), and it
+works only because the legacy rows it targets have no `roles` map yet. The day one does, the
+settlement fails every attempt with a condition that *looks* like contention and no amount
+of retrying helps. `deepEquals` (beside `cloneValue`, over the same JSON-value domain) is
+what the seam always promised: DynamoDB compares attribute VALUES.
+
+Key order is deliberately insignificant - a `JSON.parse` of a FileStore snapshot need not
+preserve insertion order, and comparing serialized forms would make equality depend on how
+a caller happened to build its object literal. An explicit-`undefined` key is NOT equal to
+an absent one, matching DynamoDB, where a null attribute and a missing one differ.
+
+**(b) `transact` accepted two actions on the same item**, applying them last-wins. DynamoDB
+`TransactWriteItems` rejects that outright, and last-wins is not merely "different": it
+silently discards one of two writes the caller believed both landed - a lost update
+produced by the very mechanism that exists to prevent them. Also unbounded, where DynamoDB
+caps a transaction at 100 actions.
+
+Both now throw a plain `Error`, **not** a `ConditionError`, and that distinction is
+load-bearing: every retry loop in this codebase treats `ConditionError` as "somebody got
+there first", so dressing a programming error as contention would bury it in a retry loop
+forever.
+
+- [x] **Negative test** - reverting `deepEquals` fails the object-guard test; making
+      `assertTransactShape` a no-op fails 5.
+- [x] **Regression tests** - in `test/storeSeamFidelity.test.ts`, with the complements that
+      stop a fix from over-reaching: a genuinely different value must still be REFUSED, and
+      an ordinary multi-key batch must still succeed.
+- [x] **Evidence in the status line** - 1,468 api tests pass (107 files).
+
+## DATA-14
+
+*Seam-fidelity gaps between MemoryStore and the promised DynamoDB semantics.*
+
+Same list as **API-17** from the other report; the two traps it shares are closed there.
+What is left is three CONVENTIONS this codebase actively depends on which are not
+expressible as plain DynamoDB operations. The finding offers a choice - "encode these
+conventions explicitly in the contract so a DynamoDB adapter must implement them, or tighten
+MemoryStore to reject what DynamoDB rejects" - and they take the first branch, because each
+one is load-bearing behaviour rather than an accident:
+
+1. **`ifEquals: {value: undefined}` means "the attribute is ABSENT"** - the adapter must
+   emit `attribute_not_exists(attr)`, not `attr = :v`. `settlement.ts` binds a legacy
+   account row only while it still has no `roles` map; the guard *must* fail once somebody
+   else has written one.
+2. **`undefined` inside `set` means REMOVE** - routed into a `REMOVE` clause, not a `SET` of
+   null. `dualControl.ts` takes a terminal proposal out of the pending index this way; as a
+   `SET`, the row would stay indexed and every sweep would keep finding it forever.
+3. **`GSI1SK` falls back to the item's own `SK`** - a real composite-key GSI OMITS items
+   lacking the sort key, so an adapter must PROJECT a `GSI1SK` for every indexed row rather
+   than rely on a read-time fallback. Otherwise rows silently vanish from every list that
+   reads the index.
+
+They are documented on `ConfigStore` - the interface an adapter author reads - rather than
+in `MemoryStore`, which is the one file such an author will never open.
+
+- [x] **Regression tests** - one per convention, pinning the BEHAVIOUR rather than the
+      prose, so an adapter can be held to them: the absent-guard passing and then failing
+      once the attribute exists, a row actually leaving the GSI partition, and an
+      unlabelled row being returned and ordered by its SK fallback.
+- [x] **Evidence in the status line** - see **API-17**.
+
+## DATA-15
+
+*Map key concatenation with a space separator is aliasable in principle; client-controlled
+bytes reach PKs unconstrained.*
+
+**The first half was already closed** and is recorded here so the next reader does not
+re-derive it: the composite key was `pk + ' ' + sk` and is now NUL, with a comment explaining both
+why (it cannot appear in a legitimate key, so two distinct key pairs can no longer collide
+on one composite string) and why it is written as an escape rather than a literal byte.
+
+**The second half was live.** `idempotencyKey` accepted any 1-200 characters and is
+concatenated into a store PK, so a caller chose part of a primary key: NUL, `#` (the
+namespace delimiter), newlines, or a whole forged key path. "No collision is constructible
+today" was true and is a property of the current SK vocabulary rather than an enforced
+invariant - and the place to enforce it is where the untrusted bytes enter.
+
+A safe charset (`A-Za-z0-9._:-`) rather than escaping, because an idempotency key is an
+opaque token the CLIENT invents: there is nothing expressive to preserve, and a rejected key
+is a clear 422 at submit time instead of a key that works until the day it aliases.
+
+- [x] **Negative test - and the FIRST version of it passed against the unfixed code.** The
+      submit body it posted was invalid for an unrelated reason, so every request returned
+      422 and both assertions were satisfied by an error that had nothing to do with the
+      key. Exactly L-1, caught only because the fix was reverted and the test stayed green.
+      There is now a CONTROL test asserting a clean key really does yield 201, and with the
+      charset removed the defect reproduces honestly: `a#b` is accepted into a PK as a 201.
+- [x] **Regression tests** - the refusals (delimiters, whitespace, NUL, newline, a forged
+      key path) alongside the tokens that must keep working (uuid, ulid, a dotted nonce).
+- [x] **Evidence in the status line** - see **API-17**.
