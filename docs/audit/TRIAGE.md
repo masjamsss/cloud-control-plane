@@ -162,11 +162,12 @@ and **API-20** (raised, not fixed: the one-time legacy settlement races itself a
 
 **Model:** opus · **Findings:** 6 · **Touches:** `ccp/api/src/store/*`
 
-**Status: 3 of 6 closed** (API-17, DATA-14, DATA-15 - the seam-fidelity cluster, done as
-one piece as this table advises). **DATA-5, DATA-16 and CONC-8 remain.** Context for whoever
-takes them: `ConfigStore` now carries a documented list of the seam's deliberate DynamoDB
-divergences, `transact` rejects duplicate keys and >100-action batches, `ifEquals` compares
-values deep-equal, and `QueryOptions` has a `where` filter (added for PERF-14).
+**Status: 4 of 6 closed** (API-17, DATA-14, DATA-15, CONC-8). **DATA-5 and DATA-16 remain.**
+Context for whoever takes them: `ConfigStore` now carries a documented list of the seam's
+deliberate DynamoDB divergences, `transact` rejects duplicate keys and >100-action batches,
+`ifEquals` compares values deep-equal, `QueryOptions` has a `where` filter (PERF-14), and
+the snapshot is serialized in chunks that yield the event loop — which rests on stored items
+being REPLACED rather than mutated in place, so do not break that property.
 
 
 | finding | sev | expected result |
@@ -176,7 +177,7 @@ values deep-equal, and `QueryOptions` has a `where` filter (added for PERF-14).
 | **DATA-16** | low | The snapshot carries a format/version marker, so a future migration does not rest on convention. Must stay readable by the current loader. |
 | ~~**API-17**~~ | low | **DONE.** Two traps FIXED (`ifEquals` now deep-equal - an object guard could never pass; `transact` now rejects duplicate keys and >100 actions, as a plain Error so retry loops do not bury it). Three conventions DOCUMENTED on `ConfigStore` for a future adapter. |
 | ~~**DATA-14**~~ | low | **DONE with API-17.** The three conventions (undefined-guard = attribute-absent, undefined-in-set = REMOVE, GSI1SK-falls-back-to-SK) are now contract, each with a behaviour test an adapter can be held to. |
-| **CONC-8** | medium | Snapshot serialization stops being synchronous O(store) on the event loop. PR #6 coalesced the WRITES; the serialize step itself still blocks. Note R-32: sequential write latency is still O(store size). |
+| ~~**CONC-8**~~ | medium | **DONE.** Both halves of the finding's own recommendation were already in place (slide granularity, write coalescing); what remained was the serialize step, measured at 107 ms of blocked event loop at 20,000 rows. Now chunked with a real macrotask yield: max block 122.7 ms -> 20.3 ms, and bounded by chunk size rather than store size. |
 
 
 ## B-O4 — Audit chain: scale, contention, retention

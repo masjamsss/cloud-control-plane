@@ -1,7 +1,7 @@
 {
   "generated_from": "docs/audit/FINDINGS.md + docs/audit/TRIAGE.md",
   "authoritative_source": "docs/audit/FINDINGS.md \u2014 if this file disagrees, FINDINGS.md wins",
-  "open_findings": 128,
+  "open_findings": 127,
   "rules": {
     "take": "a whole batch id, not individual findings \u2014 batches are grouped by files touched",
     "baseline": "parallel lanes must NOT touch scripts/findings-baseline.txt; it is a ceiling, not an exact match. One reconciliation commit at the end.",
@@ -259,7 +259,8 @@
           "title": "Every authenticated request triggers a full-store snapshot write; snapshot serialization is synchronous O(store) on the event loop",
           "lane": null,
           "expected_result": "Snapshot serialization stops being synchronous O(store) on the event loop. PR #6 coalesced the WRITES; the serialize step itself still blocks. Note R-32: sequential write latency is still O(store size).",
-          "verify_first": false
+          "verify_first": false,
+          "status": "closed"
         }
       ]
     },
@@ -1675,5 +1676,5 @@
       ]
     }
   ],
-  "note_on_open_findings": "Count at the time TRIAGE.md was written was 139 of 212 declared. Now 128 open of 214 declared: B-O1 and B-O2 are COMPLETE, B-O3 has its seam-fidelity cluster (API-17, DATA-14, DATA-15) closed with DATA-5, DATA-16 and CONC-8 remaining, and two findings were RAISED during the work (API-19 fixed; API-20 open). FINDINGS.md is authoritative."
+  "note_on_open_findings": "Count at the time TRIAGE.md was written was 139 of 212 declared. Now 127 open of 214 declared: B-O1 and B-O2 COMPLETE; B-O3 has API-17, DATA-14, DATA-15 and CONC-8 closed with DATA-5 and DATA-16 remaining; two findings were RAISED during the work (API-19 fixed; API-20 open). FINDINGS.md is authoritative."
 }

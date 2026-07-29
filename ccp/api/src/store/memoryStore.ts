@@ -12,6 +12,16 @@ import { cloneValue, deepEquals } from './clone';
  * would reintroduce exactly that collision.
  */
 const SEP = '\u0000';
+
+/**
+ * Rows per synchronous chunk when serializing the snapshot (CONC-8).
+ *
+ * The trade is total wall time against the longest UNINTERRUPTED block, and a server lives
+ * by the second: 2,000 rows is a few milliseconds of stringify, small enough that a health
+ * check or an in-flight read is never starved, large enough that the per-chunk overhead
+ * stays in the noise. Tuned to the measurement (~5 microseconds/row), not guessed.
+ */
+const SNAPSHOT_CHUNK_ROWS = 2000;
 const keyOf = (pk: string, sk: string): string => `${pk}${SEP}${sk}`;
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -202,6 +212,49 @@ export class MemoryStore implements ConfigStore {
    */
   serializeItems(): string {
     return JSON.stringify(this.itemsInKeyOrder());
+  }
+
+  /**
+   * The same snapshot, produced in CHUNKS that yield the event loop between them
+   * (CONC-8).
+   *
+   * `JSON.stringify` over the whole store is one uninterruptible synchronous step, and it
+   * is on the durable-write path, so its cost is a hard stall of the single-threaded
+   * server: measured at ~5 microseconds per row — 107 ms at 20,000 rows, 263 ms at 50,000
+   * — during which nothing else is served, including `/readyz`. That is the same class of
+   * stall CONC-5 was about, arriving through the persist path instead of a subprocess.
+   *
+   * WHY THIS IS SAFE, and it rests on one property worth stating explicitly: stored items
+   * are REPLACED, never mutated in place. Every write path builds a new object
+   * (`setItem(cloneValue(...))`) and swaps the map's reference, so the array of references
+   * captured below is an immutable point-in-time view — a mutation landing mid-serialize
+   * changes the map, not the objects being read. There is no torn snapshot to worry about;
+   * there is only a snapshot of time T, which is what a snapshot is.
+   *
+   * The capture happens BEFORE the first `await`, i.e. still inside the caller's
+   * synchronous step. `FileStore.flush` relies on that: it claims its waiters and calls
+   * this in one uninterrupted step, so "these callers are covered" and "this is the state
+   * being written" cannot disagree. Mutations arriving during the awaits queue the next
+   * flush and are covered by it.
+   *
+   * Byte-identical to {@link serializeItems} by construction — `JSON.stringify([a,b,c])`
+   * is `[` + the element renderings joined by `,` + `]` — and pinned by a test that
+   * compares the two over the same store rather than trusting that argument.
+   *
+   * The yield is `setImmediate`, NOT a resolved promise: microtasks drain before the loop
+   * turns, so awaiting one would chunk the work without ever letting an I/O callback run —
+   * all of the added complexity and none of the benefit.
+   */
+  async serializeItemsChunked(chunkRows = SNAPSHOT_CHUNK_ROWS): Promise<string> {
+    const rows = this.itemsInKeyOrder(); // synchronous capture — see above
+    if (rows.length === 0) return '[]';
+    const parts: string[] = [];
+    for (let i = 0; i < rows.length; i += chunkRows) {
+      // `slice(1, -1)` strips the chunk's own brackets; the pieces are re-joined below.
+      parts.push(JSON.stringify(rows.slice(i, i + chunkRows)).slice(1, -1));
+      if (i + chunkRows < rows.length) await new Promise<void>((r) => setImmediate(r));
+    }
+    return `[${parts.join(',')}]`;
   }
 
   /** Replace the whole store from a snapshot (load-on-boot). */

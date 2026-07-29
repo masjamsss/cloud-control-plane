@@ -189,16 +189,29 @@ export class FileStore extends MemoryStore {
 
   /**
    * Write one snapshot covering every waiter registered so far. Claiming `waiters`
-   * and serializing happen in the SAME synchronous step, so no mutation can slip
+   * and CAPTURING the rows happen in the SAME synchronous step, so no mutation can slip
    * between "these callers are covered" and "this is the state we are writing" —
    * a mutation that lands during the await simply queues the next flush.
+   *
+   * CONC-8 — the serialization is chunked and yields the event loop between chunks.
+   * `JSON.stringify` over the whole store was one uninterruptible step on the durable
+   * write path: 107 ms at 20,000 rows, 263 ms at 50,000, during which this
+   * single-threaded server answered nothing at all — `/readyz` included, which is how a
+   * slow snapshot turns into an orchestrator restart mid-write.
+   *
+   * The "same synchronous step" guarantee above is UNCHANGED by that, and the reason is
+   * worth being explicit about: `serializeItemsChunked` captures its row references
+   * before its first `await`, so the capture still happens inside this method's
+   * synchronous prefix, right after the waiters are claimed. What spans ticks is only the
+   * rendering of rows that were already fixed — and stored items are replaced rather than
+   * mutated in place, so those references cannot change underneath it.
    */
   private async flush(): Promise<void> {
     this.flushQueued = false;
     const covered = this.waiters;
     this.waiters = [];
     if (covered.length === 0) return;
-    const json = this.serializeItems();
+    const json = await this.serializeItemsChunked();
     try {
       await this.writeAtomic(json);
     } catch (e) {

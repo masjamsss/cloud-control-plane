@@ -556,3 +556,35 @@ rather than passing both through in one request. The alternative — matching Dy
 semantics exactly in `MemoryStore` — would mean the in-memory store returning short pages
 for no reason a reader of this codebase could see, which trades a documented divergence for
 a baffling one.
+
+### R-47 · The snapshot row CAPTURE is still one synchronous O(store) step
+*Residue on **CONC-8**.*
+
+`itemsInKeyOrder()` sorts the key list (when the cache is cold, which any insert
+invalidates) and then does one map lookup per row, all synchronously, before the first
+chunk is rendered. At 20,000 rows the measured max block is 20.3 ms against a predicted
+~10 ms of stringify for a 2,000-row chunk, and the difference is that capture.
+
+Accepted at that. It is roughly an order of magnitude cheaper than the serialization it
+replaced as the dominant cost, it is bounded by the same store size rather than growing
+faster, and chunking it too would mean giving up the one property the whole design rests
+on: that the rows are fixed in a single synchronous step, so the waiters claimed by
+`flush` and the state written for them cannot disagree. Trading that guarantee for another
+10 ms would be a bad bargain. The real answer is the same one PERF-10 points at — an index
+that does not need a full re-sort per snapshot.
+
+### R-48 · Three tests are timing-flaky under full-suite parallel load
+*Residue on **CONC-8**, observed while running the suite repeatedly.*
+
+`driftBundleSeam.test.ts` and `bundleCrashRecovery.test.ts` each failed once with
+`Test timed out in 5000ms` during a full run, and passed in isolation and on two subsequent
+full runs. Both shell out to real subprocesses (git, `catalogctl`) under vitest's default
+5-second timeout, so they are competing for CPU with the rest of the suite; the
+`snapshotChunking` FileStore test hit the same wall until its writes were made concurrent.
+
+Not caused by the snapshot work — the failures are in files that use `MemoryStore`, and the
+change is `FileStore`-only — but recorded because a suite that fails once in three runs
+teaches people to re-run instead of to read, which is how a real regression gets waved
+through. The fix is a longer explicit timeout on the tests that spawn processes, not more
+retries; deliberately not done here, where it would be an unrelated change buried in a
+store commit.

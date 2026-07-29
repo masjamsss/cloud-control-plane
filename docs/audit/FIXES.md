@@ -2926,3 +2926,73 @@ is a clear 422 at submit time instead of a key that works until the day it alias
 - [x] **Regression tests** - the refusals (delimiters, whitespace, NUL, newline, a forged
       key path) alongside the tokens that must keep working (uuid, ulid, a dotted nonce).
 - [x] **Evidence in the status line** - see **API-17**.
+
+## CONC-8
+
+*Every authenticated request triggers a full-store snapshot write; snapshot serialization is
+synchronous O(store) on the event loop.*
+
+**Both halves of the finding's own recommendation were already done**, and this entry says
+so rather than leaving the next reader to re-derive it. "Don't persist the idle slide on
+every request" is closed by `SLIDE_GRANULARITY_MS`: the slid value is still what the request
+sees, but the WRITE happens at most once a minute per session. "Move snapshot serialization
+off the hot path" was half-done by PR #6's write coalescing, and `serializeItems` had
+already dropped the deep copy `exportItems` used to make.
+
+What remained is the part the triage flags: **the serialize step itself still blocks**.
+Measured before deciding, at ~5 microseconds per row:
+
+| store | snapshot | `JSON.stringify` |
+| --- | --- | --- |
+| 1,000 rows | 1.1 MB | 7.9 ms |
+| 5,000 rows | 5.4 MB | 30.8 ms |
+| 20,000 rows | 21.5 MB | 107.0 ms |
+| 50,000 rows | 53.7 MB | 263.3 ms |
+
+That is a hard stall of the entire single-threaded server, on the durable-write path.
+Nothing is served during it — `/readyz` included, which is precisely how a slow snapshot
+turns into an orchestrator restart in the middle of a write, the interaction ERR-1 and
+CONC-5 are about arriving through a third door.
+
+The snapshot is now rendered in chunks that yield between them. Max contiguous block, at
+2,000 rows per chunk:
+
+| store | before | after |
+| --- | --- | --- |
+| 5,000 rows | 31.7 ms | 11.7 ms |
+| 20,000 rows | 122.7 ms | 20.3 ms |
+
+The point is not the ratio, it is the SHAPE: the block used to grow with the database and
+now grows with the chunk size, which is a constant.
+
+**The safety argument rests on one property, and it is worth stating because the whole
+optimisation collapses without it: stored items are REPLACED, never mutated in place.**
+Every write path builds a new object and swaps the map's reference, so an array of
+references captured synchronously is an immutable point-in-time view — a mutation landing
+mid-serialize changes the map, not the objects being read. There is no torn snapshot
+possible, only a snapshot of time T, which is what a snapshot is. A test lands an update, an
+insert and a delete DURING a serialize and asserts the output is exactly the state at
+capture.
+
+`FileStore.flush`'s "claim the waiters and fix the state in one synchronous step" guarantee
+is unchanged: `serializeItemsChunked` captures its rows before its first `await`, so the
+capture is still inside flush's synchronous prefix. Mutations arriving during the awaits
+queue the next flush, as they always did.
+
+- [x] **Negative test, run twice, and the SECOND run is the valuable one.** Removing the
+      yield fails the "the loop turns between chunks" test. Replacing it with
+      `await Promise.resolve()` — a microtask, the subtly wrong version, which chunks the
+      work and yields nothing because microtasks drain before the loop turns — fails the
+      SAME test. A fix that looked right would not have passed.
+- [x] **Regression tests** — 10 in `test/snapshotChunking.test.ts`. The first four assert
+      the chunked output is BYTE-IDENTICAL to the synchronous one, including at every
+      awkward boundary (empty, one row, exactly one chunk, one over): that is the entire
+      correctness argument, asserted rather than reasoned about. There is a CONTROL
+      asserting the synchronous serializer yields nothing, without which the yield test
+      would prove nothing (L-1). And three FileStore tests cover the property that actually
+      matters — a chunk-written snapshot reloads identically, the file is never half-written
+      at rest, and a mutation during a flush is covered by the next one rather than lost.
+- [x] **Evidence in the status line** — 1,478 api tests pass (108 files).
+
+**Residue:** the row CAPTURE is still one synchronous O(store) step, and the suite has a
+timing-flake this work ran into three times. See **R-47** and **R-48**.
