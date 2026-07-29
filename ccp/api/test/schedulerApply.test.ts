@@ -208,8 +208,13 @@ describe('not-yet-due / already-expired → nothing runs', () => {
 
 /* ── decision path: missing / corrupt pinned plan → HALT (never apply) ──────── */
 
-describe('missing or corrupt pinned plan → HALT, never apply', () => {
-  it('absent planDigest+pinnedDiff → HALTED_DRIFT, no apply attempted, audited + notified', async () => {
+describe('missing or corrupt pinned plan → never apply', () => {
+  // API-3 changed this case's DESTINATION, not its guarantee. An ABSENT pin is the
+  // deployment missing its pin-writer, not a damaged change, so the request is HELD in
+  // AWAITING_DEPLOY_APPROVAL rather than destroyed into an unrecoverable HALTED_DRIFT.
+  // `test/schedulerNoPin.test.ts` owns that behaviour in full; what is pinned here is
+  // the part that did not change — apply is never called.
+  it('absent planDigest+pinnedDiff → HELD in AWAITING_DEPLOY_APPROVAL, no apply attempted, audited + notified', async () => {
     const store = new MemoryStore();
     const id = await seedDue(store, { planDigest: undefined, pinnedDiff: undefined });
     const { notifier, events } = recorder();
@@ -223,11 +228,11 @@ describe('missing or corrupt pinned plan → HALT, never apply', () => {
 
     const outcomes = await runDueApplies(store, PROJECT, NOW, applyGuard, { notifier });
 
-    expect(outcomes).toEqual([{ requestId: id, result: 'halted', haltReason: 'NO_PINNED_PLAN' }]);
-    expect((await getReq(store, id)).status).toBe(HALTED_DRIFT);
+    expect(outcomes).toEqual([{ requestId: id, result: 'held-no-plan' }]);
+    expect((await getReq(store, id)).status).toBe('AWAITING_DEPLOY_APPROVAL');
     const actions = (await auditEntries(store, id)).map((e) => e.action);
-    expect(actions).toContain('scheduler-halt-noplan');
-    expect(events.map((e) => e.kind)).toContain('halted-no-plan');
+    expect(actions).toContain('scheduler-hold-noplan');
+    expect(events.map((e) => e.kind)).toContain('held-no-plan');
   });
 
   it('corrupt pin (digest does not match its diff) → HALTED_DRIFT, never apply', async () => {
@@ -490,7 +495,11 @@ describe('FINDING 1 regression — overlapping ticks can never double-apply', ()
 
   it('a request already in APPLYING is reported skipped-moved and never (re-)applied', async () => {
     const store = new MemoryStore();
-    const id = await seedDue(store, { status: APPLYING });
+    // The claim stamp is explicit and FRESH. It used to be implicit (whatever wall-clock
+    // `seedRequests` wrote), which was fine while `APPLYING` was permanent — but the
+    // claim now carries a lease (API-2), so "still owned by a live worker" is a premise
+    // this test has to state rather than inherit from the calendar.
+    const id = await seedDue(store, { status: APPLYING, applyClaimedAt: new Date(NOW - 60_000).toISOString() });
     let applyCalled = false;
     const ex: ApplyExecutor = {
       replan: async (r) => ({ diff: r.pinnedDiff!, digest: r.planDigest! }),

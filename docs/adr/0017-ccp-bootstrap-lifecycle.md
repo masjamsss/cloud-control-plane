@@ -4,7 +4,7 @@
 ships, `grant-admin.ts` remains the sanctioned day-zero path)
 **Date:** 2026-07-22
 **Deciders:** repo owner
-**Design:** [spec 2026-07-21 — CCP bootstrap lifecycle](../superpowers/specs/2026-07-21-ccp-bootstrap-lifecycle.md)
+**Design:** spec 2026-07-21 — CCP bootstrap lifecycle (`docs/superpowers/specs/2026-07-21-ccp-bootstrap-lifecycle.md`, private planning archive — not published)
 (the governing design; this ADR records the decision, the spec carries the mechanics)
 **Extends:** [ADR-0011](0011-gerbang-admin-capability.md) (admin as capability — untouched) ·
 [ADR-0013](0013-ccp-approval-ladder-2fa.md) (ladder + 2FA — untouched)
@@ -31,7 +31,7 @@ a symptom — 2FA demanded before the one-time password is even rotated
 and dead at 72 h, no request the founder submits ever approvable, and the sanctioned way out
 an offline incantation: `npx tsx scripts/grant-admin.ts --username <id> --pr <ref>` on the
 host, discoverable only via runbook
-[second-approver-enrolment.md](../runbooks/second-approver-enrolment.md) Phase 3.
+`docs/runbooks/second-approver-enrolment.md` (not written) Phase 3.
 
 `grant-admin.ts` is **already a bootstrap bypass** — a host-side script that flips `isAdmin`
 outside every in-app control. It is narrow (refuses at ≥2 active admins,
@@ -145,7 +145,7 @@ and registered as the not-taken operator choice (spec §15 #1) so it stays visib
 - Two-truths discipline: until the build lands, docs must keep describing `grant-admin.ts`
   as the live sanctioned path; the lifecycle is settled *direction*
   (this ADR), not live behavior. Rollout status lives in
-  [proposal 0018](../proposals/0018-enablement-deployment-unresolved.md).
+  proposal 0018 (`docs/proposals/0018-enablement-deployment-unresolved.md`, private planning archive — not published).
 
 ## Action items
 1. [ ] Build lanes A–D per spec §13 (api domain/routes/seal → installer → app → docs), each

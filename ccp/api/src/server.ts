@@ -10,6 +10,8 @@ import { ensureProjectDataRoot, resolveProjectDataRoot } from './domain/projectD
 import { bootstrap, seedInstanceIdentity } from '../scripts/bootstrap';
 import { executorKind, maybeStartSchedulerLoop, schedulerEnabled } from './domain/apply/loop';
 import { runSettlement, SettlementConfigError } from './domain/settlement';
+import { runVersionStamp } from './domain/versionStamp';
+import { installProcessErrorLogging } from './log';
 
 export { resolveDataFile };
 
@@ -37,6 +39,13 @@ export function selectStore(): Promise<ConfigStore> | ConfigStore {
 }
 
 async function start(): Promise<void> {
+  // FIRST thing in the process, before anything that can throw (OPS-2). There was no
+  // unhandledRejection/uncaughtException handler anywhere in the api, so a stray rejection
+  // during boot — a bad data dir, a store that will not load — printed Node's own warning
+  // at best and nothing at all at worst. Installed here rather than in createApp: the app
+  // factory runs once per test, and attaching process listeners there leaks them.
+  installProcessErrorLogging();
+
   // Fail closed on an insecure/incomplete production config BEFORE opening the store
   // or binding a port. Outside NODE_ENV=production this is a no-op (dev/tests + B2's
   // restart-survival proof, which boots with NODE_ENV=development, are unaffected).
@@ -110,6 +119,21 @@ async function start(): Promise<void> {
     );
   }
 
+  // REM-1 — stamp the optimistic-concurrency attributes onto rows that predate them.
+  // Runs AFTER settlement (which may materialize account rows this then stamps) and
+  // BEFORE serving, so no request can read a row mid-stamp. Idempotent via its own
+  // marker; a no-op on an already-stamped store and on a blank one.
+  //
+  // Until this has run, every ifEquals guard in the routes is inert against existing
+  // data: the attribute is `undefined` on both sides of a concurrent pair, so both
+  // writes pass. The guards protect new rows; this is what extends them to old ones.
+  const stamped = await runVersionStamp(store);
+  if (stamped && (stamped.requests || stamped.accounts || stamped.teams)) {
+    console.log(
+      `ccp-api: version-stamp — requests: ${stamped.requests}, accounts: ${stamped.accounts}, teams: ${stamped.teams}`,
+    );
+  }
+
   if (process.env.CCP_BOOTSTRAP === '1') {
     // Disk-presence refusal ran BEFORE the store opened (see above). What remains here
     // is the store-level account-presence refusal for non-file backends.
@@ -141,6 +165,24 @@ async function start(): Promise<void> {
   }
 
   const port = Number(process.env.PORT) || 8801;
+  // CONC-7 / DATA-9 — hand the writer lock back on a clean shutdown, so a rolling deploy
+  // or a `docker compose restart` does not leave the next process clearing a lock before
+  // it can boot. A `kill -9` still leaves one behind; that path is covered by the
+  // same-host dead-pid takeover in `dataLock.ts`, which is the one case where the holder
+  // can be PROVEN gone rather than assumed.
+  if (store instanceof FileStore) {
+    const release = (): void => store.close();
+    process.once('SIGTERM', () => {
+      release();
+      process.exit(0);
+    });
+    process.once('SIGINT', () => {
+      release();
+      process.exit(0);
+    });
+    process.once('exit', release);
+  }
+
   serve({ fetch: app.fetch, port }, (i) => console.log(`ccp-api dev on :${i.port}`));
 }
 

@@ -30,6 +30,8 @@ import {
   type SessionsView,
 } from './accountFlow';
 import { useReauthGate } from './ReauthDialog';
+import { attempt } from '@/lib/asyncGuard';
+import { LoadError } from '@/components/LoadError';
 import './account.css';
 
 /**
@@ -52,18 +54,38 @@ export function AccountSecurityPage(): JSX.Element {
   const [recovery, setRecovery] = useState<RecoveryStatusView | null>(null);
   const [sessions, setSessions] = useState<SessionsView | null>(null);
   const [ceremonyCodes, setCeremonyCodes] = useState<string[] | null>(null);
+  const [devicesError, setDevicesError] = useState<string | null>(null);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
   // Read once at mount, then forgotten — the nudge shows at most once per
   // sign-in (see lib/apiSession.ts's consumeRecoveryLoginFlag doc).
   const [showRecoveryBanner] = useState(() => consumeRecoveryLoginFlag());
 
+  // FE-2/UI-1: all three loaders throw (ApiRefusalError) on any refusal or
+  // transport failure. The old `.then(setX)` had no rejection path, so each
+  // card sat on "Loading…" for ever — three independent silent hangs on one
+  // page. Each pane now owns its own error, because they fail independently
+  // (a 403 on sessions must not blank the devices list that DID load).
   const refreshDevices = useCallback(() => {
-    void loadDevicesVia(authoritative, client, id).then(setDevices);
+    setDevicesError(null);
+    void attempt(() => loadDevicesVia(authoritative, client, id)).then((outcome) => {
+      if (outcome.ok) setDevices(outcome.value);
+      else setDevicesError(outcome.reason);
+    });
   }, [authoritative, client, id]);
   const refreshRecovery = useCallback(() => {
-    void loadRecoveryStatusVia(authoritative, client, id).then(setRecovery);
+    setRecoveryError(null);
+    void attempt(() => loadRecoveryStatusVia(authoritative, client, id)).then((outcome) => {
+      if (outcome.ok) setRecovery(outcome.value);
+      else setRecoveryError(outcome.reason);
+    });
   }, [authoritative, client, id]);
   const refreshSessions = useCallback(() => {
-    void loadSessionsVia(authoritative, client, id).then(setSessions);
+    setSessionsError(null);
+    void attempt(() => loadSessionsVia(authoritative, client, id)).then((outcome) => {
+      if (outcome.ok) setSessions(outcome.value);
+      else setSessionsError(outcome.reason);
+    });
   }, [authoritative, client, id]);
 
   useEffect(() => {
@@ -109,6 +131,7 @@ export function AccountSecurityPage(): JSX.Element {
           client={client}
           id={id}
           devices={devices}
+          loadError={devicesError}
           onRefresh={refreshDevices}
           withReauth={withReauth}
           onCodesIssued={onCodesIssued}
@@ -118,6 +141,7 @@ export function AccountSecurityPage(): JSX.Element {
           client={client}
           id={id}
           status={recovery}
+          loadError={recoveryError}
           hasDevices={hasDevices}
           onRefresh={refreshRecovery}
           withReauth={withReauth}
@@ -126,6 +150,7 @@ export function AccountSecurityPage(): JSX.Element {
         <SessionsCard
           client={client}
           view={sessions}
+          loadError={sessionsError}
           onRefresh={refreshSessions}
           withReauth={withReauth}
           revokeOthers={() => revokeOtherSessionsVia(authoritative, client, id)}
@@ -267,6 +292,9 @@ interface DevicesCardProps {
   client: HttpApiClient | null;
   id: string;
   devices: DeviceRow[] | null;
+  /** A failed load of THIS pane's data (FE-2) — rendered in place of its
+   * "Loading…", with a retry that re-runs `onRefresh`. */
+  loadError: string | null;
   onRefresh: () => void;
   withReauth: <T>(action: () => Promise<T>) => Promise<T>;
   onCodesIssued: (codes: string[]) => void;
@@ -277,6 +305,7 @@ function DevicesCard({
   client,
   id,
   devices,
+  loadError,
   onRefresh,
   withReauth,
   onCodesIssued,
@@ -353,7 +382,9 @@ function DevicesCard({
 
   return (
     <Card title="Authenticator devices" className="acct-card">
-      {devices === null ? (
+      {loadError !== null ? (
+        <LoadError message={loadError} what="your devices" onRetry={onRefresh} />
+      ) : devices === null ? (
         <p className="acct-fact">Loading…</p>
       ) : devices.length === 0 ? (
         <p className="acct-fact">No authenticator devices yet.</p>
@@ -475,6 +506,9 @@ interface RecoveryCodesCardProps {
   client: HttpApiClient | null;
   id: string;
   status: RecoveryStatusView | null;
+  /** A failed load of THIS pane's data (FE-2) — rendered in place of its
+   * "Loading…", with a retry that re-runs `onRefresh`. */
+  loadError: string | null;
   hasDevices: boolean;
   onRefresh: () => void;
   withReauth: <T>(action: () => Promise<T>) => Promise<T>;
@@ -486,6 +520,7 @@ function RecoveryCodesCard({
   client,
   id,
   status,
+  loadError,
   hasDevices,
   onRefresh,
   withReauth,
@@ -521,7 +556,9 @@ function RecoveryCodesCard({
         One-time codes you can use to sign in if you lose every authenticator device. Each one works
         exactly once.
       </p>
-      {status === null ? (
+      {loadError !== null ? (
+        <LoadError message={loadError} what="your recovery codes" onRetry={onRefresh} />
+      ) : status === null ? (
         <p className="acct-fact">Loading…</p>
       ) : status.generatedAt ? (
         <p className="acct-fact">
@@ -556,6 +593,9 @@ function RecoveryCodesCard({
 interface SessionsCardProps {
   client: HttpApiClient | null;
   view: SessionsView | null;
+  /** A failed load of THIS pane's data (FE-2) — rendered in place of its
+   * "Loading…", with a retry that re-runs `onRefresh`. */
+  loadError: string | null;
   onRefresh: () => void;
   withReauth: <T>(action: () => Promise<T>) => Promise<T>;
   revokeOthers: () => Promise<{ revoked: number }>;
@@ -564,6 +604,7 @@ interface SessionsCardProps {
 function SessionsCard({
   client,
   view,
+  loadError,
   onRefresh,
   withReauth,
   revokeOthers,
@@ -606,7 +647,9 @@ function SessionsCard({
 
   return (
     <Card title="Active sessions" className="acct-card">
-      {view === null ? (
+      {loadError !== null ? (
+        <LoadError message={loadError} what="your sessions" onRetry={onRefresh} />
+      ) : view === null ? (
         <p className="acct-fact">Loading…</p>
       ) : view.kind === 'rows' ? (
         <ul className="acct-list">

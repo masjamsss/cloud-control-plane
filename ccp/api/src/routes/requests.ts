@@ -6,8 +6,8 @@ import { canApprove, canRequest } from '@app-lib/permissions';
 import { PlanSummarySchema, type PlanCounts } from '../store/planSummarySchema';
 import { initialStatusFor, ladderFor, nextLadderStep, reviewTierFor, strictestTier, tierOf, type LadderStep, type ReviewTier } from '../domain/exposure';
 import type { AppEnv } from '../appEnv';
-import type { ChainHeadItem, RequestItem, RequestSetItem } from '../store/schema';
-import { approvalKey, chainHead, requestCollectionGsi, requestIdempotencyKey, requestKey } from '../store/schema';
+import type { ChainHeadItem, ProjectItem, RequestItem, RequestSetItem } from '../store/schema';
+import { approvalKey, chainHead, projectKey, requestCollectionGsi, requestIdempotencyKey, requestKey } from '../store/schema';
 import { itemsOf } from '../domain/changeset';
 import type { TransactWrite } from '../store/configStore';
 import { ConditionError } from '../store/configStore';
@@ -22,7 +22,9 @@ import { isSystemDriftOp } from '../domain/systemOps';
 import { disabledOps, isFrozen, loadPolicy, loadTeams, resolveRisk } from '../domain/config';
 import { checkSubmitRateLimit } from '../middleware/rateLimit';
 import { recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
-import { bundleConfig, realSteps, runBundle } from '../domain/bundle';
+import { bundleArmed, bundleClaimLive, bundleConfig, realSteps, runBundle } from '../domain/bundle';
+import { resolveLaneRemote, type LaneProject } from '../domain/laneRepo';
+import { resolveKnob } from '../domain/deploymentSettings';
 import { coolingElapsed, settleCooling } from '../domain/cooling';
 import { canSignStep } from '../domain/eligibility';
 import { totpDevicesOf } from '../auth/totp';
@@ -125,7 +127,25 @@ const OPEN_STATUSES = new Set(['AWAITING_CODE_REVIEW', 'NEEDS_ENGINEER']);
  * AS-MERGED, the check was a single hardcoded `!== 'APPROVED_COOLING'`, not
  * yet a Set — this is that promised one-line-per-status widening, made real).
  */
-const CANCELLABLE_STATUSES = new Set(['APPROVED_COOLING', 'AWAITING_DEPLOY_APPROVAL', 'WINDOW_EXPIRED']);
+const CANCELLABLE_STATUSES = new Set([
+  'APPROVED_COOLING',
+  'AWAITING_DEPLOY_APPROVAL',
+  'WINDOW_EXPIRED',
+  // The scheduler's halt statuses (API-2). Before this, nothing in the API could move a
+  // request out of `HALTED_DRIFT`/`HALTED_APPLY_FAILED`: approve/reject refuse them,
+  // rewindow refuses them, the bundle refuses them, and the scheduler itself only ever
+  // writes them. A halted change was unreachable by every verb the product ships, and
+  // the only remedy was editing the store JSON by hand.
+  //
+  // Cancel is the RIGHT exit and deliberately the only one. A halt means the reviewed
+  // plan can no longer be trusted (drift/corrupt pin/quorum shortfall) or that an apply
+  // may have half-landed — the halt messages already say "routed to a fresh
+  // plan/review". Re-windowing such a row straight back into auto-apply eligibility
+  // would re-arm exactly the plan the halt refused, so rewindow is NOT widened; the
+  // path out of a halt is cancel + resubmit, through the humans.
+  'HALTED_DRIFT',
+  'HALTED_APPLY_FAILED',
+]);
 /**
  * Statuses POST /:id/link-pr refuses: a terminally-refused request
  * has no fulfilling PR to point at. Everything else may gain (or correct) its
@@ -239,6 +259,9 @@ export function bundleRequestPayload(req: RequestItem, projectId: string): Recor
     params: req.params,
     approvals: req.approvals,
     status: req.status,
+    // ARCH-3: the gate is told which plan was approved, so it can report a digest the api
+    // can check. Absent on every request today (API-3 — no pin-writer is deployed).
+    ...(req.planDigest !== undefined ? { planDigest: req.planDigest } : {}),
     ...(req.items ? { items: req.items } : {}),
   };
 }
@@ -445,6 +468,18 @@ export function requestRoutes(): Hono<AppEnv> {
       ],
       policyVersion,
       riskOverrideVersion,
+      // DATA-1: born WITH the attribute its own concurrency guard compares.
+      //
+      // Every full-replacement write below guards on `ifEquals: {attr:'eventSeq', …}`, and
+      // `ifEquals` compares the stored value to the captured one. On a row that has no
+      // `eventSeq` at all, that comparison is `undefined !== undefined` — false — so the
+      // guard PASSES for every concurrent writer at once. The guard existed and protected
+      // nothing, for exactly the window that matters most: the FIRST pair of concurrent
+      // approvals on a freshly-submitted request, before any write has bumped the counter.
+      //
+      // REM-1's boot stamp back-fills rows that predate the field; this is the other half,
+      // so a row created after boot is never in that state either.
+      eventSeq: 0,
       ...feasibility,
       GSI1PK: requestCollectionGsi(projectId),
       GSI1SK: id,
@@ -705,6 +740,9 @@ export function requestRoutes(): Hono<AppEnv> {
 
     const updated: RequestItem = {
       ...req,
+      // Bumped on every write so a concurrent writer's guard can detect that the row
+      // moved. `eventSeq` has been in the schema since the beginning and was never used.
+      eventSeq: (req.eventSeq ?? 0) + 1,
       approvals,
       approvalsRequired: required,
       reviewTier: tier, // persist the tighten-only effective tier
@@ -729,7 +767,13 @@ export function requestRoutes(): Hono<AppEnv> {
       // closed before quorum completed is a doomed wait — surfaced NOW, not after a
       // silent stall. With no cooling-off ever stamped, this only fires for a window
       // already wholly past (a slow quorum completing after close).
-      const infeasible = isWindowInfeasible(req.schedule, undefined, nowMs());
+      //
+      // `req.earliestApplyAt` is passed, not `undefined` (API-7): rewindow feeds this
+      // same predicate the row's cooling-off, and a row whose cooling cannot elapse
+      // before its window closes is exactly as doomed at quorum-met as it is at
+      // rewindow. Feeding one call site the field and the other `undefined` meant the
+      // same question got two answers.
+      const infeasible = isWindowInfeasible(req.schedule, req.earliestApplyAt, nowMs());
       // Freeze vetoes the quorum-met APPLIED stamp (0024 §2.2/§2.6.1): no request may
       // RECORD an apply during a freeze. Approving itself stays allowed (paperwork, not
       // applies); only THIS status decision is gated.
@@ -770,7 +814,12 @@ export function requestRoutes(): Hono<AppEnv> {
       const { writes: auditWrites } = recordIn(projectId, head, entry);
       const domain: TransactWrite[] = [
         { kind: 'put', item: { ...aKey, user: account.id, at: now }, ifNotExists: true },
-        { kind: 'put', item: updated },
+        // Guarded on the eventSeq this handler read. `updated` was computed from that
+        // read — it carries `approvals = [...req.approvals, mine]` — so writing it
+        // unconditionally overwrites any signature that landed in between, and the
+        // quorum ledger silently loses an approval (CONC-1). The guard turns that
+        // lost update into a refusal.
+        { kind: 'put', item: updated, ifEquals: { attr: 'eventSeq', value: req.eventSeq } },
       ];
       try {
         await store.transact([...domain, ...auditWrites]);
@@ -778,7 +827,13 @@ export function requestRoutes(): Hono<AppEnv> {
       } catch (e) {
         if (e instanceof ConditionError) {
           if (await store.get(aKey.PK, aKey.SK)) return apiError(c, 'ALREADY_APPROVED'); // lost the dedupe race
-          if (attempt === 0) continue; // chain contention → retry once
+          // Which condition failed? If the request row moved, `updated` is stale and
+          // retrying would write exactly the corruption the guard just prevented — the
+          // old code's `continue` did precisely that. Refuse instead; the client re-reads
+          // and re-submits against the state that actually landed.
+          const fresh = (await store.get(k.PK, k.SK)) as RequestItem | null;
+          if (!fresh || fresh.eventSeq !== req.eventSeq) return apiError(c, 'STATE_CONFLICT');
+          if (attempt === 0) continue; // chain contention only → retry once, still fresh
           throw new ApiError('CHAIN_CONTENTION');
         }
         throw e;
@@ -807,6 +862,8 @@ export function requestRoutes(): Hono<AppEnv> {
     const reason = parsed.data.reason?.trim();
     const updated: RequestItem = {
       ...req,
+      // Bumped on every write so a concurrent writer's guard sees the row moved (CONC-2).
+      eventSeq: (req.eventSeq ?? 0) + 1,
       status: 'REJECTED',
       updatedAt: now,
       events: [
@@ -823,7 +880,15 @@ export function requestRoutes(): Hono<AppEnv> {
       before: { status: req.status },
       after: { status: 'REJECTED' },
     };
-    await transactWithAudit(store, projectId, [{ kind: 'put', item: updated }], entry);
+    await transactWithAudit(
+      store,
+      projectId,
+      // Guarded on the eventSeq this handler read: the row is a full replacement computed
+      // from that read, so an unguarded put silently discards anything that landed in
+      // between (CONC-2).
+      [{ kind: 'put', item: updated, ifEquals: { attr: 'eventSeq', value: req.eventSeq } }],
+      entry,
+    );
     return c.json(toChangeRequest(updated, projectId));
   });
 
@@ -863,6 +928,8 @@ export function requestRoutes(): Hono<AppEnv> {
     const now = nowIso();
     const updated: RequestItem = {
       ...req,
+      // Bumped on every write so a concurrent writer's guard sees the row moved (CONC-2).
+      eventSeq: (req.eventSeq ?? 0) + 1,
       prUrl: parsed.data.prUrl,
       updatedAt: now,
       events: [
@@ -889,7 +956,15 @@ export function requestRoutes(): Hono<AppEnv> {
       before: { prNumber: req.prNumber, prUrl: req.prUrl },
       after: { prNumber: updated.prNumber, prUrl: updated.prUrl },
     };
-    await transactWithAudit(store, projectId, [{ kind: 'put', item: updated }], entry);
+    await transactWithAudit(
+      store,
+      projectId,
+      // Guarded on the eventSeq this handler read: the row is a full replacement computed
+      // from that read, so an unguarded put silently discards anything that landed in
+      // between (CONC-2).
+      [{ kind: 'put', item: updated, ifEquals: { attr: 'eventSeq', value: req.eventSeq } }],
+      entry,
+    );
     return c.json(toChangeRequest(updated, projectId));
   });
 
@@ -927,6 +1002,8 @@ export function requestRoutes(): Hono<AppEnv> {
     const now = nowIso();
     const updated: RequestItem = {
       ...req,
+      // Bumped on every write so a concurrent writer's guard sees the row moved (CONC-2).
+      eventSeq: (req.eventSeq ?? 0) + 1,
       planSummary: summary,
       updatedAt: now,
       events: [
@@ -951,13 +1028,36 @@ export function requestRoutes(): Hono<AppEnv> {
       before: { counts: req.planSummary?.counts },
       after: { counts: summary.counts },
     };
-    await transactWithAudit(store, projectId, [{ kind: 'put', item: updated }], entry);
+    await transactWithAudit(
+      store,
+      projectId,
+      // Guarded on the eventSeq this handler read: the row is a full replacement computed
+      // from that read, so an unguarded put silently discards anything that landed in
+      // between (CONC-2).
+      [{ kind: 'put', item: updated, ifEquals: { attr: 'eventSeq', value: req.eventSeq } }],
+      entry,
+    );
     return c.json(toChangeRequest(updated, projectId));
   });
 
-  // ADR-0016: statuses the bundle may act on — fully approved, unapplied. A
-  // pre-quorum, cooling, terminal, or already-applied request is refused.
+  // ADR-0016: statuses the bundle may act on. A cooling, terminal, or already-applied
+  // request is refused here — but NOT a pre-quorum one, which is ARCH-1: this set's old
+  // comment claimed "fully approved" and `AWAITING_CODE_REVIEW` **is** the pre-quorum
+  // status. `initialStatusFor` puts every fresh non-engineer submission there, and the
+  // approve handler moves a quorum-met request OUT of it. So the status was never the
+  // quorum signal, and status alone can never be one.
+  //
+  // The set stays a coarse pre-filter and the real gate is the explicit approvals check in
+  // the handler. `AWAITING_CODE_REVIEW` is kept because a request CAN legitimately reach
+  // quorum and remain there in a multi-item ladder edge case; what must not happen is
+  // applying it without checking, which is now impossible.
   const BUNDLE_ELIGIBLE = new Set(['AWAITING_CODE_REVIEW', 'AWAITING_DEPLOY_APPROVAL']);
+
+  /** ARCH-4/ERR-2: one definition of "a live bundle claim", shared with the scheduler's
+   * due filter (domain/bundle.ts). The route reads it as "is another apply already in
+   * flight"; the scheduler reads it as "keep off this row". */
+  const bundleClaimExpired = (bundle: RequestItem['bundle'], now: number): boolean =>
+    bundle?.state === 'running' && !bundleClaimLive(bundle, now);
 
   // POST /requests/:id/apply — ADR-0016: the approval-to-apply bundle. One click on
   // a fully approved request runs, server-side: local gate (plan == the approved
@@ -968,8 +1068,12 @@ export function requestRoutes(): Hono<AppEnv> {
     const store = c.get('store');
     const projectId = c.get('projectId');
     const account = c.get('account')!;
-    const cfg = bundleConfig();
-    if (!cfg) return c.json({ code: 'BUNDLE_DISARMED', reason: 'The approval-to-apply bundle is not armed on this deployment (CCP_BUNDLE + git/gate/trigger config).' }, 409);
+
+    // Arming first, from the environment alone — the cheapest, most caller-independent
+    // answer there is. A deployment that never armed the bundle replies identically to
+    // every caller without touching the store, which is the property that kept ARCH-2's
+    // per-estate resolution (two reads, below) off the disarmed path.
+    if (!bundleArmed()) return c.json({ code: 'BUNDLE_DISARMED', reason: 'The approval-to-apply bundle is not armed on this deployment (CCP_BUNDLE + git/gate/trigger config).' }, 409);
 
     const k = requestKey(projectId, c.req.param('id'));
     let req = (await store.get(k.PK, k.SK)) as RequestItem | null;
@@ -983,23 +1087,105 @@ export function requestRoutes(): Hono<AppEnv> {
     }
     if (await isFrozen(store, projectId)) return apiError(c, 'GLOBAL_FREEZE');
     if (!BUNDLE_ELIGIBLE.has(req.status)) return apiError(c, 'STATE_CONFLICT');
-    if (req.bundle?.state === 'running') return c.json({ code: 'BUNDLE_RUNNING', reason: 'A bundle for this request is already in flight.' }, 409);
+
+    // ARCH-1 — THE QUORUM CHECK. ADR-0016's whole premise is that the portal ladder IS the
+    // human review of the change, so the bundle may only act on a request that has actually
+    // completed it. The handler checked role, freeze, status and bundle state, and never
+    // `approvals.length` against the ladder — so on an armed deployment a Lead or admin
+    // calling this on a ZERO-APPROVAL request ran the full bundle: gate, commit to main,
+    // deploy-gate trigger. The only remaining defence was whatever the operator happened to
+    // wire into CCP_BUNDLE_GATE_CMD, and the shipped UNAPPROVED refusal lives in
+    // `pr-prepare`, not in the documented drift-edit/plan-check gate recipe.
+    //
+    // `currentRequirement` is the same tighten-only helper the approve handler uses, so the
+    // bar here is the live one — a tier raised after submission applies, and a request
+    // approved under a laxer ladder does not sneak through on its old count.
+    const { required } = currentRequirement(req);
+    if (req.approvals.length < required) {
+      return c.json(
+        {
+          code: 'STATE_CONFLICT',
+          reason: `This change has ${req.approvals.length} of ${required} required approvals — the apply bundle acts only on a fully approved request.`,
+        },
+        409,
+      );
+    }
+    // ERR-2: refuse only while the claim is LIVE. An expired claim belongs to a run that
+    // never reported back, and taking it over here — on the very act the wedge blocks — is
+    // the same lazy-settle doctrine settleCooling/settleWindow/scanJobLease already use:
+    // there is no background timer in this system, and a recovery an operator has to know
+    // to perform is not a recovery.
+    const claimExpired = bundleClaimExpired(req.bundle, nowMs());
+    if (req.bundle?.state === 'running' && !claimExpired) {
+      return c.json({ code: 'BUNDLE_RUNNING', reason: 'A bundle for this request is already in flight.' }, 409);
+    }
     if (req.bundle?.state === 'triggered') return apiError(c, 'STATE_CONFLICT');
 
-    // Claim (idempotency guard) — CAS on the observed status; a lost race means a
-    // concurrent bundle/cancel/settle won, and we report it rather than double-run.
+    // Claim (idempotency guard) — CAS on `eventSeq`, which THIS WRITE ADVANCES (ERR-11).
+    //
+    // It used to guard on `status`, an attribute the claim does not change, so the guard
+    // could not discriminate: two near-simultaneous applies both passed the read-then-act
+    // pre-check above, both satisfied the status guard, and both ran full bundles — two
+    // clones, two gate runs. Only git's non-fast-forward rejection stopped a double
+    // landing, and the loser then recorded `bundle-failed` over the winner's `triggered`.
+    //
+    // Guarding on the attribute the claim itself moves is what makes it a claim. DATA-1
+    // made `eventSeq` present on every row, without which this guard would be the same
+    // no-op in a different place.
     const now = nowIso();
+    const claimSeq = (req.eventSeq ?? 0) + 1;
+    const takeoverEvent = claimExpired
+      ? [{ at: now, type: 'bundle-claim-expired', label: 'A previous apply bundle never reported back — its claim expired and this attempt took it over', actor: account.id }]
+      : [];
     try {
       await store.transact([
-        { kind: 'update', pk: k.PK, sk: k.SK, set: { bundle: { state: 'running', at: now }, updatedAt: now }, ifEquals: { attr: 'status', value: req.status } },
+        {
+          kind: 'update',
+          pk: k.PK,
+          sk: k.SK,
+          set: {
+            bundle: { state: 'running', at: now },
+            updatedAt: now,
+            eventSeq: claimSeq,
+            ...(takeoverEvent.length > 0 ? { events: [...req.events, ...takeoverEvent] } : {}),
+          },
+          ifEquals: { attr: 'eventSeq', value: req.eventSeq },
+        },
       ]);
     } catch (e) {
       if (e instanceof ConditionError) return apiError(c, 'STATE_CONFLICT');
       throw e;
     }
+    if (takeoverEvent.length > 0) req = { ...req, events: [...req.events, ...takeoverEvent] };
+
+    // ARCH-2 — WHICH estate's repository this run clones. The remote used to come from
+    // one deployment-global `CCP_GIT_REMOTE` regardless of the acting project, so the
+    // moment a second estate was onboarded an armed deployment cloned estate A's repo
+    // for estate B's requests. The registry has stored each project's repo all along.
+    //
+    // Resolved HERE — after role, freeze, status and quorum — so a caller who is not
+    // entitled to run a bundle never causes a registry read, and the disarmed answer
+    // above stays store-free.
+    const pk = projectKey(projectId);
+    const project = (await store.get(pk.PK, pk.SK)) as ProjectItem | null;
+    // A project row that has vanished is not a licence to clone somebody else's repo:
+    // it resolves as "registers nothing", which the CCP_GIT_PROJECT pin then refuses.
+    const laneProject: LaneProject = project ?? { id: projectId };
+    const extraHosts = ((await resolveKnob(store, 'scanner.forgeHosts')).value ?? []) as string[];
+    const cfg = bundleConfig(process.env, laneProject, extraHosts);
+    if (!cfg) {
+      // Armed (checked above) and still no config ⇒ the remote is what failed, for THIS
+      // estate. Reporting that as "disarmed" is what made the cross-estate clone
+      // invisible: the operator would go looking at flags that were set correctly.
+      const remote = resolveLaneRemote(laneProject, process.env, extraHosts);
+      return c.json(
+        { code: 'BUNDLE_REPO_UNRESOLVED', reason: `The apply bundle cannot resolve a repository for this estate: ${remote.ok ? 'unknown' : remote.detail}` },
+        409,
+      );
+    }
 
     // The bundle itself (gate → CAS commit → trigger). Never terraform apply here.
-    const outcome = runBundle(
+    const outcome = await runBundle(
       realSteps(cfg),
       JSON.stringify(bundleRequestPayload(req, projectId)),
       `ccp: apply request ${req.id} (${req.operationId} on ${req.targetAddress})\n\nApproved in the portal (ADR-0016 bundle); plan gated + digest-pinned.\nRequested-by: ${req.requester}; bundle-run-by: ${account.id}`,
@@ -1020,7 +1206,11 @@ export function requestRoutes(): Hono<AppEnv> {
       targetId: req.id,
       requestId: req.id,
       before: { status: req.status, bundle: req.bundle ?? null },
-      after: { status: req.status, bundle, steps: outcome.steps },
+      // ARCH-2 — WHICH estate's repository this run acted on, in the audit trail of
+      // record. The cross-estate clone was possible for years because the answer lived
+      // only in one process's environment; a reader of this chain could not have told
+      // that a request for estate B landed in estate A's repo.
+      after: { status: req.status, bundle, steps: outcome.steps, remote: { source: cfg.remoteSource, detail: cfg.remoteDetail, branch: cfg.branch } },
     };
     const hKey = chainHead(projectId);
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -1028,7 +1218,10 @@ export function requestRoutes(): Hono<AppEnv> {
       const { writes } = recordIn(projectId, head, entry);
       try {
         await store.transact([
-          { kind: 'update', pk: k.PK, sk: k.SK, set: { bundle, updatedAt: done, events }, ifEquals: { attr: 'status', value: req.status } },
+          // Guarded on the seq THIS handler's claim wrote (ERR-11). Guarding on `status`
+          // let an outcome land on a row that had moved under the running bundle — a
+          // cancel, a settle, or the losing half of the double-run the claim now prevents.
+          { kind: 'update', pk: k.PK, sk: k.SK, set: { bundle, updatedAt: done, events, eventSeq: claimSeq + 1 }, ifEquals: { attr: 'eventSeq', value: claimSeq } },
           ...writes,
         ]);
         break;

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { JSX } from 'react';
 import type { ServiceManifest } from '@/types';
 import { api, authClient } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
 import { getCurrentUser } from '@/lib/session';
 import { recordAudit } from '@/lib/audit';
@@ -77,7 +78,12 @@ export function AllowlistAdmin({
   const projectId = useActiveProjectId();
 
   useEffect(() => {
-    void api.listManifests().then(setManifests);
+    // FE-1/FE-2: `listManifests` throws in api mode. An empty param list is the
+    // honest degraded state for this screen (it renders "no allowlistable
+    // params"), but it must not arrive as an unhandled rejection.
+    void attempt(() => api.listManifests()).then((outcome) => {
+      if (outcome.ok) setManifests(outcome.value);
+    });
   }, [projectId]);
 
   const params = useMemo(() => collectAllowlistParams(manifests), [manifests]);

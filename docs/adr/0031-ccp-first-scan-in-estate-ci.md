@@ -1,7 +1,7 @@
 # ADR-0031: The first onboarding scan runs in the estate repo's own CI — the control plane still never checks out repos
 
 **Status:** Proposed (design lane; build gated on owner sign-off — spec:
-[easy first import](../superpowers/specs/2026-07-24-easy-first-import.md)).
+easy first import (`docs/superpowers/specs/2026-07-24-easy-first-import.md`, private planning archive — not published)).
 **2026-07-25 — superseded in part by [0033](0033-ccp-zero-touch-first-scan.md):** the
 option-B deferral below is lifted **for deployments that opt in** (owner-directed); this
 ADR's chosen lanes remain the standing design for every deployment that does not opt in.

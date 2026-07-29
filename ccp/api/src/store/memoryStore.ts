@@ -231,9 +231,23 @@ export class MemoryStore implements ConfigStore {
 
   /* ── writes ────────────────────────────────────────────────────────────── */
 
-  async put(item: Item, opts?: { ifNotExists?: boolean }): Promise<void> {
+  async put(
+    item: Item,
+    opts?: { ifNotExists?: boolean; ifEquals?: { attr: string; value: unknown } },
+  ): Promise<void> {
     if (opts?.ifNotExists && this.lookup(item.PK, item.SK) !== undefined) {
       throw new ConditionError(`Item ${item.PK}/${item.SK} already exists`);
+    }
+    if (opts?.ifEquals) {
+      const cur = this.lookup(item.PK, item.SK);
+      // Fail closed against a missing item, exactly as DynamoDB does and as `transact`
+      // already does below — a guarded put must never resurrect a deleted row.
+      if (!cur) {
+        throw new ConditionError(`ifEquals failed on ${item.PK}/${item.SK}.${opts.ifEquals.attr} (item missing)`);
+      }
+      if (cur[opts.ifEquals.attr] !== opts.ifEquals.value) {
+        throw new ConditionError(`ifEquals failed on ${item.PK}/${item.SK}.${opts.ifEquals.attr}`);
+      }
     }
     this.setItem(cloneValue(item));
   }
@@ -248,6 +262,19 @@ export class MemoryStore implements ConfigStore {
       if (w.kind === 'put') {
         if (w.ifNotExists && this.lookup(w.item.PK, w.item.SK) !== undefined) {
           throw new ConditionError(`Item ${w.item.PK}/${w.item.SK} already exists`);
+        }
+        if (w.ifEquals) {
+          const cur = this.lookup(w.item.PK, w.item.SK);
+          // Same fail-closed rule as update/delete below: a guarded put can never
+          // resurrect a row deleted between the read and the write.
+          if (!cur) {
+            throw new ConditionError(
+              `ifEquals failed on ${w.item.PK}/${w.item.SK}.${w.ifEquals.attr} (item missing)`,
+            );
+          }
+          if (cur[w.ifEquals.attr] !== w.ifEquals.value) {
+            throw new ConditionError(`ifEquals failed on ${w.item.PK}/${w.item.SK}.${w.ifEquals.attr}`);
+          }
         }
       } else if (w.ifEquals) {
         const cur = this.lookup(w.pk, w.sk);

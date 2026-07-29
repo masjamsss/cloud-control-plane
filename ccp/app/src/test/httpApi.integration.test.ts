@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { createHttpApiClient, type HttpApiClient } from '@/lib/httpApi';
 import { noCapabilities } from '@/lib/serverInfo';
+import { skipUnless } from './helpers/requireToolchain';
 
 /**
  * Integration proof for L10: the HTTP client REALLY talks to ccp-api. We boot
@@ -135,7 +136,13 @@ afterAll(() => {
   server?.kill('SIGKILL');
 });
 
-describe.skipIf(!apiDepsReady)(
+describe.skipIf(
+  skipUnless(
+    "ccp/api's node_modules (this proof boots the real api via its tsx)",
+    apiDepsReady,
+    'run `npm ci` in ccp/api — CI does this in .github/workflows/ccp-app.yml',
+  ),
+)(
   'createHttpApiClient ↔ real ccp-api (L10 authoritative bridge)',
   () => {
     it('drives login → TOTP enroll → me through the real cookie/session flow', async () => {

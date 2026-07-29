@@ -3,6 +3,8 @@ import type { JSX } from 'react';
 import { Link } from 'react-router-dom';
 import type { DriftStatus } from '@/types/drift';
 import { api } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
+import { LoadError } from '@/components/LoadError';
 import { useActiveProjectId } from '@/lib/ProjectContext';
 import { formatProjectTime } from '@/lib/datetime';
 import './drift.css';
@@ -157,13 +159,22 @@ export function DriftStatusCard({ status, now = Date.now() }: DriftStatusCardPro
  */
 export function DriftPanel(): JSX.Element {
   const [status, setStatus] = useState<DriftStatus | null | undefined>(undefined);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const projectId = useActiveProjectId();
 
   useEffect(() => {
     let active = true;
     setStatus(undefined);
-    void api.getDriftStatus().then((s) => {
-      if (active) setStatus(s);
+    setStatusError(null);
+    // FE-2/UI-1: `undefined` is the LOADING sentinel here and `null` means "no
+    // drift data yet", so a rejected fetch left "Checking drift status…" on
+    // screen for ever. A failed status read degrades to `null` — the honest
+    // "nothing to report" state — with the reason shown beside it, because the
+    // panel is one card on a page, not the page.
+    void attempt(() => api.getDriftStatus()).then((outcome) => {
+      if (!active) return;
+      setStatusError(outcome.ok ? null : outcome.reason);
+      setStatus(outcome.ok ? outcome.value : null);
     });
     return () => {
       active = false;
@@ -176,6 +187,11 @@ export function DriftPanel(): JSX.Element {
         <div className="drift-card drift-card--loading" role="note">
           <p className="drift-card__headline">Checking drift status…</p>
         </div>
+      ) : statusError !== null ? (
+        // No retry button: this is a dashboard card, and the page it sits on is
+        // reloaded far more often than it is stared at. What matters is that it
+        // stops claiming to be checking, and says why it stopped.
+        <LoadError message={statusError} what="drift status" />
       ) : (
         <DriftStatusCard status={status} />
       )}

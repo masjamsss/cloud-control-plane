@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { ConfigStore } from '../store/configStore';
+import { ConditionError } from '../store/configStore';
 import type { AccountItem, SessionItem } from '../store/schema';
 import { accountKey, sessionKey, sessionUserGsi } from '../store/schema';
 import { nowMs } from '../clock';
@@ -104,8 +105,66 @@ export async function resolveSession(store: ConfigStore, token: string, now: num
   // always what this request sees; the WRITE is coalesced to SLIDE_GRANULARITY_MS so a
   // burst of requests on one session costs one durable write, not one per request.
   const slid: SessionItem = { ...session, lastSeenAt: new Date(now).toISOString() };
-  if (now - Date.parse(session.lastSeenAt) >= SLIDE_GRANULARITY_MS) await store.put(slid);
+  if (now - Date.parse(session.lastSeenAt) >= SLIDE_GRANULARITY_MS) {
+    const survived = await slideIdleWindow(store, sKey, session.lastSeenAt, slid.lastSeenAt);
+    if (!survived) return { ok: false, reason: 'invalid' };
+  }
   return { ok: true, account, session: slid };
+}
+
+/**
+ * Write the slid `lastSeenAt`, GUARDED (API-10 / CONC-4). Returns false when the session
+ * row is gone — the caller must then fail the request closed.
+ *
+ * The slide used to be an unconditional whole-item `store.put(slid)` after two awaited
+ * reads. `killAllSessions`, `killOtherSessions` and `DELETE /auth/sessions/:id` revoke by
+ * DELETING rows without bumping `sessionVersion` — deliberately, so the caller's own
+ * session survives "sign out my other devices". So an in-flight request on the session
+ * being revoked would `get` the row, watch the delete land, and then RECREATE it with the
+ * put. The revocation was silently undone, and the resurrected session kept sliding its
+ * own idle window on every subsequent request, so it lived until absolute expiry.
+ *
+ * That is the common case, not a corner: the reason to revoke a session is that it is
+ * active, a polling SPA has a request in flight essentially always, and
+ * `killOtherSessions` deletes row-by-row, holding the window open across every row.
+ * The `sessionVersion`-bumping paths (password reset, admin revoke) were immune —
+ * a resurrected row fails the version check — which is exactly why the self-service
+ * paths' failure never showed up next to them.
+ *
+ * A guarded `update` fixes it because the store fails an `ifEquals` against a MISSING item
+ * (DynamoDB-faithful, `memoryStore.ts`): a row that was deleted cannot be conditioned back
+ * into existence. It also narrows the write to the one attribute that changed, so the
+ * slide can no longer clobber a concurrent mutation to any other field.
+ *
+ * A LOST CONDITION IS NOT AUTOMATICALLY A DEAD SESSION, and treating it as one would trade
+ * this bug for a worse one. Two different things lose the guard: the row was revoked, or
+ * another in-flight request on the same session slid it first — which is precisely what
+ * `SLIDE_GRANULARITY_MS` coalescing makes likely under a burst. Logging the user out
+ * because two of their own tabs raced would be a self-inflicted denial of service. So the
+ * loser re-reads and lets presence decide: gone means revoked, present means someone else
+ * did the work. One extra read, only on the contended path.
+ */
+async function slideIdleWindow(
+  store: ConfigStore,
+  sKey: { PK: string; SK: string },
+  expected: string,
+  next: string,
+): Promise<boolean> {
+  try {
+    await store.transact([
+      {
+        kind: 'update',
+        pk: sKey.PK,
+        sk: sKey.SK,
+        set: { lastSeenAt: next },
+        ifEquals: { attr: 'lastSeenAt', value: expected },
+      },
+    ]);
+    return true;
+  } catch (e) {
+    if (!(e instanceof ConditionError)) throw e;
+    return (await store.get(sKey.PK, sKey.SK)) !== null;
+  }
 }
 
 /** Kill every live session for a user (reset/disable/revoke). Returns the count revoked. */

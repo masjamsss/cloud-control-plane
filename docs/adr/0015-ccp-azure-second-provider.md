@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-07-17
 **Deciders:** repo owner
-**Evidence:** [proposal 0039](../proposals/0039-azure-second-provider-concept.md) (assessment +
+**Evidence:** proposal 0039 (`docs/proposals/0039-azure-second-provider-concept.md`, private planning archive — not published) (assessment +
 concept; four-census appendix). Numbering note: 0012/0013 are reserved by the pending
 docs-restructure branch and 0014 is taken — 0015 chosen per the `bf9fab9` precedent.
 

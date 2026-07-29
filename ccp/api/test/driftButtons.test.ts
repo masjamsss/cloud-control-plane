@@ -163,7 +163,7 @@ beforeEach(() => {
   __resetDriftCheckStateForTests();
   for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
   process.env.CCP_DRIFT = '1';
-  for (const k of ['CCP_DRIFT_CHECK_CMD', 'CCP_DRIFT_PROPOSALS', 'CCP_DRIFT_GEN_CMD', 'CCP_GIT_REMOTE']) delete process.env[k];
+  for (const k of ['CCP_DRIFT_CHECK_CMD', 'CCP_DRIFT_PROPOSALS', 'CCP_DRIFT_GEN_CMD', 'CCP_GIT_REMOTE', 'CCP_GIT_PROJECT']) delete process.env[k];
 });
 afterEach(() => {
   __setNow(null);
@@ -336,6 +336,7 @@ describe('POST /projects/:id/drift/generate (B2)', () => {
     const { token } = await mintToken(s);
     expect((await putDrift(s, token)).status).toBe(201);
     process.env.CCP_DRIFT_PROPOSALS = '1';
+    process.env.CCP_GIT_PROJECT = 'acme'; // ARCH-2: this global remote IS acme's
     process.env.CCP_GIT_REMOTE = 'unused-in-this-test';
     process.env.CCP_DRIFT_GEN_CMD = 'true';
 
@@ -364,6 +365,7 @@ describe('POST /projects/:id/drift/generate (B2)', () => {
     const s = await setup();
     await driveToTrusted(s);
     process.env.CCP_DRIFT_PROPOSALS = '1';
+    process.env.CCP_GIT_PROJECT = 'acme'; // ARCH-2: this global remote IS acme's
     process.env.CCP_GIT_REMOTE = 'unused-in-this-test';
     process.env.CCP_DRIFT_GEN_CMD = 'true';
     const res = await generate(s, s.root);
@@ -378,6 +380,7 @@ describe('POST /projects/:id/drift/generate (B2)', () => {
     expect((await putDrift(s, token)).status).toBe(201);
     await setSetting(s.store, 'acme', 'freeze.global', true);
     process.env.CCP_DRIFT_PROPOSALS = '1';
+    process.env.CCP_GIT_PROJECT = 'acme'; // ARCH-2: this global remote IS acme's
     process.env.CCP_GIT_REMOTE = 'unused-in-this-test';
     process.env.CCP_DRIFT_GEN_CMD = 'true';
     const res = await generate(s, s.root);
@@ -390,6 +393,7 @@ describe('POST /projects/:id/drift/generate (B2)', () => {
     const { token } = await mintToken(s);
     expect((await putDrift(s, token)).status).toBe(201); // v1
     process.env.CCP_DRIFT_PROPOSALS = '1';
+    process.env.CCP_GIT_PROJECT = 'acme'; // ARCH-2: this global remote IS acme's
     process.env.CCP_GIT_REMOTE = 'unused-in-this-test'; // prepare() will fail (no such remote) — proves WIRING, mirrors driftProposals.test.ts's own precedent
     process.env.CCP_DRIFT_GEN_CMD = 'true';
 
@@ -414,6 +418,7 @@ describe('POST /projects/:id/drift/generate (B2)', () => {
     const { token } = await mintToken(s);
     expect((await putDrift(s, token)).status).toBe(201);
     process.env.CCP_DRIFT_PROPOSALS = '1';
+    process.env.CCP_GIT_PROJECT = 'acme'; // ARCH-2: this global remote IS acme's
     process.env.CCP_GIT_REMOTE = 'unused-in-this-test';
     process.env.CCP_DRIFT_GEN_CMD = `cat > "$DRIFT_OUT" <<'EOF'\n${JSON.stringify({ schema: 'ccp.drift-proposals/v1', baseCommit: 'x', proposals: [], ungenerable: [] })}\nEOF`;
 

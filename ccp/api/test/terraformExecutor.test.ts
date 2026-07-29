@@ -15,6 +15,7 @@ import {
   TerraformExecutor,
   TerraformExecutorError,
 } from '../src/domain/apply/terraformExecutor';
+import { skipUnless } from './helpers/requireToolchain';
 
 /**
  * PROOF MILESTONE — the real TerraformExecutor. Two layers:
@@ -188,7 +189,7 @@ describe('apply() pre-checks — refuse before terraform is ever spawned', () =>
 
 /* ── LIVE integration — real terraform on the offline sandbox ─────────────────── */
 
-describe.skipIf(!hasTerraform)('LIVE (terraform required): plan → pin → digest-gated apply, and halt-on-drift', () => {
+describe.skipIf(skipUnless('the terraform binary', hasTerraform, 'install terraform (CI does this in .github/workflows/ccp-api.yml)'))('LIVE (terraform required): plan → pin → digest-gated apply, and halt-on-drift', () => {
   const PROJECT = 'sample';
   const WINDOW = { kind: 'window' as const, at: '2026-08-01T00:00:00.000Z', endAt: '2026-08-01T04:00:00.000Z' };
   const IN_WINDOW = Date.parse('2026-08-01T01:00:00.000Z');

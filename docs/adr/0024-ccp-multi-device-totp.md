@@ -1,7 +1,7 @@
 # ADR-0024: 2FA becomes a named TOTP device list — shimmed migration from the single secret, and an enrolled factor is always challenged
 
 **Status:** Proposed (build landed on `claude/account-security-build` per the spec:
-[account & security center](../superpowers/specs/2026-07-22-ccp-account-security-center.md) —
+account & security center (`docs/superpowers/specs/2026-07-22-ccp-account-security-center.md`, private planning archive — not published) —
 the owner greenlit the always-challenged rule (clause 4) and the 5-device cap (§13 open
 questions 1 and 5) as defaults not to be re-litigated; status flips to Accepted on the
 owner's formal word, the same pattern [ADR-0023](0023-ccp-instance-identity.md) uses)

@@ -102,7 +102,13 @@ def parse_resources(path):
         refuse("TF_JSON_UNSUPPORTED", f"{path}: the kit reads/writes native HCL syntax only")
     try:
         with open(path) as fh:
-            doc = hcl2.load(fh)
+            # with_meta=True attaches __start_line__/__end_line__ per block — required on the
+            # repo-pinned python-hcl2 5.1.1 (scripts/gen-project-data.sh), where a plain
+            # load() omits them and every read below dies with a raw KeyError instead of a
+            # refusal. The Azure kit was fixed for exactly this and carried the note; the
+            # fix was never back-ported here, which is the divergence risk of copied-not-
+            # shared kits made real (IMP-1).
+            doc = hcl2.load(fh, with_meta=True)
     except Exception as e:  # lark raises its own exception types
         refuse("UNPARSEABLE", f"{path} does not parse as HCL: {e}")
     out = []

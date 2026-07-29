@@ -1,0 +1,1664 @@
+{
+  "generated_from": "docs/audit/FINDINGS.md + docs/audit/TRIAGE.md",
+  "authoritative_source": "docs/audit/FINDINGS.md — if this file disagrees, FINDINGS.md wins",
+  "open_findings": 139,
+  "rules": {
+    "take": "a whole batch id, not individual findings — batches are grouped by files touched",
+    "baseline": "parallel lanes must NOT touch scripts/findings-baseline.txt; it is a ceiling, not an exact match. One reconciliation commit at the end.",
+    "runbook": "docs/audit/TRIAGE.md#worker-runbook"
+  },
+  "lanes": {
+    "L1": {
+      "name": "app",
+      "owns": [
+        "ccp/app/src/"
+      ]
+    },
+    "L2": {
+      "name": "api-domain",
+      "owns": [
+        "ccp/api/src/domain/"
+      ]
+    },
+    "L3": {
+      "name": "ci-and-ops",
+      "owns": [
+        ".github/workflows/",
+        "scripts/",
+        "docker-compose*.yml"
+      ]
+    },
+    "L4": {
+      "name": "docs",
+      "owns": [
+        "docs/",
+        "ccp/api/README.md",
+        "tools/catalogctl/README.md"
+      ]
+    },
+    "L5": {
+      "name": "catalogctl",
+      "owns": [
+        "tools/catalogctl/"
+      ]
+    },
+    "L6": {
+      "name": "importer",
+      "owns": [
+        "importer/"
+      ]
+    },
+    "L7": {
+      "name": "contract",
+      "owns": [
+        "openapi/",
+        "ccp/api/src/store/",
+        "ccp/api/test/"
+      ]
+    },
+    "run-last": {
+      "name": "verify-and-close",
+      "owns": [
+        "docs/audit/"
+      ],
+      "note": "ledger-only writes; collides with every lane by construction"
+    },
+    "run-alone": {
+      "name": "vestigial-code",
+      "owns": [
+        "(cross-cutting)"
+      ],
+      "note": "deleting dead code while other lanes add code is how you delete something that just became live"
+    }
+  },
+  "batches": [
+    {
+      "id": "B-O1",
+      "model": "opus",
+      "title": "Bundle / apply-lane state machine",
+      "touches": "ccp/api/src/routes/requests.ts, ccp/api/src/domain/bundle.ts",
+      "lane": null,
+      "findings": [
+        {
+          "id": "CONC-6",
+          "severity": "medium",
+          "topic": "concurrency",
+          "report": "docs/audit/04-concurrency.md",
+          "title": "The bundle claim has no crash/exception/race recovery: `bundle.state:'running'` can stick forever, and a raced outcome write loses the record of a fired deploy",
+          "lane": null,
+          "expected_result": "A throwing `runBundle` reaches a terminal `bundle` state instead of leaving `running`; the outcome's AUDIT ENTRY lands even when the request row refuses the update (a cancel won), because a fired deploy is a fact and not a state transition; the caller gets a specific code, not CHAIN_CONTENTION with nothing written.",
+          "verify_first": false
+        },
+        {
+          "id": "API-5",
+          "severity": "medium",
+          "topic": "concurrency",
+          "report": "docs/audit/02-api-correctness.md",
+          "title": "Cancel can race an in-flight bundle: the change applies but the request reads CANCELLED",
+          "lane": null,
+          "expected_result": "A cancel committed during a bundle can no longer produce `CANCELLED` on a request whose change applied: either the cancel refuses while a live claim exists, or the timeline records both truthfully. Decide which, and say why in the fix entry.",
+          "verify_first": false
+        },
+        {
+          "id": "ERR-12",
+          "severity": "medium",
+          "topic": "stuck-state",
+          "report": "docs/audit/09-error-handling.md",
+          "title": "Trigger failure after a landed commit: honest-but-dead-end half state, and spawn timeouts are indistinguishable from exit-1",
+          "lane": null,
+          "expected_result": "A trigger failure after a landed commit stops being a dead end: the request reaches a state with an exit, and a spawn TIMEOUT is distinguishable from `exit 1` in the recorded evidence.",
+          "verify_first": false
+        },
+        {
+          "id": "API-4",
+          "severity": "medium",
+          "topic": "stuck-state",
+          "report": "docs/audit/02-api-correctness.md",
+          "title": "The bundle \"claim\" is not a mutual-exclusion, and a crashed bundle wedges the request at `running`",
+          "lane": null,
+          "expected_result": "VERIFY, DO NOT RE-FIX. Both defects look closed already — ERR-11 made the claim guard `eventSeq` (which the claim advances), and ERR-2 added the lease + takeover. Confirm against the code, add a regression test if none pins it, then close with evidence. If any part survives, fix only that part.",
+          "verify_first": true
+        }
+      ]
+    },
+    {
+      "id": "B-O2",
+      "model": "opus",
+      "title": "Scheduler & executor semantics",
+      "touches": "ccp/api/src/domain/apply/*",
+      "lane": null,
+      "findings": [
+        {
+          "id": "ERR-6",
+          "severity": "medium",
+          "topic": "silent-failure",
+          "report": "docs/audit/09-error-handling.md",
+          "title": "`executor.replan()` failures are an unmodeled halt: unbounded silent retry, and they abort the rest of the project's due list",
+          "lane": null,
+          "expected_result": "`executor.replan()` failure is a modelled outcome, not an unbounded silent retry, and one project's failure no longer aborts the rest of the due list.",
+          "verify_first": false
+        },
+        {
+          "id": "ERR-5",
+          "severity": "medium",
+          "topic": "stuck-state",
+          "report": "docs/audit/09-error-handling.md",
+          "title": "`TerraformExecutor.init()` caches a rejected promise: one transient init failure bricks the executor until restart",
+          "lane": null,
+          "expected_result": "One transient `init()` failure no longer bricks the executor until restart — the rejected promise is not cached, and a retry can succeed.",
+          "verify_first": false
+        },
+        {
+          "id": "CONC-10",
+          "severity": "medium",
+          "topic": "stuck-state",
+          "report": "docs/audit/04-concurrency.md",
+          "title": "Stuck `APPLYING` after a worker crash has no reclaim or operator path",
+          "lane": null,
+          "expected_result": "VERIFY FIRST: API-2's `APPLY_LEASE_MS` + halt-on-expiry, plus cancel accepting the halt statuses, may already close this. Confirm the operator path end to end; close with evidence, or fix only the remaining gap.",
+          "verify_first": true
+        },
+        {
+          "id": "PERF-14",
+          "severity": "low",
+          "topic": "scheduler",
+          "report": "docs/audit/11-performance-scalability.md",
+          "title": "Scheduler tick re-scans every project's full request collection every minute",
+          "lane": null,
+          "expected_result": "The tick stops re-scanning every project's full request collection every minute. Needs an index or a due-set the write path maintains — a design decision, not a loop tweak.",
+          "verify_first": false
+        },
+        {
+          "id": "API-8",
+          "severity": "medium",
+          "topic": "stuck-state",
+          "report": "docs/audit/02-api-correctness.md",
+          "title": "Freeze-held `kind:'now'` requests dead-end in AWAITING_DEPLOY_APPROVAL after the freeze lifts",
+          "lane": null,
+          "expected_result": "A freeze-held `kind:'now'` request has a defined path once the freeze lifts, instead of dead-ending in AWAITING_DEPLOY_APPROVAL.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-O3",
+      "model": "opus",
+      "title": "Store seam & snapshot semantics",
+      "touches": "ccp/api/src/store/*",
+      "lane": null,
+      "findings": [
+        {
+          "id": "DATA-5",
+          "severity": "medium",
+          "topic": "silent-failure",
+          "report": "docs/audit/03-data-integrity.md",
+          "title": "Store rows are not validated against the schemas on load: corrupt-but-parseable state is accepted silently",
+          "lane": null,
+          "expected_result": "Corrupt-but-parseable rows stop loading silently. WARNING: the wrong shim fails a BOOT, not a test (see R-41) — design the legacy-passthrough against real stored shapes, and make refusing loud and specific about which row.",
+          "verify_first": false
+        },
+        {
+          "id": "DATA-15",
+          "severity": "low",
+          "topic": "data-persistence",
+          "report": "docs/audit/03-data-integrity.md",
+          "title": "Map key concatenation with a space separator is aliasable in principle; client-controlled bytes reach PKs unconstrained",
+          "lane": null,
+          "expected_result": "Client-controlled bytes can no longer reach a PK unconstrained, and the space-separated map key is no longer aliasable in principle. Security-relevant; assume an adversarial id.",
+          "verify_first": false
+        },
+        {
+          "id": "DATA-16",
+          "severity": "low",
+          "topic": "data-persistence",
+          "report": "docs/audit/03-data-integrity.md",
+          "title": "No format/version marker in the snapshot file; migration rests entirely on convention",
+          "lane": null,
+          "expected_result": "The snapshot carries a format/version marker, so a future migration does not rest on convention. Must stay readable by the current loader.",
+          "verify_first": false
+        },
+        {
+          "id": "API-17",
+          "severity": "low",
+          "topic": "data-persistence",
+          "report": "docs/audit/02-api-correctness.md",
+          "title": "Store-seam divergences from the DynamoDB semantics it mirrors",
+          "lane": null,
+          "expected_result": "Each named seam divergence from DynamoDB is either fixed or documented as deliberate with the reason. A seam that quietly differs makes every local test a lie about production.",
+          "verify_first": false
+        },
+        {
+          "id": "DATA-14",
+          "severity": "low",
+          "topic": "data-persistence",
+          "report": "docs/audit/03-data-integrity.md",
+          "title": "Seam-fidelity gaps between MemoryStore and the promised DynamoDB semantics",
+          "lane": null,
+          "expected_result": "As API-17 — batch them; they are the same list from two reports.",
+          "verify_first": false
+        },
+        {
+          "id": "CONC-8",
+          "severity": "medium",
+          "topic": "data-persistence",
+          "report": "docs/audit/04-concurrency.md",
+          "title": "Every authenticated request triggers a full-store snapshot write; snapshot serialization is synchronous O(store) on the event loop",
+          "lane": null,
+          "expected_result": "Snapshot serialization stops being synchronous O(store) on the event loop. PR #6 coalesced the WRITES; the serialize step itself still blocks. Note R-32: sequential write latency is still O(store size).",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-O4",
+      "model": "opus",
+      "title": "Audit chain: scale, contention, retention",
+      "touches": "ccp/api/src/domain/audit.ts, routes/audit",
+      "lane": null,
+      "findings": [
+        {
+          "id": "PERF-11",
+          "severity": "medium",
+          "topic": "audit-chain",
+          "report": "docs/audit/11-performance-scalability.md",
+          "title": "Per-project audit chain head serializes all writes and surfaces contention as user-facing 409s after one retry",
+          "lane": null,
+          "expected_result": "Chain-head contention stops surfacing as user-facing 409s after one retry. The chain is the product's evidence store — a fix that drops entries under load is worse than the 409.",
+          "verify_first": false
+        },
+        {
+          "id": "PERF-7",
+          "severity": "medium",
+          "topic": "audit-chain",
+          "report": "docs/audit/11-performance-scalability.md",
+          "title": "Nothing in the store is ever purged: sessions, idempotency markers, and the audit chain grow forever (and every byte is re-serialized per request)",
+          "lane": null,
+          "expected_result": "A retention story exists for sessions, idempotency markers and the chain. RETENTION OF AN AUDIT CHAIN IS A PRODUCT DECISION, not a cleanup task — state the policy explicitly and get it agreed before implementing.",
+          "verify_first": false
+        },
+        {
+          "id": "PERF-8",
+          "severity": "medium",
+          "topic": "scale-and-paging",
+          "report": "docs/audit/11-performance-scalability.md",
+          "title": "Admin audit \"pagination\" materializes and re-sorts the whole chain per page; cursor lookup is a linear scan",
+          "lane": null,
+          "expected_result": "Admin audit paging stops materializing and re-sorting the whole chain per page, and the cursor lookup stops being a linear scan. Same family as PERF-3 (done) — reuse its cursor semantics.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-O5",
+      "model": "opus",
+      "title": "Shared-contract layer & the two domain implementations",
+      "touches": "ccp/shared (new), ccp/api, ccp/app",
+      "lane": null,
+      "findings": [
+        {
+          "id": "ARCH-6",
+          "severity": "medium",
+          "topic": "contracts-docs",
+          "report": "docs/audit/01-architecture.md",
+          "title": "The backend depends on frontend-package internals; the shared-contract layer is a path alias plus a hand-synced copy",
+          "lane": null,
+          "expected_result": "A real shared package replaces the `@app-lib` path alias + hand-synced `planSummary` copy, installed by both CI jobs. HAZARD: a zod VALUE import through the alias silently collapses the api's types to `unknown` in CI — that is why the copy exists. Until the package lands, an allowlist lint + a copy-parity test is the acceptable partial.",
+          "verify_first": false
+        },
+        {
+          "id": "ARCH-8",
+          "severity": "medium",
+          "topic": "duplication",
+          "report": "docs/audit/01-architecture.md",
+          "title": "The governance domain is implemented twice (server + browser mock) with acknowledged behavioral divergence",
+          "lane": null,
+          "expected_result": "The mock's surface shrinks toward 'the http client over an in-browser toy store', and the mock-vs-api behavioural gaps are enumerated in ONE table instead of scattered comments. Note ARCH-7 already moved the status vocabulary into the shared seam — follow that shape.",
+          "verify_first": false
+        },
+        {
+          "id": "ARCH-5",
+          "severity": "medium",
+          "topic": "duplication",
+          "report": "docs/audit/01-architecture.md",
+          "title": "Two sources of truth for the catalog: the server validates against the image-baked catalog, the SPA renders the per-project uploaded one",
+          "lane": null,
+          "expected_result": "Submit-time operation resolution stops disagreeing with what the SPA renders. Decide which catalog is authoritative per project and write it into DOMAIN-MODEL; a digest pin at submit is the alternative.",
+          "verify_first": false
+        },
+        {
+          "id": "DOC-7",
+          "severity": "medium",
+          "topic": "contracts-docs",
+          "report": "docs/audit/14-contracts-docs.md",
+          "title": "App `DriftProposal` type does not match the wire: `importPayload` has a different shape, and top-level `arn`/`tfType` are mock-only",
+          "lane": null,
+          "expected_result": "The app's `DriftProposal` type matches the wire. Decide which side is authoritative for `importPayload` and the mock-only `arn`/`tfType` before changing either.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-O6",
+      "model": "opus",
+      "title": "Process lifecycle, container and operator surface",
+      "touches": "ccp/api/src/server.ts, Dockerfile, docker-compose*.yml",
+      "lane": null,
+      "findings": [
+        {
+          "id": "ERR-8",
+          "severity": "medium",
+          "topic": "concurrency",
+          "report": "docs/audit/09-error-handling.md",
+          "title": "No process-level failure handling: no graceful shutdown, no rejection/exception handlers, npm-as-PID-1",
+          "lane": null,
+          "expected_result": "The api is not `npm` as PID 1; SIGTERM is handled; rejection/exception handlers exist and do the right thing. PARTIAL ALREADY: OPS-2 installed handlers and CONC-7 added SIGTERM/SIGINT lock release — build on those, and note R-16 (neither process error handler exits).",
+          "verify_first": false
+        },
+        {
+          "id": "OPS-8",
+          "severity": "medium",
+          "topic": "concurrency",
+          "report": "docs/audit/10-reliability-operations.md",
+          "title": "No graceful shutdown: `npm` as PID 1, no SIGTERM handling, default 10 s grace on the api",
+          "lane": null,
+          "expected_result": "As ERR-8 — the same defect from the ops report. Fix once, close both.",
+          "verify_first": false
+        },
+        {
+          "id": "OPS-6",
+          "severity": "medium",
+          "topic": "silent-failure",
+          "report": "docs/audit/10-reliability-operations.md",
+          "title": "Plain `compose up` (including every self-update cycle) silently strips the armed overlay",
+          "lane": null,
+          "expected_result": "A plain `compose up` can no longer silently strip the armed overlay, including on every self-update cycle. The fix shape is contested: refuse, warn, or make arming sticky — pick one and justify it.",
+          "verify_first": false
+        },
+        {
+          "id": "OPS-7",
+          "severity": "medium",
+          "topic": "observability",
+          "report": "docs/audit/10-reliability-operations.md",
+          "title": "No HTTP request logging and no request IDs anywhere in the api",
+          "lane": null,
+          "expected_result": "Request logging and request IDs exist. IN A GOVERNANCE PRODUCT THIS IS A PRIVACY SURFACE: decide what must never be logged (params, plan text, tokens) before adding the logger, and reuse `redact.ts`.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-O7",
+      "model": "opus",
+      "title": "Multi-tenant data lifecycle & identity",
+      "touches": "ccp/api/src/routes/projects.ts, projectData.ts, ccp/app/src/lib/apiSession.ts",
+      "lane": null,
+      "findings": [
+        {
+          "id": "API-9",
+          "severity": "medium",
+          "topic": "stuck-state",
+          "report": "docs/audit/02-api-correctness.md",
+          "title": "Project deregistration leaves orphaned satellite rows; a reused id inherits the previous tenant's state",
+          "lane": null,
+          "expected_result": "Deregistration no longer leaves orphaned satellite rows, and a reused project id cannot inherit the previous tenant's state. Treat as a cross-tenant data-leak class, not a cleanup task.",
+          "verify_first": false
+        },
+        {
+          "id": "DATA-11",
+          "severity": "medium",
+          "topic": "authz-identity",
+          "report": "docs/audit/03-data-integrity.md",
+          "title": "v1 migration writes rows that violate the store schemas, including an `id`≠`username` shape that breaks session resolution",
+          "lane": null,
+          "expected_result": "The v1 migration stops writing schema-violating rows; the `id` != `username` shape that breaks session resolution is corrected, with a path for rows already written.",
+          "verify_first": false
+        },
+        {
+          "id": "FE-9",
+          "severity": "medium",
+          "topic": "authz-identity",
+          "report": "docs/audit/05-frontend-flows.md",
+          "title": "apiSession role resolution falls back to another scope's role when the user has no binding on the active project",
+          "lane": null,
+          "expected_result": "Role resolution never falls back to another scope's role when the user has no binding on the active project. Fail closed — this is an authz fail-open.",
+          "verify_first": false
+        },
+        {
+          "id": "DATA-12",
+          "severity": "low",
+          "topic": "stuck-state",
+          "report": "docs/audit/03-data-integrity.md",
+          "title": "Crash between the version-row transact and the file write leaves an activatable orphan row in the upload lane",
+          "lane": null,
+          "expected_result": "A crash between the version-row transact and the file write can no longer leave an activatable orphan row.",
+          "verify_first": false
+        },
+        {
+          "id": "API-15",
+          "severity": "low",
+          "topic": "stuck-state",
+          "report": "docs/audit/02-api-correctness.md",
+          "title": "A dangling idempotency marker makes its key permanently unusable",
+          "lane": null,
+          "expected_result": "A dangling idempotency marker no longer makes its key permanently unusable.",
+          "verify_first": false
+        },
+        {
+          "id": "API-18",
+          "severity": "low",
+          "topic": "fail-open",
+          "report": "docs/audit/02-api-correctness.md",
+          "title": "Legitimize endpoint mints unlimited duplicate engineer requests for the same digest",
+          "lane": null,
+          "expected_result": "The legitimize endpoint stops minting unlimited duplicate engineer requests for one digest.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-O8",
+      "model": "opus",
+      "title": "CI trust: can the gates actually fail?",
+      "touches": "scripts/, .github/workflows/",
+      "lane": null,
+      "findings": [
+        {
+          "id": "CI-8",
+          "severity": "medium",
+          "topic": "ci-not-wired",
+          "report": "docs/audit/13-ci-cd.md",
+          "title": "PG-5's secret heuristic misses the most common real-world shapes, and its designated backstop is dead in CI",
+          "lane": null,
+          "expected_result": "PG-5 catches the common real-world secret shapes, and its designated backstop actually runs in CI. THE CLASS: a check that cannot run must be indistinguishable from nothing, never from a pass (this session hit exactly that — PG-9 skipped locally with no gitleaks and a token-shaped literal reached CI).",
+          "verify_first": false
+        },
+        {
+          "id": "CI-5",
+          "severity": "medium",
+          "topic": "install-ops",
+          "report": "docs/audit/13-ci-cd.md",
+          "title": "Whether the api's live parity/integration suites run in CI depends on unpinned runner-preinstalled toolchains; nothing asserts they ran",
+          "lane": null,
+          "expected_result": "Whether the live parity/integration suites ran is asserted, not inferred from an unpinned preinstalled toolchain. `CCP_REQUIRE_INTEGRATION=1` (TEST-4) is the established shape — extend it.",
+          "verify_first": false
+        },
+        {
+          "id": "CI-13",
+          "severity": "low",
+          "topic": "ci-not-wired",
+          "report": "docs/audit/13-ci-cd.md",
+          "title": "The smoke proves boot + serve, not the system's function; PR runs of it are triggered by any `ccp/**` docs change",
+          "lane": null,
+          "expected_result": "The smoke asserts the system's function, not just boot+serve, and stops being triggered by any `ccp/**` docs change. What it should assert is the design question.",
+          "verify_first": false
+        },
+        {
+          "id": "CI-9",
+          "severity": "medium",
+          "topic": "silent-failure",
+          "report": "docs/audit/13-ci-cd.md",
+          "title": "The recurring data lane keeps the silent-skip gate its own sibling workflow documents as a trap",
+          "lane": null,
+          "expected_result": "The recurring data lane stops keeping the silent-skip gate its own sibling workflow documents as a trap.",
+          "verify_first": false
+        },
+        {
+          "id": "CI-6",
+          "severity": "medium",
+          "topic": "frontend-nav",
+          "report": "docs/audit/13-ci-cd.md",
+          "title": "release-images publishes on any tag with no quality gate, mutable version stamping, and an unconditional `latest`",
+          "lane": null,
+          "expected_result": "release-images gets a quality gate, immutable version stamping, and a conditional `latest`. Release safety — a wrong fix ships a bad image under a good tag.",
+          "verify_first": false
+        },
+        {
+          "id": "ARCH-14",
+          "severity": "low",
+          "topic": "contracts-docs",
+          "report": "docs/audit/01-architecture.md",
+          "title": "The OpenAPI \"parity test\" is string containment, not parity",
+          "lane": null,
+          "expected_result": "The OpenAPI parity test becomes real conformance, not string containment. Designing what conformance means here is the work.",
+          "verify_first": false
+        },
+        {
+          "id": "TEST-11",
+          "severity": "low",
+          "topic": "contracts-docs",
+          "report": "docs/audit/12-testing-quality.md",
+          "title": "OpenAPI contract test is substring matching, not conformance",
+          "lane": null,
+          "expected_result": "As ARCH-14 — same defect, two reports. Fix once.",
+          "verify_first": false
+        },
+        {
+          "id": "TEST-5",
+          "severity": "medium",
+          "topic": "test-quality",
+          "report": "docs/audit/12-testing-quality.md",
+          "title": "No code-coverage measurement anywhere; `coverage.test.ts` is not code coverage",
+          "lane": null,
+          "expected_result": "Code coverage is measured. The thresholds and what they gate are a policy call; `coverage.test.ts` is not code coverage and should be renamed so the next reader is not misled.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-O9",
+      "model": "opus",
+      "title": "catalogctl gate semantics (Go)",
+      "touches": "tools/catalogctl/",
+      "lane": null,
+      "findings": [
+        {
+          "id": "CTL-4",
+          "severity": "medium",
+          "topic": "fail-open",
+          "report": "docs/audit/07-catalogctl.md",
+          "title": "plan-check R1 structurally vetoes every legitimate plan for a `local.`-targeted foreach op",
+          "lane": null,
+          "expected_result": "plan-check R1 stops structurally vetoing every legitimate plan for a `local.`-targeted foreach op. WARNING: this is a SAFETY GATE — a loosening that is too broad is a silent security regression, so pin the newly-accepted shapes with fixtures.",
+          "verify_first": false
+        },
+        {
+          "id": "CTL-2",
+          "severity": "medium",
+          "topic": "catalogctl",
+          "report": "docs/audit/07-catalogctl.md",
+          "title": "`moved_block` writes invalid or duplicate-resource HCL at exit 0: no identifier validation, no destination-collision check, no dangling-reference handling",
+          "lane": null,
+          "expected_result": "`moved_block` no longer writes invalid or duplicate-resource HCL at exit 0: identifiers are validated, destination collisions are refused, dangling references are handled.",
+          "verify_first": false
+        },
+        {
+          "id": "CTL-10",
+          "severity": "low",
+          "topic": "duplication",
+          "report": "docs/audit/07-catalogctl.md",
+          "title": "Duplicated literal-object token-walkers (edit vs driftpropose) have already diverged in behavior",
+          "lane": null,
+          "expected_result": "The two literal-object token-walkers (edit vs driftpropose) stop diverging. They ALREADY have — reconciling means deciding which behaviour is correct, not merging the code.",
+          "verify_first": false
+        },
+        {
+          "id": "CTL-11",
+          "severity": "medium",
+          "topic": "test-quality",
+          "report": "docs/audit/07-catalogctl.md",
+          "title": "Golden coverage runs against forked fixture manifests, not the shipped catalog; comment-bearing fixtures are absent",
+          "lane": null,
+          "expected_result": "Golden coverage runs against the SHIPPED catalog, not forked fixture manifests, and comment-bearing fixtures exist. This is the can-it-fail class (L-1).",
+          "verify_first": false
+        },
+        {
+          "id": "CTL-3",
+          "severity": "medium",
+          "topic": "test-quality",
+          "report": "docs/audit/07-catalogctl.md",
+          "title": "Shipped catalog op `waf-add-ip-set-entry` can never execute (exit 1 internal error); the corrected manifest exists only in test fixtures",
+          "lane": null,
+          "expected_result": "`waf-add-ip-set-entry` executes, and the corrected manifest lives in the shipped catalog rather than only in test fixtures. Batch with CTL-11 — same root cause.",
+          "verify_first": false
+        },
+        {
+          "id": "CTL-9",
+          "severity": "low",
+          "topic": "authz-identity",
+          "report": "docs/audit/07-catalogctl.md",
+          "title": "`pr-prepare`'s UNAPPROVED gate accepts any non-empty approvals list without checking `decision`",
+          "lane": null,
+          "expected_result": "`pr-prepare`'s UNAPPROVED gate checks `decision`, not merely a non-empty approvals list. Security gate.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-O10",
+      "model": "opus",
+      "title": "Importer / schemadump correctness",
+      "touches": "importer/, tools/schemadump/",
+      "lane": null,
+      "findings": [
+        {
+          "id": "IMP-6",
+          "severity": "medium",
+          "topic": "importer",
+          "report": "docs/audit/08-importer-schemadump.md",
+          "title": "statediff's managed-set match assumes Terraform state `id` equals the discovery id; false-positive findings for id-divergent types (concrete: `aws_volume_attachment`)",
+          "lane": null,
+          "expected_result": "statediff stops assuming Terraform state `id` equals the discovery id, so id-divergent types (e.g. `aws_volume_attachment`) stop producing false-positive findings.",
+          "verify_first": false
+        },
+        {
+          "id": "IMP-8",
+          "severity": "medium",
+          "topic": "importer",
+          "report": "docs/audit/08-importer-schemadump.md",
+          "title": "Committed schemadump artifacts are not reproducible via the documented `gen.sh` pipeline; generated-catalog staleness detection is entirely manual",
+          "lane": null,
+          "expected_result": "Committed schemadump artifacts are reproducible via the documented `gen.sh`, and staleness detection is mechanical rather than manual. NOTE: IMP-4 (done) added a self-check that REFUSES TO WRITE on anchor mismatch — extend that discipline, and read its lesson about a field-name typo producing a uniform zero.",
+          "verify_first": false
+        },
+        {
+          "id": "IMP-15",
+          "severity": "low",
+          "topic": "silent-failure",
+          "report": "docs/audit/08-importer-schemadump.md",
+          "title": "Coverage-sweep family granularity marks undiscoverable resources as \"covered\" (documented, but with a concrete silent case)",
+          "lane": null,
+          "expected_result": "Coverage-sweep family granularity stops marking undiscoverable resources as covered. IMP-4's family matcher is the adjacent code and was subtle — read it first.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-O11",
+      "model": "opus",
+      "title": "Submit-path and ingest performance",
+      "touches": "ccp/api/src/middleware/rateLimit.ts, domain/feasibility.ts, routes/projectData.ts",
+      "lane": null,
+      "findings": [
+        {
+          "id": "PERF-10",
+          "severity": "medium",
+          "topic": "scale-and-paging",
+          "report": "docs/audit/11-performance-scalability.md",
+          "title": "Submit-path full scans: rate-limit check and feasibility each re-scan whole collections per submission",
+          "lane": null,
+          "expected_result": "The submit path stops re-scanning whole collections per submission for the rate-limit and feasibility checks. Needs an index or a maintained counter — and NOTE the counter must stay correct under the concurrency CONC-12 describes.",
+          "verify_first": false
+        },
+        {
+          "id": "PERF-12",
+          "severity": "medium",
+          "topic": "scale-and-paging",
+          "report": "docs/audit/11-performance-scalability.md",
+          "title": "Upload ingest does 4+ full canonical-JSON passes over the 16 MiB bundle synchronously on the event loop",
+          "lane": null,
+          "expected_result": "Upload ingest stops doing 4+ full canonical-JSON passes over a 16 MiB bundle synchronously on the event loop.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-O12",
+      "model": "opus",
+      "title": "Concurrency long tail",
+      "touches": "ccp/api/src/domain/audit.ts, middleware/rateLimit.ts, domain/settlement.ts",
+      "lane": null,
+      "findings": [
+        {
+          "id": "CONC-15",
+          "severity": "low",
+          "topic": "concurrency",
+          "report": "docs/audit/04-concurrency.md",
+          "title": "`transactWithAudit` conflates a caller's domain guard failure with chain contention, producing dead error paths and mislabeled conflicts",
+          "lane": null,
+          "expected_result": "`transactWithAudit` stops conflating a caller's domain guard failure with chain contention. NOTE: this session's CONC-9 fix leans on the current behaviour (a guarded write is refused rather than replayed) — do not break that property while separating the error paths.",
+          "verify_first": false
+        },
+        {
+          "id": "API-14",
+          "severity": "low",
+          "topic": "concurrency",
+          "report": "docs/audit/02-api-correctness.md",
+          "title": "Conditional-write collisions inside `transactWithAudit` surface as the wrong error",
+          "lane": null,
+          "expected_result": "As CONC-15 — the same defect from the API report. Fix once, close both.",
+          "verify_first": false
+        },
+        {
+          "id": "CONC-12",
+          "severity": "low",
+          "topic": "concurrency",
+          "report": "docs/audit/04-concurrency.md",
+          "title": "The store-backed submit rate limiter is check-then-insert: concurrent submits breach both caps",
+          "lane": null,
+          "expected_result": "The store-backed submit rate limiter stops being check-then-insert, so concurrent submits cannot breach both caps.",
+          "verify_first": false
+        },
+        {
+          "id": "CONC-13",
+          "severity": "low",
+          "topic": "concurrency",
+          "report": "docs/audit/04-concurrency.md",
+          "title": "Concurrent first-boot settlement can escape its own race handling and 500 early requests",
+          "lane": null,
+          "expected_result": "Concurrent first-boot settlement stops escaping its own race handling and 500ing early requests.",
+          "verify_first": false
+        },
+        {
+          "id": "TEST-6",
+          "severity": "medium",
+          "topic": "concurrency",
+          "report": "docs/audit/12-testing-quality.md",
+          "title": "No route-level concurrency/race tests; store-level concurrency only",
+          "lane": null,
+          "expected_result": "Route-level concurrency/race tests exist. THE PATTERN IS NOW IN THE REPO: `test/sessionRevokeRace.test.ts` and `test/pendingChangeCas.test.ts` use a store wrapper that commits a competing write between the read and the write. Choosing WHICH races to pin is the judgment.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-O13",
+      "model": "opus",
+      "title": "Architecture & front-end authority",
+      "touches": "ccp/app/src/lib/, ccp/api/src/domain/",
+      "lane": null,
+      "findings": [
+        {
+          "id": "ARCH-9",
+          "severity": "medium",
+          "topic": "silent-failure",
+          "report": "docs/audit/01-architecture.md",
+          "title": "Single-process, single-file scaling ceiling with in-process singletons the planned DynamoDB path would silently break",
+          "lane": null,
+          "expected_result": "The single-process in-process singletons stop being ones the planned DynamoDB path would silently break. Name each one and say what it becomes.",
+          "verify_first": false
+        },
+        {
+          "id": "ARCH-11",
+          "severity": "low",
+          "topic": "duplication",
+          "report": "docs/audit/01-architecture.md",
+          "title": "Arming-flag sprawl with no whole-config validation",
+          "lane": null,
+          "expected_result": "Arming-flag sprawl gets whole-config validation, so a half-armed deployment is refused at boot rather than discovered at the first click.",
+          "verify_first": false
+        },
+        {
+          "id": "FE-6",
+          "severity": "medium",
+          "topic": "duplication",
+          "report": "docs/audit/05-frontend-flows.md",
+          "title": "Api-mode submit gates read the advisory localStorage settings, not the server's — the freeze preview is dead and a stale local freeze silently blocks valid submits",
+          "lane": null,
+          "expected_result": "Api-mode submit gates read the SERVER's settings, not advisory localStorage. Two bugs to close: the dead freeze preview, and a stale local freeze silently blocking submits.",
+          "verify_first": false
+        },
+        {
+          "id": "TEST-7",
+          "severity": "medium",
+          "topic": "contracts-docs",
+          "report": "docs/audit/12-testing-quality.md",
+          "title": "The SPA has no DOM/interaction testing; ~25 test files pin UI by source-string inspection",
+          "lane": null,
+          "expected_result": "The SPA gets interaction testing, OR a written decision that it will not. NOTE R-22: this repo has NO jsdom and `test/standalone.test.ts` enforces a dependency allowlist — 'add jsdom' is a real architectural change, not a dependency bump.",
+          "verify_first": false
+        },
+        {
+          "id": "ERR-9",
+          "severity": "medium",
+          "topic": "frontend-ux",
+          "report": "docs/audit/09-error-handling.md",
+          "title": "GitHub App credential fetches have no timeout, and any failure terminally fails the scan job with no retry",
+          "lane": null,
+          "expected_result": "GitHub App credential fetches have a timeout, and a transient failure stops terminally failing the scan job with no retry.",
+          "verify_first": false
+        },
+        {
+          "id": "ERR-14",
+          "severity": "low",
+          "topic": "silent-failure",
+          "report": "docs/audit/09-error-handling.md",
+          "title": "Drift-upload compensation is non-transactional best-effort",
+          "lane": null,
+          "expected_result": "Drift-upload compensation stops being non-transactional best-effort, or its limits are stated and bounded.",
+          "verify_first": false
+        },
+        {
+          "id": "DATA-10",
+          "severity": "medium",
+          "topic": "data-persistence",
+          "report": "docs/audit/03-data-integrity.md",
+          "title": "Backup/restore covers only the store JSON; the on-disk project-data/drift root it references is out of scope, with no consistency check",
+          "lane": null,
+          "expected_result": "Backup/restore covers the on-disk project-data/drift root it references, with a consistency check. NOTE: CONC-7/DATA-9 (done) added a writer lock that restore now takes — build on it.",
+          "verify_first": false
+        },
+        {
+          "id": "CTL-5",
+          "severity": "medium",
+          "topic": "data-persistence",
+          "report": "docs/audit/07-catalogctl.md",
+          "title": "`drift-edit` writes are neither atomic nor transactional: a mid-batch refusal leaves earlier edits in the checkout",
+          "lane": null,
+          "expected_result": "`drift-edit` writes become atomic/transactional: a mid-batch refusal leaves NO earlier edits in the checkout.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-S1",
+      "model": "sonnet",
+      "title": "Verify-and-close: likely already fixed",
+      "touches": "docs/audit/ (plus targeted checks)",
+      "lane": "run-last",
+      "findings": [
+        {
+          "id": "API-13",
+          "severity": "low",
+          "topic": "fail-open",
+          "report": "docs/audit/02-api-correctness.md",
+          "title": "`maxOpen` rate-limit counts a nonexistent status and misses real open states",
+          "lane": "run-last",
+          "expected_result": "VERIFY ONLY. ARCH-7 (this session) replaced the hand-maintained `OPEN_STATUSES` with a derived not-terminal rule, which should close both halves ('counts a nonexistent status' and 'misses real open states'). Confirm against `middleware/rateLimit.ts` + `@app-lib/requestStatus`, then close with evidence. Do NOT re-implement.",
+          "verify_first": true
+        },
+        {
+          "id": "ERR-7",
+          "severity": "medium",
+          "topic": "observability",
+          "report": "docs/audit/09-error-handling.md",
+          "title": "Unexpected errors become `{code:'INTERNAL'}` 500 with zero server-side logging",
+          "lane": "run-last",
+          "expected_result": "VERIFY ONLY. OPS-2 added server-side logging for unexpected errors. Confirm every 500 path logs, then close — or fix only the paths that do not.",
+          "verify_first": true
+        },
+        {
+          "id": "OPS-11",
+          "severity": "medium",
+          "topic": "audit-chain",
+          "report": "docs/audit/10-reliability-operations.md",
+          "title": "`/readyz` re-verifies every audit chain on every probe; cost grows unboundedly with history",
+          "lane": "run-last",
+          "expected_result": "VERIFY ONLY. PERF-4 made `/readyz` verify incrementally (253ms -> 1.05ms). Confirm, then close. NOTE R-34: the memo is deliberately NOT a tamper-detector, and that stays true.",
+          "verify_first": true
+        },
+        {
+          "id": "DATA-6",
+          "severity": "medium",
+          "topic": "data-persistence",
+          "report": "docs/audit/03-data-integrity.md",
+          "title": "`rename` durability is not guaranteed: no directory fsync after the atomic swap",
+          "lane": "run-last",
+          "expected_result": "VERIFY ONLY. ERR-10 added `syncDir` after the rename in `fileStore.ts`. Confirm it covers every atomic-write site (`store/snapshot.ts` too), then close or extend.",
+          "verify_first": true
+        },
+        {
+          "id": "DATA-13",
+          "severity": "low",
+          "topic": "resource-leak",
+          "report": "docs/audit/03-data-integrity.md",
+          "title": "Failed atomic writes leak temp files in the store path",
+          "lane": "run-last",
+          "expected_result": "VERIFY, THEN EXTEND. ERR-10 fixed the temp-file leak in `fileStore.writeAtomic`. Check the OTHER atomic-write sites for the same shape and fix any that leak.",
+          "verify_first": true
+        }
+      ]
+    },
+    {
+      "id": "B-S2",
+      "model": "sonnet",
+      "title": "Status vocabulary follow-through",
+      "touches": "ccp/app/src/lib/requestStatus.ts and its consumers",
+      "lane": "L1",
+      "findings": [
+        {
+          "id": "DOC-13",
+          "severity": "medium",
+          "topic": "duplication",
+          "report": "docs/audit/14-contracts-docs.md",
+          "title": "Request-status vocabulary is three-way inconsistent (SPA union vs server writes vs YAML prose)",
+          "lane": "L1",
+          "expected_result": "The YAML prose, the SPA union and the server writes agree. DEPENDS ON ARCH-7 (done): the closed set now lives in `ccp/app/src/lib/requestStatus.ts` — point the docs at it and add a check that keeps them agreeing.",
+          "verify_first": false
+        },
+        {
+          "id": "FE-11",
+          "severity": "low",
+          "topic": "duplication",
+          "report": "docs/audit/05-frontend-flows.md",
+          "title": "`WINDOW_EXPIRED` is missing from both status-filter vocabularies",
+          "lane": "L1",
+          "expected_result": "`WINDOW_EXPIRED` appears in both status-filter vocabularies. Trivial now that the closed set exists.",
+          "verify_first": false
+        },
+        {
+          "id": "UI-10",
+          "severity": "low",
+          "topic": "duplication",
+          "report": "docs/audit/06-frontend-ui-robustness.md",
+          "title": "Request-status copy has four competing sources; raw enum text can reach the UI",
+          "lane": "L1",
+          "expected_result": "Status copy has ONE source. `StatusBadge`'s label map is the natural home; raw enum text must not reach the UI.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-S3",
+      "model": "sonnet",
+      "title": "Documentation accuracy (with a check each)",
+      "touches": "docs/, ccp/api/README.md, tools/catalogctl/README.md",
+      "lane": "L4",
+      "findings": [
+        {
+          "id": "DOC-10",
+          "severity": "medium",
+          "topic": "contracts-docs",
+          "report": "docs/audit/14-contracts-docs.md",
+          "title": "ERROR-STATES.md's \"every error code the API can return\" is missing 8 taxonomy codes and 6 inline literals",
+          "lane": "L4",
+          "expected_result": "ERROR-STATES.md lists every error code the API can return — all 8 missing taxonomy codes and 6 inline literals. ADD A GENERATED CHECK so it cannot drift again; a hand-updated list is the defect.",
+          "verify_first": false
+        },
+        {
+          "id": "DOC-12",
+          "severity": "medium",
+          "topic": "contracts-docs",
+          "report": "docs/audit/14-contracts-docs.md",
+          "title": "DOMAIN-MODEL.md's entity catalog is missing a third of the store's item types",
+          "lane": "L4",
+          "expected_result": "DOMAIN-MODEL.md's entity catalog covers every store item type, with a check that fails when a new one is added.",
+          "verify_first": false
+        },
+        {
+          "id": "DOC-6",
+          "severity": "medium",
+          "topic": "contracts-docs",
+          "report": "docs/audit/14-contracts-docs.md",
+          "title": "API-SPEC.md states the opposite of current code on `PUT /projects/:id/identity` gating",
+          "lane": "L4",
+          "expected_result": "API-SPEC.md matches the code on `PUT /projects/:id/identity` gating. Read the route first; the code is authoritative.",
+          "verify_first": false
+        },
+        {
+          "id": "DOC-8",
+          "severity": "medium",
+          "topic": "contracts-docs",
+          "report": "docs/audit/14-contracts-docs.md",
+          "title": "catalogctl README makes two explicit completeness claims that are false",
+          "lane": "L4",
+          "expected_result": "catalogctl README's two completeness claims are true, or removed. Same shape as ARCH-12 — batch them.",
+          "verify_first": false
+        },
+        {
+          "id": "DOC-9",
+          "severity": "medium",
+          "topic": "contracts-docs",
+          "report": "docs/audit/14-contracts-docs.md",
+          "title": "Four operator-facing env vars are undocumented (two of them documented nowhere at all)",
+          "lane": "L4",
+          "expected_result": "All four operator-facing env vars are documented. NOTE: `CCP_GIT_PROJECT` and `CCP_DATA_LOCK_TAKEOVER` were added this session and ARE documented — check the finding's list against HEAD before writing.",
+          "verify_first": false
+        },
+        {
+          "id": "DOC-14",
+          "severity": "low",
+          "topic": "authz-identity",
+          "report": "docs/audit/14-contracts-docs.md",
+          "title": "PERMISSIONS.md §9 cites a \"§2 apply row\" that does not exist",
+          "lane": "L4",
+          "expected_result": "PERMISSIONS.md no longer cites a '§2 apply row' that does not exist.",
+          "verify_first": false
+        },
+        {
+          "id": "DOC-16",
+          "severity": "low",
+          "topic": "contracts-docs",
+          "report": "docs/audit/14-contracts-docs.md",
+          "title": "Assorted OpenAPI request/response gaps against route behavior",
+          "lane": "L4",
+          "expected_result": "The listed OpenAPI request/response gaps against route behaviour are closed.",
+          "verify_first": false
+        },
+        {
+          "id": "DOC-17",
+          "severity": "low",
+          "topic": "contracts-docs",
+          "report": "docs/audit/14-contracts-docs.md",
+          "title": "The code-derived docs' line citations have drifted from HEAD",
+          "lane": "L4",
+          "expected_result": "The code-derived docs' line citations match HEAD, with a checker so they stop drifting.",
+          "verify_first": false
+        },
+        {
+          "id": "ARCH-12",
+          "severity": "low",
+          "topic": "frontend-nav",
+          "report": "docs/audit/01-architecture.md",
+          "title": "`catalogctl` README's \"complete, no more, no fewer\" subcommand table omits a third of the subcommands",
+          "lane": "L4",
+          "expected_result": "catalogctl README's subcommand table is complete. Batch with DOC-8.",
+          "verify_first": false
+        },
+        {
+          "id": "ARCH-15",
+          "severity": "low",
+          "topic": "importer",
+          "report": "docs/audit/01-architecture.md",
+          "title": "ADR ledger statuses lag the built system",
+          "lane": "L4",
+          "expected_result": "The ADR ledger statuses match the built system.",
+          "verify_first": false
+        },
+        {
+          "id": "IMP-14",
+          "severity": "low",
+          "topic": "importer",
+          "report": "docs/audit/08-importer-schemadump.md",
+          "title": "Stale numbers and dangling references in kit/schemadump docs and comments",
+          "lane": "L4",
+          "expected_result": "Stale numbers and dangling references in kit/schemadump docs and comments are corrected.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-S4",
+      "model": "sonnet",
+      "title": "OpenAPI / wire contract fixes",
+      "touches": "openapi/ccp-api.yaml, ccp/api/src/store/planSummarySchema.ts",
+      "lane": "L7",
+      "findings": [
+        {
+          "id": "DOC-11",
+          "severity": "medium",
+          "topic": "contracts-docs",
+          "report": "docs/audit/14-contracts-docs.md",
+          "title": "OpenAPI types `ChangeRequest.planSummary` as a string; the API stores and serves a structured object",
+          "lane": "L7",
+          "expected_result": "OpenAPI types `ChangeRequest.planSummary` as the structured object the API actually stores and serves.",
+          "verify_first": false
+        },
+        {
+          "id": "API-12",
+          "severity": "low",
+          "topic": "contracts-docs",
+          "report": "docs/audit/02-api-correctness.md",
+          "title": "`prNumberFromUrl` extracts a \"PR number\" from any URL ending in digits",
+          "lane": "L7",
+          "expected_result": "`prNumberFromUrl` no longer extracts a 'PR number' from any URL ending in digits — it validates the shape.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-S5",
+      "model": "sonnet",
+      "title": "Front-end component bugs",
+      "touches": "ccp/app/src/components/, features/",
+      "lane": "L1",
+      "findings": [
+        {
+          "id": "UI-8",
+          "severity": "medium",
+          "topic": "data-persistence",
+          "report": "docs/audit/06-frontend-ui-robustness.md",
+          "title": "DiffView corrupts `~` change lines whose old value contains \" -> \"",
+          "lane": "L1",
+          "expected_result": "DiffView renders a `~` change line whose old value contains ' -> ' correctly. Pin it with the exact string from the finding.",
+          "verify_first": false
+        },
+        {
+          "id": "UI-5",
+          "severity": "medium",
+          "topic": "frontend-a11y",
+          "report": "docs/audit/06-frontend-ui-robustness.md",
+          "title": "RepeatedBlockField renders duplicate DOM ids and a shared radio-group `name` across instances",
+          "lane": "L1",
+          "expected_result": "RepeatedBlockField stops rendering duplicate DOM ids.",
+          "verify_first": false
+        },
+        {
+          "id": "UI-6",
+          "severity": "medium",
+          "topic": "frontend-a11y",
+          "report": "docs/audit/06-frontend-ui-robustness.md",
+          "title": "Hand-rolled drift drawers are dialogs in name only: no aria-modal, no focus move, no focus trap, no Escape",
+          "lane": "L1",
+          "expected_result": "The drift drawers are real dialogs (focus trap, escape, aria), not dialogs in name only.",
+          "verify_first": false
+        },
+        {
+          "id": "UI-7",
+          "severity": "medium",
+          "topic": "frontend-a11y",
+          "report": "docs/audit/06-frontend-ui-robustness.md",
+          "title": "ErrorSummary links are dead anchors for radio-group and repeated-block fields",
+          "lane": "L1",
+          "expected_result": "ErrorSummary links resolve for radio groups instead of being dead anchors.",
+          "verify_first": false
+        },
+        {
+          "id": "UI-11",
+          "severity": "low",
+          "topic": "frontend-form",
+          "report": "docs/audit/06-frontend-ui-robustness.md",
+          "title": "Nested repeated blocks skip their instance-count bounds",
+          "lane": "L1",
+          "expected_result": "Nested repeated blocks enforce their instance-count bounds.",
+          "verify_first": false
+        },
+        {
+          "id": "UI-13",
+          "severity": "low",
+          "topic": "frontend-form",
+          "report": "docs/audit/06-frontend-ui-robustness.md",
+          "title": "RepeatedBlockField keys instances and touched-state by array index: state misattributes after a mid-list removal",
+          "lane": "L1",
+          "expected_result": "RepeatedBlockField keys instances by identity, not array index, so state survives a mid-list removal.",
+          "verify_first": false
+        },
+        {
+          "id": "UI-14",
+          "severity": "low",
+          "topic": "frontend-form",
+          "report": "docs/audit/06-frontend-ui-robustness.md",
+          "title": "InventoryPicker: an optional single-select can never be cleared",
+          "lane": "L1",
+          "expected_result": "An optional single-select InventoryPicker can be cleared.",
+          "verify_first": false
+        },
+        {
+          "id": "UI-12",
+          "severity": "low",
+          "topic": "silent-failure",
+          "report": "docs/audit/06-frontend-ui-robustness.md",
+          "title": "Configure ⇄ Review step transitions never move focus, and the Suspense skeleton is silent for assistive tech",
+          "lane": "L1",
+          "expected_result": "Configure <-> Review transitions move focus, and the Suspense skeleton announces itself.",
+          "verify_first": false
+        },
+        {
+          "id": "UI-9",
+          "severity": "medium",
+          "topic": "frontend-ux",
+          "report": "docs/audit/06-frontend-ui-robustness.md",
+          "title": "`/login`, `/onboarding`, and the LegacyRedirect route have no errorElement: a render error there shows React Router's raw default error screen",
+          "lane": "L1",
+          "expected_result": "`/login`, `/onboarding` and LegacyRedirect have an errorElement instead of React Router's raw default screen.",
+          "verify_first": false
+        },
+        {
+          "id": "UI-15",
+          "severity": "low",
+          "topic": "frontend-ux",
+          "report": "docs/audit/06-frontend-ui-robustness.md",
+          "title": "CommandPalette data is fetched once per shell mount, so \"My requests\" rows go stale within a session",
+          "lane": "L1",
+          "expected_result": "CommandPalette data refreshes instead of being fetched once per shell mount.",
+          "verify_first": false
+        },
+        {
+          "id": "FE-13",
+          "severity": "low",
+          "topic": "frontend-nav",
+          "report": "docs/audit/05-frontend-flows.md",
+          "title": "RequestDetail sub-panels hold un-keyed local state across request-id navigation",
+          "lane": "L1",
+          "expected_result": "RequestDetail sub-panels key their local state by request id, so it does not leak across navigation.",
+          "verify_first": false
+        },
+        {
+          "id": "FE-14",
+          "severity": "low",
+          "topic": "fail-open",
+          "report": "docs/audit/05-frontend-flows.md",
+          "title": "DriftPage's post-trigger refetches bypass the staleness guard",
+          "lane": "L1",
+          "expected_result": "DriftPage's post-trigger refetches respect the staleness guard.",
+          "verify_first": false
+        },
+        {
+          "id": "FE-12",
+          "severity": "low",
+          "topic": "authz-identity",
+          "report": "docs/audit/05-frontend-flows.md",
+          "title": "After a partial approval, the queue keeps a card the server's pending scope would drop",
+          "lane": "L1",
+          "expected_result": "After a partial approval the queue drops the card the server's pending scope would drop.",
+          "verify_first": false
+        },
+        {
+          "id": "FE-7",
+          "severity": "medium",
+          "topic": "authz-identity",
+          "report": "docs/audit/05-frontend-flows.md",
+          "title": "PendingChangesBanner count goes stale after any dual-control activity — and the mock branch reads an unsubscribed store",
+          "lane": "L1",
+          "expected_result": "PendingChangesBanner's count stays fresh after dual-control activity, and the mock branch subscribes to the store it reads.",
+          "verify_first": false
+        },
+        {
+          "id": "FE-8",
+          "severity": "medium",
+          "topic": "silent-failure",
+          "report": "docs/audit/05-frontend-flows.md",
+          "title": "AuditHistory silently truncates to the first page (100 entries) — the cursor is fetched and thrown away",
+          "lane": "L1",
+          "expected_result": "AuditHistory pages instead of silently truncating at 100 — the cursor it already fetches is used. PERF-3 (done) built the server side.",
+          "verify_first": false
+        },
+        {
+          "id": "FE-10",
+          "severity": "low",
+          "topic": "test-quality",
+          "report": "docs/audit/05-frontend-flows.md",
+          "title": "Mock `rejectRequest` skips the status guard the real API enforces",
+          "lane": "L1",
+          "expected_result": "Mock `rejectRequest` enforces the same status guard the real API does.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-S6",
+      "model": "sonnet",
+      "title": "Front-end performance (patterns already in-repo)",
+      "touches": "ccp/app/src/",
+      "lane": "L1",
+      "findings": [
+        {
+          "id": "PERF-9",
+          "severity": "medium",
+          "topic": "scale-and-paging",
+          "report": "docs/audit/11-performance-scalability.md",
+          "title": "`ServiceConsole` loads the entire block-source corpus on every service page mount, fetching server chunks sequentially",
+          "lane": "L1",
+          "expected_result": "`ServiceConsole` stops loading the entire block-source corpus on every mount. THE PATTERN EXISTS: `lib/providerCatalog.ts` uses non-eager `import.meta.glob`, and PERF-5 (done) applied the same idea to the manifests — copy it.",
+          "verify_first": false
+        },
+        {
+          "id": "PERF-13",
+          "severity": "low",
+          "topic": "scale-and-paging",
+          "report": "docs/audit/11-performance-scalability.md",
+          "title": "SchemaForm recomputes inventory-derived enums for every field on every keystroke",
+          "lane": "L1",
+          "expected_result": "SchemaForm memoizes inventory-derived enums instead of recomputing every field on every keystroke.",
+          "verify_first": false
+        },
+        {
+          "id": "PERF-15",
+          "severity": "low",
+          "topic": "scale-and-paging",
+          "report": "docs/audit/11-performance-scalability.md",
+          "title": "Request-history views render unbounded lists without windowing",
+          "lane": "L1",
+          "expected_result": "Request-history views window their lists. Virtualization already exists in this codebase — reuse it.",
+          "verify_first": false
+        },
+        {
+          "id": "PERF-6",
+          "severity": "medium",
+          "topic": "catalogctl",
+          "report": "docs/audit/11-performance-scalability.md",
+          "title": "API mode re-downloads and re-parses the full inventory + manifest set on every route mount; the serve endpoints send no caching headers",
+          "lane": "L1",
+          "expected_result": "API-mode stops re-downloading and re-parsing the full inventory + manifest set per route mount, and the serve endpoints send caching headers.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-S7",
+      "model": "sonnet",
+      "title": "Lease / cleanup patterns already worked out in-repo",
+      "touches": "ccp/api/src/domain/, scanner worker",
+      "lane": "L2",
+      "findings": [
+        {
+          "id": "API-6",
+          "severity": "medium",
+          "topic": "authz-identity",
+          "report": "docs/audit/02-api-correctness.md",
+          "title": "The 72-hour dual-control expiry is dead code: `sweepExpired` has no callers and `ackPending` never checks `expiresAt`",
+          "lane": "L2",
+          "expected_result": "The 72-hour dual-control expiry is enforced: `sweepExpired` has a caller and `ackPending` checks `expiresAt`. THE PATTERN IS SETTLE-ON-READ, used four times already (APPLYING, scan jobs, bundle claims) — follow it rather than adding a timer. NOTE: CONC-9 (this session) already made `sweepExpired` guarded and idempotent.",
+          "verify_first": false
+        },
+        {
+          "id": "DATA-7",
+          "severity": "medium",
+          "topic": "authz-identity",
+          "report": "docs/audit/03-data-integrity.md",
+          "title": "The 72-hour dual-control expiry is unenforced: `sweepExpired` is dead code and `ackPending` never checks `expiresAt`",
+          "lane": "L2",
+          "expected_result": "Identical to API-6 — same defect, two reports. Fix once, close both.",
+          "verify_first": false
+        },
+        {
+          "id": "ARCH-10",
+          "severity": "medium",
+          "topic": "silent-failure",
+          "report": "docs/audit/01-architecture.md",
+          "title": "Unaudited governance transition: dual-control proposals expire silently",
+          "lane": "L2",
+          "expected_result": "A dual-control proposal expiring writes an audit entry, so the transition is not silent.",
+          "verify_first": false
+        },
+        {
+          "id": "ERR-15",
+          "severity": "low",
+          "topic": "stuck-state",
+          "report": "docs/audit/09-error-handling.md",
+          "title": "Scan worker: a failed progress report abandons the job without a terminal status; a claim non-2xx is process-fatal with no backoff",
+          "lane": "L2",
+          "expected_result": "The scan worker records a terminal status when a progress report fails, and a claim non-2xx backs off instead of being process-fatal.",
+          "verify_first": false
+        },
+        {
+          "id": "OPS-12",
+          "severity": "low",
+          "topic": "stuck-state",
+          "report": "docs/audit/10-reliability-operations.md",
+          "title": "Scanner service: no healthcheck, and the worker exits on any control-plane error",
+          "lane": "L2",
+          "expected_result": "The scanner service has a healthcheck and stops exiting on any control-plane error.",
+          "verify_first": false
+        },
+        {
+          "id": "API-16",
+          "severity": "low",
+          "topic": "resource-leak",
+          "report": "docs/audit/02-api-correctness.md",
+          "title": "Bundle workspace leaks and unchecked git steps",
+          "lane": "L2",
+          "expected_result": "The bundle workspace cannot leak, and every git step's exit code is checked. ERR-10's cleanup-spans-the-whole-window shape is the model.",
+          "verify_first": false
+        },
+        {
+          "id": "ERR-13",
+          "severity": "low",
+          "topic": "resource-leak",
+          "report": "docs/audit/09-error-handling.md",
+          "title": "`prepare()` leaks the cloned workspace when `rev-parse` fails",
+          "lane": "L2",
+          "expected_result": "`prepare()` cleans up the cloned workspace when `rev-parse` fails. Batch with API-16.",
+          "verify_first": false
+        },
+        {
+          "id": "REM-2",
+          "severity": "low",
+          "topic": "concurrency",
+          "report": "docs/audit/15-remediation.md",
+          "title": "Session rows are still written with blind full-row puts",
+          "lane": "L2",
+          "expected_result": "The remaining blind full-row session puts become guarded writes. WORKED EXAMPLE: API-10 (this session) converted the idle slide — copy its shape, INCLUDING its rule that a lost condition means re-read, not log out.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-S8",
+      "model": "sonnet",
+      "title": "CI wiring (mechanical)",
+      "touches": ".github/workflows/, scripts/",
+      "lane": "L3",
+      "findings": [
+        {
+          "id": "OPS-9",
+          "severity": "medium",
+          "topic": "ci-not-wired",
+          "report": "docs/audit/10-reliability-operations.md",
+          "title": "The documented CI-runner cutover only routes 2 of 8 workflows",
+          "lane": "L3",
+          "expected_result": "All 8 workflows route to the documented CI runner, not 2.",
+          "verify_first": false
+        },
+        {
+          "id": "CI-10",
+          "severity": "low",
+          "topic": "ci-not-wired",
+          "report": "docs/audit/13-ci-cd.md",
+          "title": "Push-trigger path filters omit the workflow file itself on ccp-api and ccp-smoke",
+          "lane": "L3",
+          "expected_result": "Push-trigger path filters include the workflow file itself on ccp-api and ccp-smoke. EXTEND `scripts/ci/check-path-filters.sh` so it catches this class.",
+          "verify_first": false
+        },
+        {
+          "id": "CI-11",
+          "severity": "low",
+          "topic": "ci-not-wired",
+          "report": "docs/audit/13-ci-cd.md",
+          "title": "Stale toolchain claims: gate.sh advertises checks CI does not run",
+          "lane": "L3",
+          "expected_result": "`gate.sh` advertises only checks CI actually runs. `scripts/ci/check-shipped-lanes.sh` is the adjacent precedent.",
+          "verify_first": false
+        },
+        {
+          "id": "CI-12",
+          "severity": "low",
+          "topic": "ci-not-wired",
+          "report": "docs/audit/13-ci-cd.md",
+          "title": "Inconsistent action pinning, with a comment that contradicts the file it sits in; setup-go caching is configured to a nonexistent root go.sum",
+          "lane": "L3",
+          "expected_result": "Action pinning is consistent, the contradicting comment is gone, and setup-go caches against a go.sum that exists.",
+          "verify_first": false
+        },
+        {
+          "id": "CI-7",
+          "severity": "medium",
+          "topic": "install-ops",
+          "report": "docs/audit/13-ci-cd.md",
+          "title": "The Docker build path (the documented production install) is never exercised by CI; images are first built at release time",
+          "lane": "L3",
+          "expected_result": "CI builds the Docker image on PRs, so the documented production install path is exercised before release time.",
+          "verify_first": false
+        },
+        {
+          "id": "ERR-16",
+          "severity": "low",
+          "topic": "silent-failure",
+          "report": "docs/audit/09-error-handling.md",
+          "title": "The ccp-data CI lane goes green when the control plane is unreachable",
+          "lane": "L3",
+          "expected_result": "The ccp-data CI lane fails when the control plane is unreachable instead of going green.",
+          "verify_first": false
+        },
+        {
+          "id": "TEST-8",
+          "severity": "medium",
+          "topic": "silent-failure",
+          "report": "docs/audit/12-testing-quality.md",
+          "title": "Golden-tree comparison is one-directional: extra files created by an edit go unnoticed",
+          "lane": "L3",
+          "expected_result": "Golden-tree comparison is bidirectional: extra files created by an edit are reported.",
+          "verify_first": false
+        },
+        {
+          "id": "TEST-12",
+          "severity": "low",
+          "topic": "test-quality",
+          "report": "docs/audit/12-testing-quality.md",
+          "title": "One test file consumes ~60% of the api suite wall time by rebuilding catalogctl per run",
+          "lane": "L3",
+          "expected_result": "The api suite stops rebuilding catalogctl per run (cache or build once); ~60% of wall time comes back.",
+          "verify_first": false
+        },
+        {
+          "id": "TEST-9",
+          "severity": "low",
+          "topic": "test-quality",
+          "report": "docs/audit/12-testing-quality.md",
+          "title": "Sleep-based synchronization in async API tests (flake and false-pass risk)",
+          "lane": "L3",
+          "expected_result": "Async API tests synchronize on a condition, not a sleep.",
+          "verify_first": false
+        },
+        {
+          "id": "TEST-10",
+          "severity": "low",
+          "topic": "test-quality",
+          "report": "docs/audit/12-testing-quality.md",
+          "title": "Functional test plan drift: stale counts, loose citations, and \"new\" rows with no tracking",
+          "lane": "L3",
+          "expected_result": "The functional test plan's counts and citations match HEAD, and 'new' rows are tracked.",
+          "verify_first": false
+        }
+      ]
+    },
+    {
+      "id": "B-S9",
+      "model": "sonnet",
+      "title": "Small correctness fixes with obvious tests",
+      "touches": "various",
+      "lane": null,
+      "findings": [
+        {
+          "id": "CTL-6",
+          "severity": "medium",
+          "topic": "fail-open",
+          "report": "docs/audit/07-catalogctl.md",
+          "title": "`danglingRef` substring scan falsely refuses removal when another resource's name extends the target's name",
+          "lane": "L5",
+          "expected_result": "`danglingRef` stops falsely refusing removal when another resource's name extends the target's. FLAG: this is a SAFETY GATE — match identifiers exactly, and add a fixture proving the true-positive still refuses.",
+          "verify_first": false
+        },
+        {
+          "id": "CTL-7",
+          "severity": "low",
+          "topic": "test-quality",
+          "report": "docs/audit/07-catalogctl.md",
+          "title": "plancheck's `inventoryAddr` does not skip `role:\"reference\"` inventory params, diverging from the executor's `targetAddress`",
+          "lane": "L5",
+          "expected_result": "plancheck's `inventoryAddr` skips `role:\"reference\"` inventory params, matching the executor's `targetAddress`.",
+          "verify_first": false
+        },
+        {
+          "id": "CTL-8",
+          "severity": "low",
+          "topic": "silent-failure",
+          "report": "docs/audit/07-catalogctl.md",
+          "title": "`atomicWrite` silently changes edited-file permissions to 0600 and skips fsync",
+          "lane": "L5",
+          "expected_result": "`atomicWrite` preserves the edited file's permissions and fsyncs. ERR-10 is the worked example.",
+          "verify_first": false
+        },
+        {
+          "id": "API-11",
+          "severity": "low",
+          "topic": "fail-open",
+          "report": "docs/audit/02-api-correctness.md",
+          "title": "Audit-chain read path bypasses the injected clock and truncates at 120 months",
+          "lane": "L2",
+          "expected_result": "The audit-chain read path uses the injected clock and stops truncating at 120 months. SEE L-26: reading the clock directly is what made the month-boundary bug untestable.",
+          "verify_first": false
+        },
+        {
+          "id": "DATA-17",
+          "severity": "low",
+          "topic": "audit-chain",
+          "report": "docs/audit/03-data-integrity.md",
+          "title": "Calendar-dependent test: the FileStore audit-durability test hardcodes month `202607`",
+          "lane": "L7",
+          "expected_result": "The FileStore audit-durability test stops hardcoding month `202607` — same clock-seam lesson (L-26).",
+          "verify_first": false
+        },
+        {
+          "id": "ARCH-13",
+          "severity": "low",
+          "topic": "duplication",
+          "report": "docs/audit/01-architecture.md",
+          "title": "Project-id grammar duplicated inline despite a declared single home",
+          "lane": "L7",
+          "expected_result": "The project-id grammar lives only in its declared single home.",
+          "verify_first": false
+        },
+        {
+          "id": "ARCH-16",
+          "severity": "low",
+          "topic": "duplication",
+          "report": "docs/audit/01-architecture.md",
+          "title": "Vestigial code and stale references",
+          "lane": "run-alone",
+          "expected_result": "Vestigial code and stale references are removed.",
+          "verify_first": false
+        },
+        {
+          "id": "IMP-12",
+          "severity": "low",
+          "topic": "silent-failure",
+          "report": "docs/audit/08-importer-schemadump.md",
+          "title": "`normalize.py split` silently drops non-`resource` top-level blocks",
+          "lane": "L6",
+          "expected_result": "`normalize.py split` no longer silently drops non-`resource` top-level blocks.",
+          "verify_first": false
+        },
+        {
+          "id": "IMP-10",
+          "severity": "low",
+          "topic": "importer",
+          "report": "docs/audit/08-importer-schemadump.md",
+          "title": "`gen-imports.py --id-region-suffix` appends `@region` to global-service ids too",
+          "lane": "L6",
+          "expected_result": "`gen-imports.py --id-region-suffix` stops appending `@region` to global-service ids.",
+          "verify_first": false
+        },
+        {
+          "id": "IMP-9",
+          "severity": "low",
+          "topic": "importer",
+          "report": "docs/audit/08-importer-schemadump.md",
+          "title": "Azure `discover.py list-subscriptions` crashes on a bare-list capture at the truncation-warning check",
+          "lane": "L6",
+          "expected_result": "Azure `discover.py list-subscriptions` handles a bare-list capture at the truncation-warning check.",
+          "verify_first": false
+        },
+        {
+          "id": "IMP-11",
+          "severity": "low",
+          "topic": "frontend-ux",
+          "report": "docs/audit/08-importer-schemadump.md",
+          "title": "`payloads.py` block scanner: a column-0 `}` inside a heredoc body truncates the skeleton and ships it",
+          "lane": "L6",
+          "expected_result": "`payloads.py`'s block scanner stops truncating a skeleton on a column-0 `}` inside a heredoc body.",
+          "verify_first": false
+        },
+        {
+          "id": "IMP-13",
+          "severity": "low",
+          "topic": "importer",
+          "report": "docs/audit/08-importer-schemadump.md",
+          "title": "Shell scripts: minor robustness gaps around the deliberate no-`set -e` style",
+          "lane": "L6",
+          "expected_result": "The shell scripts' robustness gaps are closed within the deliberate no-`set -e` style.",
+          "verify_first": false
+        },
+        {
+          "id": "IMP-5",
+          "severity": "medium",
+          "topic": "catalogctl",
+          "report": "docs/audit/08-importer-schemadump.md",
+          "title": "kit-azure `discover.sh` never clears stale page files: a re-run can resurrect deleted resources into the manifest",
+          "lane": "L6",
+          "expected_result": "kit-azure `discover.sh` clears stale page files, so a re-run cannot resurrect deleted resources.",
+          "verify_first": false
+        },
+        {
+          "id": "OPS-13",
+          "severity": "low",
+          "topic": "install-ops",
+          "report": "docs/audit/10-reliability-operations.md",
+          "title": "`doctor.sh` reports an unhealthy container as OK",
+          "lane": "L3",
+          "expected_result": "`doctor.sh` reports an unhealthy container as unhealthy.",
+          "verify_first": false
+        },
+        {
+          "id": "OPS-15",
+          "severity": "low",
+          "topic": "install-ops",
+          "report": "docs/audit/10-reliability-operations.md",
+          "title": "GitHub App key directory is not prepared or checked by any tooling",
+          "lane": "L3",
+          "expected_result": "The GitHub App key directory is prepared and checked by tooling.",
+          "verify_first": false
+        },
+        {
+          "id": "OPS-10",
+          "severity": "medium",
+          "topic": "observability",
+          "report": "docs/audit/10-reliability-operations.md",
+          "title": "No log rotation and no resource limits on any service",
+          "lane": "L3",
+          "expected_result": "Log rotation and resource limits exist on every service.",
+          "verify_first": false
+        }
+      ]
+    }
+  ]
+}

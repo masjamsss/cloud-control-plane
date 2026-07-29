@@ -1,7 +1,8 @@
+import { useSyncExternalStore } from 'react';
 import type { Account } from '@/lib/accounts';
-import { clearReauth, getByUsername, noteSignIn, noteSignOut, verifyPassword } from '@/lib/accounts';
-import { clearApiSession, getApiSessionAccount, isApiMode } from '@/lib/apiSession';
-import { createEmitter, subscribeWithStorage } from '@/lib/useStore';
+import { clearReauth, getByUsername, noteSignIn, noteSignOut, subscribeAccountsChanged, verifyPassword } from '@/lib/accounts';
+import { clearApiSession, getApiSessionAccount, isApiMode, subscribeApiSessionChanged } from '@/lib/apiSession';
+import { combineSubscriptions, createEmitter, subscribeWithStorage } from '@/lib/useStore';
 
 /**
  * The session. Owns "who is signed in", persisted across reloads. Replaces the
@@ -96,6 +97,37 @@ export function currentUser(): Account | null {
   if (!account || account.status !== 'active') return null;
   return account;
 }
+
+/**
+ * SUBSCRIBED "who is signed in" — the same answer {@link currentUser} gives, but as a
+ * React binding that re-renders when it changes (FE-5).
+ *
+ * `currentUser()` is an unsubscribed read. A component calling it sees whatever was true
+ * at its last render and is never told the answer changed, so `RequireAuth` kept rendering
+ * the app long after the session ended: identity in api mode is the in-memory
+ * `apiSession` cache, and nothing outside an explicit logout cleared it. Sessions expire
+ * at 12h absolute / 30m idle, so the ordinary path was — idle past the window, click
+ * anything, every fetch 401s, and the guard (reading the still-populated cache) keeps the
+ * user on a page where nothing works. Recovery meant a manual full reload.
+ *
+ * Subscribing is only half; the other half is in `httpApi.ts`, which now CLEARS the cache
+ * on a session-class 401. Together: the 401 clears, the emit fires, this hook re-renders,
+ * and the guard redirects to /login. Either half alone leaves the zombie UI.
+ *
+ * It also closes a second blindness the finding notes in passing: an unsubscribed guard
+ * cannot see a cross-tab sign-out either, and `subscribeSessionChanged` is storage-backed
+ * precisely so it can.
+ */
+export function useAuthedAccount(): Account | null {
+  return useSyncExternalStore(subscribeAuthChanged, currentUser, currentUser);
+}
+
+/** Every store that can change the answer to "who is signed in". */
+export const subscribeAuthChanged = combineSubscriptions(
+  subscribeSessionChanged,
+  subscribeApiSessionChanged,
+  subscribeAccountsChanged,
+);
 
 export function currentUserId(): string | null {
   return currentUser()?.id ?? null;

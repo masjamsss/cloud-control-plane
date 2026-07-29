@@ -125,7 +125,7 @@
   },
   {
     "type": "azurerm_api_management",
-    "family": "other",
+    "family": "integration",
     "attrCount": 34,
     "forceNewCount": 3,
     "hasTags": true,
@@ -137,7 +137,7 @@
   },
   {
     "type": "azurerm_api_management_api",
-    "family": "other",
+    "family": "integration",
     "attrCount": 25,
     "forceNewCount": 4,
     "hasTags": false,
@@ -147,7 +147,7 @@
   },
   {
     "type": "azurerm_api_management_api_diagnostic",
-    "family": "other",
+    "family": "integration",
     "attrCount": 15,
     "forceNewCount": 4,
     "hasTags": false,
@@ -157,7 +157,7 @@
   },
   {
     "type": "azurerm_api_management_api_operation",
-    "family": "other",
+    "family": "integration",
     "attrCount": 11,
     "forceNewCount": 4,
     "hasTags": false,
@@ -167,7 +167,7 @@
   },
   {
     "type": "azurerm_api_management_api_operation_policy",
-    "family": "other",
+    "family": "integration",
     "attrCount": 6,
     "forceNewCount": 4,
     "hasTags": false,
@@ -177,7 +177,7 @@
   },
   {
     "type": "azurerm_api_management_api_operation_tag",
-    "family": "other",
+    "family": "integration",
     "attrCount": 3,
     "forceNewCount": 2,
     "hasTags": false,
@@ -187,7 +187,7 @@
   },
   {
     "type": "azurerm_api_management_api_policy",
-    "family": "other",
+    "family": "integration",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": false,
@@ -197,7 +197,7 @@
   },
   {
     "type": "azurerm_api_management_api_release",
-    "family": "other",
+    "family": "integration",
     "attrCount": 3,
     "forceNewCount": 2,
     "hasTags": false,
@@ -207,7 +207,7 @@
   },
   {
     "type": "azurerm_api_management_api_schema",
-    "family": "other",
+    "family": "integration",
     "attrCount": 8,
     "forceNewCount": 4,
     "hasTags": false,
@@ -217,7 +217,7 @@
   },
   {
     "type": "azurerm_api_management_api_tag",
-    "family": "other",
+    "family": "integration",
     "attrCount": 2,
     "forceNewCount": 2,
     "hasTags": false,
@@ -227,7 +227,7 @@
   },
   {
     "type": "azurerm_api_management_api_tag_description",
-    "family": "other",
+    "family": "integration",
     "attrCount": 4,
     "forceNewCount": 1,
     "hasTags": false,
@@ -237,7 +237,7 @@
   },
   {
     "type": "azurerm_api_management_api_version_set",
-    "family": "other",
+    "family": "integration",
     "attrCount": 8,
     "forceNewCount": 3,
     "hasTags": false,
@@ -247,7 +247,7 @@
   },
   {
     "type": "azurerm_api_management_authorization_server",
-    "family": "other",
+    "family": "integration",
     "attrCount": 19,
     "forceNewCount": 3,
     "hasTags": false,
@@ -257,7 +257,7 @@
   },
   {
     "type": "azurerm_api_management_backend",
-    "family": "other",
+    "family": "integration",
     "attrCount": 13,
     "forceNewCount": 3,
     "hasTags": false,
@@ -267,7 +267,7 @@
   },
   {
     "type": "azurerm_api_management_certificate",
-    "family": "other",
+    "family": "integration",
     "attrCount": 10,
     "forceNewCount": 3,
     "hasTags": false,
@@ -277,7 +277,7 @@
   },
   {
     "type": "azurerm_api_management_custom_domain",
-    "family": "other",
+    "family": "integration",
     "attrCount": 6,
     "forceNewCount": 1,
     "hasTags": false,
@@ -287,7 +287,7 @@
   },
   {
     "type": "azurerm_api_management_diagnostic",
-    "family": "other",
+    "family": "integration",
     "attrCount": 14,
     "forceNewCount": 3,
     "hasTags": false,
@@ -297,7 +297,7 @@
   },
   {
     "type": "azurerm_api_management_email_template",
-    "family": "other",
+    "family": "integration",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": false,
@@ -307,7 +307,7 @@
   },
   {
     "type": "azurerm_api_management_gateway",
-    "family": "other",
+    "family": "integration",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
@@ -317,7 +317,7 @@
   },
   {
     "type": "azurerm_api_management_gateway_api",
-    "family": "other",
+    "family": "integration",
     "attrCount": 2,
     "forceNewCount": 2,
     "hasTags": false,
@@ -327,7 +327,7 @@
   },
   {
     "type": "azurerm_api_management_gateway_certificate_authority",
-    "family": "other",
+    "family": "integration",
     "attrCount": 4,
     "forceNewCount": 3,
     "hasTags": false,
@@ -337,7 +337,7 @@
   },
   {
     "type": "azurerm_api_management_gateway_host_name_configuration",
-    "family": "other",
+    "family": "integration",
     "attrCount": 9,
     "forceNewCount": 3,
     "hasTags": false,
@@ -347,7 +347,7 @@
   },
   {
     "type": "azurerm_api_management_global_schema",
-    "family": "other",
+    "family": "integration",
     "attrCount": 6,
     "forceNewCount": 3,
     "hasTags": false,
@@ -357,27 +357,27 @@
   },
   {
     "type": "azurerm_api_management_group",
-    "family": "other",
+    "family": "governance",
     "attrCount": 7,
     "forceNewCount": 5,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_api_management_group_user",
-    "family": "other",
+    "family": "governance",
     "attrCount": 4,
     "forceNewCount": 4,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_api_management_identity_provider_aad",
-    "family": "other",
+    "family": "integration",
     "attrCount": 7,
     "forceNewCount": 2,
     "hasTags": false,
@@ -387,7 +387,7 @@
   },
   {
     "type": "azurerm_api_management_identity_provider_aadb2c",
-    "family": "other",
+    "family": "integration",
     "attrCount": 12,
     "forceNewCount": 2,
     "hasTags": false,
@@ -397,7 +397,7 @@
   },
   {
     "type": "azurerm_api_management_identity_provider_facebook",
-    "family": "other",
+    "family": "integration",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
@@ -407,7 +407,7 @@
   },
   {
     "type": "azurerm_api_management_identity_provider_google",
-    "family": "other",
+    "family": "integration",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
@@ -417,7 +417,7 @@
   },
   {
     "type": "azurerm_api_management_identity_provider_microsoft",
-    "family": "other",
+    "family": "integration",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
@@ -427,7 +427,7 @@
   },
   {
     "type": "azurerm_api_management_identity_provider_twitter",
-    "family": "other",
+    "family": "integration",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
@@ -437,7 +437,7 @@
   },
   {
     "type": "azurerm_api_management_logger",
-    "family": "other",
+    "family": "integration",
     "attrCount": 8,
     "forceNewCount": 6,
     "hasTags": false,
@@ -447,7 +447,7 @@
   },
   {
     "type": "azurerm_api_management_named_value",
-    "family": "other",
+    "family": "integration",
     "attrCount": 8,
     "forceNewCount": 3,
     "hasTags": true,
@@ -459,7 +459,7 @@
   },
   {
     "type": "azurerm_api_management_notification_recipient_email",
-    "family": "other",
+    "family": "integration",
     "attrCount": 3,
     "forceNewCount": 3,
     "hasTags": false,
@@ -469,7 +469,7 @@
   },
   {
     "type": "azurerm_api_management_notification_recipient_user",
-    "family": "other",
+    "family": "integration",
     "attrCount": 3,
     "forceNewCount": 3,
     "hasTags": false,
@@ -479,7 +479,7 @@
   },
   {
     "type": "azurerm_api_management_openid_connect_provider",
-    "family": "other",
+    "family": "integration",
     "attrCount": 8,
     "forceNewCount": 3,
     "hasTags": false,
@@ -489,7 +489,7 @@
   },
   {
     "type": "azurerm_api_management_policy",
-    "family": "other",
+    "family": "integration",
     "attrCount": 3,
     "forceNewCount": 1,
     "hasTags": false,
@@ -499,7 +499,7 @@
   },
   {
     "type": "azurerm_api_management_policy_fragment",
-    "family": "other",
+    "family": "integration",
     "attrCount": 5,
     "forceNewCount": 2,
     "hasTags": false,
@@ -509,7 +509,7 @@
   },
   {
     "type": "azurerm_api_management_product",
-    "family": "other",
+    "family": "integration",
     "attrCount": 10,
     "forceNewCount": 3,
     "hasTags": false,
@@ -519,7 +519,7 @@
   },
   {
     "type": "azurerm_api_management_product_api",
-    "family": "other",
+    "family": "integration",
     "attrCount": 4,
     "forceNewCount": 4,
     "hasTags": false,
@@ -529,7 +529,7 @@
   },
   {
     "type": "azurerm_api_management_product_group",
-    "family": "other",
+    "family": "integration",
     "attrCount": 4,
     "forceNewCount": 4,
     "hasTags": false,
@@ -539,7 +539,7 @@
   },
   {
     "type": "azurerm_api_management_product_policy",
-    "family": "other",
+    "family": "integration",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": false,
@@ -549,7 +549,7 @@
   },
   {
     "type": "azurerm_api_management_product_tag",
-    "family": "other",
+    "family": "integration",
     "attrCount": 4,
     "forceNewCount": 4,
     "hasTags": false,
@@ -559,7 +559,7 @@
   },
   {
     "type": "azurerm_api_management_redis_cache",
-    "family": "other",
+    "family": "integration",
     "attrCount": 6,
     "forceNewCount": 2,
     "hasTags": false,
@@ -569,7 +569,7 @@
   },
   {
     "type": "azurerm_api_management_standalone_gateway",
-    "family": "other",
+    "family": "integration",
     "attrCount": 7,
     "forceNewCount": 6,
     "hasTags": false,
@@ -579,7 +579,7 @@
   },
   {
     "type": "azurerm_api_management_subscription",
-    "family": "other",
+    "family": "integration",
     "attrCount": 11,
     "forceNewCount": 6,
     "hasTags": false,
@@ -589,7 +589,7 @@
   },
   {
     "type": "azurerm_api_management_tag",
-    "family": "other",
+    "family": "integration",
     "attrCount": 3,
     "forceNewCount": 2,
     "hasTags": false,
@@ -599,7 +599,7 @@
   },
   {
     "type": "azurerm_api_management_user",
-    "family": "other",
+    "family": "integration",
     "attrCount": 10,
     "forceNewCount": 4,
     "hasTags": false,
@@ -609,7 +609,7 @@
   },
   {
     "type": "azurerm_api_management_workspace",
-    "family": "other",
+    "family": "integration",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
@@ -619,7 +619,7 @@
   },
   {
     "type": "azurerm_api_management_workspace_api_version_set",
-    "family": "other",
+    "family": "integration",
     "attrCount": 7,
     "forceNewCount": 2,
     "hasTags": false,
@@ -629,7 +629,7 @@
   },
   {
     "type": "azurerm_api_management_workspace_certificate",
-    "family": "other",
+    "family": "integration",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
@@ -639,7 +639,7 @@
   },
   {
     "type": "azurerm_api_management_workspace_named_value",
-    "family": "other",
+    "family": "integration",
     "attrCount": 7,
     "forceNewCount": 2,
     "hasTags": true,
@@ -651,7 +651,7 @@
   },
   {
     "type": "azurerm_api_management_workspace_policy",
-    "family": "other",
+    "family": "integration",
     "attrCount": 3,
     "forceNewCount": 1,
     "hasTags": false,
@@ -661,7 +661,7 @@
   },
   {
     "type": "azurerm_api_management_workspace_policy_fragment",
-    "family": "other",
+    "family": "integration",
     "attrCount": 5,
     "forceNewCount": 2,
     "hasTags": false,
@@ -707,7 +707,7 @@
   },
   {
     "type": "azurerm_app_service",
-    "family": "other",
+    "family": "web",
     "attrCount": 27,
     "forceNewCount": 3,
     "hasTags": true,
@@ -719,7 +719,7 @@
   },
   {
     "type": "azurerm_app_service_active_slot",
-    "family": "other",
+    "family": "web",
     "attrCount": 3,
     "forceNewCount": 2,
     "hasTags": false,
@@ -729,7 +729,7 @@
   },
   {
     "type": "azurerm_app_service_certificate",
-    "family": "other",
+    "family": "web",
     "attrCount": 17,
     "forceNewCount": 8,
     "hasTags": true,
@@ -741,7 +741,7 @@
   },
   {
     "type": "azurerm_app_service_certificate_binding",
-    "family": "other",
+    "family": "web",
     "attrCount": 6,
     "forceNewCount": 3,
     "hasTags": false,
@@ -751,7 +751,7 @@
   },
   {
     "type": "azurerm_app_service_certificate_order",
-    "family": "other",
+    "family": "web",
     "attrCount": 19,
     "forceNewCount": 3,
     "hasTags": true,
@@ -763,7 +763,7 @@
   },
   {
     "type": "azurerm_app_service_connection",
-    "family": "other",
+    "family": "web",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": false,
@@ -773,7 +773,7 @@
   },
   {
     "type": "azurerm_app_service_custom_hostname_binding",
-    "family": "other",
+    "family": "web",
     "attrCount": 6,
     "forceNewCount": 5,
     "hasTags": false,
@@ -783,7 +783,7 @@
   },
   {
     "type": "azurerm_app_service_environment_v3",
-    "family": "other",
+    "family": "web",
     "attrCount": 19,
     "forceNewCount": 6,
     "hasTags": true,
@@ -795,7 +795,7 @@
   },
   {
     "type": "azurerm_app_service_hybrid_connection",
-    "family": "other",
+    "family": "web",
     "attrCount": 11,
     "forceNewCount": 3,
     "hasTags": false,
@@ -805,7 +805,7 @@
   },
   {
     "type": "azurerm_app_service_managed_certificate",
-    "family": "other",
+    "family": "web",
     "attrCount": 10,
     "forceNewCount": 1,
     "hasTags": true,
@@ -817,7 +817,7 @@
   },
   {
     "type": "azurerm_app_service_plan",
-    "family": "other",
+    "family": "web",
     "attrCount": 13,
     "forceNewCount": 6,
     "hasTags": true,
@@ -829,7 +829,7 @@
   },
   {
     "type": "azurerm_app_service_public_certificate",
-    "family": "other",
+    "family": "web",
     "attrCount": 6,
     "forceNewCount": 5,
     "hasTags": false,
@@ -839,7 +839,7 @@
   },
   {
     "type": "azurerm_app_service_slot",
-    "family": "other",
+    "family": "web",
     "attrCount": 19,
     "forceNewCount": 5,
     "hasTags": true,
@@ -851,7 +851,7 @@
   },
   {
     "type": "azurerm_app_service_slot_custom_hostname_binding",
-    "family": "other",
+    "family": "web",
     "attrCount": 5,
     "forceNewCount": 4,
     "hasTags": false,
@@ -861,7 +861,7 @@
   },
   {
     "type": "azurerm_app_service_slot_virtual_network_swift_connection",
-    "family": "other",
+    "family": "network",
     "attrCount": 3,
     "forceNewCount": 2,
     "hasTags": false,
@@ -871,7 +871,7 @@
   },
   {
     "type": "azurerm_app_service_source_control",
-    "family": "other",
+    "family": "web",
     "attrCount": 10,
     "forceNewCount": 8,
     "hasTags": false,
@@ -881,7 +881,7 @@
   },
   {
     "type": "azurerm_app_service_source_control_slot",
-    "family": "other",
+    "family": "web",
     "attrCount": 10,
     "forceNewCount": 8,
     "hasTags": false,
@@ -891,7 +891,7 @@
   },
   {
     "type": "azurerm_app_service_source_control_token",
-    "family": "other",
+    "family": "web",
     "attrCount": 3,
     "forceNewCount": 0,
     "hasTags": false,
@@ -901,7 +901,7 @@
   },
   {
     "type": "azurerm_app_service_virtual_network_swift_connection",
-    "family": "other",
+    "family": "network",
     "attrCount": 2,
     "forceNewCount": 1,
     "hasTags": false,
@@ -911,7 +911,7 @@
   },
   {
     "type": "azurerm_application_gateway",
-    "family": "other",
+    "family": "network",
     "attrCount": 38,
     "forceNewCount": 4,
     "hasTags": true,
@@ -923,7 +923,7 @@
   },
   {
     "type": "azurerm_application_insights",
-    "family": "other",
+    "family": "monitoring",
     "attrCount": 21,
     "forceNewCount": 4,
     "hasTags": true,
@@ -935,7 +935,7 @@
   },
   {
     "type": "azurerm_application_insights_analytics_item",
-    "family": "other",
+    "family": "monitoring",
     "attrCount": 9,
     "forceNewCount": 4,
     "hasTags": false,
@@ -945,7 +945,7 @@
   },
   {
     "type": "azurerm_application_insights_api_key",
-    "family": "other",
+    "family": "monitoring",
     "attrCount": 5,
     "forceNewCount": 4,
     "hasTags": false,
@@ -955,7 +955,7 @@
   },
   {
     "type": "azurerm_application_insights_smart_detection_rule",
-    "family": "other",
+    "family": "monitoring",
     "attrCount": 5,
     "forceNewCount": 2,
     "hasTags": false,
@@ -965,7 +965,7 @@
   },
   {
     "type": "azurerm_application_insights_standard_web_test",
-    "family": "other",
+    "family": "monitoring",
     "attrCount": 14,
     "forceNewCount": 4,
     "hasTags": true,
@@ -977,7 +977,7 @@
   },
   {
     "type": "azurerm_application_insights_web_test",
-    "family": "other",
+    "family": "monitoring",
     "attrCount": 14,
     "forceNewCount": 5,
     "hasTags": true,
@@ -989,7 +989,7 @@
   },
   {
     "type": "azurerm_application_insights_workbook",
-    "family": "other",
+    "family": "monitoring",
     "attrCount": 11,
     "forceNewCount": 5,
     "hasTags": true,
@@ -1001,7 +1001,7 @@
   },
   {
     "type": "azurerm_application_insights_workbook_template",
-    "family": "other",
+    "family": "monitoring",
     "attrCount": 9,
     "forceNewCount": 3,
     "hasTags": true,
@@ -1037,7 +1037,7 @@
   },
   {
     "type": "azurerm_application_load_balancer_security_policy",
-    "family": "other",
+    "family": "security",
     "attrCount": 5,
     "forceNewCount": 4,
     "hasTags": true,
@@ -1049,7 +1049,7 @@
   },
   {
     "type": "azurerm_application_load_balancer_subnet_association",
-    "family": "other",
+    "family": "network",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": true,
@@ -1061,19 +1061,19 @@
   },
   {
     "type": "azurerm_application_security_group",
-    "family": "other",
+    "family": "security",
     "attrCount": 4,
     "forceNewCount": 3,
     "hasTags": true,
     "safeOpClasses": [
       "tag_update"
     ],
-    "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_arc_kubernetes_cluster",
-    "family": "other",
+    "family": "containers",
     "attrCount": 13,
     "forceNewCount": 5,
     "hasTags": true,
@@ -1085,7 +1085,7 @@
   },
   {
     "type": "azurerm_arc_kubernetes_cluster_extension",
-    "family": "other",
+    "family": "containers",
     "attrCount": 11,
     "forceNewCount": 8,
     "hasTags": false,
@@ -1095,7 +1095,7 @@
   },
   {
     "type": "azurerm_arc_kubernetes_flux_configuration",
-    "family": "other",
+    "family": "containers",
     "attrCount": 9,
     "forceNewCount": 4,
     "hasTags": false,
@@ -1105,7 +1105,7 @@
   },
   {
     "type": "azurerm_arc_kubernetes_provisioned_cluster",
-    "family": "other",
+    "family": "containers",
     "attrCount": 15,
     "forceNewCount": 4,
     "hasTags": true,
@@ -1513,7 +1513,7 @@
   },
   {
     "type": "azurerm_backup_container_storage_account",
-    "family": "other",
+    "family": "containers",
     "attrCount": 3,
     "forceNewCount": 3,
     "hasTags": false,
@@ -1523,7 +1523,7 @@
   },
   {
     "type": "azurerm_backup_policy_file_share",
-    "family": "other",
+    "family": "governance",
     "attrCount": 11,
     "forceNewCount": 3,
     "hasTags": false,
@@ -1533,7 +1533,7 @@
   },
   {
     "type": "azurerm_backup_policy_vm",
-    "family": "other",
+    "family": "governance",
     "attrCount": 14,
     "forceNewCount": 4,
     "hasTags": false,
@@ -1543,7 +1543,7 @@
   },
   {
     "type": "azurerm_backup_policy_vm_workload",
-    "family": "other",
+    "family": "governance",
     "attrCount": 6,
     "forceNewCount": 4,
     "hasTags": false,
@@ -1563,7 +1563,7 @@
   },
   {
     "type": "azurerm_backup_protected_vm",
-    "family": "other",
+    "family": "compute",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": false,
@@ -1637,13 +1637,13 @@
   },
   {
     "type": "azurerm_billing_account_cost_management_export",
-    "family": "other",
+    "family": "governance",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_blueprint_assignment",
@@ -1891,7 +1891,7 @@
   },
   {
     "type": "azurerm_cdn_frontdoor_firewall_policy",
-    "family": "other",
+    "family": "security",
     "attrCount": 16,
     "forceNewCount": 3,
     "hasTags": true,
@@ -1935,7 +1935,7 @@
   },
   {
     "type": "azurerm_cdn_frontdoor_route",
-    "family": "other",
+    "family": "network",
     "attrCount": 14,
     "forceNewCount": 2,
     "hasTags": false,
@@ -1975,7 +1975,7 @@
   },
   {
     "type": "azurerm_cdn_frontdoor_security_policy",
-    "family": "other",
+    "family": "security",
     "attrCount": 3,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2049,13 +2049,13 @@
   },
   {
     "type": "azurerm_cognitive_account_connection_account_managed_identity",
-    "family": "ai",
+    "family": "identity",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_cognitive_account_connection_api_key",
@@ -2605,7 +2605,7 @@
   },
   {
     "type": "azurerm_cosmosdb_sql_container",
-    "family": "database",
+    "family": "containers",
     "attrCount": 14,
     "forceNewCount": 8,
     "hasTags": false,
@@ -2761,7 +2761,7 @@
   },
   {
     "type": "azurerm_data_factory",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 13,
     "forceNewCount": 3,
     "hasTags": true,
@@ -2773,7 +2773,7 @@
   },
   {
     "type": "azurerm_data_factory_credential_service_principal",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 7,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2783,17 +2783,17 @@
   },
   {
     "type": "azurerm_data_factory_credential_user_managed_identity",
-    "family": "other",
+    "family": "identity",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_data_factory_custom_dataset",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 11,
     "forceNewCount": 3,
     "hasTags": false,
@@ -2803,7 +2803,7 @@
   },
   {
     "type": "azurerm_data_factory_customer_managed_key",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 3,
     "forceNewCount": 1,
     "hasTags": false,
@@ -2813,7 +2813,7 @@
   },
   {
     "type": "azurerm_data_factory_data_flow",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 10,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2823,7 +2823,7 @@
   },
   {
     "type": "azurerm_data_factory_dataset_azure_blob",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 13,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2833,7 +2833,7 @@
   },
   {
     "type": "azurerm_data_factory_dataset_azure_sql_table",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 11,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2843,7 +2843,7 @@
   },
   {
     "type": "azurerm_data_factory_dataset_binary",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 12,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2853,7 +2853,7 @@
   },
   {
     "type": "azurerm_data_factory_dataset_cosmosdb_sqlapi",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 10,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2863,7 +2863,7 @@
   },
   {
     "type": "azurerm_data_factory_dataset_delimited_text",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 21,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2873,7 +2873,7 @@
   },
   {
     "type": "azurerm_data_factory_dataset_http",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 12,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2883,7 +2883,7 @@
   },
   {
     "type": "azurerm_data_factory_dataset_json",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 12,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2893,7 +2893,7 @@
   },
   {
     "type": "azurerm_data_factory_dataset_mysql",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 10,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2903,7 +2903,7 @@
   },
   {
     "type": "azurerm_data_factory_dataset_parquet",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 14,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2913,7 +2913,7 @@
   },
   {
     "type": "azurerm_data_factory_dataset_postgresql",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 10,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2923,7 +2923,7 @@
   },
   {
     "type": "azurerm_data_factory_dataset_snowflake",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 11,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2933,7 +2933,7 @@
   },
   {
     "type": "azurerm_data_factory_dataset_sql_server_table",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 10,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2943,7 +2943,7 @@
   },
   {
     "type": "azurerm_data_factory_flowlet_data_flow",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 10,
     "forceNewCount": 2,
     "hasTags": false,
@@ -2953,7 +2953,7 @@
   },
   {
     "type": "azurerm_data_factory_integration_runtime_azure",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 10,
     "forceNewCount": 4,
     "hasTags": false,
@@ -2963,7 +2963,7 @@
   },
   {
     "type": "azurerm_data_factory_integration_runtime_azure_ssis",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 19,
     "forceNewCount": 3,
     "hasTags": false,
@@ -2973,7 +2973,7 @@
   },
   {
     "type": "azurerm_data_factory_integration_runtime_self_hosted",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": false,
@@ -2983,7 +2983,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_custom_service",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 9,
     "forceNewCount": 3,
     "hasTags": false,
@@ -2993,7 +2993,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_azure_blob_storage",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 19,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3003,7 +3003,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_azure_databricks",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 15,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3013,7 +3013,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_azure_file_storage",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 13,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3023,7 +3023,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_azure_function",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 10,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3033,7 +3033,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_azure_search",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 10,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3043,7 +3043,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_azure_sql_database",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 15,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3053,7 +3053,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_azure_table_storage",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 8,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3063,7 +3063,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_cosmosdb",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 11,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3073,7 +3073,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_cosmosdb_mongoapi",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 10,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3083,7 +3083,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_data_lake_storage_gen2",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 13,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3093,7 +3093,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_key_vault",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 8,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3103,7 +3103,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_kusto",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 13,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3113,7 +3113,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_mysql",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3123,7 +3123,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_odata",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3133,7 +3133,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_odbc",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3143,7 +3143,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_postgresql",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 8,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3153,7 +3153,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_sftp",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 20,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3163,7 +3163,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_snowflake",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3173,7 +3173,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_sql_managed_instance",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 12,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3183,7 +3183,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_sql_server",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 11,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3193,7 +3193,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_synapse",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3203,7 +3203,7 @@
   },
   {
     "type": "azurerm_data_factory_linked_service_web",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 11,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3213,7 +3213,7 @@
   },
   {
     "type": "azurerm_data_factory_managed_private_endpoint",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 5,
     "forceNewCount": 5,
     "hasTags": false,
@@ -3223,7 +3223,7 @@
   },
   {
     "type": "azurerm_data_factory_pipeline",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 10,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3233,7 +3233,7 @@
   },
   {
     "type": "azurerm_data_factory_trigger_blob_event",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 12,
     "forceNewCount": 3,
     "hasTags": false,
@@ -3243,7 +3243,7 @@
   },
   {
     "type": "azurerm_data_factory_trigger_custom_event",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 11,
     "forceNewCount": 3,
     "hasTags": false,
@@ -3253,7 +3253,7 @@
   },
   {
     "type": "azurerm_data_factory_trigger_schedule",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 14,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3263,7 +3263,7 @@
   },
   {
     "type": "azurerm_data_factory_trigger_tumbling_window",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 15,
     "forceNewCount": 5,
     "hasTags": false,
@@ -3273,7 +3273,7 @@
   },
   {
     "type": "azurerm_data_protection_backup_instance_blob_storage",
-    "family": "other",
+    "family": "storage",
     "attrCount": 7,
     "forceNewCount": 4,
     "hasTags": false,
@@ -3283,7 +3283,7 @@
   },
   {
     "type": "azurerm_data_protection_backup_instance_data_lake_storage",
-    "family": "other",
+    "family": "storage",
     "attrCount": 7,
     "forceNewCount": 4,
     "hasTags": false,
@@ -3303,7 +3303,7 @@
   },
   {
     "type": "azurerm_data_protection_backup_instance_kubernetes_cluster",
-    "family": "other",
+    "family": "containers",
     "attrCount": 8,
     "forceNewCount": 7,
     "hasTags": false,
@@ -3313,7 +3313,7 @@
   },
   {
     "type": "azurerm_data_protection_backup_instance_mysql_flexible_server",
-    "family": "other",
+    "family": "database",
     "attrCount": 6,
     "forceNewCount": 4,
     "hasTags": false,
@@ -3323,7 +3323,7 @@
   },
   {
     "type": "azurerm_data_protection_backup_instance_postgresql",
-    "family": "other",
+    "family": "database",
     "attrCount": 7,
     "forceNewCount": 4,
     "hasTags": false,
@@ -3333,7 +3333,7 @@
   },
   {
     "type": "azurerm_data_protection_backup_instance_postgresql_flexible_server",
-    "family": "other",
+    "family": "database",
     "attrCount": 6,
     "forceNewCount": 4,
     "hasTags": false,
@@ -3343,7 +3343,7 @@
   },
   {
     "type": "azurerm_data_protection_backup_policy_blob_storage",
-    "family": "other",
+    "family": "storage",
     "attrCount": 7,
     "forceNewCount": 7,
     "hasTags": false,
@@ -3353,7 +3353,7 @@
   },
   {
     "type": "azurerm_data_protection_backup_policy_data_lake_storage",
-    "family": "other",
+    "family": "storage",
     "attrCount": 6,
     "forceNewCount": 6,
     "hasTags": false,
@@ -3363,7 +3363,7 @@
   },
   {
     "type": "azurerm_data_protection_backup_policy_disk",
-    "family": "other",
+    "family": "governance",
     "attrCount": 6,
     "forceNewCount": 6,
     "hasTags": false,
@@ -3373,7 +3373,7 @@
   },
   {
     "type": "azurerm_data_protection_backup_policy_kubernetes_cluster",
-    "family": "other",
+    "family": "containers",
     "attrCount": 7,
     "forceNewCount": 7,
     "hasTags": false,
@@ -3383,7 +3383,7 @@
   },
   {
     "type": "azurerm_data_protection_backup_policy_mysql_flexible_server",
-    "family": "other",
+    "family": "governance",
     "attrCount": 6,
     "forceNewCount": 6,
     "hasTags": false,
@@ -3393,7 +3393,7 @@
   },
   {
     "type": "azurerm_data_protection_backup_policy_postgresql",
-    "family": "other",
+    "family": "database",
     "attrCount": 7,
     "forceNewCount": 7,
     "hasTags": false,
@@ -3403,7 +3403,7 @@
   },
   {
     "type": "azurerm_data_protection_backup_policy_postgresql_flexible_server",
-    "family": "other",
+    "family": "database",
     "attrCount": 6,
     "forceNewCount": 6,
     "hasTags": false,
@@ -3469,7 +3469,7 @@
   },
   {
     "type": "azurerm_data_share_dataset_blob_storage",
-    "family": "other",
+    "family": "storage",
     "attrCount": 7,
     "forceNewCount": 6,
     "hasTags": false,
@@ -3479,7 +3479,7 @@
   },
   {
     "type": "azurerm_data_share_dataset_data_lake_gen2",
-    "family": "other",
+    "family": "storage",
     "attrCount": 7,
     "forceNewCount": 6,
     "hasTags": false,
@@ -3489,7 +3489,7 @@
   },
   {
     "type": "azurerm_data_share_dataset_kusto_cluster",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": false,
@@ -3499,7 +3499,7 @@
   },
   {
     "type": "azurerm_data_share_dataset_kusto_database",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": false,
@@ -3557,7 +3557,7 @@
   },
   {
     "type": "azurerm_databricks_virtual_network_peering",
-    "family": "analytics",
+    "family": "network",
     "attrCount": 11,
     "forceNewCount": 5,
     "hasTags": false,
@@ -3599,7 +3599,7 @@
   },
   {
     "type": "azurerm_datadog_monitor",
-    "family": "other",
+    "family": "monitoring",
     "attrCount": 10,
     "forceNewCount": 3,
     "hasTags": true,
@@ -3611,7 +3611,7 @@
   },
   {
     "type": "azurerm_datadog_monitor_sso_configuration",
-    "family": "other",
+    "family": "monitoring",
     "attrCount": 6,
     "forceNewCount": 1,
     "hasTags": false,
@@ -3621,7 +3621,7 @@
   },
   {
     "type": "azurerm_datadog_monitor_tag_rule",
-    "family": "other",
+    "family": "monitoring",
     "attrCount": 4,
     "forceNewCount": 1,
     "hasTags": false,
@@ -3631,19 +3631,19 @@
   },
   {
     "type": "azurerm_dedicated_hardware_security_module",
-    "family": "other",
+    "family": "security",
     "attrCount": 9,
     "forceNewCount": 6,
     "hasTags": true,
     "safeOpClasses": [
       "tag_update"
     ],
-    "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_dedicated_host",
-    "family": "other",
+    "family": "compute",
     "attrCount": 8,
     "forceNewCount": 5,
     "hasTags": true,
@@ -3655,7 +3655,7 @@
   },
   {
     "type": "azurerm_dedicated_host_group",
-    "family": "other",
+    "family": "compute",
     "attrCount": 7,
     "forceNewCount": 6,
     "hasTags": true,
@@ -3679,7 +3679,7 @@
   },
   {
     "type": "azurerm_dev_center_attached_network",
-    "family": "other",
+    "family": "network",
     "attrCount": 3,
     "forceNewCount": 3,
     "hasTags": false,
@@ -3723,7 +3723,7 @@
   },
   {
     "type": "azurerm_dev_center_gallery",
-    "family": "other",
+    "family": "compute",
     "attrCount": 3,
     "forceNewCount": 3,
     "hasTags": false,
@@ -3733,7 +3733,7 @@
   },
   {
     "type": "azurerm_dev_center_network_connection",
-    "family": "other",
+    "family": "network",
     "attrCount": 10,
     "forceNewCount": 4,
     "hasTags": true,
@@ -3781,7 +3781,7 @@
   },
   {
     "type": "azurerm_dev_test_global_vm_shutdown_schedule",
-    "family": "other",
+    "family": "compute",
     "attrCount": 7,
     "forceNewCount": 2,
     "hasTags": true,
@@ -3805,7 +3805,7 @@
   },
   {
     "type": "azurerm_dev_test_linux_virtual_machine",
-    "family": "other",
+    "family": "compute",
     "attrCount": 19,
     "forceNewCount": 13,
     "hasTags": true,
@@ -3817,7 +3817,7 @@
   },
   {
     "type": "azurerm_dev_test_policy",
-    "family": "other",
+    "family": "governance",
     "attrCount": 9,
     "forceNewCount": 5,
     "hasTags": true,
@@ -3841,7 +3841,7 @@
   },
   {
     "type": "azurerm_dev_test_virtual_network",
-    "family": "other",
+    "family": "network",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": true,
@@ -3853,7 +3853,7 @@
   },
   {
     "type": "azurerm_dev_test_windows_virtual_machine",
-    "family": "other",
+    "family": "compute",
     "attrCount": 18,
     "forceNewCount": 12,
     "hasTags": true,
@@ -3865,7 +3865,7 @@
   },
   {
     "type": "azurerm_digital_twins_endpoint_eventgrid",
-    "family": "other",
+    "family": "iot",
     "attrCount": 6,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3875,7 +3875,7 @@
   },
   {
     "type": "azurerm_digital_twins_endpoint_eventhub",
-    "family": "other",
+    "family": "iot",
     "attrCount": 5,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3885,7 +3885,7 @@
   },
   {
     "type": "azurerm_digital_twins_endpoint_servicebus",
-    "family": "other",
+    "family": "iot",
     "attrCount": 5,
     "forceNewCount": 2,
     "hasTags": false,
@@ -3895,7 +3895,7 @@
   },
   {
     "type": "azurerm_digital_twins_instance",
-    "family": "other",
+    "family": "iot",
     "attrCount": 6,
     "forceNewCount": 3,
     "hasTags": true,
@@ -3907,7 +3907,7 @@
   },
   {
     "type": "azurerm_digital_twins_time_series_database_connection",
-    "family": "other",
+    "family": "iot",
     "attrCount": 10,
     "forceNewCount": 10,
     "hasTags": false,
@@ -4061,7 +4061,7 @@
   },
   {
     "type": "azurerm_dynatrace_monitor",
-    "family": "other",
+    "family": "monitoring",
     "attrCount": 10,
     "forceNewCount": 7,
     "hasTags": true,
@@ -4379,7 +4379,7 @@
   },
   {
     "type": "azurerm_express_route_circuit",
-    "family": "other",
+    "family": "network",
     "attrCount": 15,
     "forceNewCount": 6,
     "hasTags": true,
@@ -4391,7 +4391,7 @@
   },
   {
     "type": "azurerm_express_route_circuit_authorization",
-    "family": "other",
+    "family": "network",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": false,
@@ -4401,7 +4401,7 @@
   },
   {
     "type": "azurerm_express_route_circuit_connection",
-    "family": "other",
+    "family": "network",
     "attrCount": 6,
     "forceNewCount": 4,
     "hasTags": false,
@@ -4411,7 +4411,7 @@
   },
   {
     "type": "azurerm_express_route_circuit_peering",
-    "family": "other",
+    "family": "network",
     "attrCount": 16,
     "forceNewCount": 2,
     "hasTags": false,
@@ -4421,7 +4421,7 @@
   },
   {
     "type": "azurerm_express_route_connection",
-    "family": "other",
+    "family": "network",
     "attrCount": 10,
     "forceNewCount": 3,
     "hasTags": false,
@@ -4431,7 +4431,7 @@
   },
   {
     "type": "azurerm_express_route_gateway",
-    "family": "other",
+    "family": "network",
     "attrCount": 7,
     "forceNewCount": 4,
     "hasTags": true,
@@ -4443,7 +4443,7 @@
   },
   {
     "type": "azurerm_express_route_port",
-    "family": "other",
+    "family": "network",
     "attrCount": 14,
     "forceNewCount": 6,
     "hasTags": true,
@@ -4455,7 +4455,7 @@
   },
   {
     "type": "azurerm_express_route_port_authorization",
-    "family": "other",
+    "family": "network",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": false,
@@ -4571,7 +4571,7 @@
   },
   {
     "type": "azurerm_fluid_relay_server",
-    "family": "other",
+    "family": "integration",
     "attrCount": 13,
     "forceNewCount": 5,
     "hasTags": true,
@@ -4605,7 +4605,7 @@
   },
   {
     "type": "azurerm_frontdoor_firewall_policy",
-    "family": "other",
+    "family": "security",
     "attrCount": 12,
     "forceNewCount": 2,
     "hasTags": true,
@@ -4627,7 +4627,7 @@
   },
   {
     "type": "azurerm_function_app",
-    "family": "other",
+    "family": "web",
     "attrCount": 27,
     "forceNewCount": 5,
     "hasTags": true,
@@ -4639,7 +4639,7 @@
   },
   {
     "type": "azurerm_function_app_active_slot",
-    "family": "other",
+    "family": "web",
     "attrCount": 3,
     "forceNewCount": 1,
     "hasTags": false,
@@ -4649,7 +4649,7 @@
   },
   {
     "type": "azurerm_function_app_connection",
-    "family": "other",
+    "family": "web",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": false,
@@ -4659,7 +4659,7 @@
   },
   {
     "type": "azurerm_function_app_flex_consumption",
-    "family": "other",
+    "family": "web",
     "attrCount": 41,
     "forceNewCount": 4,
     "hasTags": true,
@@ -4671,7 +4671,7 @@
   },
   {
     "type": "azurerm_function_app_function",
-    "family": "other",
+    "family": "web",
     "attrCount": 14,
     "forceNewCount": 3,
     "hasTags": false,
@@ -4681,7 +4681,7 @@
   },
   {
     "type": "azurerm_function_app_hybrid_connection",
-    "family": "other",
+    "family": "web",
     "attrCount": 10,
     "forceNewCount": 2,
     "hasTags": false,
@@ -4691,7 +4691,7 @@
   },
   {
     "type": "azurerm_function_app_slot",
-    "family": "other",
+    "family": "web",
     "attrCount": 24,
     "forceNewCount": 7,
     "hasTags": true,
@@ -4893,7 +4893,7 @@
   },
   {
     "type": "azurerm_hpc_cache_access_policy",
-    "family": "other",
+    "family": "governance",
     "attrCount": 3,
     "forceNewCount": 2,
     "hasTags": false,
@@ -4945,25 +4945,25 @@
   },
   {
     "type": "azurerm_iot_security_device_group",
-    "family": "iot",
+    "family": "security",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_iot_security_solution",
-    "family": "iot",
+    "family": "security",
     "attrCount": 15,
     "forceNewCount": 3,
     "hasTags": true,
     "safeOpClasses": [
       "tag_update"
     ],
-    "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_iotcentral_application",
@@ -4979,7 +4979,7 @@
   },
   {
     "type": "azurerm_iotcentral_application_network_rule_set",
-    "family": "other",
+    "family": "network",
     "attrCount": 4,
     "forceNewCount": 1,
     "hasTags": false,
@@ -5087,7 +5087,7 @@
   },
   {
     "type": "azurerm_iothub_endpoint_cosmosdb_account",
-    "family": "iot",
+    "family": "database",
     "attrCount": 13,
     "forceNewCount": 6,
     "hasTags": false,
@@ -5097,7 +5097,7 @@
   },
   {
     "type": "azurerm_iothub_endpoint_eventhub",
-    "family": "iot",
+    "family": "integration",
     "attrCount": 9,
     "forceNewCount": 3,
     "hasTags": false,
@@ -5107,7 +5107,7 @@
   },
   {
     "type": "azurerm_iothub_endpoint_servicebus_queue",
-    "family": "iot",
+    "family": "integration",
     "attrCount": 9,
     "forceNewCount": 3,
     "hasTags": false,
@@ -5117,7 +5117,7 @@
   },
   {
     "type": "azurerm_iothub_endpoint_servicebus_topic",
-    "family": "iot",
+    "family": "integration",
     "attrCount": 9,
     "forceNewCount": 3,
     "hasTags": false,
@@ -5127,7 +5127,7 @@
   },
   {
     "type": "azurerm_iothub_endpoint_storage_container",
-    "family": "iot",
+    "family": "containers",
     "attrCount": 13,
     "forceNewCount": 4,
     "hasTags": false,
@@ -5209,7 +5209,7 @@
   },
   {
     "type": "azurerm_key_vault",
-    "family": "other",
+    "family": "keyvault",
     "attrCount": 18,
     "forceNewCount": 3,
     "hasTags": true,
@@ -5221,7 +5221,7 @@
   },
   {
     "type": "azurerm_key_vault_access_policy",
-    "family": "other",
+    "family": "keyvault",
     "attrCount": 8,
     "forceNewCount": 4,
     "hasTags": false,
@@ -5231,7 +5231,7 @@
   },
   {
     "type": "azurerm_key_vault_certificate",
-    "family": "other",
+    "family": "keyvault",
     "attrCount": 15,
     "forceNewCount": 2,
     "hasTags": true,
@@ -5243,7 +5243,7 @@
   },
   {
     "type": "azurerm_key_vault_certificate_contacts",
-    "family": "other",
+    "family": "keyvault",
     "attrCount": 2,
     "forceNewCount": 1,
     "hasTags": false,
@@ -5253,7 +5253,7 @@
   },
   {
     "type": "azurerm_key_vault_certificate_issuer",
-    "family": "other",
+    "family": "keyvault",
     "attrCount": 7,
     "forceNewCount": 2,
     "hasTags": false,
@@ -5263,7 +5263,7 @@
   },
   {
     "type": "azurerm_key_vault_key",
-    "family": "other",
+    "family": "keyvault",
     "attrCount": 21,
     "forceNewCount": 6,
     "hasTags": true,
@@ -5275,7 +5275,7 @@
   },
   {
     "type": "azurerm_key_vault_managed_hardware_security_module",
-    "family": "other",
+    "family": "keyvault",
     "attrCount": 15,
     "forceNewCount": 8,
     "hasTags": true,
@@ -5287,7 +5287,7 @@
   },
   {
     "type": "azurerm_key_vault_managed_hardware_security_module_key",
-    "family": "other",
+    "family": "keyvault",
     "attrCount": 10,
     "forceNewCount": 5,
     "hasTags": true,
@@ -5299,7 +5299,7 @@
   },
   {
     "type": "azurerm_key_vault_managed_hardware_security_module_key_rotation_policy",
-    "family": "other",
+    "family": "keyvault",
     "attrCount": 4,
     "forceNewCount": 1,
     "hasTags": false,
@@ -5309,7 +5309,7 @@
   },
   {
     "type": "azurerm_key_vault_managed_hardware_security_module_role_assignment",
-    "family": "other",
+    "family": "keyvault",
     "attrCount": 6,
     "forceNewCount": 5,
     "hasTags": false,
@@ -5319,7 +5319,7 @@
   },
   {
     "type": "azurerm_key_vault_managed_hardware_security_module_role_definition",
-    "family": "other",
+    "family": "keyvault",
     "attrCount": 7,
     "forceNewCount": 2,
     "hasTags": false,
@@ -5329,7 +5329,7 @@
   },
   {
     "type": "azurerm_key_vault_managed_storage_account",
-    "family": "other",
+    "family": "keyvault",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": false,
@@ -5339,7 +5339,7 @@
   },
   {
     "type": "azurerm_key_vault_managed_storage_account_sas_token_definition",
-    "family": "other",
+    "family": "keyvault",
     "attrCount": 7,
     "forceNewCount": 1,
     "hasTags": false,
@@ -5349,7 +5349,7 @@
   },
   {
     "type": "azurerm_key_vault_secret",
-    "family": "other",
+    "family": "keyvault",
     "attrCount": 13,
     "forceNewCount": 2,
     "hasTags": true,
@@ -5531,7 +5531,7 @@
   },
   {
     "type": "azurerm_kusto_cosmosdb_data_connection",
-    "family": "analytics",
+    "family": "database",
     "attrCount": 8,
     "forceNewCount": 8,
     "hasTags": false,
@@ -5561,7 +5561,7 @@
   },
   {
     "type": "azurerm_kusto_eventgrid_data_connection",
-    "family": "analytics",
+    "family": "integration",
     "attrCount": 18,
     "forceNewCount": 9,
     "hasTags": false,
@@ -5571,7 +5571,7 @@
   },
   {
     "type": "azurerm_kusto_eventhub_data_connection",
-    "family": "analytics",
+    "family": "integration",
     "attrCount": 15,
     "forceNewCount": 9,
     "hasTags": false,
@@ -5581,7 +5581,7 @@
   },
   {
     "type": "azurerm_kusto_iothub_data_connection",
-    "family": "analytics",
+    "family": "iot",
     "attrCount": 14,
     "forceNewCount": 13,
     "hasTags": false,
@@ -5703,7 +5703,7 @@
   },
   {
     "type": "azurerm_linux_function_app",
-    "family": "other",
+    "family": "web",
     "attrCount": 44,
     "forceNewCount": 3,
     "hasTags": true,
@@ -5715,7 +5715,7 @@
   },
   {
     "type": "azurerm_linux_function_app_slot",
-    "family": "other",
+    "family": "web",
     "attrCount": 41,
     "forceNewCount": 2,
     "hasTags": true,
@@ -5727,31 +5727,33 @@
   },
   {
     "type": "azurerm_linux_virtual_machine",
-    "family": "other",
+    "family": "compute",
     "attrCount": 55,
     "forceNewCount": 22,
     "hasTags": true,
     "safeOpClasses": [
+      "resize",
       "tag_update"
     ],
     "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "why": "In-place sizing available."
   },
   {
     "type": "azurerm_linux_virtual_machine_scale_set",
-    "family": "other",
+    "family": "compute",
     "attrCount": 55,
     "forceNewCount": 21,
     "hasTags": true,
     "safeOpClasses": [
+      "resize",
       "tag_update"
     ],
     "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "why": "In-place sizing available."
   },
   {
     "type": "azurerm_linux_web_app",
-    "family": "other",
+    "family": "web",
     "attrCount": 38,
     "forceNewCount": 3,
     "hasTags": true,
@@ -5763,7 +5765,7 @@
   },
   {
     "type": "azurerm_linux_web_app_slot",
-    "family": "other",
+    "family": "web",
     "attrCount": 37,
     "forceNewCount": 1,
     "hasTags": true,
@@ -5787,7 +5789,7 @@
   },
   {
     "type": "azurerm_local_network_gateway",
-    "family": "other",
+    "family": "network",
     "attrCount": 8,
     "forceNewCount": 3,
     "hasTags": true,
@@ -6135,7 +6137,7 @@
   },
   {
     "type": "azurerm_machine_learning_compute_cluster",
-    "family": "other",
+    "family": "ai",
     "attrCount": 14,
     "forceNewCount": 11,
     "hasTags": true,
@@ -6147,7 +6149,7 @@
   },
   {
     "type": "azurerm_machine_learning_compute_instance",
-    "family": "other",
+    "family": "ai",
     "attrCount": 12,
     "forceNewCount": 12,
     "hasTags": false,
@@ -6157,7 +6159,7 @@
   },
   {
     "type": "azurerm_machine_learning_datastore_blobstorage",
-    "family": "other",
+    "family": "ai",
     "attrCount": 9,
     "forceNewCount": 5,
     "hasTags": false,
@@ -6167,7 +6169,7 @@
   },
   {
     "type": "azurerm_machine_learning_datastore_datalake_gen2",
-    "family": "other",
+    "family": "ai",
     "attrCount": 11,
     "forceNewCount": 5,
     "hasTags": false,
@@ -6177,7 +6179,7 @@
   },
   {
     "type": "azurerm_machine_learning_datastore_fileshare",
-    "family": "other",
+    "family": "ai",
     "attrCount": 9,
     "forceNewCount": 5,
     "hasTags": false,
@@ -6187,7 +6189,7 @@
   },
   {
     "type": "azurerm_machine_learning_inference_cluster",
-    "family": "other",
+    "family": "ai",
     "attrCount": 9,
     "forceNewCount": 9,
     "hasTags": false,
@@ -6197,7 +6199,7 @@
   },
   {
     "type": "azurerm_machine_learning_synapse_spark",
-    "family": "other",
+    "family": "ai",
     "attrCount": 8,
     "forceNewCount": 8,
     "hasTags": false,
@@ -6207,7 +6209,7 @@
   },
   {
     "type": "azurerm_machine_learning_workspace",
-    "family": "other",
+    "family": "ai",
     "attrCount": 26,
     "forceNewCount": 10,
     "hasTags": true,
@@ -6219,7 +6221,7 @@
   },
   {
     "type": "azurerm_machine_learning_workspace_network_outbound_rule_fqdn",
-    "family": "other",
+    "family": "ai",
     "attrCount": 3,
     "forceNewCount": 2,
     "hasTags": false,
@@ -6229,7 +6231,7 @@
   },
   {
     "type": "azurerm_machine_learning_workspace_network_outbound_rule_private_endpoint",
-    "family": "other",
+    "family": "ai",
     "attrCount": 5,
     "forceNewCount": 5,
     "hasTags": false,
@@ -6239,7 +6241,7 @@
   },
   {
     "type": "azurerm_machine_learning_workspace_network_outbound_rule_service_tag",
-    "family": "other",
+    "family": "ai",
     "attrCount": 5,
     "forceNewCount": 2,
     "hasTags": false,
@@ -6249,7 +6251,7 @@
   },
   {
     "type": "azurerm_maintenance_assignment_dedicated_host",
-    "family": "other",
+    "family": "compute",
     "attrCount": 3,
     "forceNewCount": 3,
     "hasTags": false,
@@ -6269,7 +6271,7 @@
   },
   {
     "type": "azurerm_maintenance_assignment_virtual_machine",
-    "family": "other",
+    "family": "compute",
     "attrCount": 3,
     "forceNewCount": 3,
     "hasTags": false,
@@ -6279,7 +6281,7 @@
   },
   {
     "type": "azurerm_maintenance_assignment_virtual_machine_scale_set",
-    "family": "other",
+    "family": "compute",
     "attrCount": 3,
     "forceNewCount": 3,
     "hasTags": false,
@@ -6337,7 +6339,7 @@
   },
   {
     "type": "azurerm_managed_disk",
-    "family": "other",
+    "family": "compute",
     "attrCount": 35,
     "forceNewCount": 18,
     "hasTags": true,
@@ -6350,7 +6352,7 @@
   },
   {
     "type": "azurerm_managed_disk_sas_token",
-    "family": "other",
+    "family": "compute",
     "attrCount": 4,
     "forceNewCount": 3,
     "hasTags": false,
@@ -6372,7 +6374,7 @@
   },
   {
     "type": "azurerm_managed_redis",
-    "family": "other",
+    "family": "database",
     "attrCount": 11,
     "forceNewCount": 4,
     "hasTags": true,
@@ -6384,7 +6386,7 @@
   },
   {
     "type": "azurerm_managed_redis_access_policy_assignment",
-    "family": "other",
+    "family": "governance",
     "attrCount": 2,
     "forceNewCount": 2,
     "hasTags": false,
@@ -6394,7 +6396,7 @@
   },
   {
     "type": "azurerm_managed_redis_geo_replication",
-    "family": "other",
+    "family": "database",
     "attrCount": 2,
     "forceNewCount": 1,
     "hasTags": false,
@@ -6404,17 +6406,17 @@
   },
   {
     "type": "azurerm_management_group",
-    "family": "other",
+    "family": "governance",
     "attrCount": 5,
     "forceNewCount": 1,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_management_group_policy_assignment",
-    "family": "other",
+    "family": "governance",
     "attrCount": 14,
     "forceNewCount": 4,
     "hasTags": false,
@@ -6424,7 +6426,7 @@
   },
   {
     "type": "azurerm_management_group_policy_exemption",
-    "family": "other",
+    "family": "governance",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
@@ -6434,7 +6436,7 @@
   },
   {
     "type": "azurerm_management_group_policy_remediation",
-    "family": "other",
+    "family": "governance",
     "attrCount": 8,
     "forceNewCount": 2,
     "hasTags": false,
@@ -6444,7 +6446,7 @@
   },
   {
     "type": "azurerm_management_group_policy_set_definition",
-    "family": "other",
+    "family": "governance",
     "attrCount": 9,
     "forceNewCount": 3,
     "hasTags": false,
@@ -6454,29 +6456,29 @@
   },
   {
     "type": "azurerm_management_group_subscription_association",
-    "family": "other",
+    "family": "governance",
     "attrCount": 2,
     "forceNewCount": 2,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_management_group_template_deployment",
-    "family": "other",
+    "family": "governance",
     "attrCount": 9,
     "forceNewCount": 3,
     "hasTags": true,
     "safeOpClasses": [
       "tag_update"
     ],
-    "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_management_lock",
-    "family": "other",
+    "family": "governance",
     "attrCount": 4,
     "forceNewCount": 4,
     "hasTags": false,
@@ -6520,7 +6522,7 @@
   },
   {
     "type": "azurerm_marketplace_role_assignment",
-    "family": "other",
+    "family": "identity",
     "attrCount": 10,
     "forceNewCount": 9,
     "hasTags": false,
@@ -6542,7 +6544,7 @@
   },
   {
     "type": "azurerm_mongo_cluster_firewall_rule",
-    "family": "other",
+    "family": "security",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
@@ -6795,7 +6797,7 @@
   },
   {
     "type": "azurerm_mssql_database_extended_auditing_policy",
-    "family": "database",
+    "family": "governance",
     "attrCount": 7,
     "forceNewCount": 1,
     "hasTags": false,
@@ -6840,7 +6842,7 @@
   },
   {
     "type": "azurerm_mssql_firewall_rule",
-    "family": "database",
+    "family": "security",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
@@ -6956,7 +6958,7 @@
   },
   {
     "type": "azurerm_mssql_managed_instance_security_alert_policy",
-    "family": "database",
+    "family": "security",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
@@ -6996,7 +6998,7 @@
   },
   {
     "type": "azurerm_mssql_outbound_firewall_rule",
-    "family": "database",
+    "family": "security",
     "attrCount": 2,
     "forceNewCount": 2,
     "hasTags": false,
@@ -7028,7 +7030,7 @@
   },
   {
     "type": "azurerm_mssql_server_extended_auditing_policy",
-    "family": "database",
+    "family": "governance",
     "attrCount": 10,
     "forceNewCount": 1,
     "hasTags": false,
@@ -7038,7 +7040,7 @@
   },
   {
     "type": "azurerm_mssql_server_microsoft_support_auditing_policy",
-    "family": "database",
+    "family": "governance",
     "attrCount": 6,
     "forceNewCount": 1,
     "hasTags": false,
@@ -7048,7 +7050,7 @@
   },
   {
     "type": "azurerm_mssql_server_security_alert_policy",
-    "family": "database",
+    "family": "security",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
@@ -7078,7 +7080,7 @@
   },
   {
     "type": "azurerm_mssql_virtual_machine",
-    "family": "database",
+    "family": "compute",
     "attrCount": 16,
     "forceNewCount": 2,
     "hasTags": true,
@@ -7090,7 +7092,7 @@
   },
   {
     "type": "azurerm_mssql_virtual_machine_availability_group_listener",
-    "family": "database",
+    "family": "compute",
     "attrCount": 7,
     "forceNewCount": 7,
     "hasTags": false,
@@ -7100,7 +7102,7 @@
   },
   {
     "type": "azurerm_mssql_virtual_machine_group",
-    "family": "database",
+    "family": "compute",
     "attrCount": 7,
     "forceNewCount": 4,
     "hasTags": true,
@@ -7112,7 +7114,7 @@
   },
   {
     "type": "azurerm_mssql_virtual_network_rule",
-    "family": "database",
+    "family": "network",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
@@ -7164,7 +7166,7 @@
   },
   {
     "type": "azurerm_mysql_flexible_server_firewall_rule",
-    "family": "database",
+    "family": "security",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": false,
@@ -7418,13 +7420,13 @@
   },
   {
     "type": "azurerm_network_interface_application_security_group_association",
-    "family": "network",
+    "family": "security",
     "attrCount": 2,
     "forceNewCount": 2,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_network_interface_backend_address_pool_association",
@@ -7448,13 +7450,13 @@
   },
   {
     "type": "azurerm_network_interface_security_group_association",
-    "family": "network",
+    "family": "security",
     "attrCount": 2,
     "forceNewCount": 2,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_network_manager",
@@ -7532,13 +7534,13 @@
   },
   {
     "type": "azurerm_network_manager_management_group_connection",
-    "family": "network",
+    "family": "governance",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_network_manager_network_group",
@@ -7592,13 +7594,13 @@
   },
   {
     "type": "azurerm_network_manager_security_admin_configuration",
-    "family": "network",
+    "family": "security",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_network_manager_static_member",
@@ -7666,31 +7668,31 @@
   },
   {
     "type": "azurerm_network_security_group",
-    "family": "network",
+    "family": "security",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": true,
     "safeOpClasses": [
       "tag_update"
     ],
-    "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_network_security_perimeter",
-    "family": "network",
+    "family": "security",
     "attrCount": 4,
     "forceNewCount": 3,
     "hasTags": true,
     "safeOpClasses": [
       "tag_update"
     ],
-    "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_network_security_perimeter_access_rule",
-    "family": "network",
+    "family": "security",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": false,
@@ -7700,27 +7702,27 @@
   },
   {
     "type": "azurerm_network_security_perimeter_association",
-    "family": "network",
+    "family": "security",
     "attrCount": 4,
     "forceNewCount": 3,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_network_security_perimeter_profile",
-    "family": "network",
+    "family": "security",
     "attrCount": 2,
     "forceNewCount": 2,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_network_security_rule",
-    "family": "network",
+    "family": "security",
     "attrCount": 18,
     "forceNewCount": 3,
     "hasTags": false,
@@ -7754,7 +7756,7 @@
   },
   {
     "type": "azurerm_new_relic_monitor",
-    "family": "other",
+    "family": "monitoring",
     "attrCount": 12,
     "forceNewCount": 12,
     "hasTags": false,
@@ -7892,7 +7894,7 @@
   },
   {
     "type": "azurerm_oracle_cloud_vm_cluster",
-    "family": "other",
+    "family": "compute",
     "attrCount": 32,
     "forceNewCount": 28,
     "hasTags": true,
@@ -7916,7 +7918,7 @@
   },
   {
     "type": "azurerm_oracle_exascale_database_storage_vault",
-    "family": "other",
+    "family": "storage",
     "attrCount": 10,
     "forceNewCount": 9,
     "hasTags": true,
@@ -7974,15 +7976,16 @@
   },
   {
     "type": "azurerm_orchestrated_virtual_machine_scale_set",
-    "family": "other",
+    "family": "compute",
     "attrCount": 39,
     "forceNewCount": 13,
     "hasTags": true,
     "safeOpClasses": [
+      "resize",
       "tag_update"
     ],
     "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "why": "In-place sizing available."
   },
   {
     "type": "azurerm_palo_alto_local_rulestack",
@@ -8058,7 +8061,7 @@
   },
   {
     "type": "azurerm_palo_alto_next_generation_firewall_virtual_hub_local_rulestack",
-    "family": "other",
+    "family": "security",
     "attrCount": 9,
     "forceNewCount": 3,
     "hasTags": true,
@@ -8070,7 +8073,7 @@
   },
   {
     "type": "azurerm_palo_alto_next_generation_firewall_virtual_hub_panorama",
-    "family": "other",
+    "family": "security",
     "attrCount": 11,
     "forceNewCount": 4,
     "hasTags": true,
@@ -8082,7 +8085,7 @@
   },
   {
     "type": "azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_manager",
-    "family": "other",
+    "family": "security",
     "attrCount": 11,
     "forceNewCount": 4,
     "hasTags": true,
@@ -8094,7 +8097,7 @@
   },
   {
     "type": "azurerm_palo_alto_next_generation_firewall_virtual_network_local_rulestack",
-    "family": "other",
+    "family": "network",
     "attrCount": 9,
     "forceNewCount": 3,
     "hasTags": true,
@@ -8106,7 +8109,7 @@
   },
   {
     "type": "azurerm_palo_alto_next_generation_firewall_virtual_network_panorama",
-    "family": "other",
+    "family": "network",
     "attrCount": 11,
     "forceNewCount": 4,
     "hasTags": true,
@@ -8118,7 +8121,7 @@
   },
   {
     "type": "azurerm_palo_alto_next_generation_firewall_virtual_network_strata_cloud_manager",
-    "family": "other",
+    "family": "network",
     "attrCount": 11,
     "forceNewCount": 4,
     "hasTags": true,
@@ -8130,7 +8133,7 @@
   },
   {
     "type": "azurerm_palo_alto_virtual_network_appliance",
-    "family": "other",
+    "family": "network",
     "attrCount": 2,
     "forceNewCount": 2,
     "hasTags": false,
@@ -8140,7 +8143,7 @@
   },
   {
     "type": "azurerm_pim_active_role_assignment",
-    "family": "other",
+    "family": "identity",
     "attrCount": 7,
     "forceNewCount": 6,
     "hasTags": false,
@@ -8150,7 +8153,7 @@
   },
   {
     "type": "azurerm_pim_eligible_role_assignment",
-    "family": "other",
+    "family": "identity",
     "attrCount": 9,
     "forceNewCount": 8,
     "hasTags": false,
@@ -8160,7 +8163,7 @@
   },
   {
     "type": "azurerm_point_to_site_vpn_gateway",
-    "family": "other",
+    "family": "network",
     "attrCount": 10,
     "forceNewCount": 6,
     "hasTags": true,
@@ -8192,7 +8195,7 @@
   },
   {
     "type": "azurerm_policy_virtual_machine_configuration_assignment",
-    "family": "governance",
+    "family": "compute",
     "attrCount": 4,
     "forceNewCount": 3,
     "hasTags": false,
@@ -8360,7 +8363,7 @@
   },
   {
     "type": "azurerm_postgresql_virtual_network_rule",
-    "family": "database",
+    "family": "network",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": false,
@@ -8382,7 +8385,7 @@
   },
   {
     "type": "azurerm_private_dns_a_record",
-    "family": "other",
+    "family": "network",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": true,
@@ -8394,7 +8397,7 @@
   },
   {
     "type": "azurerm_private_dns_aaaa_record",
-    "family": "other",
+    "family": "network",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": true,
@@ -8406,7 +8409,7 @@
   },
   {
     "type": "azurerm_private_dns_cname_record",
-    "family": "other",
+    "family": "network",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": true,
@@ -8418,7 +8421,7 @@
   },
   {
     "type": "azurerm_private_dns_mx_record",
-    "family": "other",
+    "family": "network",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": true,
@@ -8430,7 +8433,7 @@
   },
   {
     "type": "azurerm_private_dns_ptr_record",
-    "family": "other",
+    "family": "network",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": true,
@@ -8442,7 +8445,7 @@
   },
   {
     "type": "azurerm_private_dns_resolver",
-    "family": "other",
+    "family": "network",
     "attrCount": 5,
     "forceNewCount": 4,
     "hasTags": true,
@@ -8454,7 +8457,7 @@
   },
   {
     "type": "azurerm_private_dns_resolver_dns_forwarding_ruleset",
-    "family": "other",
+    "family": "network",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": true,
@@ -8466,7 +8469,7 @@
   },
   {
     "type": "azurerm_private_dns_resolver_forwarding_rule",
-    "family": "other",
+    "family": "network",
     "attrCount": 6,
     "forceNewCount": 3,
     "hasTags": false,
@@ -8476,7 +8479,7 @@
   },
   {
     "type": "azurerm_private_dns_resolver_inbound_endpoint",
-    "family": "other",
+    "family": "network",
     "attrCount": 5,
     "forceNewCount": 4,
     "hasTags": true,
@@ -8488,7 +8491,7 @@
   },
   {
     "type": "azurerm_private_dns_resolver_outbound_endpoint",
-    "family": "other",
+    "family": "network",
     "attrCount": 5,
     "forceNewCount": 4,
     "hasTags": true,
@@ -8500,7 +8503,7 @@
   },
   {
     "type": "azurerm_private_dns_resolver_virtual_network_link",
-    "family": "other",
+    "family": "network",
     "attrCount": 4,
     "forceNewCount": 3,
     "hasTags": false,
@@ -8510,7 +8513,7 @@
   },
   {
     "type": "azurerm_private_dns_srv_record",
-    "family": "other",
+    "family": "network",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": true,
@@ -8522,7 +8525,7 @@
   },
   {
     "type": "azurerm_private_dns_txt_record",
-    "family": "other",
+    "family": "network",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": true,
@@ -8534,7 +8537,7 @@
   },
   {
     "type": "azurerm_private_dns_zone",
-    "family": "other",
+    "family": "network",
     "attrCount": 8,
     "forceNewCount": 3,
     "hasTags": true,
@@ -8546,7 +8549,7 @@
   },
   {
     "type": "azurerm_private_dns_zone_virtual_network_link",
-    "family": "other",
+    "family": "network",
     "attrCount": 7,
     "forceNewCount": 4,
     "hasTags": true,
@@ -8570,7 +8573,7 @@
   },
   {
     "type": "azurerm_private_endpoint_application_security_group_association",
-    "family": "other",
+    "family": "security",
     "attrCount": 2,
     "forceNewCount": 2,
     "hasTags": false,
@@ -8604,7 +8607,7 @@
   },
   {
     "type": "azurerm_public_ip",
-    "family": "other",
+    "family": "network",
     "attrCount": 20,
     "forceNewCount": 10,
     "hasTags": true,
@@ -8616,7 +8619,7 @@
   },
   {
     "type": "azurerm_public_ip_prefix",
-    "family": "other",
+    "family": "network",
     "attrCount": 11,
     "forceNewCount": 9,
     "hasTags": true,
@@ -8698,7 +8701,7 @@
   },
   {
     "type": "azurerm_redis_cache_access_policy",
-    "family": "database",
+    "family": "governance",
     "attrCount": 3,
     "forceNewCount": 2,
     "hasTags": false,
@@ -8708,7 +8711,7 @@
   },
   {
     "type": "azurerm_redis_cache_access_policy_assignment",
-    "family": "database",
+    "family": "governance",
     "attrCount": 5,
     "forceNewCount": 5,
     "hasTags": false,
@@ -8740,7 +8743,7 @@
   },
   {
     "type": "azurerm_redis_firewall_rule",
-    "family": "database",
+    "family": "security",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": false,
@@ -8826,39 +8829,39 @@
   },
   {
     "type": "azurerm_resource_group",
-    "family": "other",
+    "family": "governance",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": true,
     "safeOpClasses": [
       "tag_update"
     ],
-    "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_resource_group_cost_management_export",
-    "family": "other",
+    "family": "governance",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_resource_group_cost_management_view",
-    "family": "other",
+    "family": "governance",
     "attrCount": 10,
     "forceNewCount": 3,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_resource_group_policy_assignment",
-    "family": "other",
+    "family": "governance",
     "attrCount": 14,
     "forceNewCount": 4,
     "hasTags": false,
@@ -8868,7 +8871,7 @@
   },
   {
     "type": "azurerm_resource_group_policy_exemption",
-    "family": "other",
+    "family": "governance",
     "attrCount": 9,
     "forceNewCount": 3,
     "hasTags": false,
@@ -8878,7 +8881,7 @@
   },
   {
     "type": "azurerm_resource_group_policy_remediation",
-    "family": "other",
+    "family": "governance",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
@@ -8888,15 +8891,15 @@
   },
   {
     "type": "azurerm_resource_group_template_deployment",
-    "family": "other",
+    "family": "governance",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": true,
     "safeOpClasses": [
       "tag_update"
     ],
-    "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_resource_management_private_link",
@@ -8920,7 +8923,7 @@
   },
   {
     "type": "azurerm_resource_policy_assignment",
-    "family": "other",
+    "family": "governance",
     "attrCount": 14,
     "forceNewCount": 4,
     "hasTags": false,
@@ -8930,7 +8933,7 @@
   },
   {
     "type": "azurerm_resource_policy_exemption",
-    "family": "other",
+    "family": "governance",
     "attrCount": 9,
     "forceNewCount": 3,
     "hasTags": false,
@@ -8940,7 +8943,7 @@
   },
   {
     "type": "azurerm_resource_policy_remediation",
-    "family": "other",
+    "family": "governance",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
@@ -9002,7 +9005,7 @@
   },
   {
     "type": "azurerm_role_management_policy",
-    "family": "identity",
+    "family": "governance",
     "attrCount": 8,
     "forceNewCount": 2,
     "hasTags": false,
@@ -9152,13 +9155,13 @@
   },
   {
     "type": "azurerm_security_center_server_vulnerability_assessment_virtual_machine",
-    "family": "security",
+    "family": "compute",
     "attrCount": 1,
     "forceNewCount": 1,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "engineer_only",
-    "why": "Access/reachability gate — requires curation."
+    "bucket": "review_needed",
+    "why": "No obvious safe operations — needs human review."
   },
   {
     "type": "azurerm_security_center_server_vulnerability_assessments_setting",
@@ -9242,7 +9245,7 @@
   },
   {
     "type": "azurerm_sentinel_alert_rule_machine_learning_behavior_analytics",
-    "family": "security",
+    "family": "ai",
     "attrCount": 4,
     "forceNewCount": 3,
     "hasTags": false,
@@ -9482,13 +9485,13 @@
   },
   {
     "type": "azurerm_sentinel_log_analytics_workspace_onboarding",
-    "family": "security",
+    "family": "monitoring",
     "attrCount": 2,
     "forceNewCount": 2,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "engineer_only",
-    "why": "Access/reachability gate — requires curation."
+    "bucket": "review_needed",
+    "why": "No obvious safe operations — needs human review."
   },
   {
     "type": "azurerm_sentinel_metadata",
@@ -9558,7 +9561,7 @@
   },
   {
     "type": "azurerm_service_plan",
-    "family": "other",
+    "family": "web",
     "attrCount": 14,
     "forceNewCount": 4,
     "hasTags": true,
@@ -9672,7 +9675,7 @@
   },
   {
     "type": "azurerm_shared_image",
-    "family": "other",
+    "family": "compute",
     "attrCount": 28,
     "forceNewCount": 17,
     "hasTags": true,
@@ -9684,7 +9687,7 @@
   },
   {
     "type": "azurerm_shared_image_gallery",
-    "family": "other",
+    "family": "compute",
     "attrCount": 7,
     "forceNewCount": 4,
     "hasTags": true,
@@ -9696,7 +9699,7 @@
   },
   {
     "type": "azurerm_shared_image_version",
-    "family": "other",
+    "family": "compute",
     "attrCount": 15,
     "forceNewCount": 11,
     "hasTags": true,
@@ -9740,7 +9743,7 @@
   },
   {
     "type": "azurerm_signalr_service_network_acl",
-    "family": "other",
+    "family": "network",
     "attrCount": 4,
     "forceNewCount": 1,
     "hasTags": false,
@@ -9770,7 +9773,7 @@
   },
   {
     "type": "azurerm_site_recovery_hyperv_network_mapping",
-    "family": "other",
+    "family": "network",
     "attrCount": 5,
     "forceNewCount": 5,
     "hasTags": false,
@@ -9780,7 +9783,7 @@
   },
   {
     "type": "azurerm_site_recovery_hyperv_replication_policy",
-    "family": "other",
+    "family": "governance",
     "attrCount": 5,
     "forceNewCount": 2,
     "hasTags": false,
@@ -9790,7 +9793,7 @@
   },
   {
     "type": "azurerm_site_recovery_hyperv_replication_policy_association",
-    "family": "other",
+    "family": "governance",
     "attrCount": 3,
     "forceNewCount": 3,
     "hasTags": false,
@@ -9800,7 +9803,7 @@
   },
   {
     "type": "azurerm_site_recovery_network_mapping",
-    "family": "other",
+    "family": "network",
     "attrCount": 7,
     "forceNewCount": 7,
     "hasTags": false,
@@ -9810,7 +9813,7 @@
   },
   {
     "type": "azurerm_site_recovery_protection_container",
-    "family": "other",
+    "family": "containers",
     "attrCount": 4,
     "forceNewCount": 4,
     "hasTags": false,
@@ -9820,7 +9823,7 @@
   },
   {
     "type": "azurerm_site_recovery_protection_container_mapping",
-    "family": "other",
+    "family": "containers",
     "attrCount": 8,
     "forceNewCount": 7,
     "hasTags": false,
@@ -9830,7 +9833,7 @@
   },
   {
     "type": "azurerm_site_recovery_replicated_vm",
-    "family": "other",
+    "family": "compute",
     "attrCount": 24,
     "forceNewCount": 14,
     "hasTags": false,
@@ -9840,7 +9843,7 @@
   },
   {
     "type": "azurerm_site_recovery_replication_policy",
-    "family": "other",
+    "family": "governance",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": false,
@@ -9870,7 +9873,7 @@
   },
   {
     "type": "azurerm_site_recovery_vmware_replicated_vm",
-    "family": "other",
+    "family": "compute",
     "attrCount": 22,
     "forceNewCount": 5,
     "hasTags": false,
@@ -9880,7 +9883,7 @@
   },
   {
     "type": "azurerm_site_recovery_vmware_replication_policy",
-    "family": "other",
+    "family": "governance",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
@@ -9890,7 +9893,7 @@
   },
   {
     "type": "azurerm_site_recovery_vmware_replication_policy_association",
-    "family": "other",
+    "family": "governance",
     "attrCount": 3,
     "forceNewCount": 3,
     "hasTags": false,
@@ -9973,7 +9976,7 @@
   },
   {
     "type": "azurerm_spring_cloud_app_cosmosdb_association",
-    "family": "other",
+    "family": "database",
     "attrCount": 10,
     "forceNewCount": 4,
     "hasTags": false,
@@ -9993,7 +9996,7 @@
   },
   {
     "type": "azurerm_spring_cloud_app_mysql_association",
-    "family": "other",
+    "family": "database",
     "attrCount": 6,
     "forceNewCount": 3,
     "hasTags": false,
@@ -10003,7 +10006,7 @@
   },
   {
     "type": "azurerm_spring_cloud_app_redis_association",
-    "family": "other",
+    "family": "database",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": false,
@@ -10013,7 +10016,7 @@
   },
   {
     "type": "azurerm_spring_cloud_application_insights_application_performance_monitoring",
-    "family": "other",
+    "family": "monitoring",
     "attrCount": 8,
     "forceNewCount": 2,
     "hasTags": false,
@@ -10093,7 +10096,7 @@
   },
   {
     "type": "azurerm_spring_cloud_container_deployment",
-    "family": "other",
+    "family": "containers",
     "attrCount": 12,
     "forceNewCount": 2,
     "hasTags": false,
@@ -10173,7 +10176,7 @@
   },
   {
     "type": "azurerm_spring_cloud_gateway_route_config",
-    "family": "other",
+    "family": "network",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
@@ -10215,7 +10218,7 @@
   },
   {
     "type": "azurerm_spring_cloud_storage",
-    "family": "other",
+    "family": "storage",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
@@ -10269,7 +10272,7 @@
   },
   {
     "type": "azurerm_stack_hci_logical_network",
-    "family": "other",
+    "family": "network",
     "attrCount": 8,
     "forceNewCount": 7,
     "hasTags": true,
@@ -10281,7 +10284,7 @@
   },
   {
     "type": "azurerm_stack_hci_marketplace_gallery_image",
-    "family": "other",
+    "family": "compute",
     "attrCount": 10,
     "forceNewCount": 9,
     "hasTags": true,
@@ -10293,7 +10296,7 @@
   },
   {
     "type": "azurerm_stack_hci_network_interface",
-    "family": "other",
+    "family": "network",
     "attrCount": 8,
     "forceNewCount": 7,
     "hasTags": true,
@@ -10305,7 +10308,7 @@
   },
   {
     "type": "azurerm_stack_hci_storage_path",
-    "family": "other",
+    "family": "storage",
     "attrCount": 6,
     "forceNewCount": 5,
     "hasTags": true,
@@ -10329,7 +10332,7 @@
   },
   {
     "type": "azurerm_static_site",
-    "family": "other",
+    "family": "web",
     "attrCount": 10,
     "forceNewCount": 3,
     "hasTags": true,
@@ -10341,7 +10344,7 @@
   },
   {
     "type": "azurerm_static_site_custom_domain",
-    "family": "other",
+    "family": "web",
     "attrCount": 4,
     "forceNewCount": 3,
     "hasTags": false,
@@ -10373,7 +10376,7 @@
   },
   {
     "type": "azurerm_static_web_app_function_app_registration",
-    "family": "other",
+    "family": "web",
     "attrCount": 2,
     "forceNewCount": 2,
     "hasTags": false,
@@ -10416,7 +10419,7 @@
   },
   {
     "type": "azurerm_storage_account_network_rules",
-    "family": "storage",
+    "family": "network",
     "attrCount": 6,
     "forceNewCount": 1,
     "hasTags": false,
@@ -10476,7 +10479,7 @@
   },
   {
     "type": "azurerm_storage_container",
-    "family": "storage",
+    "family": "containers",
     "attrCount": 11,
     "forceNewCount": 3,
     "hasTags": false,
@@ -10486,7 +10489,7 @@
   },
   {
     "type": "azurerm_storage_container_immutability_policy",
-    "family": "storage",
+    "family": "containers",
     "attrCount": 5,
     "forceNewCount": 1,
     "hasTags": false,
@@ -10710,7 +10713,7 @@
   },
   {
     "type": "azurerm_stream_analytics_cluster",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": true,
@@ -10722,7 +10725,7 @@
   },
   {
     "type": "azurerm_stream_analytics_function_javascript_uda",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 5,
     "forceNewCount": 2,
     "hasTags": false,
@@ -10732,7 +10735,7 @@
   },
   {
     "type": "azurerm_stream_analytics_function_javascript_udf",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 6,
     "forceNewCount": 3,
     "hasTags": false,
@@ -10742,7 +10745,7 @@
   },
   {
     "type": "azurerm_stream_analytics_job",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 19,
     "forceNewCount": 4,
     "hasTags": true,
@@ -10754,7 +10757,7 @@
   },
   {
     "type": "azurerm_stream_analytics_job_schedule",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 4,
     "forceNewCount": 1,
     "hasTags": false,
@@ -10764,7 +10767,7 @@
   },
   {
     "type": "azurerm_stream_analytics_job_storage_account",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 4,
     "forceNewCount": 1,
     "hasTags": false,
@@ -10774,7 +10777,7 @@
   },
   {
     "type": "azurerm_stream_analytics_managed_private_endpoint",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 5,
     "forceNewCount": 5,
     "hasTags": false,
@@ -10784,7 +10787,7 @@
   },
   {
     "type": "azurerm_stream_analytics_output_blob",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 14,
     "forceNewCount": 3,
     "hasTags": false,
@@ -10794,7 +10797,7 @@
   },
   {
     "type": "azurerm_stream_analytics_output_cosmosdb",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 8,
     "forceNewCount": 2,
     "hasTags": false,
@@ -10804,7 +10807,7 @@
   },
   {
     "type": "azurerm_stream_analytics_output_eventhub",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 11,
     "forceNewCount": 3,
     "hasTags": false,
@@ -10814,7 +10817,7 @@
   },
   {
     "type": "azurerm_stream_analytics_output_function",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 8,
     "forceNewCount": 3,
     "hasTags": false,
@@ -10824,7 +10827,7 @@
   },
   {
     "type": "azurerm_stream_analytics_output_mssql",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 11,
     "forceNewCount": 7,
     "hasTags": false,
@@ -10834,7 +10837,7 @@
   },
   {
     "type": "azurerm_stream_analytics_output_powerbi",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 8,
     "forceNewCount": 2,
     "hasTags": false,
@@ -10844,7 +10847,7 @@
   },
   {
     "type": "azurerm_stream_analytics_output_servicebus_queue",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 11,
     "forceNewCount": 3,
     "hasTags": false,
@@ -10854,7 +10857,7 @@
   },
   {
     "type": "azurerm_stream_analytics_output_servicebus_topic",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 11,
     "forceNewCount": 3,
     "hasTags": false,
@@ -10864,7 +10867,7 @@
   },
   {
     "type": "azurerm_stream_analytics_output_synapse",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 8,
     "forceNewCount": 7,
     "hasTags": false,
@@ -10874,7 +10877,7 @@
   },
   {
     "type": "azurerm_stream_analytics_output_table",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 10,
     "forceNewCount": 3,
     "hasTags": false,
@@ -10884,7 +10887,7 @@
   },
   {
     "type": "azurerm_stream_analytics_reference_input_blob",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 11,
     "forceNewCount": 3,
     "hasTags": false,
@@ -10894,7 +10897,7 @@
   },
   {
     "type": "azurerm_stream_analytics_reference_input_mssql",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 12,
     "forceNewCount": 3,
     "hasTags": false,
@@ -10904,7 +10907,7 @@
   },
   {
     "type": "azurerm_stream_analytics_stream_input_blob",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 11,
     "forceNewCount": 3,
     "hasTags": false,
@@ -10914,7 +10917,7 @@
   },
   {
     "type": "azurerm_stream_analytics_stream_input_eventhub",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 11,
     "forceNewCount": 3,
     "hasTags": false,
@@ -10924,7 +10927,7 @@
   },
   {
     "type": "azurerm_stream_analytics_stream_input_eventhub_v2",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 10,
     "forceNewCount": 2,
     "hasTags": false,
@@ -10934,7 +10937,7 @@
   },
   {
     "type": "azurerm_stream_analytics_stream_input_iothub",
-    "family": "other",
+    "family": "analytics",
     "attrCount": 9,
     "forceNewCount": 4,
     "hasTags": false,
@@ -10964,13 +10967,13 @@
   },
   {
     "type": "azurerm_subnet_network_security_group_association",
-    "family": "network",
+    "family": "security",
     "attrCount": 2,
     "forceNewCount": 2,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_subnet_route_table_association",
@@ -10984,7 +10987,7 @@
   },
   {
     "type": "azurerm_subnet_service_endpoint_storage_policy",
-    "family": "network",
+    "family": "storage",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": true,
@@ -11008,27 +11011,27 @@
   },
   {
     "type": "azurerm_subscription_cost_management_export",
-    "family": "other",
+    "family": "governance",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_subscription_cost_management_view",
-    "family": "other",
+    "family": "governance",
     "attrCount": 10,
     "forceNewCount": 3,
     "hasTags": false,
     "safeOpClasses": [],
-    "bucket": "review_needed",
-    "why": "No obvious safe operations — needs human review."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_subscription_policy_assignment",
-    "family": "other",
+    "family": "governance",
     "attrCount": 14,
     "forceNewCount": 4,
     "hasTags": false,
@@ -11038,7 +11041,7 @@
   },
   {
     "type": "azurerm_subscription_policy_exemption",
-    "family": "other",
+    "family": "governance",
     "attrCount": 9,
     "forceNewCount": 3,
     "hasTags": false,
@@ -11048,7 +11051,7 @@
   },
   {
     "type": "azurerm_subscription_policy_remediation",
-    "family": "other",
+    "family": "governance",
     "attrCount": 9,
     "forceNewCount": 2,
     "hasTags": false,
@@ -11070,7 +11073,7 @@
   },
   {
     "type": "azurerm_synapse_firewall_rule",
-    "family": "analytics",
+    "family": "security",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
@@ -11176,7 +11179,7 @@
   },
   {
     "type": "azurerm_synapse_sql_pool_security_alert_policy",
-    "family": "analytics",
+    "family": "security",
     "attrCount": 8,
     "forceNewCount": 1,
     "hasTags": false,
@@ -11268,7 +11271,7 @@
   },
   {
     "type": "azurerm_synapse_workspace_security_alert_policy",
-    "family": "analytics",
+    "family": "security",
     "attrCount": 8,
     "forceNewCount": 1,
     "hasTags": false,
@@ -11298,7 +11301,7 @@
   },
   {
     "type": "azurerm_system_center_virtual_machine_manager_availability_set",
-    "family": "other",
+    "family": "compute",
     "attrCount": 6,
     "forceNewCount": 5,
     "hasTags": true,
@@ -11310,7 +11313,7 @@
   },
   {
     "type": "azurerm_system_center_virtual_machine_manager_cloud",
-    "family": "other",
+    "family": "compute",
     "attrCount": 6,
     "forceNewCount": 5,
     "hasTags": true,
@@ -11322,7 +11325,7 @@
   },
   {
     "type": "azurerm_system_center_virtual_machine_manager_server",
-    "family": "other",
+    "family": "compute",
     "attrCount": 9,
     "forceNewCount": 8,
     "hasTags": true,
@@ -11334,7 +11337,7 @@
   },
   {
     "type": "azurerm_system_center_virtual_machine_manager_virtual_machine_instance",
-    "family": "other",
+    "family": "compute",
     "attrCount": 8,
     "forceNewCount": 4,
     "hasTags": false,
@@ -11344,7 +11347,7 @@
   },
   {
     "type": "azurerm_system_center_virtual_machine_manager_virtual_machine_instance_guest_agent",
-    "family": "other",
+    "family": "compute",
     "attrCount": 4,
     "forceNewCount": 4,
     "hasTags": false,
@@ -11354,7 +11357,7 @@
   },
   {
     "type": "azurerm_system_center_virtual_machine_manager_virtual_machine_template",
-    "family": "other",
+    "family": "compute",
     "attrCount": 6,
     "forceNewCount": 5,
     "hasTags": true,
@@ -11366,7 +11369,7 @@
   },
   {
     "type": "azurerm_system_center_virtual_machine_manager_virtual_network",
-    "family": "other",
+    "family": "compute",
     "attrCount": 6,
     "forceNewCount": 5,
     "hasTags": true,
@@ -11444,15 +11447,15 @@
   },
   {
     "type": "azurerm_user_assigned_identity",
-    "family": "other",
+    "family": "identity",
     "attrCount": 8,
     "forceNewCount": 3,
     "hasTags": true,
     "safeOpClasses": [
       "tag_update"
     ],
-    "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_video_indexer_account",
@@ -11598,7 +11601,7 @@
   },
   {
     "type": "azurerm_virtual_hub_route_table",
-    "family": "other",
+    "family": "network",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
@@ -11608,7 +11611,7 @@
   },
   {
     "type": "azurerm_virtual_hub_route_table_route",
-    "family": "other",
+    "family": "network",
     "attrCount": 6,
     "forceNewCount": 2,
     "hasTags": false,
@@ -11628,31 +11631,32 @@
   },
   {
     "type": "azurerm_virtual_hub_security_partner_provider",
-    "family": "other",
+    "family": "security",
     "attrCount": 6,
     "forceNewCount": 5,
     "hasTags": true,
     "safeOpClasses": [
       "tag_update"
     ],
-    "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "bucket": "engineer_only",
+    "why": "Access/reachability gate — requires curation."
   },
   {
     "type": "azurerm_virtual_machine",
-    "family": "other",
+    "family": "compute",
     "attrCount": 24,
     "forceNewCount": 7,
     "hasTags": true,
     "safeOpClasses": [
+      "resize",
       "tag_update"
     ],
     "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "why": "In-place sizing available."
   },
   {
     "type": "azurerm_virtual_machine_automanage_configuration_assignment",
-    "family": "other",
+    "family": "compute",
     "attrCount": 2,
     "forceNewCount": 2,
     "hasTags": false,
@@ -11662,7 +11666,7 @@
   },
   {
     "type": "azurerm_virtual_machine_data_disk_attachment",
-    "family": "other",
+    "family": "compute",
     "attrCount": 6,
     "forceNewCount": 4,
     "hasTags": false,
@@ -11672,7 +11676,7 @@
   },
   {
     "type": "azurerm_virtual_machine_extension",
-    "family": "other",
+    "family": "compute",
     "attrCount": 13,
     "forceNewCount": 3,
     "hasTags": true,
@@ -11684,7 +11688,7 @@
   },
   {
     "type": "azurerm_virtual_machine_gallery_application_assignment",
-    "family": "other",
+    "family": "compute",
     "attrCount": 5,
     "forceNewCount": 4,
     "hasTags": false,
@@ -11694,7 +11698,7 @@
   },
   {
     "type": "azurerm_virtual_machine_implicit_data_disk_from_source",
-    "family": "other",
+    "family": "compute",
     "attrCount": 8,
     "forceNewCount": 5,
     "hasTags": false,
@@ -11706,7 +11710,7 @@
   },
   {
     "type": "azurerm_virtual_machine_packet_capture",
-    "family": "other",
+    "family": "compute",
     "attrCount": 8,
     "forceNewCount": 8,
     "hasTags": false,
@@ -11716,7 +11720,7 @@
   },
   {
     "type": "azurerm_virtual_machine_restore_point",
-    "family": "other",
+    "family": "compute",
     "attrCount": 4,
     "forceNewCount": 4,
     "hasTags": false,
@@ -11726,7 +11730,7 @@
   },
   {
     "type": "azurerm_virtual_machine_restore_point_collection",
-    "family": "other",
+    "family": "compute",
     "attrCount": 5,
     "forceNewCount": 4,
     "hasTags": true,
@@ -11738,7 +11742,7 @@
   },
   {
     "type": "azurerm_virtual_machine_run_command",
-    "family": "other",
+    "family": "compute",
     "attrCount": 14,
     "forceNewCount": 3,
     "hasTags": true,
@@ -11750,19 +11754,20 @@
   },
   {
     "type": "azurerm_virtual_machine_scale_set",
-    "family": "other",
+    "family": "compute",
     "attrCount": 28,
     "forceNewCount": 8,
     "hasTags": true,
     "safeOpClasses": [
+      "resize",
       "tag_update"
     ],
     "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "why": "In-place sizing available."
   },
   {
     "type": "azurerm_virtual_machine_scale_set_extension",
-    "family": "other",
+    "family": "compute",
     "attrCount": 13,
     "forceNewCount": 4,
     "hasTags": false,
@@ -11772,7 +11777,7 @@
   },
   {
     "type": "azurerm_virtual_machine_scale_set_packet_capture",
-    "family": "other",
+    "family": "compute",
     "attrCount": 9,
     "forceNewCount": 9,
     "hasTags": false,
@@ -11782,7 +11787,7 @@
   },
   {
     "type": "azurerm_virtual_machine_scale_set_standby_pool",
-    "family": "other",
+    "family": "compute",
     "attrCount": 7,
     "forceNewCount": 3,
     "hasTags": true,
@@ -11794,7 +11799,7 @@
   },
   {
     "type": "azurerm_virtual_network",
-    "family": "other",
+    "family": "network",
     "attrCount": 15,
     "forceNewCount": 4,
     "hasTags": true,
@@ -11806,7 +11811,7 @@
   },
   {
     "type": "azurerm_virtual_network_dns_servers",
-    "family": "other",
+    "family": "network",
     "attrCount": 2,
     "forceNewCount": 1,
     "hasTags": false,
@@ -11816,7 +11821,7 @@
   },
   {
     "type": "azurerm_virtual_network_gateway",
-    "family": "other",
+    "family": "network",
     "attrCount": 26,
     "forceNewCount": 9,
     "hasTags": true,
@@ -11828,7 +11833,7 @@
   },
   {
     "type": "azurerm_virtual_network_gateway_connection",
-    "family": "other",
+    "family": "network",
     "attrCount": 26,
     "forceNewCount": 11,
     "hasTags": true,
@@ -11840,7 +11845,7 @@
   },
   {
     "type": "azurerm_virtual_network_gateway_nat_rule",
-    "family": "other",
+    "family": "network",
     "attrCount": 8,
     "forceNewCount": 5,
     "hasTags": false,
@@ -11850,7 +11855,7 @@
   },
   {
     "type": "azurerm_virtual_network_peering",
-    "family": "other",
+    "family": "network",
     "attrCount": 13,
     "forceNewCount": 6,
     "hasTags": false,
@@ -11882,7 +11887,7 @@
   },
   {
     "type": "azurerm_vmware_express_route_authorization",
-    "family": "other",
+    "family": "network",
     "attrCount": 4,
     "forceNewCount": 2,
     "hasTags": false,
@@ -11892,7 +11897,7 @@
   },
   {
     "type": "azurerm_vmware_netapp_volume_attachment",
-    "family": "other",
+    "family": "storage",
     "attrCount": 3,
     "forceNewCount": 3,
     "hasTags": false,
@@ -11958,7 +11963,7 @@
   },
   {
     "type": "azurerm_vpn_server_configuration_policy_group",
-    "family": "network",
+    "family": "governance",
     "attrCount": 5,
     "forceNewCount": 3,
     "hasTags": false,
@@ -12000,7 +12005,7 @@
   },
   {
     "type": "azurerm_web_application_firewall_policy",
-    "family": "other",
+    "family": "security",
     "attrCount": 9,
     "forceNewCount": 3,
     "hasTags": true,
@@ -12054,7 +12059,7 @@
   },
   {
     "type": "azurerm_web_pubsub_network_acl",
-    "family": "other",
+    "family": "network",
     "attrCount": 4,
     "forceNewCount": 1,
     "hasTags": false,
@@ -12086,7 +12091,7 @@
   },
   {
     "type": "azurerm_windows_function_app",
-    "family": "other",
+    "family": "web",
     "attrCount": 44,
     "forceNewCount": 3,
     "hasTags": true,
@@ -12098,7 +12103,7 @@
   },
   {
     "type": "azurerm_windows_function_app_slot",
-    "family": "other",
+    "family": "web",
     "attrCount": 41,
     "forceNewCount": 2,
     "hasTags": true,
@@ -12110,31 +12115,33 @@
   },
   {
     "type": "azurerm_windows_virtual_machine",
-    "family": "other",
+    "family": "compute",
     "attrCount": 59,
     "forceNewCount": 25,
     "hasTags": true,
     "safeOpClasses": [
+      "resize",
       "tag_update"
     ],
     "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "why": "In-place sizing available."
   },
   {
     "type": "azurerm_windows_virtual_machine_scale_set",
-    "family": "other",
+    "family": "compute",
     "attrCount": 58,
     "forceNewCount": 23,
     "hasTags": true,
     "safeOpClasses": [
+      "resize",
       "tag_update"
     ],
     "bucket": "catalog_candidate",
-    "why": "Tags only — baseline entry point."
+    "why": "In-place sizing available."
   },
   {
     "type": "azurerm_windows_web_app",
-    "family": "other",
+    "family": "web",
     "attrCount": 38,
     "forceNewCount": 3,
     "hasTags": true,
@@ -12146,7 +12153,7 @@
   },
   {
     "type": "azurerm_windows_web_app_slot",
-    "family": "other",
+    "family": "web",
     "attrCount": 36,
     "forceNewCount": 2,
     "hasTags": true,

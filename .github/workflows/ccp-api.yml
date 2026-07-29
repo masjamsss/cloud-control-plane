@@ -9,12 +9,28 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      # CI-3 — this filter mirrors the IMPORT GRAPH, not the directory tree.
+      # The api is not a self-contained path: it VALUE-IMPORTS ccp/app/src/lib/* through
+      # the @app-lib alias (tsconfig.json), including the approval-authority predicates
+      # (canApprove/canRequest), policy defaults, the shared redactor and the dependsOn
+      # predicate — server-side AUTHORIZATION decisions. It also runs cross-layer parity
+      # suites against the catalogctl binary and its fixtures. Before this, a PR editing
+      # ccp/app/src/lib/permissions.ts ran the app and smoke lanes but NEVER the api's
+      # typecheck or tests — the suite that actually consumes those files — so a break
+      # landed on main and surfaced on some later, unrelated api PR.
+      # Verified by scripts/ci/check-path-filters.sh.
       - 'ccp/api/**'
+      - 'ccp/app/src/lib/**'
+      - 'ccp/app/src/data/manifests/**'
+      - 'tools/catalogctl/**'
       - '.github/workflows/ccp-api.yml'
   push:
     branches: [main]
     paths:
       - 'ccp/api/**'
+      - 'ccp/app/src/lib/**'
+      - 'ccp/app/src/data/manifests/**'
+      - 'tools/catalogctl/**'
 
 permissions:
   contents: read
@@ -34,7 +50,42 @@ jobs:
           cache: npm
           cache-dependency-path: ccp/api/package-lock.json
       - run: npm ci
+      # DOC-1/DOC-2: the vitest suite reads ccp-api.yaml as TEXT (string containment,
+      # plus a line-based path extractor for the route-parity diff). Neither parses it,
+      # so a syntactically invalid contract used to pass every check — this was not
+      # hypothetical, an unquoted `>=` inside a flow mapping did exactly that during the
+      # DOC-2 work. One real parse, before the tests that assume the file is well-formed.
+      - name: OpenAPI contract is valid YAML
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 -c "
+          import sys, yaml
+          spec = yaml.safe_load(open('openapi/ccp-api.yaml'))
+          assert spec['openapi'].startswith('3.1'), spec['openapi']
+          assert spec['paths'], 'no paths declared — the parse succeeded but found nothing'
+          print(f\"contract parses: {len(spec['paths'])} paths, {len(spec['components']['schemas'])} schemas\")
+          "
+      # TEST-4 — the integration proofs' toolchain, DECLARED.
+      #
+      # The LIVE terraform plan→pin→apply→halt-on-drift proof and both TS↔Go parity
+      # harnesses ran here only because ubuntu-latest happens to preinstall Go and
+      # Terraform. That is an undeclared dependency on a runner image: a runner change or
+      # a self-hosted runner turns the highest-value proofs in the repo off, and every one
+      # of them degrades to a SILENT SKIP, so the build stays green while proving less.
+      # Naming them here is half the fix; CCP_REQUIRE_INTEGRATION below is the other half.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/catalogctl/go.mod
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false # the executor spawns `terraform` directly, not a wrapper script
       - name: Typecheck
         run: npm run typecheck
       - name: Tests
+        # CCP_REQUIRE_INTEGRATION=1 turns "this suite would skip" into a hard failure that
+        # names what is missing (test/helpers/requireToolchain.ts). Unset locally, so a
+        # developer without terraform still gets a clean skip — the guarantee is about CI,
+        # where a skipped proof is indistinguishable from a passing one.
         run: npm test
+        env:
+          CCP_REQUIRE_INTEGRATION: '1'

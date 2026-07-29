@@ -18,7 +18,7 @@ bottleneck that grows with every onboarded account.
 
 The 2026-07-15/16 concept reconciliation reversed the rule; [PRD.md](../../PRD.md)
 ("How it stays safe while applying automatically") and
-[ccp/DECISIONS.md](../../ccp/DECISIONS.md) #2/#4 record the new direction. This
+[the ADR ledger](README.md) #2/#4 record the new direction. This
 ADR gives that reversal the decision-ledger entry it was missing.
 
 ## Decision
@@ -43,8 +43,8 @@ drifted · blast-radius limits.
   before auto-apply is armed anywhere.
 - **Not built yet:** the approved-request → PR → merge → apply bridge does not exist as of
   2026-07-17 — see the
-  [live register (0018)](../proposals/0018-enablement-deployment-unresolved.md). Until it
-  lands, every apply still rides the manual gated lane in [docs/cicd.md](../cicd.md).
+  live register (0018) (`docs/proposals/0018-enablement-deployment-unresolved.md`, private planning archive — not published). Until it
+  lands, every apply still rides the manual gated lane in `docs/cicd.md` (not written).
 - **Scope:** this ADR covers the control-plane request path only. The hand-written-PR lane keeps
   its manual `prod`-environment gate.
 - Documents asserting "nothing auto-applies" are superseded on that clause and carry

@@ -1314,7 +1314,9 @@ export function adminRoutes(
     await transactWithAudit(
       store,
       projectId,
-      [{ kind: "put", item: updated }],
+      // Guarded on the version this handler read: team CRUD bumps `version` but never
+      // guarded on it, so two concurrent edits lost one silently (CONC-14).
+      [{ kind: "put", item: updated, ifEquals: { attr: "version", value: team.version } }],
       {
         action: "team-rename",
         actor,
@@ -1351,7 +1353,13 @@ export function adminRoutes(
       serviceSlugs: [...wanted],
       version: (team.version ?? 0) + 1,
     };
-    writes.push({ kind: "put", item: updated });
+    // Guarded on the version this handler read (CONC-14). Team CRUD bumped `version` on
+    // every write but never guarded on it, so two concurrent edits lost one silently.
+    writes.push({
+      kind: "put",
+      item: updated,
+      ifEquals: { attr: "version", value: team.version },
+    });
 
     // Single-ownership steal is EXPLICIT in the audit before/after.
     await transactWithAudit(store, projectId, writes, {
@@ -1433,7 +1441,9 @@ export function adminRoutes(
     await transactWithAudit(
       store,
       projectId,
-      [{ kind: "put", item: updated }],
+      // Guarded on the accountVersion this handler read (CONC-3): an unguarded full-row
+      // put here can be overwritten by, or overwrite, a concurrent self-service write.
+      [{ kind: "put", item: updated, ifEquals: { attr: "accountVersion", value: acc.accountVersion } }],
       {
         action: "totp-reset",
         actor,
@@ -1468,7 +1478,9 @@ export function adminRoutes(
     await transactWithAudit(
       store,
       projectId,
-      [{ kind: "put", item: updated }],
+      // Guarded on the accountVersion this handler read (CONC-3): an unguarded full-row
+      // put here can be overwritten by, or overwrite, a concurrent self-service write.
+      [{ kind: "put", item: updated, ifEquals: { attr: "accountVersion", value: acc.accountVersion } }],
       {
         action: "sessions-revoke",
         actor,
@@ -1504,9 +1516,14 @@ function stripFromOthers(
     const removed = t.serviceSlugs.filter((s) => wanted.has(s));
     if (removed.length === 0) continue;
     const kept = t.serviceSlugs.filter((s) => !wanted.has(s));
+    // Guarded like every other team write. These are the teams a slug is taken FROM, and
+    // they matter most: two concurrent set-services calls whose steal sets were computed
+    // against each other's pre-image can otherwise leave one slug owned by two teams —
+    // the single-ownership invariant this helper exists to maintain (CONC-14).
     writes.push({
       kind: "put",
       item: { ...t, serviceSlugs: kept, version: (t.version ?? 0) + 1 },
+      ifEquals: { attr: "version", value: t.version },
     });
     steals.push({ id: t.id, removed });
   }

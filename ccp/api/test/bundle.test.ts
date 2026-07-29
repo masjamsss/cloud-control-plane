@@ -37,12 +37,15 @@ function makeOrigin(): { bare: string; work: string } {
 }
 
 describe('bundleConfig — off by default (the load-bearing invariant)', () => {
-  it('unset ⇒ null; flag alone ⇒ null; fully configured ⇒ armed', () => {
+  it('unset ⇒ null; flag alone ⇒ null; fully configured ⇒ armed', async () => {
     expect(bundleConfig({})).toBeNull();
     expect(bundleConfig({ CCP_BUNDLE: '1' })).toBeNull();
     expect(bundleConfig({ CCP_BUNDLE: '1', CCP_GIT_REMOTE: 'r', CCP_BUNDLE_GATE_CMD: 'true' })).toBeNull();
     const cfg = bundleConfig({ CCP_BUNDLE: '1', CCP_GIT_REMOTE: 'r', CCP_BUNDLE_GATE_CMD: 'g', CCP_BUNDLE_TRIGGER_CMD: 't' });
-    expect(cfg).toEqual({ remote: 'r', branch: 'main', gateCmd: 'g', triggerCmd: 't' });
+    // `remoteSource`/`remoteDetail` are ARCH-2: WHICH estate's repository resolved, and
+    // how. With no project passed there is nothing registered to prefer, so the
+    // deployment-global remote serves it — the single-estate fallback, unchanged.
+    expect(cfg).toEqual({ remote: 'r', remoteSource: 'env-global', remoteDetail: 'CCP_GIT_REMOTE', branch: 'main', gateCmd: 'g', triggerCmd: 't' });
   });
 });
 
@@ -60,24 +63,24 @@ describe('runBundle — sequential, stop-on-red, cleanup-always', () => {
     return { steps, calls };
   }
 
-  it('a red gate stops the bundle BEFORE any commit', () => {
+  it('a red gate stops the bundle BEFORE any commit', async () => {
     const { steps, calls } = fakes({ gate: { ok: false, detail: 'plan digest mismatch' } });
-    const out = runBundle(steps, '{}', 'msg');
+    const out = await runBundle(steps, '{}', 'msg');
     expect(out.ok).toBe(false);
     expect(calls).toEqual(['prepare', 'gate', 'cleanup']); // no commit, no trigger
     expect(out.steps.at(-1)).toMatchObject({ step: 'gate', ok: false });
   });
 
-  it('a rejected CAS push stops the bundle BEFORE the trigger', () => {
+  it('a rejected CAS push stops the bundle BEFORE the trigger', async () => {
     const { steps, calls } = fakes({ commit: { ok: false, detail: 'push rejected (branch moved)' } });
-    const out = runBundle(steps, '{}', 'msg');
+    const out = await runBundle(steps, '{}', 'msg');
     expect(out.ok).toBe(false);
     expect(calls).toEqual(['prepare', 'gate', 'commit', 'cleanup']);
   });
 
-  it('green end-to-end runs all steps in order and reports the landed sha', () => {
+  it('green end-to-end runs all steps in order and reports the landed sha', async () => {
     const { steps, calls } = fakes({});
-    const out = runBundle(steps, '{}', 'msg');
+    const out = await runBundle(steps, '{}', 'msg');
     expect(out.ok).toBe(true);
     expect(out.sha).toBe('b'.repeat(40));
     expect(calls).toEqual(['prepare', 'gate', 'commit', 'trigger', 'cleanup']);
@@ -85,10 +88,10 @@ describe('runBundle — sequential, stop-on-red, cleanup-always', () => {
 });
 
 describe('realSteps — the git workspace (local bare origin; no network)', () => {
-  it('green path: gate edit + evidence land on main as one commit', () => {
+  it('green path: gate edit + evidence land on main as one commit', async () => {
     const { bare } = makeOrigin();
     const steps = realSteps({ remote: bare, branch: 'main', gateCmd: 'echo gated-change > "$BUNDLE_CHECKOUT/changed.txt"', triggerCmd: 'true' });
-    const out = runBundle(steps, '{"id":"REQ-1"}', 'ccp: apply REQ-1');
+    const out = await runBundle(steps, '{"id":"REQ-1"}', 'ccp: apply REQ-1');
     expect(out.ok).toBe(true);
     // the bare's main advanced to the bundle commit, carrying edit + evidence
     const files = g(bare, 'ls-tree', '--name-only', 'main');
@@ -98,7 +101,7 @@ describe('realSteps — the git workspace (local bare origin; no network)', () =
     rmSync(join(bare, '..'), { recursive: true, force: true });
   });
 
-  it('CAS: a commit that lands mid-bundle REJECTS the push (nothing slips in between)', () => {
+  it('CAS: a commit that lands mid-bundle REJECTS the push (nothing slips in between)', async () => {
     const { bare, work } = makeOrigin();
     let raced = false;
     const inner = realSteps({ remote: bare, branch: 'main', gateCmd: 'echo x > "$BUNDLE_CHECKOUT/x.txt"', triggerCmd: 'true' });
@@ -114,7 +117,7 @@ describe('realSteps — the git workspace (local bare origin; no network)', () =
         return inner.gate(dir, reqPath);
       },
     };
-    const out = runBundle(steps, '{}', 'bundle');
+    const out = await runBundle(steps, '{}', 'bundle');
     expect(raced).toBe(true);
     expect(out.ok).toBe(false);
     const commitStep = out.steps.find((s) => s.step === 'commit')!;
@@ -179,6 +182,48 @@ describe('POST /requests/:id/apply — the route surface', () => {
     rmSync(join(bare, '..'), { recursive: true, force: true });
   });
 
+  it('ARCH-2: an estate whose OWN repo will not resolve is refused — it never borrows the global remote', async () => {
+    // The finding's exact impact, offline: the deployment's `CCP_GIT_REMOTE` is a
+    // perfectly good checkout, and this estate must still NOT be applied from it.
+    // Before the fix the bundle would have cloned it happily and gated inside another
+    // estate's Terraform.
+    const { bare } = makeOrigin();
+    Object.assign(process.env, {
+      CCP_BUNDLE: '1',
+      CCP_GIT_REMOTE: bare,
+      CCP_BUNDLE_GATE_CMD: 'echo should-never-run > "$BUNDLE_CHECKOUT/leaked.txt"',
+      CCP_BUNDLE_TRIGGER_CMD: 'true',
+    });
+    const { store, app, id } = await seededApp('AWAITING_DEPLOY_APPROVAL');
+    // This estate registers a repo on a forge host the deployment does not allow.
+    // Let the app settle/retro-register `sample` the way a real deployment does, THEN
+    // give that row a repository of its own. Fabricating the row here instead would
+    // bypass the known-project registry and 422 before the handler ever ran.
+    const { projectKey } = await import('../src/store/schema');
+    const cookie = await sessionCookieFor(store, 'lina');
+    await app.request('/requests', { headers: { cookie, 'x-ccp-project': 'sample' } });
+    const pk = projectKey('sample');
+    const project = (await store.get(pk.PK, pk.SK)) as Record<string, unknown> | null;
+    // The check must be able to fail: with no row the route takes the env-global arm and
+    // every assertion below would pass for the wrong reason (L-1).
+    expect(project, 'the sample project row must exist for this test to mean anything').not.toBeNull();
+    await store.put({
+      ...project!,
+      // A forge host this deployment does not allowlist — stands in for "this estate's
+      // repo is not the deployment's repo", which is the property under test.
+      repo: { host: 'gitlab', baseUrl: 'https://git.internal.example', owner: 'infra', name: 'estate-b' },
+    } as never);
+
+    const res = await post(app, cookie, id);
+    const body = await res.json();
+    expect(res.status).toBe(409);
+    expect(body.code).toBe('BUNDLE_REPO_UNRESOLVED');
+    expect(body.reason).toMatch(/deliberately NOT used as a fallback/);
+    // Nothing ran against the deployment's remote — the gate would have left this file.
+    expect(g(bare, 'ls-tree', '--name-only', '-r', 'main')).not.toContain('leaked.txt');
+    rmSync(join(bare, '..'), { recursive: true, force: true });
+  });
+
   it('happy path: gate → CAS land on main → trigger; request marked triggered with the sha', async () => {
     const { bare } = makeOrigin();
     Object.assign(process.env, {
@@ -194,7 +239,12 @@ describe('POST /requests/:id/apply — the route surface', () => {
     expect(body.ok).toBe(true);
     expect(body.bundle.state).toBe('triggered');
     expect(body.bundle.sha).toMatch(/^[0-9a-f]{40}$/);
-    expect(body.steps.map((s: { step: string; ok: boolean }) => `${s.step}:${s.ok}`)).toEqual(['prepare:true', 'gate:true', 'commit:true', 'trigger:true']);
+    // `plan-digest` sits between gate and commit (ARCH-3): the api re-checks the plan
+    // property itself rather than inferring it from the gate command's exit code. This
+    // request carries no pin (API-3 — no pin-writer is deployed), so the step passes as
+    // `unpinned` and says so in its detail rather than claiming verification.
+    expect(body.steps.map((s: { step: string; ok: boolean }) => `${s.step}:${s.ok}`)).toEqual(['prepare:true', 'gate:true', 'plan-digest:true', 'commit:true', 'trigger:true']);
+    expect(body.steps.find((s: { step: string }) => s.step === 'plan-digest').detail).toMatch(/NOT verified/);
     // the change really landed on the origin's main
     expect(g(bare, 'ls-tree', '--name-only', '-r', 'main')).toContain('environments/change.tf');
     // re-click ⇒ refused (already triggered)

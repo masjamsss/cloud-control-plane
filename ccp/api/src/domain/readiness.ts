@@ -59,6 +59,14 @@ export async function readiness(store: ConfigStore): Promise<Readiness> {
 
     if (accounts === 0) reasons.push('store holds 0 accounts — an emptied/wiped store is not ready (a bootstrapped store has ≥1 admin).');
 
+    // DATA-3 / ERR-10 — a store that can no longer make writes durable is NOT ready,
+    // however well it answers reads. Its memory has diverged from disk by an unknown
+    // amount, so every read it serves may be state a restart will not resurrect. This is
+    // exactly what readiness is for: take the instance out of rotation rather than let it
+    // keep serving confidently wrong answers behind a green probe.
+    const durability = store.durabilityFault?.() ?? null;
+    if (durability !== null) reasons.push(durability);
+
     return { ready: reasons.length === 0, storeLoaded: true, accounts, estates, chains, reasons };
   } catch (e) {
     // A throwing store (unreadable/corrupt beyond load) is the least-ready state of all.
