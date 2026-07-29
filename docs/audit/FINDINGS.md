@@ -183,7 +183,7 @@ States nothing can leave: wedged jobs, dead-end requests, permanently disabled c
 - [x] UI-2 | high | stuck-state | fixed:ed4ca42 | 06-frontend-ui-robustness.md | Resource drill-in dead-ends for every "named service" whose slug is not a literal manifest file: all 16 azure-fixture services are broken
 - [x] API-4 | medium | stuck-state | fixed:20e387f | 02-api-correctness.md | The bundle "claim" is not a mutual-exclusion, and a crashed bundle wedges the request at `running`
 - [ ] API-9 | medium | stuck-state | open | 02-api-correctness.md | Project deregistration leaves orphaned satellite rows; a reused id inherits the previous tenant's state
-- [x] CONC-10 | medium | stuck-state | fixed:PENDING | 04-concurrency.md | Stuck `APPLYING` after a worker crash has no reclaim or operator path
+- [x] CONC-10 | medium | stuck-state | fixed:fd3581e | 04-concurrency.md | Stuck `APPLYING` after a worker crash has no reclaim or operator path
 - [x] ERR-12 | medium | stuck-state | fixed:feb43ef | 09-error-handling.md | Trigger failure after a landed commit: honest-but-dead-end half state, and spawn timeouts are indistinguishable from exit-1
 - [x] ERR-5 | medium | stuck-state | fixed:7024c7a | 09-error-handling.md | `TerraformExecutor.init()` caches a rejected promise: one transient init failure bricks the executor until restart
 - [x] UI-4 | medium | stuck-state | fixed:b5b703b | 06-frontend-ui-robustness.md | Mutation handlers `await` API calls without try/catch: a network failure permanently wedges busy/submitting state
@@ -299,7 +299,7 @@ Red suites, silent skips, fixtures that pin the wrong premise.
 - [x] ERR-1 | high | blocking-io | fixed:domain/exec.ts replaces spawnSync with an awaited spawn; test/execNonBlocking.test.ts | 09-error-handling.md | Synchronous child processes block the entire API event loop for minutes
 - [x] OPS-3 | high | blocking-io | fixed:domain/exec.ts replaces spawnSync with an awaited spawn; test/execNonBlocking.test.ts | 10-reliability-operations.md | Armed-lane commands run `spawnSync` on the event loop: the whole API freezes for up to 15 minutes and health checks flap
 - [x] PERF-2 | high | blocking-io | fixed:domain/exec.ts replaces spawnSync with an awaited spawn; test/execNonBlocking.test.ts | 11-performance-scalability.md | `spawnSync` on the serving thread: the API freezes for up to 10-15 minutes during bundle/drift work
-- [x] API-8 | medium | stuck-state | fixed:PENDING | 02-api-correctness.md | Freeze-held `kind:'now'` requests dead-end in AWAITING_DEPLOY_APPROVAL after the freeze lifts
+- [x] API-8 | medium | stuck-state | fixed:fd3581e | 02-api-correctness.md | Freeze-held `kind:'now'` requests dead-end in AWAITING_DEPLOY_APPROVAL after the freeze lifts
 - [ ] CONC-8 | medium | data-persistence | open | 04-concurrency.md | Every authenticated request triggers a full-store snapshot write; snapshot serialization is synchronous O(store) on the event loop
 - [ ] FE-6 | medium | duplication | open | 05-frontend-flows.md | Api-mode submit gates read the advisory localStorage settings, not the server's — the freeze preview is dead and a stale local freeze silently blocks valid submits
 - [ ] PERF-12 | medium | scale-and-paging | open | 11-performance-scalability.md | Upload ingest does 4+ full canonical-JSON passes over the 16 MiB bundle synchronously on the event loop
@@ -315,7 +315,7 @@ Guards that pass when they should refuse.
 - [ ] API-11 | low | fail-open | open | 02-api-correctness.md | Audit-chain read path bypasses the injected clock and truncates at 120 months
 - [ ] API-13 | low | fail-open | open | 02-api-correctness.md | `maxOpen` rate-limit counts a nonexistent status and misses real open states
 - [ ] API-18 | low | fail-open | open | 02-api-correctness.md | Legitimize endpoint mints unlimited duplicate engineer requests for the same digest
-- [x] API-19 | medium | fail-open | fixed:PENDING | 02-api-correctness.md | `settleCooling` stamps `APPLIED` during a change freeze, bypassing the freeze veto the approve handler enforces
+- [x] API-19 | medium | fail-open | fixed:fd3581e | 02-api-correctness.md | `settleCooling` stamps `APPLIED` during a change freeze, bypassing the freeze veto the approve handler enforces
 - [ ] API-20 | low | concurrency | open | 02-api-correctness.md | The one-time legacy settlement races itself: concurrent first requests get 409 CHAIN_CONTENTION on a plain read
 - [ ] FE-14 | low | fail-open | open | 05-frontend-flows.md | DriftPage's post-trigger refetches bypass the staleness guard
 
