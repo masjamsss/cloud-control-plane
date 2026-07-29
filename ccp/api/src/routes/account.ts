@@ -22,6 +22,26 @@ import { generateRecoveryCodes, remainingRecoveryCodes } from '../auth/recovery'
 import { REAUTH_MS, TOTP_PENDING_MS, findUserSessionBySha, killOtherSessions, listLiveSessions } from '../auth/sessions';
 import { record } from '../domain/audit';
 import { nowIso, nowMs } from '../clock';
+import { ConditionError, type ConfigStore } from '../store/configStore';
+
+/** See auth.ts's twin: guarded account write, false on conflict (CONC-3). */
+async function putAccountGuarded(
+  store: ConfigStore,
+  prev: AccountItem,
+  updated: AccountItem,
+): Promise<boolean> {
+  try {
+    await store.put(
+      { ...updated, accountVersion: nextAccountVersion(prev) },
+      { ifEquals: { attr: 'accountVersion', value: prev.accountVersion } },
+    );
+    return true;
+  } catch (e) {
+    if (e instanceof ConditionError) return false;
+    throw e;
+  }
+}
+
 
 /**
  * Self-service account & security routes (account & security center spec
@@ -129,7 +149,10 @@ export function accountRoutes(): Hono<AppEnv> {
       recoveryCodes = generated.plaintext;
       updated = { ...updated, recoveryCodes: { codes: generated.hashed, generatedAt: nowIso() } };
     }
-    await store.put(updated);
+    // Guarded on the accountVersion this handler read (CONC-3): every write here
+    // follows a slow await, and an unguarded full-row put silently discards anything
+    // that landed in the window — including an admin disable.
+    if (!(await putAccountGuarded(store, account, updated))) return apiError(c, 'STATE_CONFLICT');
 
     // Clear the offer holding fields — the session moves on from "mid-enrollment".
     const clearedSession = { ...session };
@@ -181,7 +204,10 @@ export function accountRoutes(): Hono<AppEnv> {
     let updated = withDevices({ ...account, accountVersion: nextAccountVersion(account) }, remaining);
     const hadCodes = remaining.length === 0 && account.recoveryCodes !== undefined;
     if (hadCodes) delete updated.recoveryCodes;
-    await store.put(updated);
+    // Guarded on the accountVersion this handler read (CONC-3): every write here
+    // follows a slow await, and an unguarded full-row put silently discards anything
+    // that landed in the window — including an admin disable.
+    if (!(await putAccountGuarded(store, account, updated))) return apiError(c, 'STATE_CONFLICT');
 
     await record(store, projectId, {
       action: 'totp-device-remove',
@@ -227,7 +253,10 @@ export function accountRoutes(): Hono<AppEnv> {
       recoveryCodes: { codes: generated.hashed, generatedAt },
       accountVersion: nextAccountVersion(account),
     };
-    await store.put(updated);
+    // Guarded on the accountVersion this handler read (CONC-3): every write here
+    // follows a slow await, and an unguarded full-row put silently discards anything
+    // that landed in the window — including an admin disable.
+    if (!(await putAccountGuarded(store, account, updated))) return apiError(c, 'STATE_CONFLICT');
     await record(store, projectId, {
       action: 'recovery-codes-generate',
       actor: account.id,

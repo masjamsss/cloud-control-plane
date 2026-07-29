@@ -101,11 +101,26 @@ export function sessionCookieOptions(env: Env = process.env): SessionCookieOptio
  * Empty = no cross-origin browser access. With credentials the spec forbids `*`, so the
  * edge echoes ONLY an exact allow-listed origin.
  */
+let corsMemo: { raw: string; origins: string[] } | null = null;
+
 export function corsOrigins(env: Env = process.env): string[] {
-  return (env.CCP_CORS_ORIGIN ?? '')
+  const raw = env.CCP_CORS_ORIGIN ?? '';
+  // Memoized on the RAW string, so a deploy still sets CCP_CORS_ORIGIN without a
+  // rebuild and a test can still flip it mid-process — the memo re-derives the
+  // moment the value differs. Without it this splits, trims and filters on every
+  // single request (the CORS origin callback runs per request, before anything
+  // else), which is pure repeated work for a value that essentially never changes.
+  if (corsMemo !== null && corsMemo.raw === raw) return corsMemo.origins;
+  const origins = raw
     .split(',')
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+  // Frozen: callers used to get a fresh array each time and could mutate it
+  // harmlessly. They now share one, and this is the allow-list for credentialed
+  // CORS — a stray push into it would widen who may authenticate, process-wide.
+  Object.freeze(origins);
+  corsMemo = { raw, origins };
+  return origins;
 }
 
 /** Thrown by `assertDeployable` — carries the list of fatal config problems. */

@@ -4,7 +4,8 @@ import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store/memoryStore';
 import type { ConfigStore } from '../src/store/configStore';
 import type { AppEnv } from '../src/appEnv';
-import { seed, seedRequests, sessionCookieFor, setSetting } from './helpers/seed';
+import { seed, seedRequests, sessionCookieFor, setSetting, SAMPLE_PROJECT_ID } from './helpers/seed';
+import { checkSubmitRateLimit } from '../src/middleware/rateLimit';
 
 /**
  * maxOpen quota vs the request-status lifecycle (coordinator scope addition to
@@ -83,5 +84,33 @@ describe('maxOpen quota: which request statuses occupy a slot', () => {
     const budi = await sessionCookieFor(store, 'budi');
     const res = await submit(app, budi, DRAFT);
     expect(res.status).toBe(201);
+  });
+});
+
+/**
+ * `rate.limits` is operator-set JSON behind PUT /admin/settings/:key with no value
+ * schema, so a cap of zero is reachable — and it means "admit nothing", which is a
+ * way to freeze submissions. It has to fail CLOSED even for a requester with no
+ * prior requests, where there is nothing to count and a per-row check never fires.
+ */
+describe('a zero cap admits nothing (fail-closed)', () => {
+  it('blocks with submissionsPerHour: 0 and no prior requests', async () => {
+    const store = new MemoryStore();
+    await seed(store);
+    await setSetting(store, SAMPLE_PROJECT_ID, 'rate.limits', { submissionsPerHour: 0 });
+    expect(await checkSubmitRateLimit(store, SAMPLE_PROJECT_ID, 'sari')).toEqual({ ok: false });
+  });
+
+  it('blocks with maxOpen: 0 and no prior requests', async () => {
+    const store = new MemoryStore();
+    await seed(store);
+    await setSetting(store, SAMPLE_PROJECT_ID, 'rate.limits', { maxOpen: 0 });
+    expect(await checkSubmitRateLimit(store, SAMPLE_PROJECT_ID, 'sari')).toEqual({ ok: false });
+  });
+
+  it('still admits a submission under a normal cap', async () => {
+    const store = new MemoryStore();
+    await seed(store);
+    expect(await checkSubmitRateLimit(store, SAMPLE_PROJECT_ID, 'sari')).toEqual({ ok: true });
   });
 });

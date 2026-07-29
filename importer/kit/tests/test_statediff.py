@@ -232,8 +232,15 @@ class IgnoreRuleTests(StatediffTestCase):
         self.assertIn("tagKey", kinds, "the aws:autoscaling:groupName seed rule must be present")
         tagkey_rules = [r for r in doc["rules"] if r["kind"] == "tagKey"]
         self.assertTrue(any(r["tagKey"] == "aws:autoscaling:groupName" for r in tagkey_rules))
-        bootstrap_ids = {r["id"] for r in doc["rules"] if r["kind"] == "id"}
-        self.assertIn("alarmtickettable", bootstrap_ids, "the real bootstrap state bucket (environments/prod/backend.tf)")
+        # The shipped file carries the GENERIC seeds only. It deliberately does NOT name a
+        # deployment's bootstrap state bucket or lock table: those are estate-specific, and
+        # this assertion used to pin one by name — the single place a private identifier
+        # survived the public split. A deployment adds its own `id` rows locally; what the
+        # repository can promise is that every row is well-formed and explained, which the
+        # loop above checks.
+        for rule in doc["rules"]:
+            if rule["kind"] == "id":
+                self.assertTrue(rule.get("type"), "an 'id' rule must name a resource type")
         # the real file must also be directly usable by statediff.py, not just parseable JSON
         r = self.run_statediff(ignore=REAL_SWEEP_IGNORE)
         self.assertEqual(r.returncode, 0, r.stderr)

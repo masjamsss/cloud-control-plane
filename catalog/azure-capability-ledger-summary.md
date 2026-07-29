@@ -1,6 +1,6 @@
 # Azure Capability Coverage Ledger
 
-Generated: 2026-07-18T05:15:07.868Z
+Generated: 2026-07-28T05:38:20.318Z
 
 **Total resource types: 1141** (all 1,141 Azure resource types accounted for)
 
@@ -12,28 +12,30 @@ This ledger is the coverage backbone for wiring Azure into the Cloud Control Pla
 
 | Family | Catalog Candidate | Engineer Only | Review Needed | Total |
 |--------|-------------------|---------------|---------------|-------|
-| ai | 6 | 2 | 19 | 27 |
-| analytics | 12 | 9 | 23 | 44 |
-| compute | 4 | 0 | 0 | 4 |
-| containers | 14 | 1 | 17 | 32 |
-| database | 17 | 20 | 46 | 83 |
-| governance | 0 | 9 | 0 | 9 |
-| identity | 0 | 4 | 0 | 4 |
-| integration | 14 | 8 | 28 | 50 |
-| iot | 5 | 4 | 11 | 20 |
-| monitoring | 12 | 10 | 13 | 35 |
-| network | 26 | 23 | 27 | 76 |
-| other | 224 | 110 | 328 | 662 |
-| security | 0 | 50 | 0 | 50 |
-| storage | 7 | 7 | 31 | 45 |
-| **TOTAL** | **341** | **257** | **543** | **1141** |
+| ai | 8 | 6 | 24 | 38 |
+| analytics | 15 | 7 | 89 | 111 |
+| compute | 34 | 1 | 19 | 54 |
+| containers | 16 | 3 | 27 | 46 |
+| database | 16 | 9 | 53 | 78 |
+| governance | 0 | 55 | 0 | 55 |
+| identity | 0 | 9 | 0 | 9 |
+| integration | 18 | 15 | 75 | 108 |
+| iot | 5 | 4 | 10 | 19 |
+| keyvault | 1 | 13 | 0 | 14 |
+| monitoring | 19 | 12 | 19 | 50 |
+| network | 48 | 45 | 30 | 123 |
+| other | 122 | 16 | 128 | 266 |
+| security | 0 | 81 | 0 | 81 |
+| storage | 9 | 8 | 36 | 53 |
+| web | 20 | 0 | 16 | 36 |
+| **TOTAL** | **331** | **284** | **526** | **1141** |
 
 ## Safe Operation Class Coverage
 
 | Safe Op Class | Types Offering | Percentage |
 |---------------|----------------|------------|
 | `grow_disk` | 7 | 0.6% |
-| `resize` | 0 | 0.0% |
+| `resize` | 7 | 0.6% |
 | `tag_update` | 387 | 33.9% |
 | `tighten_tls` | 1 | 0.1% |
 

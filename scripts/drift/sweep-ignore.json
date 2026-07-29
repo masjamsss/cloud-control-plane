@@ -1,0 +1,51 @@
+{
+  "_comment": [
+    "Ignore rules for the statediff drift sweep (importer/kit/statediff.py, --ignore).",
+    "Every rule needs a 'reason': an unexplained ignore is indistinguishable from a",
+    "forgotten one, and this file is the reviewed record of what the sweep is allowed",
+    "not to report.",
+    "",
+    "These are the GENERIC seeds — resources every AWS estate has that are managed",
+    "outside Terraform by construction. A deployment adds its own rows for its own",
+    "bootstrap resources (the state bucket and lock table named in its backend.tf,",
+    "typically as kind 'id'); those are estate-specific and do not belong in a public",
+    "repository.",
+    "",
+    "Kinds: 'id' (type + id), 'arn' (arn), 'idPrefix' (type + idPrefix), 'tagKey' (tagKey)."
+  ],
+  "rules": [
+    {
+      "kind": "tagKey",
+      "tagKey": "aws:autoscaling:groupName",
+      "reason": "Applied by EC2 Auto Scaling to every instance it launches. It is not writable from Terraform, so it appears as drift on every ASG-managed instance forever."
+    },
+    {
+      "kind": "tagKey",
+      "tagKey": "aws:cloudformation:stack-id",
+      "reason": "Stamped by CloudFormation on resources it owns. A Terraform-managed estate that still has CFN stacks will otherwise report every one of their resources as drift."
+    },
+    {
+      "kind": "tagKey",
+      "tagKey": "elasticbeanstalk:environment-id",
+      "reason": "Stamped by Elastic Beanstalk on the resources it provisions; not settable from Terraform."
+    },
+    {
+      "kind": "idPrefix",
+      "type": "aws_iam_role",
+      "idPrefix": "AWSServiceRoleFor",
+      "reason": "Service-linked roles are created by AWS services on demand and cannot be managed by Terraform; they are deleted with the service, not by the estate."
+    },
+    {
+      "kind": "idPrefix",
+      "type": "aws_iam_policy",
+      "idPrefix": "arn:aws:iam::aws:policy/",
+      "reason": "AWS-managed policies are owned by AWS. They are referenced by the estate but never declared in it."
+    },
+    {
+      "kind": "idPrefix",
+      "type": "aws_cloudwatch_log_group",
+      "idPrefix": "/aws/lambda/",
+      "reason": "Created implicitly by Lambda on first invocation when the estate has not declared the group explicitly. Declare the group to remove the need for this row."
+    }
+  ]
+}

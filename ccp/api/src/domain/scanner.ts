@@ -1,4 +1,5 @@
 import type { RepoRef } from "../store/schema";
+import { redactSecrets } from "../redact";
 
 /**
  * The scanner lane's arming switch and its SSRF-proof clone-URL construction
@@ -201,14 +202,10 @@ export const SCAN_ERROR_MAX = 500;
  */
 export function sanitizeScanError(raw: unknown): string {
   if (typeof raw !== "string" || raw.length === 0) return "";
-  return (
-    raw
-      // eslint-disable-next-line no-control-regex
-      .replace(/[\x00-\x1f\x7f]+/g, " ")
-      .replace(/https?:\/\/\S*/gi, "[url]")
-      .replace(/\b[0-9A-HJKMNP-TV-Z]{26}\.[A-Za-z0-9_-]{20,}\b/g, "[token]")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, SCAN_ERROR_MAX)
-  );
+  // eslint-disable-next-line no-control-regex
+  const oneLine = raw.replace(/[\x00-\x1f\x7f]+/g, " ");
+  // The URL/token shapes moved to ../redact when errors.ts's server-error log needed the
+  // same protection from the same strings. This file had them first and kept the reason
+  // above; sharing them is what stops the two drifting (L-8).
+  return redactSecrets(oneLine).replace(/\s+/g, " ").trim().slice(0, SCAN_ERROR_MAX);
 }

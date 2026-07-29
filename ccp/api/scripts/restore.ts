@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolveDataFile } from '../src/deploy';
 import { parseSnapshotItems, summarizeSnapshot, writeFileAtomic, type SnapshotSummary } from '../src/store/snapshot';
+import { DataLock, DataLockError } from '../src/store/dataLock';
 
 /**
  * Restore the FileStore data file from a backup — the recovery half of the disk/host
@@ -9,6 +10,12 @@ import { parseSnapshotItems, summarizeSnapshot, writeFileAtomic, type SnapshotSu
  * store must not silently replace live data) unless `--force` is passed for a
  * deliberate disaster restore. The write itself is atomic (temp + fsync + rename), so
  * an interrupted restore leaves the OLD data file intact.
+ *
+ * DATA-9: it also CLAIMS the data file's single-writer lock for the duration. A restore
+ * under a running server was silently pointless — the atomic write installs the backup,
+ * and the server's very next persist (a session slide from any authenticated request will
+ * do) rewrites the whole file from its own in-memory map and discards it, with no error
+ * anywhere. The operator sees "restored N items" and has restored nothing.
  *
  * Run:  npm run restore -- --from <backup>   [--data <dest>] [--force]
  */
@@ -56,7 +63,26 @@ export async function runRestore(opts: {
     io.error('  WARNING: restoring a backup whose audit chain does NOT verify (--force). The restored store is not tamper-evident-clean.');
   }
 
-  await writeFileAtomic(opts.dataFile, raw);
+  // DATA-9 — take the writer lock BEFORE the write and hold it across it. A running
+  // server holds this lock, so this is the check: if we cannot claim it, a process that
+  // rewrites the file from memory is live, and installing a backup underneath it would
+  // be discarded by its next persist without either side noticing.
+  let lock: DataLock;
+  try {
+    lock = DataLock.acquire(opts.dataFile);
+  } catch (e) {
+    if (!(e instanceof DataLockError)) throw e;
+    return {
+      ok: false,
+      summary,
+      reason: `${e.message} A restore installed under a running server is silently undone by its next write — stop the server first.`,
+    };
+  }
+  try {
+    await writeFileAtomic(opts.dataFile, raw);
+  } finally {
+    lock.release();
+  }
   io.log(`  restored ${summary.itemCount} items (atomic write complete).`);
   return { ok: true, dataFile: opts.dataFile, summary };
 }

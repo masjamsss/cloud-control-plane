@@ -1,0 +1,190 @@
+name: ccp-apply
+# ═══════════════════════════════════════════════════════════════════════════════
+# THE REFERENCE APPLY LANE — "a human approves and CI applies" (CI-4).
+#
+# This is an ESTATE TEMPLATE, shipped in the product repo so adopters copy it
+# rather than reassemble it from ADR prose. It is the pipeline ADR-0016 describes
+# and that `scripts/ci/plancheck-gate.sh` and `apply-window-gate.sh` were written
+# for — both scripts state that "the workflow invokes the exact script the test
+# exercises", and until now NO workflow anywhere invoked either of them. A
+# repo-wide search of every *.yml found zero consumers, and the `ccp/plan-digest`
+# commit status that plancheck-gate.sh names was posted by nothing.
+#
+# So an adopting estate got excellent gate SCRIPTS and no pipeline that ran them,
+# and had to hand-assemble the most safety-critical workflow in the product.
+#
+# INERT BY DEFAULT, the same contract ccp-data.yml follows. With no estate tree
+# and no CCP_APPLY_ENABLED variable this does nothing but say so. Arming it is a
+# deliberate act by the estate, not a consequence of copying the file.
+#
+# THE ORDER OF THE GATES IS THE SAFETY PROPERTY, and it is not arbitrary:
+#
+#   1. plan        — terraform plan -out, then `show -json`. A neutral re-plan,
+#                    not the requester's.
+#   2. plan-digest — sha256(plan.json), published as the `ccp/plan-digest` commit
+#                    status. This is what "approve-this-exact-plan" binds to.
+#   3. plan-check  — catalogctl R1–R6 against plan + request. Any violation is a
+#                    hard fail (exit 2).
+#   4. window/freeze — the schedule veto, and the freeze veto FIRST within it.
+#                    Freeze is absolute (exit 7).
+#   5. apply       — only if every gate above passed.
+#
+# Steps 2-4 are cheap and offline; the apply is the only irreversible one, so it
+# is last and it is the only step that needs cloud credentials.
+#
+# Per-repo setup:
+#   variable CCP_APPLY_ENABLED   set to '1' to arm. Unset ⇒ this lane is inert.
+#   variable CCP_ESTATE_TZ       IANA zone for the window gate (default UTC).
+#   variable CCP_FREEZE          truthy ⇒ every apply is vetoed (mirrors the
+#                                portal's freeze into CI, which cannot see it).
+#   variable CCP_SCAN_ROOT       terraform root (default environments/prod).
+#   secrets                      whatever your cloud auth step needs. This
+#                                template deliberately ships NO credential wiring
+#                                — see the apply job.
+# ═══════════════════════════════════════════════════════════════════════════════
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['requests/**', 'environments/**', '.github/workflows/ccp-apply.yml']
+  push:
+    branches: [main]
+    paths: ['requests/**', 'environments/**', '.github/workflows/ccp-apply.yml']
+
+permissions:
+  contents: read
+  statuses: write # for the ccp/plan-digest commit status
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    outputs:
+      armed: ${{ steps.arm.outputs.armed }}
+      digest: ${{ steps.digest.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # INERT BY DEFAULT. Announced rather than silent: a lane that does nothing
+      # and says nothing is indistinguishable from one that is broken.
+      - name: arming check
+        id: arm
+        run: |
+          set -euo pipefail
+          root="${CCP_SCAN_ROOT:-environments/prod}"
+          if [ "${CCP_APPLY_ENABLED:-}" != "1" ]; then
+            echo "::notice::ccp-apply is INERT (set the CCP_APPLY_ENABLED variable to '1' to arm it)"
+            echo "armed=0" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ ! -d "$root" ]; then
+            echo "::notice::ccp-apply armed but no terraform root at '$root' — nothing to plan"
+            echo "armed=0" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "armed=1" >> "$GITHUB_OUTPUT"
+        env:
+          CCP_APPLY_ENABLED: ${{ vars.CCP_APPLY_ENABLED }}
+          CCP_SCAN_ROOT: ${{ vars.CCP_SCAN_ROOT }}
+
+      - name: locate the request
+        id: req
+        if: steps.arm.outputs.armed == '1'
+        # No request in the push ⇒ this is an ordinary, non-ccp change and the
+        # lane is inert for it, exactly as apply-window-gate.sh's own contract
+        # says ("No REQ in the bundle ⇒ the gate is INERT").
+        run: |
+          set -euo pipefail
+          req="$(find requests -name 'REQ-*.yaml' -type f 2>/dev/null | sort | head -1 || true)"
+          if [ -z "$req" ]; then
+            echo "::notice::no requests/REQ-*.yaml in this change — ccp-apply is inert for it"
+            echo "found=0" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "found=1" >> "$GITHUB_OUTPUT"
+          echo "path=$req" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        if: steps.req.outputs.found == '1'
+        with:
+          go-version-file: tools/catalogctl/go.mod
+      - name: build catalogctl
+        if: steps.req.outputs.found == '1'
+        run: go build -o "$RUNNER_TEMP/catalogctl" ./cmd/catalogctl
+        working-directory: tools/catalogctl
+
+      - uses: hashicorp/setup-terraform@v3
+        if: steps.req.outputs.found == '1'
+        with:
+          terraform_wrapper: false
+
+      # STEP 1 — a NEUTRAL re-plan. The point of doing it here rather than
+      # trusting a plan attached to the request is that this environment is not
+      # the requester's.
+      - name: terraform plan
+        if: steps.req.outputs.found == '1'
+        run: |
+          set -euo pipefail
+          terraform init -input=false -no-color
+          terraform plan -input=false -no-color -out=tfplan
+          terraform show -json tfplan > "$RUNNER_TEMP/plan.json"
+        working-directory: ${{ vars.CCP_SCAN_ROOT || 'environments/prod' }}
+
+      # STEPS 2+3 — digest and plan-check, in ONE invocation of the exact script
+      # the Go tests exercise (tools/catalogctl/plancheck_gate_test.go).
+      #
+      # --expect-digest is NOT passed here. It is the apply-time backstop for a
+      # digest the portal already approved; on a first plan there is nothing to
+      # expect yet, and passing a value derived from this same plan would be the
+      # check grading itself. The approved value belongs on the apply job, from
+      # the request.
+      - name: plan-digest + plan-check (R1–R6)
+        id: digest
+        if: steps.req.outputs.found == '1'
+        run: |
+          set -euo pipefail
+          scripts/ci/plancheck-gate.sh \
+            --plan "$RUNNER_TEMP/plan.json" \
+            --request "${{ steps.req.outputs.path }}" \
+            --manifests ccp/app/src/data/manifests \
+            --catalogctl "$RUNNER_TEMP/catalogctl" \
+            --digest-out "$RUNNER_TEMP/digest.txt"
+          echo "digest=$(cat "$RUNNER_TEMP/digest.txt")" >> "$GITHUB_OUTPUT"
+
+      # The status plancheck-gate.sh names and that approvals bind to. Posting it
+      # is what makes "approve-this-exact-plan" reviewable in the forge.
+      - name: publish the ccp/plan-digest commit status
+        if: steps.req.outputs.found == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -f state=success \
+            -f context='ccp/plan-digest' \
+            -f description="${{ steps.digest.outputs.digest }}" \
+            >/dev/null
+          echo "ccp/plan-digest = ${{ steps.digest.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+
+      # STEP 4 — schedule + freeze. Freeze is checked FIRST inside the script and
+      # is absolute (exit 7); the window verdict follows.
+      - name: window + freeze gate
+        if: steps.req.outputs.found == '1'
+        env:
+          CCP_FREEZE: ${{ vars.CCP_FREEZE }}
+          CCP_ESTATE_TZ: ${{ vars.CCP_ESTATE_TZ }}
+        run: |
+          scripts/ci/apply-window-gate.sh \
+            --request "${{ steps.req.outputs.path }}" \
+            --catalogctl "$RUNNER_TEMP/catalogctl"
+
+  # STEP 5 — the only irreversible step, and the only one needing credentials.
+  #
+  # Deliberately a SEPARATE JOB with no credential wiring shipped. An estate adds
+  # its own auth step (OIDC role assumption, or whatever it uses) here. Shipping a
+  # credential pattern in a template invites copying one that does not match the
+  # estate's threat model, and this is the step where that would matter most.
+  apply:
+    needs: gates
+    if: needs.gates.outputs.armed == '1' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "::notice::apply step is a TEMPLATE STUB — add your estate's cloud auth and"
+          echo "::notice::\`terraform apply\` here. Every gate above has already passed."
+          echo "Approved plan digest: ${{ needs.gates.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"

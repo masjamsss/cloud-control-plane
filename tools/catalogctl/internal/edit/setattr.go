@@ -242,7 +242,11 @@ func currentNumber(blockBytes []byte, attr string) (float64, bool) {
 }
 
 type objEntry struct {
-	key     string
+	key string
+	// lead is trivia that sat on its own line(s) ABOVE this entry — full-line
+	// comments. It is carried separately so it can never leak into keyToks
+	// (CTL-1) and is re-emitted before the key so the bytes round-trip.
+	lead    hclwrite.Tokens
 	keyToks hclwrite.Tokens
 	valToks hclwrite.Tokens
 	comment hclwrite.Tokens
@@ -365,11 +369,40 @@ func parseObject(toks hclwrite.Tokens) ([]objEntry, bool) {
 	i++
 	var entries []objEntry
 	for i < len(toks) {
-		switch toks[i].Type {
-		case hclsyntax.TokenNewline, hclsyntax.TokenComma:
-			i++
-			continue
-		case hclsyntax.TokenCBrace:
+		// Leading trivia. A single-line comment token CARRIES its terminating
+		// newline ("# note\n" is ONE token), so a full-line comment above an entry
+		// is not a TokenNewline and the key loop below would happily append it to
+		// keyToks — yielding a key like "# owner of record\nPIC" that matches
+		// nothing. Every consumer then mis-identified the entry AT EXIT 0: mergeMap
+		// and appendForeachEntry appended a DUPLICATE key (defeating the
+		// KEY_CONFLICT guard, and last-one-wins silently changed the protected
+		// value), removeForeachEntry found nothing and removed nothing. This is the
+		// key-loop half of the lesson the value loop already learned below; the
+		// trivia is kept on the entry so buildObject round-trips the bytes rather
+		// than dropping a comment the operator wrote.
+		var lead hclwrite.Tokens
+		for i < len(toks) {
+			switch toks[i].Type {
+			case hclsyntax.TokenNewline, hclsyntax.TokenComma:
+				i++
+				continue
+			case hclsyntax.TokenComment:
+				lead = append(lead, toks[i])
+				i++
+				continue
+			}
+			break
+		}
+		if i >= len(toks) {
+			return nil, false
+		}
+		if toks[i].Type == hclsyntax.TokenCBrace {
+			if len(lead) > 0 {
+				// A dangling comment after the last entry has no entry to attach
+				// to; re-emitting it would move or drop it. Refuse rather than
+				// guess — NOT_LITERAL is loud and leaves the tree untouched.
+				return nil, false
+			}
 			return entries, true
 		}
 		var keyToks hclwrite.Tokens
@@ -416,7 +449,7 @@ func parseObject(toks hclwrite.Tokens) ([]objEntry, bool) {
 			valToks = append(valToks, t)
 			i++
 		}
-		entries = append(entries, objEntry{key: keyString(keyToks), keyToks: keyToks, valToks: valToks, comment: comment})
+		entries = append(entries, objEntry{key: keyString(keyToks), lead: lead, keyToks: keyToks, valToks: valToks, comment: comment})
 	}
 	return nil, false
 }
@@ -455,6 +488,9 @@ func buildObject(entries []objEntry) hclwrite.Tokens {
 		{Type: hclsyntax.TokenNewline, Bytes: []byte("\n")},
 	}
 	for _, e := range entries {
+		// Leading full-line comments come back out above their entry; each already
+		// carries its own newline (see parseObject), so no separator is added.
+		toks = append(toks, e.lead...)
 		toks = append(toks, e.keyToks...)
 		toks = append(toks, &hclwrite.Token{Type: hclsyntax.TokenEqual, Bytes: []byte("=")})
 		toks = append(toks, e.valToks...)

@@ -1,8 +1,8 @@
 # Per-resource import workflow (Azure)
 
-The Azure sibling of [`importer/docs/import-plan.md`](../../../importer/docs/import-plan.md): the
+The Azure sibling of `importer/docs/import-plan.md` (not written): the
 mechanical loop each resource goes through, from a discovered id to a no-op plan under Terraform.
-The operator procedure that wraps this is [docs/runbooks/azure-subscription-import.md](../../../docs/runbooks/azure-subscription-import.md);
+The operator procedure that wraps this is `docs/runbooks/azure-subscription-import.md` (not written);
 the phased ordering is [strategy.md](strategy.md).
 
 ## The loop (one batch — a service or a resource group — at a time)

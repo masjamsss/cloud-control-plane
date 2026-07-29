@@ -160,6 +160,10 @@ export async function seedRequests(
       updatedAt: now,
       events: [],
       policyVersion: 1,
+      // Mirrors what the submit route writes (DATA-1). A fixture without it produces a row
+      // real code cannot create, and would quietly exempt every test from the concurrency
+      // guard that row is supposed to carry.
+      eventSeq: 0,
       GSI1PK: requestCollectionGsi(projectId),
       GSI1SK: id,
       ...over,

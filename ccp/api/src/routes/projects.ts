@@ -31,6 +31,10 @@ import {
   isTerminalScanStatus,
   scannerWorkerKey,
 } from "../domain/scanner";
+import {
+  settleScanJobLease,
+  settleScanJobLeases,
+} from "../domain/scanJobLease";
 import { knobEnabled, resolveKnob } from "../domain/deploymentSettings";
 import {
   ForgeCredentialError,
@@ -921,10 +925,15 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     if (!buildCloneUrl(repo, process.env, extraHosts).ok)
       return apiError(c, "SCAN_TARGET_REFUSED");
 
-    const existing = (await store.query(
-      k.PK,
-      SCAN_JOB_SK_PREFIX,
-    )) as ProjectScanJobItem[];
+    // Settle any expired claim lease BEFORE the one-in-flight refusal (OPS-4). A job
+    // whose worker died stays non-terminal forever, and this check is the thing it
+    // wedges: without the settle, one container restart mid-scan permanently blocks
+    // this project's onboarding, and the only remedy is hand-crafting a worker-keyed
+    // status POST. The act that was blocked is now the act that clears it.
+    const existing = await settleScanJobLeases(
+      store,
+      (await store.query(k.PK, SCAN_JOB_SK_PREFIX)) as ProjectScanJobItem[],
+    );
     if (existing.some((j) => !isTerminalScanStatus(j.status)))
       return apiError(c, "STATE_CONFLICT");
 
@@ -971,9 +980,13 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
         projectKey(id).PK,
         SCAN_JOB_SK_PREFIX,
       )) as ProjectScanJobItem[];
-      const latest = rows[rows.length - 1];
-      if (!latest)
+      const newest = rows[rows.length - 1];
+      if (!newest)
         return c.json({ code: "NOT_FOUND", reason: "No scan job." }, 404);
+      // The wizard's progress read is the OTHER place the wedge is felt (OPS-4): a job
+      // whose worker died shows `scanning` forever and the user watches a spinner with
+      // no end. Settling here turns that into an honest terminal failure with a reason.
+      const latest = await settleScanJobLease(store, newest);
       return c.json({
         jobId: latest.jobId,
         status: latest.status,
@@ -1252,7 +1265,21 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
       await transactWithAudit(
         store,
         auditProjectId,
-        [{ kind: "put", item: updated as never }],
+        [
+          {
+            kind: "put",
+            item: updated as never,
+            // CONC-11 — the project row HAS an OCC discipline (`guardAttr:'version'` on the
+            // trust decision, and on activate/archive/unarchive) and this handler bypassed
+            // it with an unconditional full-row put built from a stale read. Two costs, and
+            // the second is the serious one: a racing identity confirm loses one write
+            // entirely, and because both handlers RESET `version` to `stale + 1` they can
+            // rewind the counter to a value a pending dual-controlled proposal already
+            // captured — letting a genuinely stale ack pass its `version` guard against
+            // different row content, which is the exact class that guard exists to stop.
+            ifEquals: { attr: "version", value: project.version },
+          },
+        ],
         {
           action: "project-trust-request",
           actor,
@@ -1406,7 +1433,17 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     await transactWithAudit(
       store,
       c.get("projectId"),
-      [{ kind: "put", item: updated as never }],
+      [
+        {
+          kind: "put",
+          item: updated as never,
+          // CONC-11, the other half: same unconditional full-row put, same version reset.
+          // Carrying an `ifEquals` also makes `transactWithAudit` refuse to REPLAY these
+          // writes on chain contention (CONC-2's rule) and surface STATE_CONFLICT — which
+          // is right: a replay would write exactly the lost update the guard just caught.
+          ifEquals: { attr: "version", value: project.version },
+        },
+      ],
       {
         action: "project-identity-confirm",
         actor,

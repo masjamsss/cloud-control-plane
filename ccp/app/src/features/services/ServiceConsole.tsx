@@ -3,6 +3,7 @@ import type { JSX } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { Inventory, InventoryResource, ManifestOperation, ServiceManifest } from '@/types';
 import { api } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId, useProject } from '@/lib/ProjectContext';
 import { allBlockSources, type BlockSource } from '@/lib/blockSource';
 import { buildResourceFamilies, summarizeChildren, type FamilyRow } from '@/lib/resourceFamily';
@@ -12,7 +13,7 @@ import { canRequest } from '@/lib/permissions';
 import { resolveRisk } from '@/lib/riskOverrides';
 import { getServiceMeta, hasServiceMeta, primaryTypeFor } from '@/lib/serviceMeta';
 import { provisionPathFor } from '@/lib/providerCatalog';
-import { catalogServiceKey } from '@/lib/catalog';
+import { manifestForServiceSlug } from '@/lib/catalog';
 import { useTeams } from '@/lib/teams';
 import { isProvisionAdd, isResourceScopedAdd, isScopedAction } from '@/lib/actionPicker';
 import {
@@ -35,6 +36,7 @@ import { stripProviderPrefix } from '@/lib/providerDisplay';
 import { OrientationNote } from './OrientationNote';
 import { ResourceRow } from './ResourceRow';
 import { VirtualRows } from './VirtualRows';
+import { LoadError } from '@/components/LoadError';
 import './console.css';
 
 /** Human-friendly label for an AWS resource type (aws_db_instance → Db Instance). */
@@ -126,6 +128,8 @@ export function ServiceConsole(): JSX.Element {
   // the empty corpus degrades to the flat one-group-per-type list, never an
   // error state.
   const [blocks, setBlocks] = useState<Record<string, BlockSource> | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -134,11 +138,20 @@ export function ServiceConsole(): JSX.Element {
     setManifests(null);
     setInventory(null);
     setBlocks(null);
-    void api.listManifests().then((m) => {
-      if (alive) setManifests(m);
+    setLoadError(null);
+    // FE-2/UI-1: both of these reject on a transport failure (and
+    // `parseManifests` throws on a malformed vendored manifest), which used
+    // to leave the console on "Loading service…" for ever. `blocks` below
+    // already had its own degrade-to-empty path and keeps it.
+    void attempt(() => api.listManifests()).then((outcome) => {
+      if (!alive) return;
+      if (outcome.ok) setManifests(outcome.value);
+      else setLoadError(outcome.reason);
     });
-    void api.getInventory().then((inv) => {
-      if (alive) setInventory(inv);
+    void attempt(() => api.getInventory()).then((outcome) => {
+      if (!alive) return;
+      if (outcome.ok) setInventory(outcome.value);
+      else setLoadError(outcome.reason);
     });
     void allBlockSources().then(
       (b) => {
@@ -151,36 +164,12 @@ export function ServiceConsole(): JSX.Element {
     return () => {
       alive = false;
     };
-  }, [projectId]);
+  }, [projectId, reloadToken]);
 
-  const manifest = useMemo(() => {
-    const all = manifests ?? [];
-    // A real manifest slug (every AWS service, and legacy azure-* keys) resolves
-    // directly. A portal-parity NAMED service (e.g. "vm", "sql") has no manifest
-    // of its own — synthesize one from the ops whose catalogServiceKey is this
-    // slug, across the (already provider-filtered) manifests, so its console
-    // renders exactly the ops the browse tile grouped under it.
-    // Gather EVERY op whose catalogServiceKey is this slug, across all manifests —
-    // for a curated slug (e.g. ec2) this now includes the family tag-ops that key
-    // to it from other files, not just its own manifest, so the console op set
-    // matches the browse tile's count. contributions===0 means either an op-less
-    // named service (→ undefined, so the Provision CTA renders) or a bare manifest
-    // slug navigated directly (→ its manifest).
-    const contributions = all
-      .map((m) => ({
-        m,
-        ops: m.operations.filter(
-          (op) => catalogServiceKey(op.target.resourceType, m.service) === slug,
-        ),
-      }))
-      .filter((c) => c.ops.length > 0);
-    if (contributions.length === 0) return all.find((m) => m.service === slug);
-    // dominant manifest = the file contributing the most ops (its scope/summary base)
-    const dominant = contributions.reduce((a, b) => (b.ops.length > a.ops.length ? b : a));
-    const operations = contributions.flatMap((c) => c.ops);
-    const resourceTypes = [...new Set(operations.map((op) => op.target.resourceType))];
-    return { ...dominant.m, service: slug, operations, resourceTypes };
-  }, [manifests, slug]);
+  // UI-2: one implementation, shared with ResourceDetail. The two MUST agree — a
+  // drill-in that resolves the slug differently from the list it was reached from is
+  // precisely the dead-end this closes. See lib/catalog.ts#manifestForServiceSlug.
+  const manifest = useMemo(() => manifestForServiceSlug(manifests ?? [], slug), [manifests, slug]);
   // The active project's provider disambiguates the three slugs both clouds name
   // ('batch','dms','resource-groups') so this console shows the same identity its
   // browse tile did (getServiceMeta docblock); harmless for every other slug.
@@ -378,6 +367,19 @@ export function ServiceConsole(): JSX.Element {
       <div className="console">
         <Breadcrumbs items={crumbs} />
         <div className="console__empty">No service named “{slug}”.</div>
+      </div>
+    );
+  }
+
+  if (loadError !== null) {
+    return (
+      <div className="console">
+        <Breadcrumbs items={crumbs} />
+        <LoadError
+          message={loadError}
+          what="this service"
+          onRetry={() => setReloadToken((n) => n + 1)}
+        />
       </div>
     );
   }

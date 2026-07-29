@@ -21,7 +21,9 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/catalogctl ./cmd/catalogctl
 
 FROM debian:bookworm-slim
 
-# Terraform pin — matches CI (.github/workflows/terraform.yml TF_VERSION) and
+# Terraform pin (OPS-14/CI-4: this named a CI workflow that was never shipped —
+# .github/workflows/ccp-apply.yml is the reference apply lane, which pins terraform
+# via hashicorp/setup-terraform). Matches
 # scripts/setup.sh's TF_VERSION default. Verified against HashiCorp's published
 # SHA256SUMS — the same flow scripts/setup.sh's install_terraform() uses; never
 # a hand-pinned hash for Terraform.

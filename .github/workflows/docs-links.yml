@@ -1,0 +1,34 @@
+name: docs-links
+# DOC-5: keeps the published tree's own navigation working.
+#
+# A mechanical scan once found 122 relative markdown links resolving to nothing —
+# private ADRs never published, runbooks promised and never written, citations into a
+# planning archive this repo does not ship. None of it was caught because nothing was
+# looking. This is the watcher.
+#
+# Runs on every change to a markdown file OR to the checker itself. Note the second
+# half of that: a checker whose own edits are not gated is a checker that can be
+# quietly defanged.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['**/*.md', 'scripts/docs-link-check.py', '.github/workflows/docs-links.yml']
+  push:
+    branches: [main]
+    paths: ['**/*.md', 'scripts/docs-link-check.py', '.github/workflows/docs-links.yml']
+permissions:
+  contents: read
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Makes no network calls: it resolves relative paths against the checkout only.
+      # It also asserts a floor on how many links it found, so a scan that silently
+      # checked nothing fails instead of reporting a clean tree.
+      - name: every relative markdown link resolves
+        run: python3 scripts/docs-link-check.py

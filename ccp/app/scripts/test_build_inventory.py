@@ -93,9 +93,16 @@ class BuildInventoryCliTest(unittest.TestCase):
     def test_unmanaged_resource_type_is_excluded(self):
         # A resource type no Cloud Control Plane manifest covers must not appear —
         # "managed" filtering is unaffected by the CLI change.
+        #
+        # The type is deliberately SYNTHETIC. This test used to use aws_sqs_queue, and it
+        # went red the day the catalog grew to cover SQS — the property under test was
+        # still true, but the fixture's premise had quietly become false, and nobody saw
+        # it because this suite ran in no CI (TEST-3). The catalog covers 864 resource
+        # types and grows; any real type picked here is a future false failure. A type no
+        # provider will ever ship cannot be overtaken.
         self.write_tf(
             "queue.tf",
-            'resource "aws_sqs_queue" "jobs" {\n  name = "jobs"\n}\n',
+            'resource "aws_ccp_nonexistent_thing" "jobs" {\n  name = "jobs"\n}\n',
         )
         r = run_script(["--root", self.root, "--out", self.out])
         self.assertEqual(r.returncode, 0, r.stderr)

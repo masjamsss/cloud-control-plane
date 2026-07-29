@@ -171,7 +171,10 @@ if [ "$MODE" = "check" ]; then
     say "--check: update available ${PRE_SHA:0:9} → ${NEW_SHA:0:9}:"
     git log --oneline "${PRE_SHA}..${NEW_SHA}" | head -20
     git merge-base --is-ancestor "$PRE_SHA" "$NEW_SHA" && ok "fast-forward possible" || warn "NOT fast-forwardable — a human must reconcile"
-    git diff --name-only "$PRE_SHA" "$NEW_SHA" | grep -q '^\.github/workflows/terraform.yml\|^scripts/gate.sh' && warn "toolchain files change in this update — review before applying"
+    # CI-4/OPS-14: this watched a workflow path that does not exist in this repo, so for
+    # that path the warning could never fire. Now watches the apply lane that was actually
+    # shipped, plus the pin file the data lane reads.
+    git diff --name-only "$PRE_SHA" "$NEW_SHA" | grep -qE '^\.github/workflows/ccp-apply\.yml|^scripts/gate\.sh|^scripts/gen-project-data\.sh' && warn "toolchain files change in this update — review before applying"
   fi
   exit 0
 fi

@@ -41,6 +41,19 @@ regexes = [
   # in base32) — a published standards-body known-answer vector used by the TOTP
   # unit tests (authFlow.test.ts, totpQr.test.tsx); never a real secret.
   '''GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ''',
+  # The audit's PG-5 probe value (docs/audit/13-ci-cd.md). That table documents which
+  # assignment shapes PG-5's regex catches, so it has to spell the shapes out; this is
+  # the invented 16-char value it uses. It is not a credential and never was.
+  # Note what it demonstrates: the three rows the table marks "uncaught" are uncaught by
+  # PG-5 and ARE caught here — which is precisely the layering the report argues for, and
+  # could not be observed while PG-9 silently scanned nothing (finding CI-2).
+  '''Xq9rT2vLbN8sWd41''',
+  # PG-4's own public AKIA example set, declared at scripts/publish-gate.sh:547.
+  # AKIAIOSFODNN7EXAMPLE is AWS's published documentation key. The gate's config stays in
+  # scope for every other check; this is the narrow self-match it cannot avoid, since the
+  # allowlist has to contain the literals it allows.
+  '''AKIA1234567890ABCDEF''',
+  '''AKIAIOSFODNN7EXAMPLE''',
 ]
 
 # .env.example files are placeholder-only by convention — exempt the whole file class

@@ -3,6 +3,8 @@ import type { JSX } from 'react';
 import { Link } from 'react-router-dom';
 import type { Inventory, ServiceManifest } from '@/types';
 import { api } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
+import { LoadError } from '@/components/LoadError';
 import { deriveServiceCatalog, type ServiceSummary } from '@/lib/catalog';
 import { useActiveProjectId, useProject } from '@/lib/ProjectContext';
 import { useCurrentUser } from '@/lib/session';
@@ -55,6 +57,8 @@ export function ServiceCatalog(): JSX.Element {
   // could not be asked before: of 156 browsable services, which ones are mine?
   const [teamOnly, setTeamOnly] = useState(false);
   const [withResourcesOnly, setWithResourcesOnly] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const projectId = useActiveProjectId();
   // The active project's CLOUD provider (0039 S1 lane L) — an absent field
   // means aws, the same wire convention every provider-aware seam reads (see
@@ -69,16 +73,26 @@ export function ServiceCatalog(): JSX.Element {
     // previous project's catalog on screen while the new fetch is in flight.
     setManifests(null);
     setInventory(null);
-    void api.listManifests().then((m) => {
-      if (alive) setManifests(m);
-    });
-    void api.getInventory().then((inv) => {
-      if (alive) setInventory(inv);
+    setLoadError(null);
+    // FE-2/UI-1: both calls throw in api mode, and `manifests === null` is the
+    // LOADING sentinel — so a rejected fetch left "Loading services…" on the
+    // catalog for ever. Fetched together rather than as two independent `.then`s:
+    // a half-loaded catalog (services with no inventory) renders wrong counts,
+    // which is worse than saying plainly that it could not load.
+    void attempt(() => Promise.all([api.listManifests(), api.getInventory()])).then((outcome) => {
+      if (!alive) return;
+      if (!outcome.ok) {
+        setLoadError(outcome.reason);
+        return;
+      }
+      const [m, inv] = outcome.value;
+      setManifests(m);
+      setInventory(inv);
     });
     return () => {
       alive = false;
     };
-  }, [projectId]);
+  }, [projectId, reloadToken]);
 
   const groups = useMemo(
     () => deriveServiceCatalog(manifests ?? [], inventory ?? undefined, provider),
@@ -256,7 +270,13 @@ export function ServiceCatalog(): JSX.Element {
         {hasResults && <CategoryNav items={navItems} />}
       </div>
 
-      {manifests === null ? (
+      {loadError !== null ? (
+        <LoadError
+          message={loadError}
+          what="the service catalog"
+          onRetry={() => setReloadToken((n) => n + 1)}
+        />
+      ) : manifests === null ? (
         <p className="catalog__empty">Loading services…</p>
       ) : manifests.length === 0 ? (
         <p className="catalog__empty">This account’s data hasn’t been loaded yet.</p>

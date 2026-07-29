@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { execCapture } from './exec';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
@@ -9,6 +9,7 @@ import type { ConfigStore, TransactWrite } from '../store/configStore';
 import type { DriftProposalItem } from '../store/schema';
 import { DRIFT_PROPOSAL_SK_PREFIX, driftProposalKey } from '../store/schema';
 import { record, transactWithAudit } from './audit';
+import { resolveLaneRemote, type LaneProject, type LaneRemoteSource } from './laneRepo';
 import type { DriftFinding, DriftVerdict } from './drift';
 import { isSecurityPosture, parseStoredEnvelope, readDriftReport } from './drift';
 import { nowIso } from '../clock';
@@ -731,8 +732,12 @@ export function driftProposalsArmed(env: Env = process.env): boolean {
 }
 
 export interface DriftGenConfig {
-  /** Pushable/clonable checkout URL — shared with the bundle (CCP_GIT_REMOTE). */
+  /** Clonable checkout URL — the acting project's own repo, else CCP_GIT_REMOTE. */
   remote: string;
+  /** Where {@link remote} came from (ARCH-2) — recorded in the run's evidence. */
+  remoteSource: LaneRemoteSource;
+  /** Human-readable form of the same, for the audit payload. */
+  remoteDetail: string;
   /** Branch to check out — shared with the bundle; default 'main'. */
   branch: string;
   /** Operator command: runs `catalogctl drift-propose` inside $DRIFT_CHECKOUT,
@@ -740,12 +745,39 @@ export interface DriftGenConfig {
   genCmd: string;
 }
 
-export function driftGenConfig(env: Env = process.env): DriftGenConfig | null {
-  if (!driftProposalsArmed(env)) return null;
-  const remote = env.CCP_GIT_REMOTE;
-  const genCmd = env.CCP_DRIFT_GEN_CMD;
-  if (!remote || !genCmd) return null;
-  return { remote, branch: env.CCP_GIT_BRANCH || 'main', genCmd };
+/**
+ * ARCH-2: the checkout is the ACTING project's repository when it registers one, and
+ * the deployment-global `CCP_GIT_REMOTE` only as the single-estate fallback. Generating
+ * estate B's fix proposals from a clone of estate A's Terraform is the same defect as the
+ * bundle's, with the same cause — one global remote in a multi-account product.
+ * `project` is optional so the legacy call shape still type-checks; both routes pass it.
+ */
+/**
+ * Is generation armed AT ALL — flag plus the operator command, from the environment
+ * alone? The bundle's `bundleArmed` twin, for the same reason: "never armed" and
+ * "armed but no repository resolves for YOUR estate" are different operator problems,
+ * and only the first can be answered without reading the registry.
+ */
+export function driftGenArmed(env: Env = process.env): boolean {
+  return driftProposalsArmed(env) && !!env.CCP_DRIFT_GEN_CMD;
+}
+
+export function driftGenConfig(
+  env: Env = process.env,
+  project?: LaneProject,
+  extraHosts: readonly string[] = [],
+): DriftGenConfig | null {
+  if (!driftGenArmed(env)) return null;
+  const genCmd = env.CCP_DRIFT_GEN_CMD!;
+  const remote = resolveLaneRemote(project, env, extraHosts);
+  if (!remote.ok) return null;
+  return {
+    remote: remote.remote,
+    remoteSource: remote.source,
+    remoteDetail: remote.detail,
+    branch: env.CCP_GIT_BRANCH || 'main',
+    genCmd,
+  };
 }
 
 export interface DriftGenStepResult {
@@ -758,11 +790,14 @@ export interface DriftGenStepResult {
  * use fakes and a local fixture checkout, no network. */
 export interface DriftGenSteps {
   /** Clone the branch into a scratch dir (mirrors the bundle's `prepare()`). */
-  prepare(): { dir: string } | { error: string };
+  prepare(): { dir: string } | { error: string } | Promise<{ dir: string } | { error: string }>;
   /** Run the operator's CCP_DRIFT_GEN_CMD with env DRIFT_CHECKOUT=dir,
    * DRIFT_ENVELOPE=envelopePath, DRIFT_OUT=<a path this picks>; ok ⇒ the
    * `proposals.json` TEXT read back from DRIFT_OUT. */
-  generate(dir: string, envelopePath: string): DriftGenStepResult & { out?: string };
+  generate(
+    dir: string,
+    envelopePath: string,
+  ): (DriftGenStepResult & { out?: string }) | Promise<DriftGenStepResult & { out?: string }>;
   cleanup(dir: string): void;
 }
 
@@ -780,13 +815,16 @@ export interface DriftGenRunOutcome {
  * {@link ProposalsDocSchema} — a malformed/non-JSON generator output is a
  * refusal, never a crash.
  */
-export function runDriftGen(steps: DriftGenSteps, envelopeText: string): DriftGenRunOutcome {
-  const prep = steps.prepare();
+export async function runDriftGen(
+  steps: DriftGenSteps,
+  envelopeText: string,
+): Promise<DriftGenRunOutcome> {
+  const prep = await steps.prepare();
   if ('error' in prep) return { ok: false, detail: prep.error };
   try {
     const envPath = join(prep.dir, '.drift-envelope.json');
     writeFileSync(envPath, envelopeText, 'utf8');
-    const gen = steps.generate(prep.dir, envPath);
+    const gen = await steps.generate(prep.dir, envPath);
     if (!gen.ok || gen.out === undefined) return { ok: false, detail: gen.detail || 'generator produced no output' };
     let parsedJson: unknown;
     try {
@@ -798,7 +836,7 @@ export function runDriftGen(steps: DriftGenSteps, envelopeText: string): DriftGe
     if (!parsed.success) return { ok: false, detail: 'generator output does not match the ccp.drift-proposals/v1 shape' };
     return { ok: true, detail: gen.detail || 'generated', doc: parsed.data };
   } finally {
-    steps.cleanup(prep.dir);
+    await steps.cleanup(prep.dir);
   }
 }
 
@@ -807,30 +845,31 @@ export function runDriftGen(steps: DriftGenSteps, envelopeText: string): DriftGe
 const tail = (s: string, n = 400): string => (s.length > n ? `…${s.slice(-n)}` : s);
 
 /** Production steps: a shallow git clone + the operator's shell command. */
-export function realDriftGenSteps(cfg: DriftGenConfig): DriftGenSteps {
+export function realDriftGenSteps(
+  cfg: Pick<DriftGenConfig, 'remote' | 'branch' | 'genCmd'>,
+): DriftGenSteps {
   return {
-    prepare() {
+    async prepare() {
       const dir = mkdtempSync(join(tmpdir(), 'ccp-driftgen-'));
-      const clone = spawnSync('git', ['clone', '--depth', '1', '--branch', cfg.branch, cfg.remote, dir], { encoding: 'utf8', timeout: 5 * 60_000 });
+      const clone = await execCapture('git', ['clone', '--depth', '1', '--branch', cfg.branch, cfg.remote, dir], { timeoutMs: 5 * 60_000 });
       if (clone.status !== 0) {
         rmSync(dir, { recursive: true, force: true });
-        return { error: `clone failed: ${tail(`${clone.stdout ?? ''}${clone.stderr ?? ''}`.trim())}` };
+        return { error: `clone failed: ${tail(clone.out.trim())}` };
       }
       return { dir };
     },
-    generate(dir, envelopePath) {
+    async generate(dir, envelopePath) {
       // A SIBLING of the scratch checkout (never inside it — keeps a stray
       // untracked file out of $DRIFT_CHECKOUT's git tree), cleaned up here
       // regardless of outcome; `cleanup(dir)` only removes `dir` itself.
       const out = `${dir}-out.json`;
       try {
-        const r = spawnSync('bash', ['-lc', cfg.genCmd], {
+        const r = await execCapture('bash', ['-lc', cfg.genCmd], {
           cwd: dir,
           env: { ...process.env, DRIFT_CHECKOUT: dir, DRIFT_ENVELOPE: envelopePath, DRIFT_OUT: out },
-          encoding: 'utf8',
-          timeout: 10 * 60_000,
+          timeoutMs: 10 * 60_000,
         });
-        const detail = tail(`${r.stdout ?? ''}${r.stderr ?? ''}`.trim());
+        const detail = tail(r.out.trim());
         if (r.status !== 0) return { ok: false, detail: detail || `generator exited ${r.status}` };
         try {
           return { ok: true, detail: detail || 'generator green', out: readFileSync(out, 'utf8') };
@@ -892,7 +931,7 @@ export async function generateDriftProposalsOnce(deps: DriftGenDeps, projectId: 
       await auditGenFailure(store, projectId, reportVersion, detail);
       return { ok: false, detail };
     }
-    const outcome = runDriftGen(steps, rawText);
+    const outcome = await runDriftGen(steps, rawText);
     if (!outcome.ok || !outcome.doc) {
       await auditGenFailure(store, projectId, reportVersion, outcome.detail);
       return { ok: false, detail: outcome.detail };

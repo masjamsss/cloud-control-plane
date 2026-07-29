@@ -19,6 +19,7 @@ import { writeDriftProposalBody } from '../src/domain/driftProposals';
 import type { DriftProposalDoc } from '../src/domain/driftProposals';
 import { bundleRequestPayload } from '../src/routes/requests';
 import { seed, seedAccount, sessionCookieFor } from './helpers/seed';
+import { skipUnless } from './helpers/requireToolchain';
 
 /**
  * F1(d) — the cross-layer seam proof (plan §2-F1, "the F1 failure mode
@@ -128,7 +129,7 @@ if (!seamFixturesPresent) {
   console.warn(`[driftBundleSeam layer 1] SKIPPING: ${SEAM_FIXTURE_DIR} does not exist yet (Lane A's A2) — the always-on layer-1 contract until then is eligibility-cases.json.`);
 }
 
-describe.skipIf(!seamFixturesPresent)('F1(d) layer 1 — bundleRequestPayload canonical-JSON parity with tools/catalogctl/testdata/driftpropose/seam/*.json', () => {
+describe.skipIf(skipUnless('the driftpropose seam fixtures', seamFixturesPresent, 'restore tools/catalogctl/testdata/driftpropose/seam/*.json'))('F1(d) layer 1 — bundleRequestPayload canonical-JSON parity with tools/catalogctl/testdata/driftpropose/seam/*.json', () => {
   for (const file of seamFixtureFiles) {
     it(`${file} — bundleRequestPayload(reconstructed) === the fixture, byte-for-byte`, () => {
       const fixture = JSON.parse(readFileSync(join(SEAM_FIXTURE_DIR, file), 'utf8')) as SeamFixtureRequest;
@@ -171,7 +172,7 @@ if (!l29FixturesPresent) {
   );
 }
 
-describe.skipIf(!l29FixturesPresent)('L29/L32 — bundleRequestPayload canonical-JSON parity with the restore/legitimize seam fixtures', () => {
+describe.skipIf(skipUnless('the L29/L32 restore/legitimize seam fixtures', l29FixturesPresent, 'restore the seam fixtures under tools/catalogctl/testdata'))('L29/L32 — bundleRequestPayload canonical-JSON parity with the restore/legitimize seam fixtures', () => {
   for (const file of l29FixtureFiles) {
     it(`${file} — bundleRequestPayload(reconstructed) === the fixture, byte-for-byte`, () => {
       const fixture = JSON.parse(readFileSync(join(SEAM_FIXTURE_DIR, file), 'utf8')) as SeamFixtureRequest;
@@ -692,7 +693,7 @@ async function submitAndApproveImport(s: Setup, digest: string, l2Cookie: string
   return req.id;
 }
 
-const ENV_KEYS = ['CCP_DRIFT', 'CCP_DRIFT_IMPORT', 'CCP_BUNDLE', 'CCP_GIT_REMOTE', 'CCP_GIT_BRANCH', 'CCP_BUNDLE_GATE_CMD', 'CCP_BUNDLE_TRIGGER_CMD'] as const;
+const ENV_KEYS = ['CCP_DRIFT', 'CCP_DRIFT_IMPORT', 'CCP_BUNDLE', 'CCP_GIT_REMOTE', 'CCP_GIT_PROJECT', 'CCP_GIT_BRANCH', 'CCP_BUNDLE_GATE_CMD', 'CCP_BUNDLE_TRIGGER_CMD'] as const;
 const saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -733,6 +734,12 @@ describe.runIf(goAvailable)('F1(d) layer 2 — real submit -> real approve -> re
     Object.assign(process.env, {
       CCP_BUNDLE: '1',
       CCP_GIT_REMOTE: bare,
+      // ARCH-2: name the estate this deployment-global remote belongs to. `acme`
+      // registers github.com/acme-co/terraform-acme (a scanner reference), and without
+      // the pin the lane would correctly resolve THAT instead of this local fixture —
+      // which is the fix working, not a fault. The pin is what a real single-estate
+      // deployment sets when its push remote is not the registered clone URL.
+      CCP_GIT_PROJECT: 'acme',
       CCP_BUNDLE_GATE_CMD: `"${catalogctlBin}" drift-edit --request "$BUNDLE_REQUEST" --repo "$BUNDLE_CHECKOUT" --root environments/prod && "${catalogctlBin}" plan-check --plan "${planPath}" --request "$BUNDLE_REQUEST"`,
       CCP_BUNDLE_TRIGGER_CMD: 'true',
     });
@@ -770,6 +777,12 @@ describe.runIf(goAvailable)('F1(d) layer 2 — real submit -> real approve -> re
     Object.assign(process.env, {
       CCP_BUNDLE: '1',
       CCP_GIT_REMOTE: bare,
+      // ARCH-2: name the estate this deployment-global remote belongs to. `acme`
+      // registers github.com/acme-co/terraform-acme (a scanner reference), and without
+      // the pin the lane would correctly resolve THAT instead of this local fixture —
+      // which is the fix working, not a fault. The pin is what a real single-estate
+      // deployment sets when its push remote is not the registered clone URL.
+      CCP_GIT_PROJECT: 'acme',
       CCP_BUNDLE_GATE_CMD: `"${catalogctlBin}" drift-edit --request "$BUNDLE_REQUEST" --repo "$BUNDLE_CHECKOUT" --root environments/prod && "${catalogctlBin}" plan-check --plan "${planPath}" --request "$BUNDLE_REQUEST"`,
       CCP_BUNDLE_TRIGGER_CMD: 'true',
     });
@@ -810,6 +823,12 @@ describe.runIf(goAvailable)('F1(d) layer 2 — real submit -> real approve -> re
     Object.assign(process.env, {
       CCP_BUNDLE: '1',
       CCP_GIT_REMOTE: bare,
+      // ARCH-2: name the estate this deployment-global remote belongs to. `acme`
+      // registers github.com/acme-co/terraform-acme (a scanner reference), and without
+      // the pin the lane would correctly resolve THAT instead of this local fixture —
+      // which is the fix working, not a fault. The pin is what a real single-estate
+      // deployment sets when its push remote is not the registered clone URL.
+      CCP_GIT_PROJECT: 'acme',
       CCP_BUNDLE_GATE_CMD: `"${catalogctlBin}" drift-edit --request "$BUNDLE_REQUEST" --repo "$BUNDLE_CHECKOUT" --root environments/prod && "${catalogctlBin}" plan-check --plan "${planPath}" --request "$BUNDLE_REQUEST"`,
       CCP_BUNDLE_TRIGGER_CMD: 'true',
     });
@@ -851,6 +870,12 @@ describe.runIf(goAvailable)('F1(d) layer 2 — real submit -> real approve -> re
     Object.assign(process.env, {
       CCP_BUNDLE: '1',
       CCP_GIT_REMOTE: bare,
+      // ARCH-2: name the estate this deployment-global remote belongs to. `acme`
+      // registers github.com/acme-co/terraform-acme (a scanner reference), and without
+      // the pin the lane would correctly resolve THAT instead of this local fixture —
+      // which is the fix working, not a fault. The pin is what a real single-estate
+      // deployment sets when its push remote is not the registered clone URL.
+      CCP_GIT_PROJECT: 'acme',
       CCP_BUNDLE_GATE_CMD: `"${catalogctlBin}" drift-edit --request "$BUNDLE_REQUEST" --repo "$BUNDLE_CHECKOUT" --root environments/prod && "${catalogctlBin}" plan-check --plan "${planPath}" --request "$BUNDLE_REQUEST"`,
       CCP_BUNDLE_TRIGGER_CMD: 'true',
     });
@@ -897,6 +922,12 @@ describe.runIf(goAvailable)('F1(d) layer 2 — real submit -> real approve -> re
     Object.assign(process.env, {
       CCP_BUNDLE: '1',
       CCP_GIT_REMOTE: bare,
+      // ARCH-2: name the estate this deployment-global remote belongs to. `acme`
+      // registers github.com/acme-co/terraform-acme (a scanner reference), and without
+      // the pin the lane would correctly resolve THAT instead of this local fixture —
+      // which is the fix working, not a fault. The pin is what a real single-estate
+      // deployment sets when its push remote is not the registered clone URL.
+      CCP_GIT_PROJECT: 'acme',
       CCP_BUNDLE_GATE_CMD: `"${catalogctlBin}" drift-edit --request "$BUNDLE_REQUEST" --repo "$BUNDLE_CHECKOUT" --root environments/prod && "${catalogctlBin}" plan-check --plan "${planPath}" --request "$BUNDLE_REQUEST"`,
       CCP_BUNDLE_TRIGGER_CMD: 'true',
     });

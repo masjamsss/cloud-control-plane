@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { JSX } from 'react';
 import { api } from '@/lib/api';
 import { isApiMode } from '@/lib/apiSession';
+import { attempt } from '@/lib/asyncGuard';
 import {
   noCapabilities,
   type ServerCapabilities,
@@ -56,6 +57,21 @@ export const INITIAL_SERVER_INFO_STATE: ServerInfoState = {
 };
 
 /**
+ * Where an UNANSWERED `serverInfo()` lands (FE-1/FE-2).
+ *
+ * Capabilities already fail closed, so the posture on failure is the same as the
+ * posture while loading — but `loading` must still CLEAR. A rejected call used to leave
+ * `loading: true` for the lifetime of the tab: every gated control sat permanently in
+ * its advisory stand-in, and because that is indistinguishable from "still resolving"
+ * nothing anywhere said why. Clearing the flag makes the state honest — we asked, we did
+ * not get an answer, and no flow is served — rather than eternally pending.
+ */
+export const UNRESOLVED_SERVER_INFO_STATE: ServerInfoState = {
+  capabilities: noCapabilities(),
+  loading: false,
+};
+
+/**
  * Pure: how a resolved {@link ServerInfo} maps onto hook state. Split out from
  * {@link useServerInfo} so the resolution logic is unit-testable without
  * mounting a component — this repo's vitest runs in plain Node (no jsdom/
@@ -86,8 +102,9 @@ export function useServerInfo(): UseServerInfoResult {
   const [state, setState] = useState<ServerInfoState>(INITIAL_SERVER_INFO_STATE);
   useEffect(() => {
     let alive = true;
-    void api.serverInfo().then((info) => {
-      if (alive) setState(serverInfoToState(info));
+    void attempt(() => api.serverInfo()).then((outcome) => {
+      if (!alive) return;
+      setState(outcome.ok ? serverInfoToState(outcome.value) : UNRESOLVED_SERVER_INFO_STATE);
     });
     return () => {
       alive = false;

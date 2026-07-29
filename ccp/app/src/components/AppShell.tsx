@@ -1,8 +1,10 @@
 import { Suspense, useEffect, useState } from 'react';
 import type { JSX } from 'react';
 import { NavLink, Outlet, useMatches } from 'react-router-dom';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useCurrentUser } from '@/lib/session';
+import { useActiveProjectId } from '@/lib/ProjectContext';
+import { projectScopedPath } from '@/lib/legacyRoute';
+import { OverflowNav, PrimaryNav, shellNavItems } from '@/components/ShellNav';
 import { useSettings } from '@/lib/settings';
 import { Notifications } from '@/components/Notifications';
 import { AccountMenu } from '@/components/AccountMenu';
@@ -11,12 +13,6 @@ import { CommandPalette } from '@/components/CommandPalette';
 import { ProjectSwitcher } from '@/features/projects/ProjectSwitcher';
 import { useInstanceIdentity } from '@/lib/instanceIdentity';
 import './AppShell.css';
-
-interface NavItem {
-  to: string;
-  label: string;
-  end?: boolean;
-}
 
 interface RouteHandle {
   title?: string;
@@ -56,6 +52,10 @@ export function AppShell(): JSX.Element {
   const settings = useSettings();
   const frozen = settings.changeFreeze;
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // UI-3: every nav target below is rendered PROJECT-SCOPED. Unscoped `to`
+  // values made `isActive` structurally impossible and sent each click
+  // through a full unmount → LegacyRedirect → remount cycle.
+  const projectId = useActiveProjectId();
 
   // Cmd/Ctrl+K opens the command palette.
   useEffect(() => {
@@ -68,21 +68,7 @@ export function AppShell(): JSX.Element {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, []);
-  const canApprove = user.role === 'approver' || user.role === 'lead';
-  const isLead = user.role === 'lead';
-
-  const nav: NavItem[] = [
-    { to: '/', label: 'Home', end: true },
-    { to: '/requests', label: 'My requests' },
-    // Every role — presence is honesty; the drift page itself projects
-    // detail by role, so it is never hidden from the nav like Approvals/
-    // Dashboard below.
-    { to: '/drift', label: 'Drift' },
-    ...(canApprove ? [{ to: '/approvals', label: 'Approvals' }] : []),
-    ...(isLead ? [{ to: '/dashboard', label: 'Dashboard' }] : []),
-    // Admin is a governance capability, not the Lead role.
-    ...(user.isAdmin ? [{ to: '/admin', label: 'Admin' }] : []),
-  ];
+  const nav = shellNavItems(user);
 
   return (
     <div className="shell">
@@ -90,7 +76,12 @@ export function AppShell(): JSX.Element {
         Skip to main content
       </a>
       <header className="shell__bar">
-        <NavLink to="/" end className="shell__brand" aria-label={`${identity.name} home`}>
+        <NavLink
+          to={projectScopedPath(projectId, '/')}
+          end
+          className="shell__brand"
+          aria-label={`${identity.name} home`}
+        >
           <span className="shell__mark" aria-hidden="true">◆</span>
           {/* F-08: below ~480px the wordmark is hidden (CSS) so the shell
               stops scrolling sideways — the ◆ mark alone still carries the
@@ -101,46 +92,13 @@ export function AppShell(): JSX.Element {
 
         <ProjectSwitcher />
 
-        <nav className="shell__nav" aria-label="Primary">
-          {nav.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) =>
-                isActive ? 'shell__link shell__link--active' : 'shell__link'
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
+        <PrimaryNav items={nav} projectId={projectId} />
 
-        {/* Overflow nav (Task: mobile nav is otherwise unreachable) — same
-            role-gated `nav` array as .shell__nav above, rendered as a Radix
-            dropdown. CSS-only visibility: hidden above the breakpoint where
-            .shell__nav hides, shown below it, so there is never a gap or a
-            double nav. NavLink's className stays a plain string here (not the
-            isActive-callback form used above) so Radix's asChild/Slot prop
-            merge — which only knows how to combine string classNames — stays
-            safe; the current route is still indicated via NavLink's own
-            `aria-current="page"`, targeted in CSS. */}
-        <DropdownMenu.Root>
-          <DropdownMenu.Trigger className="shell__nav-toggle" aria-label="Open navigation menu">
-            <span aria-hidden="true">☰</span>
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content className="shell__navmenu" align="start" sideOffset={8}>
-              {nav.map((item) => (
-                <DropdownMenu.Item key={item.to} asChild>
-                  <NavLink to={item.to} end={item.end} className="shell__navmenu-item">
-                    {item.label}
-                  </NavLink>
-                </DropdownMenu.Item>
-              ))}
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
+        {/* Overflow nav (Task: mobile nav is otherwise unreachable) — the SAME
+            role-gated `nav` array, rendered as a Radix dropdown. CSS-only
+            visibility: hidden above the breakpoint where .shell__nav hides,
+            shown below it, so there is never a gap or a double nav. */}
+        <OverflowNav items={nav} projectId={projectId} />
 
         <button
           type="button"
@@ -181,7 +139,10 @@ export function AppShell(): JSX.Element {
             lifted.
           </span>
           {user.isAdmin && (
-            <NavLink to="/admin/settings" className="shell__freeze-link">
+            <NavLink
+              to={projectScopedPath(projectId, '/admin/settings')}
+              className="shell__freeze-link"
+            >
               Manage in Settings →
             </NavLink>
           )}

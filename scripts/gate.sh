@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
 # Local pre-push gate — mirrors the GitHub Actions workflows (catalogctl,
-# ccp-api, ccp-app, terraform) so a failing check is caught in seconds
+# ccp-api, ccp-app, importer, terraform) so a failing check is caught in seconds
 # LOCALLY instead of minutes of Actions time (and a red PR).
 #
 # Usage:
-#   scripts/gate.sh              # fast gates: go + api + app + tf-fmt  (default)
+#   scripts/gate.sh              # fast gates: go + api + app + py + tf-fmt  (default)
 #   scripts/gate.sh all          # same as default
 #   scripts/gate.sh full         # + terraform validate + checkov/tflint
 #                                #   + the ccp install smoke (run-local.sh --smoke) if Node >= 22
-#   scripts/gate.sh go|api|app|tf|smoke # run just one section
+#   scripts/gate.sh go|api|app|py|tf|smoke # run just one section
 #
 # Exit code is non-zero if ANY selected gate fails — so it composes:
 #   scripts/gate.sh && git push
@@ -74,6 +74,30 @@ gate_app() {
     step "lint/format SKIPPED — local Node $nmaj != CI Node 20 (eslint/prettier unreliable here)"
     SUMMARY+=$'\n'"  \033[33m~ SKIP\033[0m  ccp-app: lint/format (Node $nmaj!=20 — CI authoritative)"
   fi
+}
+
+# TEST-2 / CI-1 / IMP-3 — the Python suites. `importer.yml` runs these in GitHub CI;
+# this is the LOCAL half of the same gap. Three suites existed (importer/kit 106 tests,
+# importer/kit-azure 48, ccp/app/scripts 30) and NOTHING executed them: no workflow, no
+# GitLab job, and not this script — which ran only go, the two npm suites, and terraform.
+# Two shipped regressions are what that gap cost.
+#
+# `python-hcl2` is required, not optional: SKIPPING when it is absent would reproduce the
+# exact defect this closes — a suite that runs nowhere, reported as fine. The pin is read
+# from gen-project-data.sh rather than copied, the same rule importer.yml follows.
+gate_py() {
+  section "python suites (importer kits + app scripts)"
+  ( set -e
+    have python3 || { echo "python3 not found — install it; a skipped suite is how these rotted"; exit 1; }
+    python3 -c 'import hcl2, pytest' 2>/dev/null || {
+      hcl2="$(grep -E '^PIN_PYTHON_HCL2=' scripts/gen-project-data.sh | cut -d'"' -f2)"
+      echo "missing deps — install with: pip install \"python-hcl2==${hcl2}\" pytest"
+      exit 1
+    }
+    for d in importer/kit importer/kit-azure ccp/app/scripts; do
+      step "pytest $d" && ( cd "$d" && python3 -m pytest -q )
+    done
+  ); record "python: importer/kit + kit-azure + app scripts" $?
 }
 
 gate_smoke() {
@@ -144,9 +168,10 @@ case "$MODE" in
   go)  gate_go ;;
   api) gate_api ;;
   app) gate_app ;;
+  py)  gate_py ;;
   tf)  gate_tf ;;
   smoke) gate_smoke ;;
-  all|full) gate_go; gate_api; gate_app; gate_tf; [ "$MODE" = "full" ] && gate_smoke ;;
+  all|full) gate_go; gate_api; gate_app; gate_py; gate_tf; [ "$MODE" = "full" ] && gate_smoke ;;
   *) echo "unknown mode: $MODE (use: all|full|go|api|app|tf|smoke)"; exit 2 ;;
 esac
 

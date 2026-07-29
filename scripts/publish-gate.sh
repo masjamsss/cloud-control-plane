@@ -776,10 +776,27 @@ check_pg9() {
   done
 
   local report; report="$(mktemp)"
+  local glout; glout="$(mktemp)"
   local cfg_args=()
   [[ -f "$GITLEAKS_CONFIG" ]] && cfg_args=(--config "$GITLEAKS_CONFIG")
+  local gl_status=0
   gitleaks dir "$stage" "${cfg_args[@]}" --report-format json --report-path "$report" \
-    --exit-code 0 --no-banner >/dev/null 2>&1
+    --exit-code 0 --no-banner >"$glout" 2>&1 || gl_status=$?
+
+  # `--exit-code 0` makes findings NOT change the exit status, so a non-zero status here
+  # can only mean the invocation itself failed — an unknown subcommand, an unreadable
+  # config, a crash. That must be loud. It was silent until now: the output was discarded
+  # and the status never read, so a gitleaks that could not run left an empty report,
+  # counted zero findings, and recorded PASS. The pinned v8.18.4 has no `dir` subcommand
+  # (it arrived in v8.19.0), so PG-9 reported PASS in CI while scanning nothing at all.
+  # A check that cannot run must never be indistinguishable from a check that found nothing.
+  if ((gl_status != 0)); then
+    echo "publish-gate.sh: ERROR — gitleaks could not run (exit $gl_status); PG-9 proves nothing." >&2
+    sed 's/^/  gitleaks: /' "$glout" >&2
+    rm -rf -- "$stage" "$report" "$glout"
+    record "PG-9" "FAIL" 1 "gitleaks invocation failed (exit $gl_status) — see stderr" ""
+    return
+  fi
 
   local count=0 example=""
   if command -v jq >/dev/null 2>&1 && [[ -s "$report" ]]; then
@@ -791,7 +808,7 @@ check_pg9() {
       example="${example#"$stage"/}"
     fi
   fi
-  rm -rf -- "$stage" "$report"
+  rm -rf -- "$stage" "$report" "$glout"
 
   record "PG-9" "$([[ $count -gt 0 ]] && echo FAIL || echo PASS)" "$count" \
     "gitleaks findings (.gitleaks.toml)" "$example"

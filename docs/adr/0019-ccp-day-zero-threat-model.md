@@ -4,11 +4,11 @@
 the build via the named contract tests below)
 **Date:** 2026-07-22
 **Deciders:** repo owner
-**Design:** [spec 2026-07-21](../superpowers/specs/2026-07-21-ccp-bootstrap-lifecycle.md)
+**Design:** spec 2026-07-21 (`docs/superpowers/specs/2026-07-21-ccp-bootstrap-lifecycle.md`, private planning archive — not published)
 §4 (proof), §3.5 (seal), §14 (assert-and-test list) · **Companions:**
 [ADR-0017](0017-ccp-bootstrap-lifecycle.md) (the lifecycle) ·
 [ADR-0018](0018-ccp-founding-quorum.md) (the quorum that ends the window) ·
-**Prior evidence:** [proposal 0021](../proposals/0021-second-approver-enablement.md) §0
+**Prior evidence:** proposal 0021 (`docs/proposals/0021-second-approver-enablement.md`, private planning archive — not published) §0
 (steady-state SoD verification; the ADV-3 residual this ADR inherits knowingly).
 
 ## Context

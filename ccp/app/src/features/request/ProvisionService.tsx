@@ -3,6 +3,7 @@ import type { JSX } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Inventory, ManifestOperation, ServiceManifest } from '@/types';
 import { api } from '@/lib/api';
+import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId, useProject } from '@/lib/ProjectContext';
 import { getCurrentUser } from '@/lib/session';
 import { buildRequestDraft, validateParams } from '@/lib/interpreter';
@@ -25,6 +26,8 @@ import { RiskBadge } from '@/components/ui/RiskBadge';
 import { AccessBadge } from '@/components/ui/AccessBadge';
 import { MacdTag } from '@/components/ui/MacdTag';
 import { ErrorSummary, type ErrorSummaryItem } from './ErrorSummary';
+import { LoadError } from '@/components/LoadError';
+import { submitRequestVia } from './submitFlow';
 import './request.css';
 
 const MIN_JUSTIFICATION = 10;
@@ -139,17 +142,29 @@ export function ProvisionService(): JSX.Element {
   const [submitting, setSubmitting] = useState(false);
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
   const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const errorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let alive = true;
     setLoaded(false);
-    void Promise.all([
-      loadProviderIndex(provider),
-      service ? loadServiceChunk(provider, service) : Promise.resolve(null),
-      api.listManifests(),
-    ]).then(([idx, ch, m]) => {
+    setLoadError(null);
+    // FE-2/UI-1: the provider index/chunk fetches reject on any transport
+    // failure, which used to hang this form on "Loading…" for ever.
+    void attempt(() =>
+      Promise.all([
+        loadProviderIndex(provider),
+        service ? loadServiceChunk(provider, service) : Promise.resolve(null),
+        api.listManifests(),
+      ]),
+    ).then((outcome) => {
       if (!alive) return;
+      if (!outcome.ok) {
+        setLoadError(outcome.reason);
+        return;
+      }
+      const [idx, ch, m] = outcome.value;
       setIndex(idx);
       setChunk(ch);
       setManifests(m);
@@ -158,7 +173,7 @@ export function ProvisionService(): JSX.Element {
     return () => {
       alive = false;
     };
-  }, [service, projectId, provider]);
+  }, [service, projectId, provider, reloadToken]);
 
   const entry = useMemo(
     () => index?.services.find((s) => s.slug === service) ?? null,
@@ -196,8 +211,14 @@ export function ProvisionService(): JSX.Element {
   useEffect(() => {
     if (!from || !op) return;
     let alive = true;
-    void api.getRequest(from).then((request) => {
-      if (!alive || !request) return;
+    // FE-1/FE-2: this is OPTIONAL prefill — the form is fully usable without it,
+    // so a failed read leaves the fields blank rather than blocking the screen.
+    // What it must not do is reject unhandled, which is what the bare `.then`
+    // did on every dropped connection.
+    void attempt(() => api.getRequest(from)).then((outcome) => {
+      if (!alive || !outcome.ok) return;
+      const request = outcome.value;
+      if (!request) return;
       if (provisionResourceType(request.operationId) !== op.target.resourceType) return;
       const seed: Record<string, unknown> = {};
       for (const p of op.params) {
@@ -217,6 +238,18 @@ export function ProvisionService(): JSX.Element {
     () => (op ? validateParams(op, values, NO_INVENTORY) : { ok: false, errors: {} }),
     [op, values],
   );
+
+  if (loadError !== null) {
+    return (
+      <div className="rq">
+        <LoadError
+          message={loadError}
+          what="this form"
+          onRetry={() => setReloadToken((n) => n + 1)}
+        />
+      </div>
+    );
+  }
 
   if (!loaded) {
     return (
@@ -307,12 +340,11 @@ export function ProvisionService(): JSX.Element {
     }
     setSubmitting(true);
     const draft = buildRequestDraft(op, '(new)', values, justification, getCurrentUser().id);
-    void api.submitRequest(draft).then((result) => {
-      if (result.ok) navigate(`/requests/${result.request.id}`);
-      else {
-        setSubmitting(false);
-        setBlockedReason(result.reason);
-      }
+    // Never rejects (FE-1) — see features/request/submitFlow.ts.
+    void submitRequestVia(api, (path) => navigate(path), draft).then((result) => {
+      if (result.ok) return; // already navigated
+      setSubmitting(false);
+      setBlockedReason(result.reason);
     });
   };
 

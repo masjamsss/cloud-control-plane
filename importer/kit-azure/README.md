@@ -5,7 +5,7 @@ imported Terraform code → ready for Cloud Control Plane onboarding. It is the 
 sibling of [`importer/kit`](../../importer/kit/README.md) and ports it file-for-file; the
 two kits are intended to read as siblings. It provides the automated, pinned tooling for the
 "draft the import" step of the per-subscription ceremony in
-[docs/runbooks/azure-subscription-import.md](../../docs/runbooks/azure-subscription-import.md)
+`docs/runbooks/azure-subscription-import.md` (not written)
 (Stage 3). Direction + rationale: [ADR-0015](../../docs/adr/0015-ccp-azure-second-provider.md)
 and the Azure second-provider concept (internal design doc, not published).
 
@@ -38,10 +38,10 @@ the Azure second-provider concept (internal design doc)). This kit is the
 read-only **exporter**: the automated, pinned tooling for the step the import runbook still
 describes as manual — *"`aztfexport` … the scope … and the flag that emits native `import {}`
 blocks … is not pinned in this repo"*
-([azure-subscription-import.md](../../docs/runbooks/azure-subscription-import.md) Stage 3). It
-**complements, does not duplicate**, the committed Azure bootstrap
-([`importer/bootstrap-azure/`](../../importer/bootstrap-azure/README.md): state backend + federated
-CI identities) and the control-plane capability data
+(`docs/runbooks/azure-subscription-import.md` Stage 3 — that runbook is **not written**). It
+**complements, does not duplicate**, the Azure bootstrap described as committed
+(`importer/bootstrap-azure/` — state backend + federated CI identities — which is **not
+present in this repo**) and the control-plane capability data
 ([`catalog/azure-capability-ledger.json`](../../catalog/azure-capability-ledger.json)). Nothing here
 runs against a cloud on its own or changes the AWS estate: discovery is read-only under the built-in
 **Reader** role, and the apply lane is armed last per ADR-0015 — this kit stops at a clean,
@@ -192,7 +192,9 @@ apps) and per-scope children (role assignments, diagnostic settings, subnets) be
 ## Testing
 
 ```bash
-pip install python-hcl2==5.1.1     # the repo-pinned version (terraform.yml); normalize.py only
+pip install python-hcl2==5.1.1     # the repo-pinned version (scripts/gen-project-data.sh
+                                   # PIN_PYTHON_HCL2 — this used to name a CI workflow that
+                                   # was never shipped); normalize.py only
 python3 -m unittest discover -s importer/kit-azure/tests -v
 ```
 
@@ -210,4 +212,4 @@ gate.
 - Capture dirs contain real resource ids → keep them under `work/` (gitignored) or outside the repo.
 - Nothing here applies Terraform. The import apply is a human, PR-reviewed step with the scoped
   Reader + Storage-Blob-Data-Contributor identity; the one intentional apply is the Phase-0
-  bootstrap ([importer/bootstrap-azure/](../bootstrap/README.md)).
+  bootstrap (`importer/bootstrap-azure/` — not present in this repo).

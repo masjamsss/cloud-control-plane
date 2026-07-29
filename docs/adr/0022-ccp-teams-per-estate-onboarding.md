@@ -3,10 +3,10 @@
 **Status:** Accepted — enacted
 **Date:** 2026-07-22
 **Deciders:** repo owner
-**Evidence:** [docs/superpowers/specs/2026-07-21-ccp-data-birth-generic-onboarding.md](../superpowers/specs/2026-07-21-ccp-data-birth-generic-onboarding.md)
+**Evidence:** `docs/superpowers/specs/2026-07-21-ccp-data-birth-generic-onboarding.md` (private planning archive — not published)
 §8; branch `claude/data-birth-generic-onboarding`, `ccp/api/scripts/bootstrap.ts`. Companion
-to [ADR-0020](0020-ccp-data-birth-blank-install.md) and
-[ADR-0021](0021-ccp-control-scope-and-settlement.md) — this ADR is the one place the "remove
+to [ADR-0029](0029-ccp-data-birth-blank-install-public-summary.md) and
+[ADR-0030](0030-ccp-control-scope-and-settlement-public-summary.md) — this ADR is the one place the "remove
 teams" premise floated during data-birth planning is formally evaluated and rejected.
 
 ## Context
@@ -62,7 +62,7 @@ them born **per estate, at onboarding**, rather than assumed to already exist:
   authorization — this is now the documented, intentional shape (this ADR), not an unexamined
   loose end.
 - `requestableServices` (`ccp/app/src/lib/permissions.ts`, no production consumer) is **not**
-  removed by this change — flagged to [proposal 0018](../proposals/0018-enablement-deployment-unresolved.md)
+  removed by this change — flagged to proposal 0018 (`docs/proposals/0018-enablement-deployment-unresolved.md`, private planning archive — not published)
   as a candidate for a future simplify pass, out of scope here.
 
 ## Options considered
@@ -119,4 +119,4 @@ than as a live-reevaluated authorization field would be. Rejected as out of scop
 3. [x] Add "define teams and service ownership" to the onboarding checklist
    ([onboarding-runbook.md](../../ccp/docs/onboarding-runbook.md)).
 4. [ ] Future simplify pass: remove `requestableServices` (no production consumer) — registered
-   in [proposal 0018](../proposals/0018-enablement-deployment-unresolved.md), not required here.
+   in proposal 0018 (`docs/proposals/0018-enablement-deployment-unresolved.md`, private planning archive — not published), not required here.
