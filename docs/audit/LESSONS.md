@@ -798,6 +798,20 @@ nobody runs, a residue "tracked by" a finding nobody reopened, a doc citing a li
 moved. A reference is only evidence if something dereferences it. The check that would have
 caught this is one line: every `fixed:<sha>` must be an ancestor of `HEAD`.
 
+**Postscript, from the run that closed CONC-6/API-5/API-4 — the check worked and its
+summary line lied.** `--amend` is not the only thing that rewrites a commit: cherry-picking
+the work onto a fresh branch does too, and the sha recorded a minute earlier stopped
+resolving. The L-28 error fired exactly as designed. Underneath it, the summary still read
+`32 of 32 fixed:<sha> references verified reachable from HEAD` — because the count was of
+references *dereferenced*, not references that *passed*. The verdict was correct and the
+one line a reader actually scans said the opposite of it.
+
+So: **a check's summary must be derived from its verdict, not from its workload.** Counting
+what you looked at is the natural thing to write and it is the thing that goes wrong,
+because it keeps reporting a comfortable number in precisely the runs that matter. The
+original L-28 lesson was that a reference is only evidence if something dereferences it;
+the postscript is that a *check* is only evidence if its summary can say no.
+
 ### L-29 — A finding written months ago describes code that no longer exists; re-derive the defect before implementing the recommendation
 
 Findings: CONC-6, API-4

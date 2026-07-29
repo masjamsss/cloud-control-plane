@@ -65,8 +65,17 @@ check_fixed_shas() {
   # shallow checkout `checked` is 0 and this check has verified nothing — which must be
   # visible, or "PASS" means "I could not look" (L-1). `findings.yml` therefore checks out
   # full history; anywhere else, a 0 here is the reader's cue.
+  #
+  # The count is `checked - bad`, NOT `checked`, and that correction came from watching
+  # this line lie: a cherry-pick onto a fresh branch rewrote a just-recorded sha, the
+  # ERROR above fired correctly — and this line still read "32 of 32 verified reachable".
+  # A reader scanning output sees the reassuring summary, not the stderr line above it.
+  # A check whose summary contradicts its own verdict is worse than no summary, and this
+  # file exists because of exactly that shape (CI-2).
   if [ "$checked" -eq 0 ] && [ "$seen" -gt 0 ]; then
     echo "findings-gate: NOTE — 0 of $seen fixed:<sha> references could be resolved in this clone (shallow checkout?); their reachability was NOT verified."
+  elif [ "$bad" -gt 0 ]; then
+    echo "findings-gate: $((checked - bad)) of $seen fixed:<sha> references verified reachable from HEAD; $bad DANGLING (see the errors above)."
   else
     echo "findings-gate: $checked of $seen fixed:<sha> references verified reachable from HEAD."
   fi
