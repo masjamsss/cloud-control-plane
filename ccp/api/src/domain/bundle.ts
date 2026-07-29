@@ -244,6 +244,39 @@ export async function runBundle(
   }
 }
 
+/**
+ * ERR-12 — RESUME A LANDED-BUT-UNTRIGGERED RUN AT THE TRIGGER.
+ *
+ * When `commit` succeeded and `trigger` failed, the change is already on the deploy
+ * branch and the only thing missing is the CI gate approval for that sha. Re-running
+ * {@link runBundle} cannot express that: it would re-clone (a clone that now CONTAINS the
+ * landed commit), re-run the gate, find nothing left to change, and fail at `commit` with
+ * "gate left no change?" — technically true and actively misleading, since the operator's
+ * real remediation is "fire the gate approval for sha X".
+ *
+ * So the retry is a different operation, not the same one again. It takes the recorded sha
+ * and does the one step that did not happen. Deliberately NOT re-gating: the gate already
+ * ran, on this exact sha, and passed — that is why the commit exists. Re-gating a landed
+ * commit would either be a no-op or, worse, a second opinion about a plan that has already
+ * been applied to the branch, and a `false` from it would leave the operator with a change
+ * on `main` and a tool refusing to finish it.
+ *
+ * Shaped as a {@link BundleOutcome} so the route's terminal path is the same one every
+ * other outcome takes — the `prepare`/`gate`/`commit` steps are reported as the skips
+ * they are rather than omitted, because an audit reader comparing two runs of the same
+ * request must be able to see WHY the second one has a shorter step log.
+ */
+export async function runTriggerOnly(steps: BundleSteps, sha: string): Promise<BundleOutcome> {
+  const log: BundleOutcome['steps'] = [
+    { step: 'prepare', ok: true, detail: `skipped — ${sha.slice(0, 9)} is already on the deploy branch` },
+    { step: 'gate', ok: true, detail: 'skipped — the gate already passed on this sha; that is why the commit exists' },
+    { step: 'commit', ok: true, detail: `skipped — already landed ${sha.slice(0, 9)}` },
+  ];
+  const trig = await steps.trigger(sha);
+  log.push({ step: 'trigger', ok: trig.ok, detail: trig.detail });
+  return { ok: trig.ok, steps: log, sha };
+}
+
 /* ── real effect implementations ────────────────────────────────────────────── */
 
 const tail = (s: string, n = 400): string => (s.length > n ? `…${s.slice(-n)}` : s);

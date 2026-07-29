@@ -22,7 +22,7 @@ import { isSystemDriftOp } from '../domain/systemOps';
 import { disabledOps, isFrozen, loadPolicy, loadTeams, resolveRisk } from '../domain/config';
 import { checkSubmitRateLimit } from '../middleware/rateLimit';
 import { recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
-import { bundleArmed, bundleClaimLive, bundleConfig, realSteps, runBundle, type BundleOutcome } from '../domain/bundle';
+import { bundleArmed, bundleClaimLive, bundleConfig, realSteps, runBundle, runTriggerOnly, type BundleOutcome } from '../domain/bundle';
 import { resolveLaneRemote, type LaneProject } from '../domain/laneRepo';
 import { resolveKnob } from '../domain/deploymentSettings';
 import { coolingElapsed, settleCooling } from '../domain/cooling';
@@ -1121,6 +1121,11 @@ export function requestRoutes(): Hono<AppEnv> {
     }
     if (req.bundle?.state === 'triggered') return apiError(c, 'STATE_CONFLICT');
 
+    // ERR-12 — a run that landed its commit and failed only at the trigger is RESUMED at
+    // the trigger, never re-run from the top. Captured before the claim overwrites
+    // `req.bundle`, because the sha to fire lives in the state we are about to replace.
+    const resumeSha = req.bundle?.state === 'landed-untriggered' ? req.bundle.sha : undefined;
+
     // Claim (idempotency guard) — CAS on `eventSeq`, which THIS WRITE ADVANCES (ERR-11).
     //
     // It used to guard on `status`, an attribute the claim does not change, so the guard
@@ -1197,11 +1202,13 @@ export function requestRoutes(): Hono<AppEnv> {
     // gets a 502 describing what happened instead of an opaque 500.
     let outcome: BundleOutcome;
     try {
-      outcome = await runBundle(
-        realSteps(cfg),
-        JSON.stringify(bundleRequestPayload(req, projectId)),
-        `ccp: apply request ${req.id} (${req.operationId} on ${req.targetAddress})\n\nApproved in the portal (ADR-0016 bundle); plan gated + digest-pinned.\nRequested-by: ${req.requester}; bundle-run-by: ${account.id}`,
-      );
+      outcome = resumeSha
+        ? await runTriggerOnly(realSteps(cfg), resumeSha)
+        : await runBundle(
+            realSteps(cfg),
+            JSON.stringify(bundleRequestPayload(req, projectId)),
+            `ccp: apply request ${req.id} (${req.operationId} on ${req.targetAddress})\n\nApproved in the portal (ADR-0016 bundle); plan gated + digest-pinned.\nRequested-by: ${req.requester}; bundle-run-by: ${account.id}`,
+          );
     } catch (e) {
       outcome = {
         ok: false,
@@ -1216,11 +1223,26 @@ export function requestRoutes(): Hono<AppEnv> {
     }
 
     const done = nowIso();
-    const bundle = outcome.ok ? { state: 'triggered' as const, sha: outcome.sha, at: done } : { state: 'failed' as const, at: done };
+    // ERR-12 — THE THREE-WAY OUTCOME. A failed run that nevertheless LANDED A COMMIT is
+    // not the same thing as a failed run, and collapsing the two into `failed` is what
+    // made this a dead end: the sha survived only inside the audit `steps`, so the only
+    // record of a change that was already on `main` lived somewhere no retry path reads.
+    // `runBundle` returns `sha` whenever `commit` succeeded, trigger outcome aside, which
+    // is exactly the discriminator.
+    const landedNotTriggered = !outcome.ok && !!outcome.sha;
+    const bundle = outcome.ok
+      ? { state: 'triggered' as const, sha: outcome.sha, at: done }
+      : landedNotTriggered
+        ? { state: 'landed-untriggered' as const, sha: outcome.sha, at: done }
+        : { state: 'failed' as const, at: done };
     const bundleEvent = {
       at: done,
-      type: outcome.ok ? 'bundle-triggered' : 'bundle-failed',
-      label: outcome.ok ? `Apply bundle landed ${outcome.sha?.slice(0, 9)} and satisfied the deploy gate` : `Apply bundle failed at ${outcome.steps.find((s) => !s.ok)?.step ?? '?'}`,
+      type: outcome.ok ? 'bundle-triggered' : landedNotTriggered ? 'bundle-landed-untriggered' : 'bundle-failed',
+      label: outcome.ok
+        ? `Apply bundle landed ${outcome.sha?.slice(0, 9)} and satisfied the deploy gate`
+        : landedNotTriggered
+          ? `Apply bundle LANDED ${outcome.sha?.slice(0, 9)} on the deploy branch but could not fire the CI apply gate — the change is on the branch; re-run Apply to retry only the trigger`
+          : `Apply bundle failed at ${outcome.steps.find((s) => !s.ok)?.step ?? '?'}`,
       actor: account.id,
     };
     const hKey = chainHead(projectId);
@@ -1342,7 +1364,25 @@ export function requestRoutes(): Hono<AppEnv> {
         409,
       );
     }
-    return c.json({ ok: outcome.ok, status: settled.status, bundle, steps: outcome.steps }, outcome.ok ? 200 : 502);
+    // ERR-12 — the half state gets its remediation IN THE RESPONSE, not just in the audit
+    // steps an operator would have to go digging for. "Bundle failed" plus a 502 is what
+    // sent people to git archaeology; the change is on the branch and the next action is
+    // one button, so say both.
+    return c.json(
+      {
+        ok: outcome.ok,
+        status: settled.status,
+        bundle,
+        steps: outcome.steps,
+        ...(landedNotTriggered
+          ? {
+              code: 'BUNDLE_LANDED_UNTRIGGERED',
+              reason: `The change LANDED on ${cfg.branch} as ${outcome.sha?.slice(0, 9)} — it is on the deploy branch — but the CI apply gate could not be fired. Nothing needs re-planning or re-approving: run Apply again and it will retry only the trigger for that sha.`,
+            }
+          : {}),
+      },
+      outcome.ok ? 200 : 502,
+    );
   });
 
   // POST /requests/:id/cancel — the cooling-off cancel verb,
@@ -1387,6 +1427,12 @@ export function requestRoutes(): Hono<AppEnv> {
     //  - `triggered` — the commit landed and the deploy gate was satisfied. That is not
     //    a race at all, it is over, and it stays uncancellable for good. `POST /apply`
     //    already refuses this row for the same reason.
+    //  - `landed-untriggered` (ERR-12) — the commit landed and only the CI trigger
+    //    failed. The COMMIT is what cancel cannot undo, not the trigger, so this refuses
+    //    for exactly the same reason `triggered` does. Reading it as "the bundle failed,
+    //    so cancelling is safe" is the trap the state exists to prevent: `POST /apply`
+    //    treats it as resumable, and cancel must not disagree with that about whether
+    //    the change is on the branch.
     //
     // The residual read-then-act window (this check passes, then a claim is written) is
     // covered from the other side: CONC-6 makes the bundle merge into the timeline
@@ -1397,6 +1443,15 @@ export function requestRoutes(): Hono<AppEnv> {
         {
           code: 'BUNDLE_TRIGGERED',
           reason: `This change has already been applied — its bundle landed ${req.bundle.sha?.slice(0, 9) ?? 'a commit'} on the deploy branch and satisfied the CI apply gate. Cancelling cannot undo that; raise a new request to revert it.`,
+        },
+        409,
+      );
+    }
+    if (req.bundle?.state === 'landed-untriggered') {
+      return c.json(
+        {
+          code: 'BUNDLE_TRIGGERED',
+          reason: `This change is already on the deploy branch — its bundle landed ${req.bundle.sha?.slice(0, 9) ?? 'a commit'} and only the CI apply gate could not be fired. Cancelling cannot take the commit back; either re-run Apply to fire the gate, or raise a new request to revert it.`,
         },
         409,
       );

@@ -1,7 +1,7 @@
 {
   "generated_from": "docs/audit/FINDINGS.md + docs/audit/TRIAGE.md",
   "authoritative_source": "docs/audit/FINDINGS.md \u2014 if this file disagrees, FINDINGS.md wins",
-  "open_findings": 136,
+  "open_findings": 135,
   "rules": {
     "take": "a whole batch id, not individual findings \u2014 batches are grouped by files touched",
     "baseline": "parallel lanes must NOT touch scripts/findings-baseline.txt; it is a ceiling, not an exact match. One reconciliation commit at the end.",
@@ -109,7 +109,8 @@
           "title": "Trigger failure after a landed commit: honest-but-dead-end half state, and spawn timeouts are indistinguishable from exit-1",
           "lane": null,
           "expected_result": "A trigger failure after a landed commit stops being a dead end: the request reaches a state with an exit, and a spawn TIMEOUT is distinguishable from `exit 1` in the recorded evidence.",
-          "verify_first": false
+          "verify_first": false,
+          "status": "closed"
         },
         {
           "id": "API-4",
@@ -122,7 +123,8 @@
           "verify_first": false,
           "status": "closed"
         }
-      ]
+      ],
+      "status": "complete"
     },
     {
       "id": "B-O2",
@@ -1664,5 +1666,5 @@
       ]
     }
   ],
-  "note_on_open_findings": "Count at the time TRIAGE.md was written was 139; three of B-O1's four (CONC-6, API-5, API-4) have since closed and carry \"status\": \"closed\". FINDINGS.md is authoritative."
+  "note_on_open_findings": "Count at the time TRIAGE.md was written was 139. Batch B-O1 is now COMPLETE (CONC-6, API-5, API-4, ERR-12 all carry \"status\": \"closed\"). FINDINGS.md is authoritative."
 }

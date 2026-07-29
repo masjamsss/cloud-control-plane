@@ -482,10 +482,19 @@ export const RequestItem = z.object({
    * Additive-optional (deploy-inert): 'running' claims the bundle (idempotency
    * guard), 'triggered' = landed on main + gated-apply approval fired (sha set),
    * 'failed' = a step went red (re-runnable). Absent = never bundled.
+   *
+   * 'landed-untriggered' (ERR-12) is the fourth, and it is the one that is easy to
+   * get wrong: the commit IS on the deploy branch and only the CI trigger failed.
+   * Collapsing it into 'failed' is what made it a dead end — the landed sha survived
+   * only inside the audit `steps`, and a natural retry re-cloned (now containing the
+   * commit), re-ran the gate, and died with "commit failed (gate left no change?)",
+   * which is true and actively misleading. Recording it as its own state is what lets
+   * a retry skip to the trigger, and what stops cancel from offering to stop a change
+   * that has already landed.
    */
   bundle: z
     .object({
-      state: z.enum(["running", "triggered", "failed"]),
+      state: z.enum(["running", "triggered", "failed", "landed-untriggered"]),
       sha: z.string().optional(),
       at: z.string().optional(),
     })

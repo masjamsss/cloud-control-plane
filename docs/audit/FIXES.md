@@ -2486,3 +2486,57 @@ the front door, record truthfully if one gets past.
       fixture depends on — that cancel advances no `eventSeq` — so that fixture cannot drift
       into testing nothing.
 - [x] **Evidence in the status line** — 1,401 api tests pass (100 files), 2,745 app tests.
+
+## ERR-12
+
+*Trigger failure after a landed commit: honest-but-dead-end half state, and spawn timeouts
+are indistinguishable from exit-1.*
+
+Two halves. One was already closed by other work; the other was the dead end.
+
+**The half state — the real work.** If `commit` succeeds the change **is on the deploy
+branch**. If `trigger` then fails, the run reported `ok:false` → `bundle.state:'failed'` →
+502, and the landed sha survived only inside the audit `steps`. The obvious next move —
+click Apply again — re-cloned a branch that now *contained* the commit, re-ran the gate,
+found nothing left to change, and died with *"commit failed (gate left no change?)"*: true,
+and actively misleading, because the operator's actual remediation was "the change already
+landed; fire the CI gate approval for sha X" and nothing anywhere said so.
+
+`landed-untriggered` is now its own state rather than a shade of `failed`, and the
+discriminator was already there — `runBundle` returns `sha` whenever `commit` succeeded,
+trigger outcome aside. Four things follow from recording it:
+
+- The sha lives on the **request row**, not only in an audit payload no retry path reads.
+- A retry **resumes at the trigger** (`runTriggerOnly`) instead of re-running from the top.
+  Deliberately *not* re-gating: the gate already ran on this exact sha and passed — that is
+  why the commit exists — and a `false` from a second opinion would leave the operator with
+  a change on `main` and a tool refusing to finish it. The skipped steps are reported as
+  skips with reasons, so an audit reader comparing two runs can see why the second is
+  shorter.
+- The **response carries the remediation** (`BUNDLE_LANDED_UNTRIGGERED`), because "bundle
+  failed" plus a 502 is precisely what sent people to git archaeology.
+- **Cancel refuses it**, with the same code and for the same reason it refuses `triggered`.
+  This is the trap the state exists to prevent: read as "the bundle failed, so cancelling is
+  safe", it would cancel a change that is on the branch. Apply treats the state as
+  resumable, so cancel must not simultaneously treat it as nothing having happened.
+
+**The timeout half was already closed** by the async-exec work (CONC-5 / ERR-1 / PERF-2).
+The finding describes the `spawnSync` shape that mapped a timeout, a spawn error and a
+signal kill all onto a bare `status:1`. `execCapture` now resolves a timeout as **124** with
+`timed out after Nms` appended, a spawn failure as `spawn failed: …`, and a signal as 128 —
+and `sh()`/`gate()` pass both the status and the text through verbatim. Verified against the
+current code rather than assumed (L-29); "already fixed elsewhere" needs the same evidence
+as any other claim.
+
+- [x] **Negative test** — three reversals. Collapsing the state back into `failed` fails 5
+      tests; removing the resume fails 2. The second reversal also showed the unfixed
+      behaviour is *worse* than the finding says when the gate is not idempotent: rather
+      than dying at "gate left no change?", the retry **lands a second commit for the same
+      change**. Both shapes are now pinned — one test uses a timestamp gate, one an
+      idempotent gate that reproduces the finding's literal quoted message.
+- [x] **Regression tests** — 12 in `test/bundleLandedUntriggered.test.ts`, driving the real
+      route against a real bare repo. The ground truth is `git rev-list --count main` on the
+      origin, not the API's own report: every test asserts what actually reached the branch,
+      including that a resume lands *nothing new* and that a genuinely failed run (red gate,
+      nothing committed) is still plain `failed` with no remediation offered.
+- [x] **Evidence in the status line** — 1,413 api tests pass (101 files), 2,745 app tests.

@@ -119,15 +119,16 @@ at HEAD first, and if it is closed, close it with evidence rather than a patch.
 
 **Model:** opus · **Findings:** 4 · **Touches:** `ccp/api/src/routes/requests.ts, ccp/api/src/domain/bundle.ts`
 
-**Status: 3 of 4 closed.** Only **ERR-12** is left, and it is self-contained — it needs no
-context from the three below beyond knowing that the bundle's outcome path is now
-merge-into-the-timeline rather than replace-it.
+**Status: BATCH COMPLETE — all 4 closed.** Nothing here needs picking up. The apply lane's
+outcome path now: merges into the timeline rather than replacing it (CONC-6), refuses a
+cancel it cannot honour (API-5), and distinguishes a landed-but-untriggered run from a
+failed one so a retry resumes at the trigger (ERR-12).
 
 | finding | sev | expected result |
 | --- | --- | --- |
 | ~~**CONC-6**~~ | medium | **DONE.** A throwing `runBundle` reaches a terminal `bundle` state instead of leaving `running`; the outcome's AUDIT ENTRY lands even when the request row refuses the update, because a fired deploy is a fact and not a state transition; the caller gets a specific code, not CHAIN_CONTENTION with nothing written. **Note for whoever reads this next:** gap 2 had *moved* since the finding was written — ERR-11's guard change closed it as literally stated and opened a quieter variant (the timeline being replaced rather than lost). See L-29. |
 | ~~**API-5**~~ | medium | **DONE.** Answered with *refuse at the front door* — cancel returns `BUNDLE_RUNNING` while a claim is live and `BUNDLE_TRIGGERED` once the commit landed — with CONC-6's truthful-timeline merge as the backstop for the residual read-then-act sliver. Reasoning in the fix entry. |
-| **ERR-12** | medium | A trigger failure after a landed commit stops being a dead end: the request reaches a state with an exit, and a spawn TIMEOUT is distinguishable from `exit 1` in the recorded evidence. |
+| ~~**ERR-12**~~ | medium | **DONE.** `landed-untriggered` is now its own bundle state carrying the sha on the request row; a retry resumes at the trigger instead of re-running from the top, and cancel refuses it as it does `triggered`. The timeout half was already closed by the async-exec work — `execCapture` returns 124 with `timed out after Nms`; verified, not assumed. |
 | ~~**API-4**~~ | medium | **DONE — verified closed, no code changed.** ERR-11 made the claim guard `eventSeq` (which the claim advances) and ERR-2 added the lease + takeover; `test/bundleClaimLease.test.ts` already pins both. Confirmed against the current code. |
 
 
@@ -520,7 +521,7 @@ time — which is the exact failure this ledger was built to stop.
 | --- | --- | --- | --- |
 | **R-4** — `planSummary` is typed `string` in the contract | `B-S4` | DOC-11 | — |
 | **R-5** — The scan worker does not report its own terminal failure | `B-S7` | ERR-15 | — |
-| **R-6** — The bundle's landed-but-untriggered half state | `B-O1` | ERR-12 | — |
+| ~~**R-6**~~ — The bundle's landed-but-untriggered half state | `B-O1` | ERR-12 | **resolved** |
 | **R-25** — `ENGINEER_REVIEW_REQUIRED` is defined and emitted by nothing | `B-S3` | DOC-10 | Whoever enumerates the error codes for DOC-10 will hit this immediately. The decision is the deliverable, not the edit: emit it or delete it — `openapi.test.ts` currently pins its ABSENCE, which records the choice without making it. |
 | **R-3** — The Python/importer CI gap is only partly closed | `B-S8` | the importer/CI lane | The `importer` lane exists but the gap is only partly closed; the CI batch is already opening those files. |
 | **R-27** — The two literal-object token-walkers are still duplicated | `B-O9` | CTL-10 | Already carries a `Tracked by: CTL-10` marker — see the ledger corrections below, its section header is wrong. |

@@ -184,7 +184,7 @@ States nothing can leave: wedged jobs, dead-end requests, permanently disabled c
 - [x] API-4 | medium | stuck-state | fixed:20e387f | 02-api-correctness.md | The bundle "claim" is not a mutual-exclusion, and a crashed bundle wedges the request at `running`
 - [ ] API-9 | medium | stuck-state | open | 02-api-correctness.md | Project deregistration leaves orphaned satellite rows; a reused id inherits the previous tenant's state
 - [ ] CONC-10 | medium | stuck-state | open | 04-concurrency.md | Stuck `APPLYING` after a worker crash has no reclaim or operator path
-- [ ] ERR-12 | medium | stuck-state | open | 09-error-handling.md | Trigger failure after a landed commit: honest-but-dead-end half state, and spawn timeouts are indistinguishable from exit-1
+- [x] ERR-12 | medium | stuck-state | fixed:PENDING | 09-error-handling.md | Trigger failure after a landed commit: honest-but-dead-end half state, and spawn timeouts are indistinguishable from exit-1
 - [ ] ERR-5 | medium | stuck-state | open | 09-error-handling.md | `TerraformExecutor.init()` caches a rejected promise: one transient init failure bricks the executor until restart
 - [x] UI-4 | medium | stuck-state | fixed:b5b703b | 06-frontend-ui-robustness.md | Mutation handlers `await` API calls without try/catch: a network failure permanently wedges busy/submitting state
 - [ ] API-15 | low | stuck-state | open | 02-api-correctness.md | A dangling idempotency marker makes its key permanently unusable

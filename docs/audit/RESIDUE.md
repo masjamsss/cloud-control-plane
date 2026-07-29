@@ -60,6 +60,18 @@ site, deciding for each whether "absent" means "expected absent" or "cannot guar
 Kept as an **executable demonstration** in `ccp/api/test/requestRowLostUpdate.test.ts`
 rather than a comment, so it fails visibly if anyone assumes it is fixed.
 
+### R-6 · The bundle's landed-but-untriggered half state
+*Residue on **ERR-2**. Tracked by ERR-12, which has now closed it.*
+
+If `commit` succeeded but `trigger` failed, the landed SHA survived only inside the audit
+`steps`, and a retry re-cloned and died at commit with a technically-true but actively
+misleading message. ERR-2's lease made the request appliable again; it did not make that
+retry smarter.
+
+**Resolved by ERR-12**, which gave the half state a name (`landed-untriggered`), put the
+sha on the request row, and made a retry resume at the trigger rather than re-run from the
+top.
+
 ---
 
 ## tracked — an open finding covers it
@@ -78,15 +90,6 @@ where a reader comparing the two will hit it.
 `worker.go` returns without attempting a terminal `failed` report after a progress-report
 failure. The server-side lease (OPS-4) makes recovery independent of the worker, which is
 the stronger guarantee — but it does not make the worker better behaved.
-
-### R-6 · The bundle's landed-but-untriggered half state
-*Residue on **ERR-2**.*
-**Tracked by: ERR-12.**
-
-If `commit` succeeds but `trigger` fails, the landed SHA survives only inside the audit
-`steps`, and a retry re-clones and dies at commit with a technically-true but actively
-misleading message. ERR-2's lease makes the request appliable again; it does not make that
-retry smarter.
 
 ---
 
