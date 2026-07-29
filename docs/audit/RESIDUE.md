@@ -91,6 +91,39 @@ where a reader comparing the two will hit it.
 failure. The server-side lease (OPS-4) makes recovery independent of the worker, which is
 the stronger guarantee — but it does not make the worker better behaved.
 
+### R-51 · Deep audit paging still scans, and the export still buffers whole
+*Partial work on **PERF-8**.*
+**Tracked by: PERF-8**, which stays OPEN because two of its three parts remain.
+
+Done: the page walk now asks the store for `limit` rows per partition instead of cloning
+the whole month to take fifty off the front of it — a first page of a 20,000-entry chain
+went 5.8 ms to 0.33 ms. That bound applies only once the cursor is behind us; while still
+SEARCHING for the cursor the partition must be read in full, or a limited read could stop
+short of it and silently resume the page from the wrong place.
+
+So a deep page still costs the entries newer than its cursor (23.7 ms to 17.6 ms at 20,000
+entries, cursor 90% back) — paging *through* a long history is still quadratic.
+
+**The finding's proposed mechanism does not work here, and that is worth writing down
+before someone tries it.** It says to "resolve the cursor by its ULID's embedded month".
+But the partition month comes from the entry's `at` (`buildAuditItem` keys on
+`yyyymm(new Date(at))`), and `at` and `id` are *independently* injectable through
+`RecordOpts` (`nowFn`, `idFn`) — the suite routinely writes synthetic ids that decode to a
+timestamp unrelated to their partition. Deriving the month from the ULID would send the
+walk to the wrong partition and yield an empty page for a cursor that exists.
+
+What would work is a COMPOSITE cursor — `<yyyymm>:<ulid>` — which names the partition
+directly, lets the walk start there, allows the seam's existing `after` to skip within it
+at the store, and still permits an existence check so the deliberate "unknown cursor yields
+an empty page, never a silent replay from the top" semantic survives. That is a wire-format
+change (the SPA treats the cursor as opaque, so it is compatible if a bare ULID is still
+accepted as a legacy cursor) and wants the OpenAPI contract updated with it, which is why
+it is not folded into a read-path tuning commit.
+
+Also untouched: `GET /admin/audit/export` still builds the entire self-verifying document
+in memory for one `c.json`, which the finding notes as an additional problem and which
+needs a streaming response rather than a faster read.
+
 ---
 
 ## untracked — nothing covers these

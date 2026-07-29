@@ -133,7 +133,19 @@ export async function readAuditPage(
   for (const monthPk of monthsBackward(projectId, nowDate())) {
     if (items.length >= want || seen >= total) break;
     // Descending: newest entry of the month first (SK == ulid == creation order).
-    const chunk = (await store.query(monthPk, undefined, { forward: false })) as AuditItem[];
+    //
+    // PERF-8 — ONCE THE CURSOR IS BEHIND US, ASK THE STORE FOR A PAGE, NOT A MONTH.
+    // The walk stopped at the right moment but each partition read still cloned the
+    // WHOLE month to take `want` rows off the front of it: a 50-row page out of a busy
+    // month cost the whole month, which is the PERF-14 shape one layer up. The seam's
+    // `limit` makes that read cost the answer instead.
+    //
+    // It applies only while `found` — i.e. no cursor, or the cursor is already behind
+    // us. While still SEARCHING for the cursor the partition must be read in full,
+    // because a limited read could stop short of it and silently resume the page from
+    // the wrong place. That remaining scan is the residue (R-51): it is why a deep page
+    // still costs more than a shallow one.
+    const chunk = (await store.query(monthPk, undefined, found ? { forward: false, limit: want - items.length } : { forward: false })) as AuditItem[];
     seen += chunk.length;
     for (const e of chunk) {
       if (!found) {
