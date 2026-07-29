@@ -84,6 +84,23 @@ var arityBaseline = map[string]bool{
 	"target-arity\tsecurity-groups-add-egress-rule-to-security-group":            true,
 	"target-arity\tsecurity-groups-add-ingress-rule-from-security-group":         true,
 	"foreach-arity\twaf-add-ip-set-entry":                                        true,
+	// multi-value-provider (surfaced, not fixed): a set_attribute op writes ONE
+	// attribute, so every value provider after the first is silently dropped at
+	// exit 0 with a diff that looks complete. These five are PRE-EXISTING and
+	// grandfathered per surface-don't-fix; the executor's output is deliberately
+	// unchanged because the right correction differs per op. Two shapes:
+	//   - genuinely two values (dynamodb-set-warm-throughput's read+write units,
+	//     sns-set-delivery-retry-policy's retries+max-delay) → want set_attributes;
+	//   - selector+value, where the FIRST param is a picker and is therefore the
+	//     one wrongly written (vpn-*'s tunnel_number, routing-change-route-target's
+	//     new_target_type) → want role:"selector" on the picker.
+	// The vpn pair is the sharpest: the attribute written is derived from
+	// tunnel_number, so the psk / inside-cidr the operator supplied never lands.
+	"multi-value-provider\tdynamodb-set-warm-throughput":  true,
+	"multi-value-provider\trouting-change-route-target":   true,
+	"multi-value-provider\tsns-set-delivery-retry-policy": true,
+	"multi-value-provider\tvpn-rotate-tunnel-psk":         true,
+	"multi-value-provider\tvpn-set-tunnel-inside-cidr":    true,
 }
 
 func loadRealCatalogOrSkip(t *testing.T) map[string]manifests.Op {

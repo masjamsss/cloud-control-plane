@@ -32,4 +32,30 @@ jobs:
           go-version-file: tools/catalogctl/go.mod
       - run: go build ./...
       - run: go vet ./...
+      - name: gofmt is canonical
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::not gofmt-canonical:"; echo "$unformatted"; exit 1
+          fi
       - run: go test ./...
+      # The race detector is a separate step because it catches a class the plain
+      # run cannot: a racy test fake was live on main and green under `go test`
+      # for as long as the suite has existed, because nothing ever ran -race.
+      - run: go test -race -count=1 ./...
+      # Coverage floor. The suite sits at 93.5% of statements; the gate is set
+      # just below so ordinary churn does not trip it, but a change that drops
+      # real coverage fails instead of silently eroding it. Raise COVERAGE_FLOOR
+      # when the number rises — never lower it to make a red build green.
+      - name: coverage floor
+        env:
+          COVERAGE_FLOOR: '93.0'
+        run: |
+          go test -count=1 -coverprofile=cover.out -coverpkg=./... ./... >/dev/null
+          total=$(go tool cover -func=cover.out | awk '/^total:/ {print $NF}' | tr -d '%')
+          echo "total statement coverage: ${total}% (floor ${COVERAGE_FLOOR}%)"
+          awk -v t="$total" -v f="$COVERAGE_FLOOR" 'BEGIN {
+            if (t + 0 < f + 0) {
+              printf "::error::coverage %.1f%% is below the %.1f%% floor\n", t, f; exit 1
+            }
+          }'

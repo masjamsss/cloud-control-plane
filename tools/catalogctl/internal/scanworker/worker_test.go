@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -36,7 +37,13 @@ type step struct {
 	reason string
 }
 
+// fakeControl is driven from the goroutine running Run AND, in the
+// drain-the-queue tests, read from a watchdog goroutine waiting for the queue
+// to empty. Every mutable field is therefore behind mu, and the counters are
+// reached through accessors rather than read directly — an unsynchronised
+// `ctrl.claims` read is a data race the -race detector fails on.
 type fakeControl struct {
+	mu        sync.Mutex
 	jobs      []*Job // handed out in order; exhausted ⇒ nil (nothing queued)
 	claims    int
 	steps     []step
@@ -45,6 +52,8 @@ type fakeControl struct {
 }
 
 func (f *fakeControl) Claim(context.Context) (*Job, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.claimErr != nil {
 		return nil, f.claimErr
 	}
@@ -58,16 +67,45 @@ func (f *fakeControl) Claim(context.Context) (*Job, error) {
 }
 
 func (f *fakeControl) Report(_ context.Context, _ *Job, status, reason string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.steps = append(f.steps, step{status, reason})
 	return f.reportErr
 }
 
 func (f *fakeControl) statuses() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	out := make([]string, len(f.steps))
 	for i, s := range f.steps {
 		out[i] = s.status
 	}
 	return out
+}
+
+// claimCount reports how many times Claim has been called. Safe to call while
+// Run is still going, which is exactly what the watchdog goroutines need.
+func (f *fakeControl) claimCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.claims
+}
+
+// stepAt returns the recorded step at i, or a zero step when the worker never
+// got that far — keeps the assertion a readable failure instead of a panic.
+func (f *fakeControl) stepAt(i int) step {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if i >= len(f.steps) {
+		return step{}
+	}
+	return f.steps[i]
+}
+
+func (f *fakeControl) stepCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.steps)
 }
 
 type fakeCloner struct {
@@ -189,8 +227,8 @@ func TestCloneFailureIsReportedTerminal(t *testing.T) {
 	if got := ctrl.statuses(); !equal(got, want) {
 		t.Fatalf("statuses = %v, want %v", got, want)
 	}
-	if !strings.Contains(ctrl.steps[1].reason, "repository not found") {
-		t.Fatalf("failure reason lost git's message: %q", ctrl.steps[1].reason)
+	if !strings.Contains(ctrl.stepAt(1).reason, "repository not found") {
+		t.Fatalf("failure reason lost git's message: %q", ctrl.stepAt(1).reason)
 	}
 }
 
@@ -271,7 +309,7 @@ func TestOneBadRepositoryDoesNotStopTheWorker(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	// Stop once the queue has drained (the third claim returns nothing).
 	go func() {
-		for ctrl.claims < 3 {
+		for ctrl.claimCount() < 3 {
 			time.Sleep(time.Millisecond)
 		}
 		cancel()
@@ -288,8 +326,8 @@ func TestAnIdlePollSaysSoAndClaimsNothing(t *testing.T) {
 	requireCleanEnv(t)
 	ctrl := &fakeControl{}
 	out := runOnce(t, ctrl, &fakeCloner{}, &fakeScanner{})
-	if len(ctrl.steps) != 0 {
-		t.Fatalf("an idle poll reported %v", ctrl.steps)
+	if ctrl.stepCount() != 0 {
+		t.Fatalf("an idle poll reported %v", ctrl.statuses())
 	}
 	if !strings.Contains(out, "no scan jobs queued") {
 		t.Fatalf("idle output = %q", out)
@@ -351,7 +389,7 @@ func TestRunRefusesBeforeClaimingAnything(t *testing.T) {
 	if err == nil {
 		t.Fatal("Run started with a cloud credential present")
 	}
-	if ctrl.claims != 0 {
+	if ctrl.claimCount() != 0 {
 		t.Fatal("Run claimed work before refusing")
 	}
 }

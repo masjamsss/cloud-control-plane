@@ -150,7 +150,7 @@ func checkInterior(op manifests.Op, req *request.Request, c ResourceChange) (vs 
 			vs = append(vs, Violation{
 				Rule:    "value-mismatch",
 				Address: addr,
-				Reason:  fmt.Sprintf("%s planned %s but the request asked for %s", keyStr(d.keyPath), showVal(got), showVal(want)),
+				Reason:  valueMismatchReason(keyStr(d.keyPath), want, got, d.valParam.Wrap),
 			})
 		}
 	}
@@ -197,7 +197,7 @@ func deriveInterior(op manifests.Op, req *request.Request) (changes []declaredCh
 			// (UNSUPPORTED_PATH), so no in-place plan exists to confine.
 			return nil, false, fmt.Sprintf("attribute %q is a nested path the executor refuses", attr)
 		}
-		return []declaredChange{{keyPath: withSeg(base, attr), subtree: writesListValue(vp, req), valParam: vp, growOnly: isGrowOnly(vp), sel: sel}}, true, ""
+		return []declaredChange{{keyPath: withSeg(base, attr), subtree: writesCollectionValue(vp, req), valParam: vp, growOnly: isGrowOnly(vp), sel: sel}}, true, ""
 
 	case "set_attributes":
 		for i := range op.Params {
@@ -209,7 +209,7 @@ func deriveInterior(op manifests.Op, req *request.Request) (changes []declaredCh
 			if attr == "" || strings.Contains(attr, ".") {
 				continue // dotted attrs are executor-refused; skip (not a modeled leaf).
 			}
-			changes = append(changes, declaredChange{keyPath: withSeg(base, attr), subtree: writesListValue(p, req), valParam: p, growOnly: isGrowOnly(p), sel: sel})
+			changes = append(changes, declaredChange{keyPath: withSeg(base, attr), subtree: writesCollectionValue(p, req), valParam: p, growOnly: isGrowOnly(p), sel: sel})
 		}
 		if len(changes) == 0 {
 			return nil, false, fmt.Sprintf("op %q declares no verifiable value params", op.ID)
@@ -438,6 +438,25 @@ func requestedValue(p manifests.Param, req *request.Request) (any, bool) {
 
 // valueMatches compares a requested value against the planned after-value, honouring
 // wrap:"list" (the request scalar must appear as an element of the after list).
+// valueMismatchReason renders WHY the planned value at path does not carry the
+// requested one. For wrap:"list" the request supplies one MEMBER of a list, so
+// rendering the whole planned value against it read as self-contradictory when
+// the plan held a bare scalar equal to the request:
+// `arns planned "arn:new" but the request asked for "arn:new"`. The verdict was
+// right (a wrap:"list" attr planned as a scalar is a mismatch) but the sentence
+// denied itself, so say what is actually wrong.
+func valueMismatchReason(path string, want, got any, wrap string) string {
+	if wrap == "list" {
+		if _, isList := got.([]any); !isList {
+			return fmt.Sprintf("%s is declared wrap:\"list\" but the plan holds the non-list value %s; the request asked for member %s",
+				path, showVal(got), showVal(want))
+		}
+		return fmt.Sprintf("%s planned %s, which does not contain the requested member %s",
+			path, showVal(got), showVal(want))
+	}
+	return fmt.Sprintf("%s planned %s but the request asked for %s", path, showVal(got), showVal(want))
+}
+
 func valueMatches(want, got any, wrap string) bool {
 	if wrap == "list" {
 		lst, ok := got.([]any)
@@ -569,21 +588,33 @@ func isGrowOnly(p *manifests.Param) bool {
 	return p != nil && p.Bounds != nil && p.Bounds.GrowOnly
 }
 
-// writesListValue reports whether p's written value is a LIST — a wrap:"list" scalar
-// (e.g. lifecycle_config_arns) or a list-typed request value. Such a leaf must be
-// declared as a SUBTREE cover: in plan JSON the list's elements sit one index below
-// the attribute path, so an exact-leaf cover would (wrongly) read the element change
-// as an interior-escape. The op authored the whole attribute, so the whole subtree is
-// its declared interior; R6a still value-checks the requested element via valueMatches.
-func writesListValue(p *manifests.Param, req *request.Request) bool {
+// writesCollectionValue reports whether p's written value is a COLLECTION — a
+// wrap:"list" scalar (e.g. lifecycle_config_arns), or a list- or map-typed request
+// value. Such a leaf must be declared as a SUBTREE cover: in plan JSON the members
+// sit one level below the attribute path, so an exact-leaf cover would (wrongly)
+// read the member change as an interior-escape. The op authored the whole
+// attribute, so the whole subtree is its declared interior; R6a still value-checks
+// the requested member via valueMatches.
+//
+// Maps were missing here while lists were handled, so a set_attribute writing a
+// map-typed param (which edit.anyToCty legitimately renders as an HCL object
+// literal) produced a spurious interior-escape: the plan diffs per key, and
+// `tags.Env` sits one level below the exact-leaf cover {tags}, so a completely
+// correct edit was reported as "changed leaf tags.Env is outside the op's declared
+// interior {tags}" — the same failure mode this comment already described for
+// lists.
+func writesCollectionValue(p *manifests.Param, req *request.Request) bool {
 	if p == nil {
 		return false
 	}
 	if p.Wrap == "list" {
 		return true
 	}
-	_, ok := req.Params[p.Name].([]any)
-	return ok
+	switch req.Params[p.Name].(type) {
+	case []any, map[string]any, map[any]any:
+		return true
+	}
+	return false
 }
 
 func valParamKind(p *manifests.Param) string {

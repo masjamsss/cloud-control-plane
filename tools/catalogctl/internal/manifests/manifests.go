@@ -294,6 +294,16 @@ func LoadDir(dir string) (map[string]Op, error) {
 			return nil, fmt.Errorf("%s: %w", f, err)
 		}
 		for _, op := range sm.Operations {
+			// A duplicate op id used to overwrite silently, last glob-order
+			// write winning, so one definition vanished from the catalogue with
+			// no error. That is a fail-OPEN in a loader whose stated point (see
+			// the DisallowUnknownFields note above) is to fail visibly on
+			// manifest drift: the surviving definition may carry a laxer
+			// riskFloor or forcesReplace than the one it replaced, and a request
+			// resolving to that id then gets the wrong guard. Refuse instead.
+			if prev, dup := ops[op.ID]; dup {
+				return nil, fmt.Errorf("%s: duplicate operation id %q (already defined for service %q)", f, op.ID, prev.Service)
+			}
 			ops[op.ID] = op
 		}
 	}
@@ -667,8 +677,18 @@ func Validate(op Op, params map[string]any) (string, string) {
 			}
 		}
 		if b.MaxLength != nil {
-			if s := fmt.Sprint(v); len(s) > *b.MaxLength {
-				return "OUT_OF_BOUNDS", fmt.Sprintf("%s: length %d above maxLength %d", p.Name, len(s), *b.MaxLength)
+			// Per-element, like Allowlist/Pattern/CidrPolicy/MaxPrefixLen. This
+			// used to measure fmt.Sprint of the WHOLE value, so on a list- or
+			// map-typed param the cap was applied to the Go repr — `[a b c]`,
+			// `map[Env:prod]`, brackets and separators included — instead of to
+			// each element. That both failed to enforce a per-element cap and
+			// wrongly refused collections of short elements whose punctuation
+			// pushed the repr over. Identical behaviour for a scalar, where
+			// elementsOf yields the value itself.
+			for _, elem := range elementsOf(v) {
+				if s := fmt.Sprint(elem); len(s) > *b.MaxLength {
+					return "OUT_OF_BOUNDS", fmt.Sprintf("%s: length %d above maxLength %d", p.Name, len(s), *b.MaxLength)
+				}
 			}
 		}
 		if b.Pattern != "" {

@@ -450,14 +450,23 @@ func parseObjectLiteral(toks hclwrite.Tokens) ([]objEntry, bool) {
 				break
 			}
 			if t.Type == hclsyntax.TokenComment {
-				comment = append(comment, t)
-				i++
 				// A single-line comment token carries its terminating newline
-				// ("# note\n" is one token), so at depth 0 it also ends the entry —
+				// ("# note\n" is one token), so at depth 0 it ends the entry —
 				// otherwise the next entry's tokens get swallowed into this one.
+				// That TRAILING comment is the only one buildObjectLiteral may
+				// re-emit after the value.
 				if depth == 0 && strings.HasSuffix(string(t.Bytes), "\n") {
+					comment = append(comment, t)
+					i++
 					break
 				}
+				// Any other comment sits INSIDE the value (`x = /* mid */ "v"`).
+				// Hoisting it out moved it after the value on re-emit, rewriting
+				// an entry the merge never touched and adding a second
+				// added/removed line pair to what must be a one-line diff. Keep
+				// it in place instead.
+				valToks = append(valToks, t)
+				i++
 				continue
 			}
 			switch t.Type {

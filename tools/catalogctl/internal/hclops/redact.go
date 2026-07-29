@@ -62,8 +62,17 @@ var (
 	// assignRe: optional leading ws, optional diff marker (+/-/~), key, =, rhs.
 	assignRe = regexp.MustCompile(`^(\s*[+\-~]?\s*)([A-Za-z0-9_.-]+)(\s*=\s*)(.*)$`)
 	// blockOpenRe: a block opener line — name, optional "labels", optional =, then {.
-	blockOpenRe  = regexp.MustCompile(`^\s*[+\-~]?\s*([A-Za-z0-9_.-]+)(?:\s+"[^"]*")*\s*(?:=\s*)?\{\s*$`)
-	closeBraceRe = regexp.MustCompile(`^\s*\}\s*$`)
+	blockOpenRe = regexp.MustCompile(`^\s*[+\-~]?\s*([A-Za-z0-9_.-]+)(?:\s+"[^"]*")*\s*(?:=\s*)?\{\s*$`)
+	// closeBraceRe: a line that only CLOSES scope. It must accept the closers a
+	// same-line block opener produces, not just a bare `}`: rhsOpensBlockRe
+	// pushes a scope for `secret_string = jsonencode({`, whose closer is `})`.
+	// While this matched `^\s*\}\s*$` only, that scope was pushed and never
+	// popped, so every later line stayed inside a secret-bearing block and was
+	// masked too — over-masking (the safe direction) but it blinds a reviewer to
+	// unrelated attributes further down the file, which is exactly the
+	// "no over-blinding" property this package promises. Anchored on a leading
+	// `}` so a stray `)` or `,` line cannot pop a scope it never opened.
+	closeBraceRe = regexp.MustCompile(`^\s*[+\-~]?\s*\}[)\],\s]*$`)
 	// rhsOpensBlockRe: RHS that opens a nested block on the same line (`key = {`).
 	rhsOpensBlockRe = regexp.MustCompile(`\{\s*$`)
 	// quotedRe: an HCL double-quoted string literal, escape-aware.

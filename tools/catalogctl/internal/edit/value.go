@@ -156,6 +156,23 @@ func isValueProvider(p manifests.Param) bool {
 	return manifests.IsValueProvider(p)
 }
 
+// paramValue reads a param's value from the request, falling back to the
+// manifest's declared `default` when the request omits it.
+//
+// The fallback is not a convenience: manifests.Validate deliberately SKIPS an
+// absent non-required param, so without it a `required:false` param carrying a
+// default (ebs-gp2-to-gp3's target_type, default "gp3") passed validation and
+// then reached anyToCty(nil), failing with `unsupported value type <nil>` —
+// exit 1, an internal error, for a request the catalogue says is valid. The
+// create_resource / idiomrender lanes already consult paramDefault; the
+// set_attribute lanes did not.
+func paramValue(p manifests.Param, params map[string]any) any {
+	if v, ok := params[p.Name]; ok && v != nil {
+		return v
+	}
+	return paramDefault(p)
+}
+
 // valueProviders returns every value-providing param in manifest order (references,
 // consts, and ordinary user_input values) — the params a value/list codemod emits.
 func valueProviders(op manifests.Op) []manifests.Param {

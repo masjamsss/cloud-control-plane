@@ -76,7 +76,7 @@ func listEntry(op manifests.Op, req *request.Request, loc *hclops.Located, add b
 	if vp == nil {
 		return nil, "", "", fmt.Errorf("op %q has no value param", op.ID)
 	}
-	entryToks, code, reason, err := valueTokens(filepath.Dir(loc.File), *vp, req.Params[vp.Name])
+	entryToks, code, reason, err := valueTokens(filepath.Dir(loc.File), *vp, paramValue(*vp, req.Params))
 	if err != nil || code != "" {
 		return nil, code, reason, err
 	}

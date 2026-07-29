@@ -52,6 +52,20 @@ const (
 	// locator param. edit.targetAddress reads the FIRST such param and exit-3s on
 	// zero; two is an ambiguous positional bind. Exactly one is the contract.
 	RuleTargetArity = "target-arity"
+
+	// RuleMultiValueProvider — a set_attribute op with MORE THAN ONE
+	// value-provider param. set_attribute writes exactly one attribute:
+	// edit.valueParam takes the FIRST provider and the rest are silently
+	// dropped, so the run exits 0 with a diff that looks complete while an
+	// operator-supplied value never reached the file (measured: an op with
+	// noncurrent_days + storage_class writes only noncurrent_days, leaving the
+	// requested storage class untouched). set_attributes is the verb for that
+	// shape; where the extra param is really a picker it wants
+	// role:"selector"/"discriminator", which excludes it from IsValueProvider.
+	// Detection only, per the surface-don't-fix policy — the executor's output
+	// is deliberately NOT changed here, because the right correction differs
+	// per op (two values vs selector+value).
+	RuleMultiValueProvider = "multi-value-provider"
 )
 
 // IsValueProvider reports whether p supplies a value a codemod WRITES (as opposed to
@@ -123,6 +137,21 @@ func lintOp(op Op) []Finding {
 	if op.CodemodOp == "set_attribute" || op.CodemodOp == "set_attributes" {
 		if !anyParam(op, IsValueProvider) {
 			add(RuleNoValueProvider, fmt.Sprintf("%s has no value-provider param — the executor cannot resolve a value to write", op.CodemodOp))
+		}
+	}
+
+	// set_attribute writes ONE attribute; extra value providers are dropped silently.
+	if op.CodemodOp == "set_attribute" {
+		if n := countParam(op, IsValueProvider); n > 1 {
+			names := make([]string, 0, n)
+			for _, p := range op.Params {
+				if IsValueProvider(p) {
+					names = append(names, p.Name)
+				}
+			}
+			add(RuleMultiValueProvider, fmt.Sprintf(
+				"set_attribute has %d value-provider params %v — only %q is written, the rest are silently dropped; use set_attributes, or tag the picker role:\"selector\"",
+				n, names, names[0]))
 		}
 	}
 
