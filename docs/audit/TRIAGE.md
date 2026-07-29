@@ -912,7 +912,16 @@ For each finding you close:
 
 1. **`docs/audit/FINDINGS.md`** — flip the line to `- [x] … | fixed:<short-sha> | …`.
    The evidence field must be a commit sha, PR ref, or test name; `fixed:` with nothing is
-   rejected. Commit first, then amend the sha in.
+   rejected.
+
+   **Commit the code first, then record the sha in a SECOND commit — do not `--amend` it
+   in.** The amend produces a different commit object, so the sha you just wrote down
+   points at nothing from the moment you write it. That is how eight entries came to
+   dangle (L-28), and the gate now refuses it: every `fixed:<sha>` must be an ancestor of
+   `HEAD`. The same applies to anything else that rewrites the commit — **rebasing or
+   cherry-picking your work onto a fresh branch invalidates a recorded sha too**, so
+   record it after the branch is in its final shape, and re-run `scripts/findings-gate.sh`
+   if you move the commits afterwards.
 2. **`docs/audit/FIXES.md`** — append a section. **The heading must be exactly `## <ID>`,
    one per finding.** A combined `## API-10 / CONC-4` header FAILS the gate — when two
    findings are the same defect, write the reasoning under one and a short cross-reference
