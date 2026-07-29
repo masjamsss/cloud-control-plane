@@ -771,3 +771,29 @@ way to claim what it already owns (here: `CCP_GIT_PROJECT` naming the estate the
 remote belongs to) — that one variable is what turns a breaking change into an upgrade path.
 And treat a fixture that breaks under a correctness fix as evidence to read, not noise to
 update: both of these suites were telling the truth about a deployment shape.
+
+### L-28 — `commit --amend` after recording the sha makes the evidence dangle
+
+Findings: PERF-5, ARCH-2, ARCH-4, ARCH-7, API-10, CONC-4, CONC-9, DATA-8, CONC-7, DATA-9, CONC-11
+
+`FINDINGS.md` records each fix's evidence as `fixed:<sha>`, and the workflow that produced
+eight of them was: commit → read `git rev-parse --short HEAD` → write that sha into
+`FINDINGS.md` → `git commit --amend` to fold the ledger edit in. It reads as tidy. It
+records a sha that **the amend then destroys** — the amended commit is a different object,
+and the recorded one is dangling from the moment it is written.
+
+Nothing caught it. The gate checks that `fixed:` carries *something*, not that the
+something resolves. `git log` looked right, because the amended commit had the message and
+the content; only the identifier was wrong. It surfaced when the PR was merged and the shas
+were checked against `main` for the first time — eight of thirty-six did not resolve, all
+eight from this pattern.
+
+**Two transferable pieces.** First: **an identifier written before the object is final is
+not evidence.** Record the sha in a follow-up commit, or take it from `HEAD` *after* the
+last amend — never from a commit you are about to rewrite.
+
+Second, and more general: **this repo checks that evidence exists and never checked that it
+points anywhere.** The same shape appears in the audit itself — `fixed:` with a test name
+nobody runs, a residue "tracked by" a finding nobody reopened, a doc citing a line that
+moved. A reference is only evidence if something dereferences it. The check that would have
+caught this is one line: every `fixed:<sha>` must be an ancestor of `HEAD`.

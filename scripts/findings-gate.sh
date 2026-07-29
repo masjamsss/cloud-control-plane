@@ -37,6 +37,31 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LEDGER="$ROOT/docs/audit/FINDINGS.md"
 BASELINE_FILE="$ROOT/scripts/findings-baseline.txt"
+
+# ── L-28: a `fixed:<sha>` must point at a commit that EXISTS AND IS REACHABLE ──────────
+# The gate checked that `fixed:` carried *something*, never that the something resolved.
+# Eight entries recorded a sha taken BEFORE a `git commit --amend`, which the amend then
+# destroyed; they dangled from the moment they were written and nothing noticed until the
+# branch was merged and the shas were checked against main by hand. A reference is only
+# evidence if something dereferences it.
+#
+# Skipped outside a git work tree, and skipped for a sha this clone genuinely cannot see
+# (a shallow CI checkout) — refusing there would fail on the checkout depth rather than on
+# the ledger, which is the "a check that cannot run must not look like a pass" trap wearing
+# the other hat: it must not look like a FAILURE either.
+check_fixed_shas() {
+  git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  local bad=0 sha
+  for sha in $(grep -oE 'fixed:[0-9a-f]{7,40}' "$LEDGER" | sed 's/fixed://' | sort -u); do
+    git -C "$ROOT" cat-file -e "${sha}^{commit}" 2>/dev/null || continue  # not in this clone
+    if ! git -C "$ROOT" merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then
+      echo "ERROR: FINDINGS.md cites fixed:${sha}, which exists but is NOT an ancestor of HEAD — it was probably recorded before a \`git commit --amend\` rewrote it (L-28)." >&2
+      bad=$((bad + 1))
+    fi
+  done
+  [ "$bad" -eq 0 ]
+}
+
 AUDIT_DIR="$ROOT/docs/audit"
 
 STRICT=0
@@ -48,7 +73,11 @@ esac
 
 [[ -f "$LEDGER" ]] || { echo "findings-gate: missing $LEDGER" >&2; exit 2; }
 
-python3 - "$AUDIT_DIR" "$LEDGER" "$BASELINE_FILE" "$STRICT" <<'PY'
+# L-28 — BEFORE the parse: a gate that prints "PASS" and then an error has told
+# the reader the opposite of the truth on the line they will actually read.
+check_fixed_shas || exit 1
+
+python3 - "$AUDIT_DIR" "$LEDGER" "$BASELINE_FILE" "$STRICT" <<'PY' || exit 1
 import sys, re, glob, os, subprocess
 audit_dir, ledger_path, baseline_path, strict = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "1"
 SEV = r"critical|high|medium|low"
@@ -366,3 +395,4 @@ if baseline is not None and n_open < baseline:
 
 print("findings-gate: PASS")
 PY
+
