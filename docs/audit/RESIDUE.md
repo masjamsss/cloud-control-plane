@@ -588,3 +588,35 @@ teaches people to re-run instead of to read, which is how a real regression gets
 through. The fix is a longer explicit timeout on the tests that spawn processes, not more
 retries; deliberately not done here, where it would be an unrelated change buried in a
 store commit.
+
+### R-49 · The snapshot writer still emits the legacy bare array
+*Residue on **DATA-16**.*
+
+Every reader now understands `{ formatVersion, items }` and refuses a version it predates,
+but the writer still produces the bare array — so no file in the wild carries the marker
+yet, and the detection it enables only starts working once something writes one.
+
+Deliberate, and the ordering is the whole point: reading both shapes and writing the old one
+is the expand half of an expand/contract migration. Flip the writer in the same release and
+a rollback to the previous binary meets a file it cannot parse, turning a routine revert
+into hand surgery on a governance database. The contract half — flipping the writer — is a
+one-line change once a release that can read the envelope has been deployed everywhere that
+matters. A test pins the written shape so that flip has to be made on purpose rather than
+arriving as a side effect.
+
+### R-50 · Snapshot rows are still not validated against their zod schemas
+*Residue on **DATA-5**.*
+
+Load-time validation is structural only: each row must be an object with a string `PK` and
+`SK`. The finding's optional half — running each row through the schema its PK/SK shape
+implies, and refusing or quarantining violations — is not done.
+
+Accepted for now for the reason R-41 already records: the wrong shim fails a BOOT, not a
+test. `schema.ts` is strict in places where real stored rows are legitimately looser (a
+`status` the enum does not list, a legacy account row shaped before `roles` existed), so a
+validating loader written against the schemas as they read TODAY would refuse stores that
+are perfectly serviceable — trading undefined behaviour on rare corruption for a
+guaranteed outage on ordinary data. It becomes safe to do once there is a corpus of real
+snapshots to validate the shim against, or once the loader can quarantine a bad row and
+carry on rather than refusing the boot; either would be a good follow-up, and neither is
+something to guess at.

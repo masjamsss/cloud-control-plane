@@ -2996,3 +2996,76 @@ queue the next flush, as they always did.
 
 **Residue:** the row CAPTURE is still one synchronous O(store) step, and the suite has a
 timing-flake this work ran into three times. See **R-47** and **R-48**.
+
+## DATA-16
+
+*No format/version marker in the snapshot file; migration rests entirely on convention.*
+
+The on-disk snapshot is a bare JSON array with no producer stamp and no version. The
+migration story — additive-optional fields, read-time shims, unknown fields surviving
+load-to-export because items are opaque records — is real and well documented, but an older
+binary handed a file whose invariants it PREDATES could not detect that. It read it and
+rewrote it blind, which is the one failure a version marker exists to prevent. There was
+also nowhere to hang a future breaking migration.
+
+`parseSnapshotItems` now accepts the envelope `{ formatVersion, items }` as well as the
+legacy bare array, and refuses a `formatVersion` above what the binary knows — with a
+message that tells the operator to upgrade rather than leaving them to guess. A nonsense
+version (a string, a fraction, zero) is refused too: reading it as "probably 1" is the
+guessing the marker exists to stop.
+
+**This release READS both shapes and still WRITES the bare array, deliberately.** Flipping
+the writer is the second half of an expand/contract migration, and doing both at once means
+a rollback to the previous binary meets a file it cannot parse — turning a routine revert
+into a manual recovery. Teaching every reader to detect comes first. A test pins the WRITTEN
+shape so the flip cannot happen as a side effect of some later change; the flip itself is
+**R-49**.
+
+- [x] **Negative test** — reverting `FileStore.load` to its bare cast fails 8 of the 13
+      tests, and the failures are the finding's own symptoms: `items is not iterable`
+      instead of a refusal.
+- [x] **Regression tests** — in `test/snapshotFormat.test.ts`, including the compatibility
+      half (a legacy bare array must still load — breaking that would brick every existing
+      deployment on upgrade, far worse than the defect) and the pinned written shape.
+- [x] **Evidence in the status line** — 1,491 api tests pass (109 files).
+
+## DATA-5
+
+*Store rows are not validated against the schemas on load: corrupt-but-parseable state is
+accepted silently.*
+
+`FileStore.load` was `JSON.parse(raw) as Item[]`. A non-array top level failed only by an
+incidental `items.map is not a function` from deep inside the store; any PARSEABLE
+corruption — a hand-edit, a bad restore, a partial write by another tool, a row missing
+`PK` — loaded clean and flowed through unchecked casts into auth and domain logic.
+`snapshot.ts` had the proper array-shape check all along; this loader simply did not use it.
+
+Fixed where it belongs: **one parser for every reader of a snapshot.** `FileStore.load`,
+`scripts/backup` and `scripts/restore` all go through `parseSnapshotItems`, so the check
+lands in the two scripts without touching them — and the finding's note that `restore.ts`
+verifies the audit chain but not item shapes is answered by construction rather than by a
+second implementation that could drift.
+
+Two structural checks per row, both naming the ROW INDEX: the row must be an object, and it
+must carry a string `PK` and `SK`. The second is not cosmetic. An item without them keys as
+`"undefined<NUL>undefined"`, so **every** such row collapses onto a single entry and
+silently overwrites the others — a file can lose most of itself and still boot clean. The
+message also carries something findable (the key that IS present, or the first few field
+names), because an operator staring at a refused boot needs to know which line of a 50 MB
+file to open, and "invalid snapshot" would be true and useless.
+
+**Deliberately NOT a full per-row zod pass.** The finding calls that optional, and R-41 is
+the standing warning: a legacy-passthrough shim guessed at rather than designed against real
+stored shapes fails a BOOT, not a test — and a store that refuses to start is a worse
+outcome than the undefined behaviour being prevented. The PK/SK check is the part that
+cannot false-positive on any legacy shape, because a row without them was never meaningfully
+loadable in the first place. The schema pass is **R-50**, with the conditions under which it
+would be safe to do.
+
+- [x] **Negative test** — see **DATA-16**; the same reversion covers both, since both are
+      the one loader change.
+- [x] **THE CONTROL** — a 200-row ordinary snapshot must still load in full, including
+      unknown/future fields surviving load-to-export. Without it the refusal tests prove
+      only that something throws, and a tightening that rejected valid stores would be a
+      far worse defect than the one being fixed.
+- [x] **Evidence in the status line** — see **DATA-16**.

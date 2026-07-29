@@ -157,7 +157,7 @@ Failures that produce no signal — swallowed rejections, best-effort compensati
 - [ ] ARCH-10 | medium | silent-failure | open | 01-architecture.md | Unaudited governance transition: dual-control proposals expire silently
 - [ ] ARCH-9 | medium | silent-failure | open | 01-architecture.md | Single-process, single-file scaling ceiling with in-process singletons the planned DynamoDB path would silently break
 - [ ] CI-9 | medium | silent-failure | open | 13-ci-cd.md | The recurring data lane keeps the silent-skip gate its own sibling workflow documents as a trap
-- [ ] DATA-5 | medium | silent-failure | open | 03-data-integrity.md | Store rows are not validated against the schemas on load: corrupt-but-parseable state is accepted silently
+- [x] DATA-5 | medium | silent-failure | fixed:PENDING | 03-data-integrity.md | Store rows are not validated against the schemas on load: corrupt-but-parseable state is accepted silently
 - [x] ERR-6 | medium | silent-failure | fixed:7024c7a | 09-error-handling.md | `executor.replan()` failures are an unmodeled halt: unbounded silent retry, and they abort the rest of the project's due list
 - [ ] FE-8 | medium | silent-failure | open | 05-frontend-flows.md | AuditHistory silently truncates to the first page (100 entries) — the cursor is fetched and thrown away
 - [ ] OPS-6 | medium | silent-failure | open | 10-reliability-operations.md | Plain `compose up` (including every self-update cycle) silently strips the armed overlay
@@ -241,7 +241,7 @@ Durability, rollback, schema validation on load, and store-seam fidelity against
 - [x] API-17 | low | data-persistence | fixed:68b360c | 02-api-correctness.md | Store-seam divergences from the DynamoDB semantics it mirrors
 - [x] DATA-14 | low | data-persistence | fixed:68b360c | 03-data-integrity.md | Seam-fidelity gaps between MemoryStore and the promised DynamoDB semantics
 - [x] DATA-15 | low | data-persistence | fixed:68b360c | 03-data-integrity.md | Map key concatenation with a space separator is aliasable in principle; client-controlled bytes reach PKs unconstrained
-- [ ] DATA-16 | low | data-persistence | open | 03-data-integrity.md | No format/version marker in the snapshot file; migration rests entirely on convention
+- [x] DATA-16 | low | data-persistence | fixed:PENDING | 03-data-integrity.md | No format/version marker in the snapshot file; migration rests entirely on convention
 - [x] REM-1 | medium | data-persistence | fixed:domain/versionStamp.ts marker-guarded boot one-shot; test/versionStamp.test.ts | 15-remediation.md | The optimistic-concurrency guards cannot bite on rows written before they existed
 
 ## duplication

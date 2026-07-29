@@ -162,19 +162,19 @@ and **API-20** (raised, not fixed: the one-time legacy settlement races itself a
 
 **Model:** opus · **Findings:** 6 · **Touches:** `ccp/api/src/store/*`
 
-**Status: 4 of 6 closed** (API-17, DATA-14, DATA-15, CONC-8). **DATA-5 and DATA-16 remain.**
-Context for whoever takes them: `ConfigStore` now carries a documented list of the seam's
-deliberate DynamoDB divergences, `transact` rejects duplicate keys and >100-action batches,
-`ifEquals` compares values deep-equal, `QueryOptions` has a `where` filter (PERF-14), and
-the snapshot is serialized in chunks that yield the event loop — which rests on stored items
-being REPLACED rather than mutated in place, so do not break that property.
+**Status: BATCH COMPLETE — all 6 closed.** Nothing here needs picking up. The seam now
+carries a documented list of its deliberate DynamoDB divergences, `transact` rejects
+duplicate keys and >100-action batches, `ifEquals` compares values deep-equal,
+`QueryOptions` has a `where` filter (PERF-14), the snapshot serializes in chunks that yield
+the event loop — which rests on stored items being REPLACED rather than mutated in place, so
+do not break that property — and one parser validates every snapshot on the way in.
 
 
 | finding | sev | expected result |
 | --- | --- | --- |
-| **DATA-5** | medium | Corrupt-but-parseable rows stop loading silently. WARNING: the wrong shim fails a BOOT, not a test (see R-41) — design the legacy-passthrough against real stored shapes, and make refusing loud and specific about which row. |
+| ~~**DATA-5**~~ | medium | **DONE, structurally.** `FileStore.load` now goes through the one snapshot parser (so backup/restore get it too); each row must be an object with a string PK/SK, and a refusal names the row INDEX plus something findable in it. Full zod validation deliberately NOT done — R-50 records why and what would make it safe. |
 | ~~**DATA-15**~~ | low | **DONE.** The separator half was already closed (NUL). `idempotencyKey` is now constrained to a safe charset at the edge, so client bytes cannot choose part of a PK. |
-| **DATA-16** | low | The snapshot carries a format/version marker, so a future migration does not rest on convention. Must stay readable by the current loader. |
+| ~~**DATA-16**~~ | low | **DONE.** Readers accept `{formatVersion, items}` and refuse a version the binary predates; the legacy bare array still loads AND is still what gets written, so a rollback cannot meet an unparseable file. The writer flip is R-49. |
 | ~~**API-17**~~ | low | **DONE.** Two traps FIXED (`ifEquals` now deep-equal - an object guard could never pass; `transact` now rejects duplicate keys and >100 actions, as a plain Error so retry loops do not bury it). Three conventions DOCUMENTED on `ConfigStore` for a future adapter. |
 | ~~**DATA-14**~~ | low | **DONE with API-17.** The three conventions (undefined-guard = attribute-absent, undefined-in-set = REMOVE, GSI1SK-falls-back-to-SK) are now contract, each with a behaviour test an adapter can be held to. |
 | ~~**CONC-8**~~ | medium | **DONE.** Both halves of the finding's own recommendation were already in place (slide granularity, write coalescing); what remained was the serialize step, measured at 107 ms of blocked event loop at 20,000 rows. Now chunked with a real macrotask yield: max block 122.7 ms -> 20.3 ms, and bounded by chunk size rather than store size. |

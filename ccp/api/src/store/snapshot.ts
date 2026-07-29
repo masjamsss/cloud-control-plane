@@ -18,17 +18,82 @@ const AUDIT_MONTH = /^P#(.+)#AUDIT#\d{6}$/;
 const AUDIT_HEAD = /^P#(.+)#AUDIT$/;
 
 /**
+ * The highest snapshot `formatVersion` this binary understands (DATA-16).
+ *
+ * The on-disk snapshot has always been a bare JSON array with no producer stamp and no
+ * version, so an older binary handed a file whose invariants it predates could not DETECT
+ * that — it read it and rewrote it blind, which is the failure mode a format marker
+ * exists to prevent. There was also nowhere to hang a future breaking migration.
+ *
+ * The envelope is `{ formatVersion: <n>, items: [...] }`. This release READS both shapes
+ * and refuses a version above this constant; it deliberately still WRITES the bare array
+ * (see R-49) so that a rollback to the previous binary cannot be bricked by a file it
+ * cannot parse. Teaching every reader to detect comes first; changing what is written is
+ * the second half of an expand/contract migration, not the same step.
+ */
+export const SNAPSHOT_FORMAT_VERSION = 1;
+
+/**
  * Parse a snapshot file's contents. Fail closed — matching FileStore.load — on
  * empty/whitespace (a corrupt or half-written snapshot) or a non-array payload,
  * so a restore never silently installs a broken store.
+ *
+ * DATA-16: accepts the versioned envelope as well as the legacy bare array, and refuses a
+ * `formatVersion` this binary does not know rather than reading a newer file's items with
+ * older assumptions.
+ *
+ * DATA-5: every row is checked for a string `PK` and `SK` before it reaches the store, and
+ * a violation names the ROW INDEX and what it actually found. This is the structural
+ * minimum, not schema validation: an item missing `PK`/`SK` used to key as
+ * `"undefined\u0000undefined"`, so a whole corrupt file could collapse into one row that
+ * silently overwrote itself — parseable, accepted, and unrecoverable. Deliberately NOT a
+ * full per-row zod pass (see R-50): a shim guessed at rather than designed against real
+ * stored shapes fails a BOOT, not a test.
  */
 export function parseSnapshotItems(raw: string): Item[] {
   if (raw.trim().length === 0) {
     throw new Error('snapshot is empty/whitespace — refusing to treat it as a valid store snapshot (corrupt or truncated file).');
   }
   const parsed: unknown = JSON.parse(raw);
-  if (!Array.isArray(parsed)) throw new Error('snapshot is not a JSON array of items.');
-  return parsed as Item[];
+
+  let items: unknown;
+  if (Array.isArray(parsed)) {
+    items = parsed; // legacy bare array — every snapshot written to date
+  } else if (parsed !== null && typeof parsed === 'object' && 'formatVersion' in parsed) {
+    const env = parsed as { formatVersion: unknown; items?: unknown };
+    if (typeof env.formatVersion !== 'number' || !Number.isInteger(env.formatVersion) || env.formatVersion < 1) {
+      throw new Error(`snapshot has an unreadable formatVersion (${JSON.stringify(env.formatVersion)}) — refusing to guess at its shape.`);
+    }
+    if (env.formatVersion > SNAPSHOT_FORMAT_VERSION) {
+      throw new Error(
+        `snapshot formatVersion ${env.formatVersion} is newer than this build understands (max ${SNAPSHOT_FORMAT_VERSION}) — ` +
+          'refusing to read it with older assumptions. Upgrade the binary, or restore a snapshot this version wrote.',
+      );
+    }
+    if (!Array.isArray(env.items)) throw new Error(`snapshot formatVersion ${env.formatVersion} has no \`items\` array.`);
+    items = env.items;
+  } else {
+    throw new Error('snapshot is not a JSON array of items.');
+  }
+
+  const rows = items as unknown[];
+  for (let i = 0; i < rows.length; i++) {
+    const it = rows[i];
+    if (it === null || typeof it !== 'object' || Array.isArray(it)) {
+      throw new Error(`snapshot row ${i} is not an object (found ${it === null ? 'null' : Array.isArray(it) ? 'an array' : typeof it}) — refusing to load a corrupt store.`);
+    }
+    const r = it as Record<string, unknown>;
+    if (typeof r.PK !== 'string' || typeof r.SK !== 'string') {
+      // Name the row AND enough of it to find by hand: an operator staring at a refused
+      // boot needs to know which line of a 50 MB file to look at.
+      const hint = typeof r.PK === 'string' ? `PK ${JSON.stringify(r.PK)}` : typeof r.SK === 'string' ? `SK ${JSON.stringify(r.SK)}` : `keys [${Object.keys(r).slice(0, 6).join(', ')}]`;
+      throw new Error(
+        `snapshot row ${i} has no string PK/SK (${hint}) — refusing to load. Such a row keys as "undefined/undefined", ` +
+          'so every one of them would collapse onto a single entry and silently overwrite the others.',
+      );
+    }
+  }
+  return rows as Item[];
 }
 
 export type SnapshotChain = {

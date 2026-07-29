@@ -5,6 +5,7 @@ import { dirname } from 'node:path';
 import { DurabilityError, type Item, type TransactWrite } from './configStore';
 import { DataLock } from './dataLock';
 import { MemoryStore } from './memoryStore';
+import { parseSnapshotItems } from './snapshot';
 
 /**
  * Durable, single-file `ConfigStore` for real deployments. It reuses MemoryStore's
@@ -140,7 +141,13 @@ export class FileStore extends MemoryStore {
         `ccp data file ${this.file} exists but is empty/whitespace — refusing to boot a silently-empty store (corrupt or half-restored snapshot). Remove the file to start fresh, or restore a valid snapshot.`,
       );
     }
-    this.importItems(JSON.parse(raw) as Item[]);
+    // DATA-5 / DATA-16 — one parser for every reader of a snapshot (this loader, `backup`
+    // and `restore`). It was `JSON.parse(raw) as Item[]`: a non-array top level failed only
+    // by an incidental `items.map is not a function` further down, and any parseable
+    // corruption — a hand-edit, a bad restore, a partial write by another tool, a row with
+    // no PK — loaded clean and flowed through unchecked casts into auth and domain logic.
+    // `snapshot.ts` had the proper check all along; this loader simply did not use it.
+    this.importItems(parseSnapshotItems(raw));
   }
 
   override async put(

@@ -1,7 +1,7 @@
 {
   "generated_from": "docs/audit/FINDINGS.md + docs/audit/TRIAGE.md",
   "authoritative_source": "docs/audit/FINDINGS.md \u2014 if this file disagrees, FINDINGS.md wins",
-  "open_findings": 127,
+  "open_findings": 125,
   "rules": {
     "take": "a whole batch id, not individual findings \u2014 batches are grouped by files touched",
     "baseline": "parallel lanes must NOT touch scripts/findings-baseline.txt; it is a ceiling, not an exact match. One reconciliation commit at the end.",
@@ -206,7 +206,8 @@
           "title": "Store rows are not validated against the schemas on load: corrupt-but-parseable state is accepted silently",
           "lane": null,
           "expected_result": "Corrupt-but-parseable rows stop loading silently. WARNING: the wrong shim fails a BOOT, not a test (see R-41) \u2014 design the legacy-passthrough against real stored shapes, and make refusing loud and specific about which row.",
-          "verify_first": false
+          "verify_first": false,
+          "status": "closed"
         },
         {
           "id": "DATA-15",
@@ -227,7 +228,8 @@
           "title": "No format/version marker in the snapshot file; migration rests entirely on convention",
           "lane": null,
           "expected_result": "The snapshot carries a format/version marker, so a future migration does not rest on convention. Must stay readable by the current loader.",
-          "verify_first": false
+          "verify_first": false,
+          "status": "closed"
         },
         {
           "id": "API-17",
@@ -262,7 +264,8 @@
           "verify_first": false,
           "status": "closed"
         }
-      ]
+      ],
+      "status": "complete"
     },
     {
       "id": "B-O4",
@@ -1676,5 +1679,5 @@
       ]
     }
   ],
-  "note_on_open_findings": "Count at the time TRIAGE.md was written was 139 of 212 declared. Now 127 open of 214 declared: B-O1 and B-O2 COMPLETE; B-O3 has API-17, DATA-14, DATA-15 and CONC-8 closed with DATA-5 and DATA-16 remaining; two findings were RAISED during the work (API-19 fixed; API-20 open). FINDINGS.md is authoritative."
+  "note_on_open_findings": "Count at the time TRIAGE.md was written was 139 of 212 declared. Now 125 open of 214 declared: opus batches B-O1, B-O2 and B-O3 are all COMPLETE; two findings were RAISED during the work (API-19 fixed; API-20 open). Next opus batch is B-O4. FINDINGS.md is authoritative."
 }
