@@ -423,4 +423,4 @@ The apply scheduler and cooling windows.
 
 - [x] API-3 | high | scheduler | fixed:a19e688 | 02-api-correctness.md | Arming the scheduler halts every scheduled request: nothing ever writes the plan pin it requires
 - [x] API-7 | medium | scheduler | fixed:a19e688 | 02-api-correctness.md | Scheduler ignores `earliestApplyAt`: a still-cooling request auto-applies the moment its window opens
-- [x] PERF-14 | low | scheduler | fixed:PENDING | 11-performance-scalability.md | Scheduler tick re-scans every project's full request collection every minute
+- [x] PERF-14 | low | scheduler | fixed:bb88f1d | 11-performance-scalability.md | Scheduler tick re-scans every project's full request collection every minute
