@@ -238,9 +238,9 @@ Durability, rollback, schema validation on load, and store-seam fidelity against
 - [ ] DATA-6 | medium | data-persistence | open | 03-data-integrity.md | `rename` durability is not guaranteed: no directory fsync after the atomic swap
 - [x] ERR-10 | medium | data-persistence | fixed:0d4c3a4 | 09-error-handling.md | FileStore persist failure leaves memory ahead of disk: the client gets a 500 for a write that took effect
 - [ ] UI-8 | medium | data-persistence | open | 06-frontend-ui-robustness.md | DiffView corrupts `~` change lines whose old value contains " -> "
-- [x] API-17 | low | data-persistence | fixed:PENDING | 02-api-correctness.md | Store-seam divergences from the DynamoDB semantics it mirrors
-- [x] DATA-14 | low | data-persistence | fixed:PENDING | 03-data-integrity.md | Seam-fidelity gaps between MemoryStore and the promised DynamoDB semantics
-- [x] DATA-15 | low | data-persistence | fixed:PENDING | 03-data-integrity.md | Map key concatenation with a space separator is aliasable in principle; client-controlled bytes reach PKs unconstrained
+- [x] API-17 | low | data-persistence | fixed:68b360c | 02-api-correctness.md | Store-seam divergences from the DynamoDB semantics it mirrors
+- [x] DATA-14 | low | data-persistence | fixed:68b360c | 03-data-integrity.md | Seam-fidelity gaps between MemoryStore and the promised DynamoDB semantics
+- [x] DATA-15 | low | data-persistence | fixed:68b360c | 03-data-integrity.md | Map key concatenation with a space separator is aliasable in principle; client-controlled bytes reach PKs unconstrained
 - [ ] DATA-16 | low | data-persistence | open | 03-data-integrity.md | No format/version marker in the snapshot file; migration rests entirely on convention
 - [x] REM-1 | medium | data-persistence | fixed:domain/versionStamp.ts marker-guarded boot one-shot; test/versionStamp.test.ts | 15-remediation.md | The optimistic-concurrency guards cannot bite on rows written before they existed
 
