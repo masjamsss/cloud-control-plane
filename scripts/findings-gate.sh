@@ -51,14 +51,25 @@ BASELINE_FILE="$ROOT/scripts/findings-baseline.txt"
 # the other hat: it must not look like a FAILURE either.
 check_fixed_shas() {
   git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 || return 0
-  local bad=0 sha
+  local bad=0 seen=0 checked=0 sha
   for sha in $(grep -oE 'fixed:[0-9a-f]{7,40}' "$LEDGER" | sed 's/fixed://' | sort -u); do
+    seen=$((seen + 1))
     git -C "$ROOT" cat-file -e "${sha}^{commit}" 2>/dev/null || continue  # not in this clone
+    checked=$((checked + 1))
     if ! git -C "$ROOT" merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then
       echo "ERROR: FINDINGS.md cites fixed:${sha}, which exists but is NOT an ancestor of HEAD — it was probably recorded before a \`git commit --amend\` rewrote it (L-28)." >&2
       bad=$((bad + 1))
     fi
   done
+  # Say how many were actually DEREFERENCED, not just how many were looked at. On a
+  # shallow checkout `checked` is 0 and this check has verified nothing — which must be
+  # visible, or "PASS" means "I could not look" (L-1). `findings.yml` therefore checks out
+  # full history; anywhere else, a 0 here is the reader's cue.
+  if [ "$checked" -eq 0 ] && [ "$seen" -gt 0 ]; then
+    echo "findings-gate: NOTE — 0 of $seen fixed:<sha> references could be resolved in this clone (shallow checkout?); their reachability was NOT verified."
+  else
+    echo "findings-gate: $checked of $seen fixed:<sha> references verified reachable from HEAD."
+  fi
   [ "$bad" -eq 0 ]
 }
 
