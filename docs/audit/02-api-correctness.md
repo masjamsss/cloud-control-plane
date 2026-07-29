@@ -193,6 +193,28 @@ Two latent traps in the otherwise faithful transact implementation: (a) `ifEqual
 By design the revert proposal row is not consumed by legitimize ("stays open; both paths remain visible"), but nothing else deduplicates either — repeated `POST /:id/drift/security/:digest/legitimize` calls each create a fresh `NEEDS_ENGINEER` request bound to the same digest (only the submit rate limit slows it). The adopt/revert submit lane, by contrast, atomically flips the proposal to `submitted` exactly once.
 **Recommendation:** record `legitimizeRequestId` on the proposal row (without changing its `open` status) and refuse a second create while that request is open, or at least surface the prior request in the response.
 
+### API-19 — `settleCooling` stamps `APPLIED` during a change freeze, bypassing the freeze veto
+**Severity: medium**
+**Location:** `ccp/api/src/domain/cooling.ts:29` (`coolingTargetStatus`), `:41-83` (`settleCooling`); contrast `ccp/api/src/routes/requests.ts:780,789-791` (the approve handler's freeze gate)
+
+The approve handler treats "no request may RECORD an apply during a freeze" as binding (0024 §2.2/§2.6.1): at quorum-met it checks `isFrozen` and parks a `kind:'now'` request in `AWAITING_DEPLOY_APPROVAL` with a `held_frozen` event instead of stamping `APPLIED`. `settleCooling` — the lazy settler for an interim-profile request whose 24h cooling-off has elapsed — makes the *same* status decision via `coolingTargetStatus`, which reads only `schedule.kind` and **never consults the freeze**. So an `APPROVED_COOLING` + `kind:'now'` request whose cooling elapses during a freeze is stamped `APPLIED` by the next read that touches it, on any endpoint.
+
+The two paths are the same decision reached at two different times, and only one of them enforces the veto. Which one a given request takes is decided by whether its risk profile attached a cooling-off period — i.e. the *higher-risk* requests are the ones that bypass the freeze.
+
+Verified against the current code, not inferred: seeding an `APPROVED_COOLING` / `kind:'now'` row with an elapsed `earliestApplyAt` under `freeze.global = true` and calling `settleCooling` returns `APPLIED`.
+
+**Recommendation:** give `settleCooling` the freeze state (resolved once per read, as the list path already does for API-8's release) and have a frozen `kind:'now'` settlement land in `AWAITING_DEPLOY_APPROVAL` with the same `held_frozen` event the approve handler writes — which `settleFrozenHold` (API-8) then releases when the freeze lifts. That makes one freeze rule with one implementation and one exit, rather than two decisions that disagree.
+
+### API-20 — The one-time legacy settlement races itself: concurrent first requests get 409 CHAIN_CONTENTION on a plain read
+**Severity: low**
+**Location:** `ccp/api/src/middleware/session.ts:50` (`withSettlement`), `ccp/api/src/domain/settlement.ts:137,204,228` (`retroRegisterLegacyProject` via `transactWithAudit`)
+
+`ensureSettlement` runs the one-time legacy-estate materialization inside the request path, on whichever authenticated requests arrive first. It writes through `transactWithAudit`, which retries once against a fresh chain head and then throws `CHAIN_CONTENTION`. With three concurrent first requests on an unsettled deployment, one wins and the other two surface **409 on a plain `GET`** — a read failing because two other reads were doing the same one-time bootstrap.
+
+Self-healing (once settlement lands, later requests are unaffected) and confined to the first moments after a deployment upgrade, hence low. But it is a read returning a write-conflict error to a user who did nothing concurrent, and the retry budget is fixed at one regardless of how many callers are racing. Observed directly: three concurrent `GET /requests/:id` against a fresh store return `200, 409, 409`, with the stack in `retroRegisterLegacyProject`.
+
+**Recommendation:** serialize settlement behind a single in-process promise (the same "one in-flight attempt, shared" shape `TerraformExecutor.init` uses after ERR-5) so concurrent callers await one settlement rather than racing N; or, on a lost settlement race, re-read and proceed rather than surfacing the conflict — the loser's work is already done by the winner.
+
 ---
 
 ## Minor observations

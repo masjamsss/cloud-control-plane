@@ -1,7 +1,7 @@
 {
   "generated_from": "docs/audit/FINDINGS.md + docs/audit/TRIAGE.md",
   "authoritative_source": "docs/audit/FINDINGS.md \u2014 if this file disagrees, FINDINGS.md wins",
-  "open_findings": 133,
+  "open_findings": 132,
   "rules": {
     "take": "a whole batch id, not individual findings \u2014 batches are grouped by files touched",
     "baseline": "parallel lanes must NOT touch scripts/findings-baseline.txt; it is a ceiling, not an exact match. One reconciliation commit at the end.",
@@ -163,7 +163,8 @@
           "title": "Stuck `APPLYING` after a worker crash has no reclaim or operator path",
           "lane": null,
           "expected_result": "VERIFY FIRST: API-2's `APPLY_LEASE_MS` + halt-on-expiry, plus cancel accepting the halt statuses, may already close this. Confirm the operator path end to end; close with evidence, or fix only the remaining gap.",
-          "verify_first": true
+          "verify_first": false,
+          "status": "closed"
         },
         {
           "id": "PERF-14",
@@ -183,7 +184,8 @@
           "title": "Freeze-held `kind:'now'` requests dead-end in AWAITING_DEPLOY_APPROVAL after the freeze lifts",
           "lane": null,
           "expected_result": "A freeze-held `kind:'now'` request has a defined path once the freeze lifts, instead of dead-ending in AWAITING_DEPLOY_APPROVAL.",
-          "verify_first": false
+          "verify_first": false,
+          "status": "closed"
         }
       ]
     },
@@ -1668,5 +1670,5 @@
       ]
     }
   ],
-  "note_on_open_findings": "Count at the time TRIAGE.md was written was 139. Batch B-O1 is COMPLETE; B-O2 has ERR-5 and ERR-6 closed, with CONC-10, API-8 and PERF-14 still open. Findings carrying \"status\": \"closed\" here are done. FINDINGS.md is authoritative."
+  "note_on_open_findings": "Count at the time TRIAGE.md was written was 139 of 212 declared. Now 132 open of 214 declared: batch B-O1 is COMPLETE, B-O2 has only PERF-14 left, and two findings were RAISED during the work (API-19, fixed; API-20, open). Findings carrying \"status\": \"closed\" here are done. FINDINGS.md is authoritative."
 }

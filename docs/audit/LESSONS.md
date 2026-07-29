@@ -847,3 +847,39 @@ defect behind, because the check ran against the sentence rather than the behavi
 Both directions are the same discipline: **re-derive the defect against the code in front of
 you before deciding what to do about it.** It closed one finding with no code at all and
 found a live defect the other finding no longer described.
+
+### L-30 — The same decision made in two places will disagree; the lazy settler is where it disagrees quietly
+
+Findings: API-8, API-19
+
+This system has no background timer, so a state that needs an external event to advance is
+settled LAZILY by whoever next reads it. That doctrine is right, and it has a failure mode
+that is structural rather than accidental: the settler is a SECOND implementation of a
+decision the write path already makes, written months later, by someone reading a narrower
+slice of the rules.
+
+Both findings in this pair are that shape, and they fail in opposite directions from the
+same cause. The approve handler decides where a fully-approved request lands, and it
+consults two things: the schedule, and the change freeze. `settleCooling` re-derives that
+same landing decision when a cooling-off elapses — and consulted only the schedule
+(**API-19**, fail-OPEN: an apply recorded during a freeze). The freeze branch's own output
+had no settler at all (**API-8**, dead-end: parked forever once the freeze lifted). One
+decision, three implementations, no two agreeing.
+
+**What generalises:** when you find a lazy settler, do not read it against the finding —
+read it against **the write path it is re-deriving**, attribute by attribute, and ask of
+each guard the write path applies: *does the settler apply this one too?* API-19 was not in
+any report. It fell out of holding the two functions side by side while wiring API-8, and
+it took thirty seconds to confirm once the question was asked in that form.
+
+The structural fix, not taken here, is to have one function decide and both callers use it.
+What was taken instead: `coolingTargetStatus` now requires `frozen` as a **non-optional**
+parameter. An optional would have let all six existing call sites keep the old behaviour
+silently — and a call site that never asks the question is the entire defect. Making the
+compiler force every caller to answer is the cheap version of merging the two paths, and it
+fails loudly at the next call site somebody adds.
+
+**Corollary, from the same batch:** a fix that only refuses is not a fix. Adding the freeze
+check to `settleCooling` on its own would have converted a fail-open into a dead end — the
+exact defect API-8 was closing, one function over. They shipped together, sharing one
+marker and one exit, because a veto without a release is half a state machine.

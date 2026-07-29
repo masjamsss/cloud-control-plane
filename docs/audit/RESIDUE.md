@@ -522,3 +522,20 @@ no operational experience yet to set it from: shipping a tunable whose correct v
 knows invites it being set to something worse than the default, and the failure mode of
 tuning it too high is the finding's own defect wearing a configuration hat. Revisit when a
 real deployment has hit the limit and can say whether it fired too early.
+
+### R-45 · The stuck-`APPLYING` lease sweep only runs while the scheduler is armed
+*Residue on **CONC-10**.*
+
+The sweep lives inside `runDueApplies`, so it runs only when the scheduler loop is on
+(`CCP_SCHEDULER=1`). A deployment that armed the scheduler, had a worker die mid-apply, and
+then disarmed the scheduler keeps that row in `APPLYING` with nothing to release it — the
+finding's dead end, reachable by a narrower route.
+
+Accepted rather than tracked, for two reasons. Only the scheduler can create an `APPLYING`
+row in the first place, so this needs an operator to arm the lane, crash a worker, and then
+disarm it before anyone looked — and the remedy is to re-arm the scheduler for one tick,
+which is the same switch they just turned off. The finding's own alternative (an admin
+"resolve stuck apply" verb) would cover it, and was deliberately not taken: a recovery verb
+nobody knows to run is not a recovery path, and adding one *as well* means two mechanisms
+that can disagree about when a claim is dead.
+

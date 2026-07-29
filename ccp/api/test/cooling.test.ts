@@ -87,8 +87,8 @@ describe('domain/cooling.ts — pure helpers', () => {
   });
 
   it('coolingTargetStatus follows the ORIGINAL schedule', () => {
-    expect(coolingTargetStatus({ kind: 'now' })).toBe('APPLIED');
-    expect(coolingTargetStatus({ kind: 'window', at: '2026-08-01T00:00:00.000Z' })).toBe('AWAITING_DEPLOY_APPROVAL');
+    expect(coolingTargetStatus({ kind: 'now' }, false)).toBe('APPLIED');
+    expect(coolingTargetStatus({ kind: 'window', at: '2026-08-01T00:00:00.000Z' }, false)).toBe('AWAITING_DEPLOY_APPROVAL');
   });
 });
 

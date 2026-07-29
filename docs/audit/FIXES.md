@@ -2639,3 +2639,122 @@ the blast radius of an unhandled throw is a single request.
 - [x] **Evidence in the status line** — 1,428 api tests pass, 2,745 app tests.
 
 **Residue:** the halt threshold is a constant, not per-project policy. See **R-44**.
+
+## CONC-10
+
+*Stuck `APPLYING` after a worker crash has no reclaim or operator path.*
+
+**Verified closed by API-2; no code changed.** The finding's own recommendation — "stamp a
+claim timestamp and either let the scheduler transition `APPLYING` rows older than a
+generous lease to `HALTED_APPLY_FAILED` (never re-apply — halt for a human), or add an
+admin verb" — is exactly what API-2 built, and it took the first branch deliberately: a
+recovery verb an operator has to know to run is not a recovery path.
+
+Confirmed against the current code, end to end rather than by reading the fix:
+
+- `applyClaimedAt` is stamped by the claim; `applyClaimExpired` ages from it, falls back to
+  `updatedAt` for rows claimed before the stamp existed, and treats an unparseable
+  timestamp as expired — a row that cannot be aged is one nothing can ever release, which
+  is the wedge itself.
+- The claimed-row sweep runs **before** the due-list early return and is **not**
+  window-filtered, so a row stranded days after its window shut is still found. It is also
+  ahead of the freeze check, so a frozen deployment still un-wedges.
+- The sweep HALTS, never re-applies — the dead worker may have applied some, all or none of
+  the change, and re-running over a half-applied change is the one outcome worse than
+  stopping.
+- `HALTED_APPLY_FAILED` is in `CANCELLABLE_STATUSES`, so the operator's exit exists in the
+  product rather than in a text editor.
+
+- [x] **Regression tests** — already pinned, none added: `test/schedulerStuckState.test.ts`
+      (12) covers each link, including one named for exactly this finding's shape —
+      *"an end-to-end wedge clears: crash → lease expiry → cancel, with no store surgery"* —
+      and its complement, *"APPLYING itself is still NOT cancellable — the lease is the only
+      way out"*, which is what keeps API-5's guarantee intact.
+- [x] **Evidence in the status line** — those 12 tests pass against the current code.
+
+**Residue:** the sweep only runs while the scheduler loop is armed. See **R-45**.
+
+## API-8
+
+*Freeze-held `kind:'now'` requests dead-end in `AWAITING_DEPLOY_APPROVAL` after the freeze
+lifts.*
+
+At quorum-met the approve handler stamps `APPLIED` for a `kind:'now'` schedule — unless a
+change freeze is on, in which case the row is parked in `AWAITING_DEPLOY_APPROVAL` with a
+`held_frozen` event, because no request may RECORD an apply during a freeze. That park had
+no exit. `settleWindow` returns immediately for `kind:'now'`, the scheduler's due filter
+needs an open maintenance window (a `now` row has none), and the apply bundle is disarmed
+by default. "Fully approved — held" was forever, with cancel as the only way out.
+
+What makes it a defect rather than a policy is the arbitrariness: the same request approved
+one minute after the unfreeze is stamped `APPLIED` instantly. Its terminal fate depended on
+which side of the freeze the last signature happened to land on.
+
+`settleFrozenHold` is the missing sibling of `settleCooling`/`settleWindow` and follows
+their doctrine exactly — lazy, on read, guarded, audited, idempotent-safe. Three decisions
+worth naming:
+
+- **The `held_frozen` marker is the discriminator**, not the status/schedule pair. Today
+  they are equivalent, but only the marker says *why* the row is parked, and a future branch
+  that parks a `now` row for another reason must not be swept into `APPLIED` by this.
+- **Fail-closed on quorum.** The ladder can be tightened after the row was approved, so the
+  release re-checks `currentRequirement` — the same tighten-only helper approve and apply
+  use — and leaves the row held if the bar moved above its signatures. Still stranded, but
+  now stranded in a state a human can act on: it needs another approval, and the ladder
+  will ask for one.
+- **The freeze is read at most once per page.** `isFrozenHold` is pure and store-free so it
+  can screen first; a list with no held rows costs exactly what it did before.
+
+- [x] **Negative test** — removing the wiring from the route fails the three route-level
+      tests and leaves the settler-level ones green, which is the honest split: the defect
+      was never that the logic was wrong, it was that no route ran it.
+- [x] **Regression tests** — 10 in `test/frozenHoldRelease.test.ts`, driving the real
+      routes (single GET and the list, which is where a requester actually looks). Both
+      complements are covered: a windowed freeze-held row is left to the scheduler rather
+      than applied outside its window, and a `now` row with no marker is left alone.
+- [x] **A wrong test taught me something.** The race test originally issued three
+      concurrent HTTP reads and got `200, 409, 409` — which turned out to have nothing to
+      do with this seam. It reproduces on unmodified `main` with an already-`APPLIED` row,
+      and the stack points at the one-time legacy settlement racing itself. Raised as
+      **API-20**; the race test now drives the settlers directly, where the contention it
+      claims to measure actually is.
+- [x] **Evidence in the status line** — 1,445 api tests pass (105 files), 2,745 app tests.
+
+## API-19
+
+*`settleCooling` stamps `APPLIED` during a change freeze, bypassing the freeze veto.*
+
+**Found while fixing API-8, and raised as a new finding rather than folded in silently.**
+The approve handler treats "no request may RECORD an apply during a freeze" as binding and
+parks a `kind:'now'` request instead of applying it. `settleCooling` makes the *same*
+decision at a different moment — when an interim-profile request's 24h cooling-off elapses
+— through `coolingTargetStatus`, which read only `schedule.kind`. It never consulted the
+freeze, so the next read that touched such a row stamped it `APPLIED` on a frozen
+deployment, from any endpoint.
+
+The sharp edge is which requests were affected: whether a request takes the cooling path at
+all is decided by its risk profile attaching a cooling-off period, so it was precisely the
+**higher-risk** requests that bypassed the freeze.
+
+Fixed with API-8 because they are one rule seen twice. A frozen cooling settlement now
+writes the same `held_frozen` marker the approve handler writes, and `settleFrozenHold`
+releases it when the freeze lifts — one freeze rule, one marker, one exit, instead of two
+decisions that disagreed. Refusing without that exit would have traded a fail-open for a
+dead end, which is why the two land together.
+
+`coolingTargetStatus` takes `frozen` as a **required** parameter rather than an optional
+one: an optional would have let every existing call site keep the old behaviour silently,
+and the whole defect is a call site that never asked the question. The compiler made all
+six of them decide.
+
+- [x] **The defect was reproduced first**, before any code changed: seeding an
+      `APPROVED_COOLING` / `kind:'now'` row with an elapsed `earliestApplyAt` under
+      `freeze.global = true` and calling `settleCooling` returned `APPLIED`.
+- [x] **Negative test** — reverting `coolingTargetStatus` to ignore the freeze fails 5 of
+      the 7 tests. The two that survive are the over-fix guards: an unfrozen `now` row must
+      still settle straight to `APPLIED`, and a windowed row must NOT gain a `held_frozen`
+      marker (which would let API-8's release apply it outside its maintenance window).
+- [x] **Regression tests** — 7 in `test/coolingFreezeVeto.test.ts`, including the end-to-end
+      shape that neither half proves alone: cooling elapses under a freeze → held, freeze
+      lifts → one read completes it.
+- [x] **Evidence in the status line** — 1,445 api tests pass, 2,745 app tests.

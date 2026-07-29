@@ -26,6 +26,7 @@ import { bundleArmed, bundleClaimLive, bundleConfig, realSteps, runBundle, runTr
 import { resolveLaneRemote, type LaneProject } from '../domain/laneRepo';
 import { resolveKnob } from '../domain/deploymentSettings';
 import { coolingElapsed, settleCooling } from '../domain/cooling';
+import { isFrozenHold, settleFrozenHold } from '../domain/frozenHold';
 import { canSignStep } from '../domain/eligibility';
 import { totpDevicesOf } from '../auth/totp';
 import { computeFeasibility } from '../domain/feasibility';
@@ -612,11 +613,29 @@ export function requestRoutes(): Hono<AppEnv> {
     // once per settler per row — 2N turns to do no work on a list of N. The
     // screened rows still go through the FULL cooling→window chain, because
     // settling cooling can hand a row straight into a window that has expired.
+    //
+    // API-8's freeze-hold release joins the same chain, with one difference that matters
+    // on a list: its precondition is a STORE READ (is the project frozen?), and reading it
+    // per row would turn a page of N into N extra reads. `isFrozenHold` is pure and
+    // store-free, so it screens first; the freeze itself is resolved AT MOST ONCE for the
+    // whole page, lazily, and only if some row is actually waiting on it. A list with no
+    // freeze-held rows — the overwhelmingly common case — costs exactly what it did before.
     const settleNow = nowMs();
-    const settle = async (x: RequestItem): Promise<RequestItem> =>
-      coolingElapsed(x, settleNow) || needsWindowSettlement(x, settleNow)
-        ? settleWindow(store, projectId, await settleCooling(store, projectId, x))
-        : x;
+    let frozenNow: boolean | undefined;
+    const frozenOnce = async (): Promise<boolean> => (frozenNow ??= await isFrozen(store, projectId));
+    const settle = async (x: RequestItem): Promise<RequestItem> => {
+      let s = x;
+      if (coolingElapsed(s, settleNow) || needsWindowSettlement(s, settleNow)) {
+        s = await settleWindow(store, projectId, await settleCooling(store, projectId, s, await frozenOnce()));
+      }
+      // Last in the chain, and that ordering is load-bearing now: under API-19 an elapsed
+      // cooling on a frozen deployment PRODUCES a freeze-hold rather than stamping
+      // APPLIED, so a row can traverse cooling → held → released in this one touch the
+      // moment the freeze lifts. Before API-19 cooling stamped APPLIED regardless and the
+      // only producer of a hold was the approve handler.
+      if (isFrozenHold(s)) s = await settleFrozenHold(store, projectId, s, await frozenOnce());
+      return s;
+    };
 
     const gsi = requestCollectionGsi(projectId);
 
@@ -663,8 +682,12 @@ export function requestRoutes(): Hono<AppEnv> {
     const k = requestKey(projectId, c.req.param('id'));
     let item = (await store.get(k.PK, k.SK)) as RequestItem | null;
     if (!item) return c.json({ code: 'NOT_FOUND', reason: 'No such request.' }, 404);
-    item = await settleCooling(store, projectId, item); // lazy cooling-off settlement
+    // One freeze read serves BOTH settlers: API-19 needs it to decide where an elapsed
+    // cooling lands, API-8 needs it to decide whether a held row may be released.
+    const frozenHere = await isFrozen(store, projectId);
+    item = await settleCooling(store, projectId, item, frozenHere); // lazy cooling-off settlement
     item = await settleWindow(store, projectId, item); // lazy window-expiry settlement
+    item = await settleFrozenHold(store, projectId, item, frozenHere); // API-8 freeze-hold release
     return c.json(toChangeRequest(item, projectId));
   });
 
@@ -678,8 +701,12 @@ export function requestRoutes(): Hono<AppEnv> {
     const k = requestKey(projectId, c.req.param('id'));
     let req = (await store.get(k.PK, k.SK)) as RequestItem | null;
     if (!req) return c.json({ code: 'NOT_FOUND', reason: 'No such request.' }, 404);
-    req = await settleCooling(store, projectId, req);
+    // One freeze read serves BOTH settlers: API-19 needs it to decide where an elapsed
+    // cooling lands, API-8 needs it to decide whether a held row may be released.
+    const frozenHere = await isFrozen(store, projectId);
+    req = await settleCooling(store, projectId, req, frozenHere);
     req = await settleWindow(store, projectId, req);
+    req = await settleFrozenHold(store, projectId, req, frozenHere);
 
     const { ladder, required } = currentRequirement(req);
     const feasibility = await computeFeasibility(store, projectId, ladder, req.requester);
@@ -1078,8 +1105,12 @@ export function requestRoutes(): Hono<AppEnv> {
     const k = requestKey(projectId, c.req.param('id'));
     let req = (await store.get(k.PK, k.SK)) as RequestItem | null;
     if (!req) return c.json({ code: 'NOT_FOUND', reason: 'No such request.' }, 404);
-    req = await settleCooling(store, projectId, req);
+    // One freeze read serves BOTH settlers: API-19 needs it to decide where an elapsed
+    // cooling lands, API-8 needs it to decide whether a held row may be released.
+    const frozenHere = await isFrozen(store, projectId);
+    req = await settleCooling(store, projectId, req, frozenHere);
     req = await settleWindow(store, projectId, req);
+    req = await settleFrozenHold(store, projectId, req, frozenHere);
 
     // Senior-only, same tier as the deploy approval it satisfies (lead/admin).
     if (roleFor(account, projectId) !== 'lead' && account.isAdmin !== true) {
@@ -1404,8 +1435,12 @@ export function requestRoutes(): Hono<AppEnv> {
     // WINDOW_EXPIRED, itself STILL cancellable) is reflected before the state
     // check, even if nobody has read this request since it was approved (no
     // background timer).
-    req = await settleCooling(store, projectId, req);
+    // One freeze read serves BOTH settlers: API-19 needs it to decide where an elapsed
+    // cooling lands, API-8 needs it to decide whether a held row may be released.
+    const frozenHere = await isFrozen(store, projectId);
+    req = await settleCooling(store, projectId, req, frozenHere);
     req = await settleWindow(store, projectId, req);
+    req = await settleFrozenHold(store, projectId, req, frozenHere);
     if (!CANCELLABLE_STATUSES.has(req.status)) return apiError(c, 'STATE_CONFLICT');
 
     // API-5 — CANCEL CANNOT UN-FIRE A DEPLOY, SO IT MUST NOT PRETEND TO.
@@ -1538,8 +1573,12 @@ export function requestRoutes(): Hono<AppEnv> {
     let req = (await store.get(k.PK, k.SK)) as RequestItem | null;
     if (!req) return c.json({ code: 'NOT_FOUND', reason: 'No such request.' }, 404);
 
-    req = await settleCooling(store, projectId, req);
+    // One freeze read serves BOTH settlers: API-19 needs it to decide where an elapsed
+    // cooling lands, API-8 needs it to decide whether a held row may be released.
+    const frozenHere = await isFrozen(store, projectId);
+    req = await settleCooling(store, projectId, req, frozenHere);
     req = await settleWindow(store, projectId, req);
+    req = await settleFrozenHold(store, projectId, req, frozenHere);
 
     // Valid state: WINDOW_EXPIRED (any time), or AWAITING_DEPLOY_APPROVAL with a
     // window that has NOT yet opened. A schedule.kind:'now' row (a freeze-held
