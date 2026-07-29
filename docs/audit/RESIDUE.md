@@ -539,3 +539,20 @@ which is the same switch they just turned off. The finding's own alternative (an
 nobody knows to run is not a recovery path, and adding one *as well* means two mechanisms
 that can disagree about when a claim is dead.
 
+### R-46 · `where` counts MATCHING items against `limit`; DynamoDB counts EXAMINED ones
+*Residue on **PERF-14**.*
+
+The seam's `limit` now means "up to N items that match `where`". DynamoDB's `Limit` means
+"stop after examining N items", and `FilterExpression` is applied *after* that — so the same
+call against a real backend can return fewer items than the in-memory store does, or none
+at all, without being at the end of the partition.
+
+Nothing hits this today: the only `where` caller is the scheduler scan, which passes no
+`limit`. Recorded rather than resolved because the divergence is invisible until the
+DynamoDB backend lands, and that is exactly the kind of thing that gets discovered as a
+paging bug in production. The contract note lives on `QueryOptions` where an implementer
+will read it: a DynamoDB implementation must page internally until it has `limit` matches
+rather than passing both through in one request. The alternative — matching DynamoDB's
+semantics exactly in `MemoryStore` — would mean the in-memory store returning short pages
+for no reason a reader of this codebase could see, which trades a documented divergence for
+a baffling one.

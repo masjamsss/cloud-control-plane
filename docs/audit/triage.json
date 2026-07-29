@@ -1,7 +1,7 @@
 {
   "generated_from": "docs/audit/FINDINGS.md + docs/audit/TRIAGE.md",
   "authoritative_source": "docs/audit/FINDINGS.md \u2014 if this file disagrees, FINDINGS.md wins",
-  "open_findings": 132,
+  "open_findings": 131,
   "rules": {
     "take": "a whole batch id, not individual findings \u2014 batches are grouped by files touched",
     "baseline": "parallel lanes must NOT touch scripts/findings-baseline.txt; it is a ceiling, not an exact match. One reconciliation commit at the end.",
@@ -174,7 +174,8 @@
           "title": "Scheduler tick re-scans every project's full request collection every minute",
           "lane": null,
           "expected_result": "The tick stops re-scanning every project's full request collection every minute. Needs an index or a due-set the write path maintains \u2014 a design decision, not a loop tweak.",
-          "verify_first": false
+          "verify_first": false,
+          "status": "closed"
         },
         {
           "id": "API-8",
@@ -187,7 +188,8 @@
           "verify_first": false,
           "status": "closed"
         }
-      ]
+      ],
+      "status": "complete"
     },
     {
       "id": "B-O3",
@@ -1670,5 +1672,5 @@
       ]
     }
   ],
-  "note_on_open_findings": "Count at the time TRIAGE.md was written was 139 of 212 declared. Now 132 open of 214 declared: batch B-O1 is COMPLETE, B-O2 has only PERF-14 left, and two findings were RAISED during the work (API-19, fixed; API-20, open). Findings carrying \"status\": \"closed\" here are done. FINDINGS.md is authoritative."
+  "note_on_open_findings": "Count at the time TRIAGE.md was written was 139 of 212 declared. Now 131 open of 214 declared: batches B-O1 and B-O2 are both COMPLETE, and two findings were RAISED during the work (API-19, fixed; API-20, open). Findings carrying \"status\": \"closed\" here are done. FINDINGS.md is authoritative."
 }

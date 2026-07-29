@@ -2758,3 +2758,68 @@ six of them decide.
       shape that neither half proves alone: cooling elapses under a freeze → held, freeze
       lifts → one read completes it.
 - [x] **Evidence in the status line** — 1,445 api tests pass, 2,745 app tests.
+
+## PERF-14
+
+*Scheduler tick re-scans every project's full request collection every minute.*
+
+**Measured before deciding, and the measurement changed the decision.** The finding is
+filed `low` on the reasoning that this is "not a latency problem, but permanent
+allocation/GC churn". Part of its premise is also stale: it describes "a full store scan …
+~200k map iterations" across a 10k-item table, and the store has since been partitioned, so
+`queryGSI1` already reads one project's partition rather than the whole table.
+
+What survived is the part that actually costs. The seam deep-copies every row it returns —
+isolation, so a caller can never hold a reference to live state — and the scheduler then
+discarded nearly all of them. One scan of a project holding 5,000 historical requests:
+
+| project history | before | after |
+| --- | --- | --- |
+| 100 rows | 4.09 ms | 0.08 ms |
+| 1,000 rows | 16.32 ms | 0.16 ms |
+| 5,000 rows | 90.84 ms | 0.57 ms |
+
+91 ms is not GC churn. It is 91 ms of **blocked single-threaded event loop**, once a minute,
+per project, growing with history forever — at twenty projects, seconds of blocked loop per
+minute, to find a due set that is almost always empty. That is why this was worth doing now
+rather than deferring, and it is a good argument for the repo's own habit of measuring
+before agreeing with a severity.
+
+The finding's recommendation is conditional — "*once a status index exists (or the
+PK-indexed store of PERF-10)*, query only AWAITING/APPLYING rows; alternatively maintain a
+small side list". Neither was taken. PERF-10 is still open, so building against its index
+means designing against something that does not exist; and a write-path-maintained side
+list is derived state that can silently drift out of agreement with the rows it summarises,
+which is a correctness risk taken on for a performance win.
+
+Instead the seam gained a `where` filter — DynamoDB's `FilterExpression`, reduced to the
+one shape callers need — applied **before** the isolation copy. The cost becomes
+proportional to the ANSWER rather than to the history, with no derived state to drift, and
+an index later makes it cheaper still without changing a call site.
+
+Two decisions inside that:
+
+- **Declarative (`{attr, in}`), not a predicate callback.** A callback would have to be
+  handed the store's own item to be worth anything — copying it first is precisely the cost
+  being avoided — which means handing every future call site a mutable reference to live
+  state. A test pins that the filter did not become a way to skip the copy.
+- **The scanned status list is DERIVED, not duplicated.** `SCHEDULER_SCANNED_STATUSES` is
+  exported and a test holds it against `isDue`, so teaching `isDue` a third status without
+  widening the scan fails the build. Without that, the failure mode would be changes
+  quietly never applying, with no error anywhere.
+
+- [x] **Negative test** — run twice. Reverting the scheduler's filter fails exactly one
+      test, the cost property (401 copies instead of 1) — correct, because a pure
+      performance fix changes no behaviour and every behavioural test passes either way.
+      Reverting `matchesWhere` in the store fails four.
+- [x] **The regression test pins the COST, not a behaviour.** A counting store wrapper
+      records how many rows the scheduler is handed: one actionable row among 400 terminal
+      ones must cost one copy. This is the only honest way to pin a perf fix, and it is why
+      the "reverting it fails a test" requirement is satisfiable here at all.
+- [x] **Regression tests** — 9 in `test/schedulerScanScope.test.ts`, including the two
+      properties a narrowing fix is most likely to break by accident: a due request buried
+      in 400 terminal rows is still applied, and a stranded `APPLYING` row is still swept
+      (the lease sweep runs outside the due path, so it is the half most easily dropped).
+- [x] **Evidence in the status line** — 1,454 api tests pass (106 files).
+
+**Residue:** the `where`/`limit` interaction diverges from DynamoDB. See **R-46**.

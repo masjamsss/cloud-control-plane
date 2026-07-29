@@ -56,6 +56,13 @@ export const APPLYING = 'APPLYING';
 const AWAITING = 'AWAITING_DEPLOY_APPROVAL';
 
 /**
+ * The only statuses `runDueApplies` can act on, and therefore the only ones it reads
+ * (PERF-14). `APPLYING` for the lease sweep, `AWAITING_DEPLOY_APPROVAL` for the due set.
+ * Exported so a test can hold it against {@link isDue} rather than duplicating the list.
+ */
+export const SCHEDULER_SCANNED_STATUSES = [AWAITING, APPLYING] as const;
+
+/**
  * Held statuses (clearly-named, tighten-only). A halted request LEAVES the auto-apply-
  * eligible state and demands a human — strictly MORE restrictive, never a weakening:
  *  - HALTED_DRIFT: the reviewed change can no longer be trusted (CORRUPT pin, quorum
@@ -296,7 +303,22 @@ export async function runDueApplies(
   const nowIsoStr = new Date(now).toISOString();
   const notifier = opts.notifier ?? nullNotifier;
 
-  const all = (await store.queryGSI1(requestCollectionGsi(projectId))) as RequestItem[];
+  // PERF-14 — ask for the two statuses this function can act on, not the project's whole
+  // request history. Every tick previously read and deep-copied every request the project
+  // had EVER created — at 5,000 rows that measured 91 ms of blocked event loop per project
+  // per minute, growing with history forever, to find a due set that is almost always
+  // empty. The filter runs inside the store, before the isolation copy, so the cost is now
+  // proportional to the answer.
+  //
+  // The two statuses are exactly what the code below reads: `claimed` is APPLYING, and
+  // `isDue` requires AWAITING_DEPLOY_APPROVAL. Anything else was fetched, cloned and
+  // discarded. Keeping this list beside those two uses is deliberate — a third status the
+  // scheduler learns to act on must be added here too, or it will silently never be seen,
+  // which is why the parity test in `test/schedulerScanScope.test.ts` derives the
+  // expectation from `isDue` rather than restating the list.
+  const all = (await store.queryGSI1(requestCollectionGsi(projectId), {
+    where: { attr: 'status', in: SCHEDULER_SCANNED_STATUSES },
+  })) as RequestItem[];
 
   // CLAIMED ROWS ARE SWEPT INDEPENDENTLY OF THE WINDOW (API-2). A worker that dies
   // mid-apply strands the row in `APPLYING`, and by the time anyone notices its window

@@ -60,6 +60,29 @@ export type QueryOptions = {
    * endpoint fetch page N without re-reading pages 1..N-1.
    */
   after?: string;
+  /**
+   * Narrow the partition to items whose `attr` is one of `in`, evaluated by the STORE and
+   * applied BEFORE the item is copied out — DynamoDB's `FilterExpression`, reduced to the
+   * one shape the callers need.
+   *
+   * PERF-14 — the point is what it AVOIDS, not what it returns. A caller that reads a
+   * partition and filters afterwards has already paid to deep-copy every row it is about
+   * to throw away, and the seam's isolation copy is the expensive part: the scheduler's
+   * per-minute scan of a project with 5,000 historical requests measured **91 ms**, on the
+   * single-threaded event loop, to find a due set that is almost always empty. Filtering
+   * here makes that cost proportional to the ANSWER rather than to the history.
+   *
+   * Declarative on purpose — an `attr`/`in` pair rather than a predicate callback. A
+   * callback would have to be handed the store's own item to be worth anything (copying it
+   * first is the cost being avoided), which hands callers a mutable reference to live
+   * state; the store would be trusting every future call site not to write through it.
+   *
+   * ORDERING NOTE for a real backend: `limit` here counts MATCHING items, whereas
+   * DynamoDB's `Limit` counts items EXAMINED and applies `FilterExpression` after. A
+   * DynamoDB implementation must therefore page internally until it has `limit` matches,
+   * not pass both through in one request.
+   */
+  where?: { attr: string; in: readonly string[] };
 };
 
 export interface ConfigStore {

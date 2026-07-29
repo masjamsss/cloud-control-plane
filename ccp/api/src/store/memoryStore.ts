@@ -25,6 +25,17 @@ const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
  */
 type Partition<K> = { rows: Map<K, Item>; sorted: K[] | null };
 
+/**
+ * PERF-14 — the seam's `FilterExpression`, evaluated against the store's OWN item so the
+ * expensive isolation copy is only paid for rows that survive. Absent filter = everything
+ * matches, so every existing caller is byte-for-byte unaffected.
+ */
+function matchesWhere(item: Item, where: QueryOptions['where']): boolean {
+  if (!where) return true;
+  const actual = item[where.attr];
+  return typeof actual === 'string' && where.in.includes(actual);
+}
+
 function partitionInsert<K>(index: Map<string, Partition<K>>, pkey: string, k: K, item: Item): void {
   let p = index.get(pkey);
   if (!p) {
@@ -194,6 +205,7 @@ export class MemoryStore implements ConfigStore {
       if (skPrefix !== undefined && !sk.startsWith(skPrefix)) continue;
       const it = part.rows.get(sk);
       if (!it) continue;
+      if (!matchesWhere(it, opts?.where)) continue; // PERF-14: filter BEFORE the copy
       out.push(cloneValue(it));
       if (limit !== undefined && out.length >= limit) break;
     }
@@ -223,6 +235,7 @@ export class MemoryStore implements ConfigStore {
         const sk = gsiSortKey(it);
         if (descending ? sk >= after : sk <= after) continue;
       }
+      if (!matchesWhere(it, opts?.where)) continue; // PERF-14: filter BEFORE the copy
       out.push(cloneValue(it));
       if (limit !== undefined && out.length >= limit) break;
     }

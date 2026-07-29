@@ -137,10 +137,11 @@ failed one so a retry resumes at the trigger (ERR-12).
 
 **Model:** opus · **Findings:** 5 · **Touches:** `ccp/api/src/domain/apply/*`
 
-**Status: 4 of 5 closed** (ERR-5, ERR-6, CONC-10, API-8). Only **PERF-14** remains, and it
-is a design decision rather than a bug fix. Context for whoever takes it: the scheduler now
-carries `replanFailures` on the request row and a per-request catch around `processOne`, so
-a throw no longer aborts the due list.
+**Status: BATCH COMPLETE — all 5 closed.** Nothing here needs picking up.
+
+Two new findings came out of this batch: **API-19** (fixed here) and **API-20** (raised,
+still OPEN — the one-time legacy settlement races itself and returns 409 on a plain read to
+concurrent first requests).
 
 Two new findings came out of this batch and are OPEN: **API-19** (fixed here — see FIXES.md)
 and **API-20** (raised, not fixed: the one-time legacy settlement races itself and returns
@@ -152,7 +153,7 @@ and **API-20** (raised, not fixed: the one-time legacy settlement races itself a
 | ~~**ERR-6**~~ | medium | **DONE.** Replan throws are caught in `processOne`: counted on the row, reported once per episode (timeline + audit + notifier), halted at `REPLAN_FAILURE_LIMIT`, cleared on recovery — plus a per-request backstop in the due loop so no single throw can starve siblings. |
 | ~~**ERR-5**~~ | medium | **DONE.** `init()` memoizes the success and clears the field on rejection, so a transient first init is retried; concurrent callers still share one attempt. |
 | ~~**CONC-10**~~ | medium | **DONE — verified closed by API-2, no code changed.** The lease + halt-on-expiry + cancel-accepts-halt path was confirmed end to end; `test/schedulerStuckState.test.ts` already pins it, including a test named for this exact wedge. |
-| **PERF-14** | low | The tick stops re-scanning every project's full request collection every minute. Needs an index or a due-set the write path maintains — a design decision, not a loop tweak. |
+| ~~**PERF-14**~~ | low | **DONE — and the measurement changed the decision.** Filed `low` as "GC churn, not latency"; measured at 91 ms of blocked event loop per project per minute at 5,000 rows of history. Closed with a store-level `where` filter applied before the isolation copy (0.57 ms), rather than the index or side list the recommendation suggested — PERF-10 is still open, and a write-path-maintained side list is derived state that can drift. |
 | ~~**API-8**~~ | medium | **DONE.** `settleFrozenHold` is the missing lazy-settle sibling: on read, once unfrozen, a `held_frozen` `kind:'now'` row completes to APPLIED — fail-closed if its ladder was tightened past its signatures. Wired into every settle site; the freeze is read at most once per list page. |
 
 
