@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { open as fsOpen, mkdir, rename } from 'node:fs/promises';
+import { open as fsOpen, mkdir, rename, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Item } from './configStore';
 import { verifyChain, type ChainEntry, type VerifyResult } from '../domain/audit';
@@ -158,14 +158,47 @@ export function summarizeSnapshot(items: Item[]): SnapshotSummary {
  * store's code path). A reader mid-write sees the OLD or the NEW file, never a torn one.
  */
 export async function writeFileAtomic(file: string, data: string): Promise<void> {
-  await mkdir(dirname(file), { recursive: true });
+  const dir = dirname(file);
+  await mkdir(dir, { recursive: true });
   const tmp = `${file}.tmp-${process.pid}-${randomBytes(6).toString('hex')}`;
+  // DATA-6 / DATA-13 — same discipline as FileStore.writeAtomic (ERR-10): the temp file
+  // must not leak on ANY failure from here to the rename (not just a failing write/sync —
+  // a failing rename itself, e.g. a directory sitting where the target belongs, leaks
+  // just as surely), and the directory entry for the rename must be fsync'd so it survives
+  // a power loss, not just a process kill. This standalone copy had drifted from that
+  // fix — backup/restore ran with neither guarantee.
   const fh = await fsOpen(tmp, 'w');
   try {
-    await fh.writeFile(data, 'utf8');
-    await fh.sync();
-  } finally {
-    await fh.close();
+    try {
+      await fh.writeFile(data, 'utf8');
+      await fh.sync();
+    } finally {
+      await fh.close();
+    }
+    await rename(tmp, file);
+  } catch (e) {
+    await rm(tmp, { force: true }).catch(() => undefined);
+    throw e;
   }
-  await rename(tmp, file);
+  await syncDir(dir);
+}
+
+/**
+ * fsync a directory so a rename into it survives power loss. Best-effort by design: some
+ * filesystems and platforms refuse to open a directory for sync, and failing a write that
+ * has already landed — over a durability nicety — would be a worse bug than the narrow
+ * window this closes. Process-kill safety never depended on it; the rename is atomic.
+ * (Same shape as FileStore's private `syncDir` — kept as its own copy here because this
+ * module is deliberately standalone, see the module doc comment.)
+ */
+async function syncDir(dir: string): Promise<void> {
+  let dh;
+  try {
+    dh = await fsOpen(dir, 'r');
+    await dh.sync();
+  } catch {
+    // see above — deliberately swallowed
+  } finally {
+    await dh?.close().catch(() => undefined);
+  }
 }
