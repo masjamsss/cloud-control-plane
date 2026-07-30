@@ -76,13 +76,6 @@ top.
 
 ## tracked — an open finding covers it
 
-### R-4 · `planSummary` is typed `string` in the contract
-*Residue on **DOC-2**.*
-**Tracked by: DOC-11.**
-
-The API stores and serves a structured object. The new `PlanSummary` schema carries a note
-where a reader comparing the two will hit it.
-
 ### R-5 · The scan worker does not report its own terminal failure
 *Residue on **ERR-3**.*
 **Tracked by: ERR-15.**

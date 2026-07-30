@@ -3324,3 +3324,73 @@ equivalent one, because it will also catch the next status nobody remembers to a
 failure is the pre-existing `snapshotChunking.test.ts` timing flake recorded in R-48,
 unrelated — passes in isolation); app suite 2752/2752; typecheck clean in both packages;
 app build green.
+
+## DOC-11
+
+*OpenAPI types `ChangeRequest.planSummary` as a string; the API stores and serves a
+structured object.*
+
+`ccp-api.yaml`'s `ChangeRequest.planSummary` was declared `{type: string}`. The store
+schema's own comment (`store/schema.ts`) already documents why that shape is wrong: it is
+"the Stage-0 fiction — no route ever wrote it, so no durable row carries the old shape".
+The structured `PlanSummary` shape has existed on the wire since the plan-summary route
+shipped (`POST /requests/{id}/plan-summary`), and the contract already declared that
+route's own request body as `$ref: '#/components/schemas/PlanSummary'` — the same schema,
+just not linked from the property that actually carries the value on a served
+`ChangeRequest`. The `PlanSummary` schema's own description even stated the mismatch
+explicitly as a known, deliberately-untouched gap belonging to this finding.
+
+**Fix:** `ChangeRequest.planSummary` now reads `{$ref: '#/components/schemas/PlanSummary'}`
+instead of `{type: string}`. The `PlanSummary` schema's description is updated to state
+that `ChangeRequest.planSummary` references it, rather than stating the mismatch as
+unresolved.
+
+- [x] **Reproduced first** — read the `ChangeRequest` property directly at HEAD and
+      confirmed it declared `{type: string}` while the `plan-summary` route's own request
+      body already used `$ref` to the real schema three lines below it.
+- [x] **Regression test** — `test/openapi.test.ts` gained a DOC-11 case that slices out
+      exactly the `ChangeRequest:` schema block (bounded to `SubmitDraft:`, the next
+      schema, so an unrelated `planSummary` string elsewhere cannot make this pass for the
+      wrong reason — L-1) and asserts it contains the `$ref` and does not contain the old
+      `{type: string}` shape.
+- [x] **Negative test** — confirmed to fail against the unfixed YAML: reverting the `$ref`
+      back to `{type: string}` reproduced exactly `expected 'ChangeRequest: … ' to contain
+      'planSummary: {$ref: …}'`; restoring the fix passed all 33 tests in the file.
+- [x] **Failure is loud** — n/a; a contract-prose fix, no runtime path changes. No app
+      code was found reading `planSummary` as a bare string, so nothing downstream needed
+      updating alongside the contract correction.
+- [x] **Evidence in the status line** — `fixed:a49b483`.
+
+## API-12
+
+*`prNumberFromUrl` extracts a "PR number" from any URL ending in digits.*
+
+`prNumberFromUrl`'s regex (`/\/(\d{1,9})\/?$/`) matched the trailing numeric path segment
+of ANY https URL — `.../issues/42` and even a bare `https://example.com/9999` both derived
+a "PR number" that was never a pull request. The doc comment directly above the function
+always claimed it matched "a `/pull/123`-shaped URL tail"; the regex never enforced that
+restriction, so the stored `prNumber` silently mislabeled the `link-pr` timeline event and
+the audit chain's before/after for any non-PR URL a Lead happened to paste.
+
+**Fix:** the pattern now requires `/pull/` (GitHub) or `/merge_requests/` (GitLab)
+immediately before the trailing number — the finding's first recommendation branch,
+matching the doc comment for the first time rather than widening the URL-shape check with
+a host allowlist (the finding's alternative branch).
+
+- [x] **Reproduced first** — confirmed at the node REPL, before touching the fix:
+      `prNumberFromUrl('https://github.com/org/repo/issues/42')` returned `42`, and
+      `prNumberFromUrl('https://example.com/9999')` returned `9999`.
+- [x] **Regression test** — `test/linkPr.test.ts` gained an API-12 case asserting an
+      issues URL and a bare numeric-tail URL both link with `prNumber: undefined`, and
+      that the GitLab `/merge_requests/<n>` shape still derives correctly (the widened
+      pattern's own correctness, not just the narrowing).
+- [x] **Negative test** — confirmed to fail against the unfixed regex: reverting to
+      `/\/(\d{1,9})\/?$/` reproduced `expected 42 to be undefined` on the issues-URL case;
+      restoring the fix passed all 11 tests in the file.
+- [x] **Failure is loud** — n/a; the fix silently withholds a wrong inference rather than
+      raising an error, which is the correct behaviour here — the same "no stale/guessed
+      number" doctrine the adjacent "URL with no numeric tail" test already covers.
+- [x] **Evidence in the status line** — `fixed:a49b483`.
+
+**Verification (both findings, one commit):** api suite 1515/1515, typecheck clean; app
+suite 2752/2752, typecheck clean.

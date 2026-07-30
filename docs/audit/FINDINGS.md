@@ -132,7 +132,7 @@ OpenAPI vs reality, and docs citing things that do not exist.
 - [x] DOC-2 | high | contracts-docs | fixed:cdc5f2c | 14-contracts-docs.md | Shipped routes absent from the OpenAPI spec; `POST /requests/:id/apply` is documented nowhere at all
 - [ ] ARCH-6 | medium | contracts-docs | open | 01-architecture.md | The backend depends on frontend-package internals; the shared-contract layer is a path alias plus a hand-synced copy
 - [ ] DOC-10 | medium | contracts-docs | open | 14-contracts-docs.md | ERROR-STATES.md's "every error code the API can return" is missing 8 taxonomy codes and 6 inline literals
-- [ ] DOC-11 | medium | contracts-docs | open | 14-contracts-docs.md | OpenAPI types `ChangeRequest.planSummary` as a string; the API stores and serves a structured object
+- [x] DOC-11 | medium | contracts-docs | fixed:a49b483 | 14-contracts-docs.md | OpenAPI types `ChangeRequest.planSummary` as a string; the API stores and serves a structured object
 - [ ] DOC-12 | medium | contracts-docs | open | 14-contracts-docs.md | DOMAIN-MODEL.md's entity catalog is missing a third of the store's item types
 - [x] DOC-4 | medium | contracts-docs | fixed:errors.ts cites the real contract; ERROR-STATES.md's grep-a-missing-file analysis re-measured and corrected | 14-contracts-docs.md | Multiple docs and a code header cite `ccp/docs/specs/ccp-api.md`, which does not exist in this repo
 - [x] DOC-5 | medium | contracts-docs | fixed:cdc5f2c | 14-contracts-docs.md | ~100 broken relative markdown links across the published tree
@@ -141,7 +141,7 @@ OpenAPI vs reality, and docs citing things that do not exist.
 - [ ] DOC-8 | medium | contracts-docs | open | 14-contracts-docs.md | catalogctl README makes two explicit completeness claims that are false
 - [ ] DOC-9 | medium | contracts-docs | open | 14-contracts-docs.md | Four operator-facing env vars are undocumented (two of them documented nowhere at all)
 - [ ] TEST-7 | medium | contracts-docs | open | 12-testing-quality.md | The SPA has no DOM/interaction testing; ~25 test files pin UI by source-string inspection
-- [ ] API-12 | low | contracts-docs | open | 02-api-correctness.md | `prNumberFromUrl` extracts a "PR number" from any URL ending in digits
+- [x] API-12 | low | contracts-docs | fixed:a49b483 | 02-api-correctness.md | `prNumberFromUrl` extracts a "PR number" from any URL ending in digits
 - [ ] ARCH-14 | low | contracts-docs | open | 01-architecture.md | The OpenAPI "parity test" is string containment, not parity
 - [x] DOC-15 | low | contracts-docs | fixed:ec95bd2 | 14-contracts-docs.md | MAINTAINING-THE-CATALOG.md points at a generated-output directory that does not exist in the tree
 - [ ] DOC-16 | low | contracts-docs | open | 14-contracts-docs.md | Assorted OpenAPI request/response gaps against route behavior

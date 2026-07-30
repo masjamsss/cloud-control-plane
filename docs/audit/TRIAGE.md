@@ -391,14 +391,15 @@ done independently.
 
 ## B-S4 — OpenAPI / wire contract fixes
 
+**Status: BATCH COMPLETE — both closed.** Nothing here needs picking up.
 
 **Model:** sonnet · **Findings:** 2 · **Touches:** `openapi/ccp-api.yaml, ccp/api/src/store/planSummarySchema.ts`
 
 
 | finding | sev | expected result |
 | --- | --- | --- |
-| **DOC-11** | medium | OpenAPI types `ChangeRequest.planSummary` as the structured object the API actually stores and serves. |
-| **API-12** | low | `prNumberFromUrl` no longer extracts a 'PR number' from any URL ending in digits — it validates the shape. |
+| ~~**DOC-11**~~ | medium | **DONE.** `ChangeRequest.planSummary` was `{type: string}` — a Stage-0 fiction no route ever wrote. It now `$ref`s the `PlanSummary` schema the plan-summary route itself already declared three lines below it — the same schema, just not linked from the property that carries the value. |
+| ~~**API-12**~~ | low | **DONE.** `prNumberFromUrl` matched the trailing numeric segment of ANY https URL. Now requires `/pull/<n>` or the GitLab `/merge_requests/<n>` shape immediately before the number, matching the doc comment above it for the first time. |
 
 
 ## B-S5 — Front-end component bugs
