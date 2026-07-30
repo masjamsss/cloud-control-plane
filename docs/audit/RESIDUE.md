@@ -699,3 +699,21 @@ anywhere else in the app would be the same defect returning in miniature — UI-
 `test/statusBadge.test.ts` suite (asserting every `StatusBadge`-rendered label matches
 `statusLabel`) would not catch a new wrapper that drifted from `statusLabel` on its own,
 since it tests `statusLabel` itself, not every caller of it.
+
+### R-55 · The ADR ledger's status/build conflation is fixed for two rows, not the pattern
+*Residue on **ARCH-15**.*
+
+The fix corrected the two status lines the finding named concretely as inaccurate
+(ADR-0031, ADR-0028) by adding a "Built (date): ..." annotation naming what shipped
+alongside each. The finding's broader observation — that ADRs 0024-0026 also read
+"Proposed ... status flips to Accepted on the owner's formal word" while their builds
+have landed — was left as-is, because that phrasing is already candid about its own
+provisional nature (it names the exact condition under which the status will change)
+rather than silently wrong the way 0031/0028's "build gated" language was.
+
+**Untracked.** No existing finding names the systemic version of this — a periodic
+reconciliation pass across the whole ledger, or the finding's own alternative suggestion
+of a separate "built" column so decision status and build status stop sharing one field.
+Low severity: each individual ADR's status line is either accurate or self-aware about
+its own provisionality, so the ledger as a whole is not misleading a reader today, but
+nothing stops the next ADR from drifting the same way 0031/0028 did.

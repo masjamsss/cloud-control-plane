@@ -3507,3 +3507,101 @@ the `BUNDLE_DISARMED` off-by-default gate) — added by earlier work closing DOC
 
 **Verification (DOC-6, DOC-8/ARCH-12, DOC-9, DOC-14, one commit):** ccp/api full suite
 1516/1516 passing; catalogctl `go test ./...` 64/64 passing.
+
+## ARCH-15
+
+*ADR ledger statuses lag the built system.*
+
+Two status lines claimed a decision was "build gated on owner sign-off" while
+a real, shipped increment of that decision existed in code. ADR-0031 (the
+first onboarding scan running in the estate's own CI) said "Proposed (design
+lane; build gated on owner sign-off)" while its Phase 1 -- onboard-token
+mint/revoke and the Bearer `PUT /:id/trust-request` lane -- is shipped
+(`routes/projects.ts` `onboard-tokens`, `domain/onboardToken.ts`). ADR-0028
+(estate settings as two-tier runtime config) said "Proposed (build gated)"
+while its own named mechanism -- `catalogctl window-check`'s
+`--estate-tz`/`CCP_ESTATE_TZ` flag/env pair -- is shipped
+(`internal/windowcheck/command.go`).
+
+**Fix:** both status lines gained a "Built (date): ..." annotation naming
+exactly what shipped, without flipping the overall decision status to
+Accepted -- the design/policy scope each ADR gates on remains genuinely
+undecided, and claiming otherwise would be the opposite defect.
+
+- [x] **Reproduced first** -- confirmed both claims against the real code
+      before editing: grep for `onboard-tokens` in `routes/projects.ts` and
+      for `estate-tz` in `internal/windowcheck/command.go` both hit.
+- [x] **Fix addresses the cause** -- the finding's own alternative
+      recommendation (a separate "built" column) was not taken structurally,
+      as a full ledger-schema redesign is out of scope for a low-severity
+      doc-accuracy finding; the same information is now present inline.
+- [x] **Regression test** -- n/a; prose accuracy, no executable surface.
+- [x] **Failure is loud** -- n/a.
+- [x] **Evidence in the status line** -- `fixed:a6e0d53`.
+
+**Residue:** the finding names this as a systemic pattern including
+ADR-0024-0026's "build landed ... status flips on the owner's formal word"
+phrasing. Only the two concretely-inaccurate claims (0031, 0028) were fixed;
+0024-0026's phrasing is already candid about its provisional nature and was
+left alone. A full periodic reconciliation pass remains undone -- not
+tracked by a separate finding, as the finding's own text already frames this
+as periodic maintenance rather than a one-time fix.
+
+## IMP-14
+
+*Stale numbers and dangling references in kit/schemadump docs and comments.*
+
+Four independent stale references, each verified against the real source
+before being touched:
+
+1. `discover.sh`'s comment said "44-type allowlist"; `services.json`'s own
+   `types` map has 43 entries (verified via a direct len() check).
+2. `statediff.py`'s `SWEEP_METHOD` constant hardcoded "43 per-type listers"
+   -- a second, independent copy of the same count, free to drift from
+   `services.json` the moment a type is added or removed.
+3. `kit-azure/normalize.py`'s `with_meta=True` comment cited a pin living in
+   "terraform.yml", a workflow this repo never shipped (the real pin lives
+   in `scripts/gen-project-data.sh`'s `PIN_PYTHON_HCL2`; the parallel
+   reference in `kit-azure/README.md` was already fixed by earlier OPS-14
+   work -- only the `.py` comment remained stale).
+4. `tools/schemadump/README.md` described the committed AWS dump as "the
+   85-type case" in three places, but 85 is `types.txt`'s catalog-relevant
+   input-list count -- the committed `aws-v6.53.0-schema.json` artifact
+   (per IMP-8, still open) was generated with no `-types` filter and
+   reflects the full 1677-type provider.
+
+**Fix:**
+1. Corrected "44" to "43", with a note pointing at the verification command
+   itself rather than a second hardcoded number.
+2. Replaced the `SWEEP_METHOD` constant with `sweep_method(services)`,
+   deriving the count from `len(services['types'])` at call time.
+3. Corrected the comment to name the real pin location, matching the
+   README's existing fix.
+4. Added an explicit caveat at each "85-type" mention, stating the real
+   committed-artifact scope and cross-referencing IMP-8 rather than
+   duplicating its fix.
+
+- [x] **Reproduced first** -- all four claims verified against the real
+      source before any edit.
+- [x] **Fix addresses the cause for #2** -- deriving the count instead of
+      hardcoding it a second time means this specific recurrence cannot
+      happen again for this constant.
+- [x] **Regression test** -- `sweep_method()` verified directly at the REPL
+      against a synthetic services dict; no existing test references
+      `SWEEP_METHOD`/`sweep_method` by name (confirmed by grep), so nothing
+      needed updating for the rename.
+- [x] **Failure is loud** -- n/a for the prose fixes. For #2, the function
+      form means a future `services.json` change is automatically reflected
+      in every generated `unmanaged-findings.json`'s `method` field.
+- [x] **Evidence in the status line** -- `fixed:a6e0d53`.
+
+**Verification:** `importer/kit`'s existing unittest suite gives the
+identical 106 tests / 7 failures both before and after this change
+(confirmed via `git stash`/`git stash pop`) -- the 7 pre-existing failures
+are an environment gap (installed python-hcl2 predates `with_meta` support),
+unrelated to this comment/derivation-only change. `bash -n` on `discover.sh`
+confirms its syntax is unchanged.
+
+Nothing is left behind: the 1677-vs-85 mismatch itself is IMP-8's scope, not
+this finding's -- this finding only asked that the docs stop claiming
+something false about the existing artifact, which they no longer do.

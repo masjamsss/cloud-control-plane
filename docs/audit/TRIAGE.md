@@ -385,8 +385,8 @@ done independently.
 | **DOC-16** | low | *(open — pending)* The listed OpenAPI request/response gaps against route behaviour are closed. |
 | **DOC-17** | low | *(open — pending)* The code-derived docs' line citations match HEAD, with a checker so they stop drifting. |
 | ~~**ARCH-12**~~ | low | **DONE, with DOC-8.** See above. |
-| **ARCH-15** | low | *(open — pending)* The ADR ledger statuses match the built system. |
-| **IMP-14** | low | *(open — pending)* Stale numbers and dangling references in kit/schemadump docs and comments are corrected. |
+| ~~**ARCH-15**~~ | low | **DONE.** ADR-0031 (Phase 1 onboard-token lane) and ADR-0028 (catalogctl window-check's --estate-tz) each got a "Built (date): ..." annotation naming what shipped, without flipping the overall decision status. |
+| ~~**IMP-14**~~ | low | **DONE.** Four stale references fixed (discover.sh's "44" -> 43, statediff.py's SWEEP_METHOD constant -> derived sweep_method(), kit-azure/normalize.py's stale "terraform.yml" pin reference, tools/schemadump/README.md's "85-type" mischaracterization of the full 1677-type committed artifact, cross-referencing still-open IMP-8). |
 
 
 ## B-S4 — OpenAPI / wire contract fixes
