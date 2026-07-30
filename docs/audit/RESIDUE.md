@@ -688,3 +688,21 @@ try/catch and `syncDir` into one dependency-free shared helper (`store/atomicWri
 similar) both modules import would close it structurally — the same shape ARCH-6's shared
 package is meant to eventually absorb for the api/app boundary, but this pair is
 api-internal and does not need to wait for that.
+
+### R-54 · `humanizeStatus` survives as three thin wrappers instead of being deleted
+*Residue on **UI-10**.*
+
+The fix gave `StatusBadge.tsx` a canonical `statusLabel()` export and pointed
+`MyRequests.tsx`, `ApprovalsQueue.tsx` and `lib/palette.ts`'s existing `humanizeStatus`
+functions at it, rather than deleting the three functions and updating every
+`humanizeStatus(s)` call site to call `statusLabel(s)` directly. Chosen for the smaller
+diff — each file needed one function body changed instead of every JSX/template call site
+touched — but it leaves exactly the shape this finding closed: a status-copy indirection
+that is not the canonical one.
+
+**Untracked.** No existing finding names this. Low risk given how few call sites remain
+(three, all one-line pass-throughs to `statusLabel`), but a fourth wrapper appearing
+anywhere else in the app would be the same defect returning in miniature — UI-10's own
+`test/statusBadge.test.ts` suite (asserting every `StatusBadge`-rendered label matches
+`statusLabel`) would not catch a new wrapper that drifted from `statusLabel` on its own,
+since it tests `statusLabel` itself, not every caller of it.

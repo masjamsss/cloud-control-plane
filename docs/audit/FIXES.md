@@ -3188,3 +3188,107 @@ every failed backup attempt and every failed restore install, with no cleanup pa
       `snapshotChunking.test.ts`'s 5s timeout under full-suite load, reproduces on `main`
       and passes in isolation — pre-existing flake, not caused by this change).
 - [x] **Evidence in the status line** — `fixed:685621d`.
+
+## FE-11
+
+*`WINDOW_EXPIRED` is missing from both status-filter vocabularies.*
+
+`MyRequests.tsx` and `ApprovalsQueue.tsx` each hand-maintained an `ALL_STATUSES` array
+for the status-filter dropdown, and both independently omitted `WINDOW_EXPIRED` — the one
+status that *requires* user action (re-window or cancel) was the one status a requester or
+reviewer could not filter to. `parseFilters` silently coerced `?status=WINDOW_EXPIRED` to
+`'all'`, so even a hand-typed or bookmarked URL lost the filter. A plain `RequestStatus[]`
+array has no compile-time completeness check against the union, which is exactly how the
+omission happened invisibly in both files at once.
+
+**Fix:** both arrays are now `[...REQUEST_STATUSES]` — spread from the one closed
+vocabulary ARCH-7 established (`ccp/app/src/lib/requestStatus.ts`) — rather than restated
+by hand. Any status added to that vocabulary in the future is automatically filterable
+everywhere that imports it; there is no second list to remember to update.
+
+- [x] **Reproduced first** — confirmed against the pre-fix source: `?status=WINDOW_EXPIRED`
+      through `parseFilters` in both `MyRequests.tsx` and `ApprovalsQueue.tsx` returned
+      `{status:'all', q:''}` instead of preserving the value.
+- [x] **Negative test** — `test/myRequests.test.ts` and `test/approvalsQueue.test.ts` each
+      gained a case asserting `WINDOW_EXPIRED` (and, in `MyRequests.test.ts`, every
+      scheduler-written status) survives `parseFilters` unchanged. Confirmed to fail
+      against the unfixed arrays: stashing the source fix reproduced exactly the coercion
+      above, restoring it passed.
+- [x] **Evidence in the status line** — `fixed:b9653bd`.
+
+## UI-10
+
+*Request-status copy has four competing sources; raw enum text can reach the UI.*
+
+`MyRequests.tsx`, `ApprovalsQueue.tsx` and `lib/palette.ts` each carried their own
+`humanizeStatus` — a mechanical underscore-to-space transform producing different words
+for the same state right next to `StatusBadge`'s curated label ("Awaiting code review" in
+the filter dropdowns vs the badge's "Awaiting review" for the same `AWAITING_CODE_REVIEW`
+status; "Noop"/"Approved cooling" instead of the badge's "No change"/"Cooling off").
+`Notifications.tsx`'s `ownNote` default branch rendered the raw enum outright
+(`· CHECKS_RUNNING`) for any status without its own `case`. None of this is catchable by
+the copyLint suite — these are all *derived* strings, not literals it can scan for.
+
+**Fix:** `StatusBadge.tsx` now exports `statusLabel(status)` — the exact map the badge
+itself renders from — and all four call sites read it instead of re-deriving copy.
+`humanizeStatus` in the three feature files is kept as a one-line wrapper around
+`statusLabel` (least-diff change to each call site) rather than deleted outright, so the
+existing `humanizeStatus(s)` call sites needed no further edits beyond the function body.
+
+- [x] **Reproduced first** — confirmed the divergence by reading all four files side by
+      side before changing anything: `StatusBadge`'s `NOOP → "No change"` against
+      `humanizeStatus('NOOP') → "Noop"` in the other three.
+- [x] **Negative test** — `test/statusBadge.test.ts` gained a `statusLabel` suite: every
+      status in `REQUEST_STATUSES` must resolve to a non-empty, non-SCREAMING_SNAKE_CASE
+      label that is *exactly* what `StatusBadge` renders, plus two pinned curated cases
+      (`NOOP`, `APPROVED_COOLING`) that a mechanical transform would get wrong. Confirmed
+      to fail against the unfixed source: `statusLabel is not a function` (not yet
+      exported), 7 failures total across the three touched test files.
+- [x] **`Notifications.tsx`'s silent fallback is the one behavioural fix here** — every
+      other call site was a copy-consistency issue; this one could show a user
+      `· CHECKS_RUNNING` verbatim. Its default branch now calls `statusLabel(req.status)`.
+- [x] **Evidence in the status line** — `fixed:b9653bd`.
+
+**Residue:** `humanizeStatus` remains as three thin wrappers rather than being deleted and
+having every call site updated to call `statusLabel` directly. Acceptable — it is a single
+line in each file and the alternative (renaming every JSX call site) is a larger diff for
+no behavioural gain — but a fourth wrapper appearing anywhere else would be the same defect
+returning in miniature. Not tracked by a finding; low risk given how few call sites exist.
+
+## DOC-13
+
+*Request-status vocabulary is three-way inconsistent (SPA union vs server writes vs YAML prose).*
+
+Three descriptions of the same vocabulary had drifted independently. The SPA union
+(`ccp/app/src/lib/requestStatus.ts`) was already closed by ARCH-7 and already includes
+`HALTED_DRIFT`/`HALTED_APPLY_FAILED`. What remained was the **contract prose**:
+`ccp-api.yaml`'s `ChangeRequest.status` "known values" description named
+`AWAITING_CODE_REVIEW | NEEDS_ENGINEER (open) → APPROVED_COOLING → AWAITING_DEPLOY_APPROVAL
+→ WINDOW_EXPIRED → APPLIED → CANCELLED | REJECTED` — omitting `APPLYING` (the scheduler's
+lease state, `scheduler.ts`'s own exported `APPLYING` constant), `HALTED_DRIFT` and
+`HALTED_APPLY_FAILED` (both written by the scheduler since it shipped, per ARCH-7's own
+fix notes), and `CHANGES_REQUESTED`/`WITHDRAWN` (written by the review/withdraw routes,
+also already present in the SPA union). A reader of the contract alone — the intended
+audience for "known values" — could not know the wire carries any of these five.
+
+**Fix:** the prose now names all thirteen statuses the server actually writes, in their
+approximate lifecycle order, with a short parenthetical for each new entry explaining when
+it is written and how it exits (mirroring the existing entries' style rather than
+introducing a new documentation convention).
+
+- [x] **Reproduced first** — grepped the five missing statuses against the YAML at HEAD
+      before writing anything; none of the five appeared in the status description.
+- [x] **Regression test** — `test/openapi.test.ts` gained a `DOC-13` suite that slices out
+      exactly the `ChangeRequest.status` description value (not the whole 900-line file,
+      so an unrelated string elsewhere cannot make the test pass for the wrong reason —
+      L-1) and asserts all thirteen statuses appear in it by name.
+- [x] **Negative test** — confirmed to fail against the unfixed YAML: stashing just
+      `ccp-api.yaml` reproduced `CHANGES_REQUESTED: expected '...' to contain
+      'CHANGES_REQUESTED'`, restoring it passed.
+- [x] **Failure is loud** — n/a; a contract-prose fix, no runtime path changes.
+- [x] **Evidence in the status line** — `fixed:b9653bd`.
+
+**Verification (all three findings, one commit):** api suite 1503/1504 (the one failure is
+the pre-existing `snapshotChunking.test.ts` timing flake recorded in R-48, unrelated —
+passes in isolation); app suite 2752/2752; typecheck clean in both packages; app build
+green.

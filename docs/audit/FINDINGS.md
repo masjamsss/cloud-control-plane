@@ -251,14 +251,14 @@ The same rule implemented in two places, free to drift.
 - [ ] ARCH-5 | medium | duplication | open | 01-architecture.md | Two sources of truth for the catalog: the server validates against the image-baked catalog, the SPA renders the per-project uploaded one
 - [x] ARCH-7 | medium | duplication | fixed:3cf798c | 01-architecture.md | The request-status vocabulary is an unowned, drifted contract
 - [ ] ARCH-8 | medium | duplication | open | 01-architecture.md | The governance domain is implemented twice (server + browser mock) with acknowledged behavioral divergence
-- [ ] DOC-13 | medium | duplication | open | 14-contracts-docs.md | Request-status vocabulary is three-way inconsistent (SPA union vs server writes vs YAML prose)
+- [x] DOC-13 | medium | duplication | fixed:b9653bd | 14-contracts-docs.md | Request-status vocabulary is three-way inconsistent (SPA union vs server writes vs YAML prose)
 - [ ] ARCH-11 | low | duplication | open | 01-architecture.md | Arming-flag sprawl with no whole-config validation
 - [ ] ARCH-13 | low | duplication | open | 01-architecture.md | Project-id grammar duplicated inline despite a declared single home
 - [ ] ARCH-16 | low | duplication | open | 01-architecture.md | Vestigial code and stale references
 - [ ] CTL-10 | low | duplication | open | 07-catalogctl.md | Duplicated literal-object token-walkers (edit vs driftpropose) have already diverged in behavior
-- [ ] FE-11 | low | duplication | open | 05-frontend-flows.md | `WINDOW_EXPIRED` is missing from both status-filter vocabularies
+- [x] FE-11 | low | duplication | fixed:b9653bd | 05-frontend-flows.md | `WINDOW_EXPIRED` is missing from both status-filter vocabularies
 - [x] OPS-14 | low | duplication | fixed:dd1c241 | 10-reliability-operations.md | Stale references to a nonexistent `.github/workflows/terraform.yml` anchor the Terraform pin
-- [ ] UI-10 | low | duplication | open | 06-frontend-ui-robustness.md | Request-status copy has four competing sources; raw enum text can reach the UI
+- [x] UI-10 | low | duplication | fixed:b9653bd | 06-frontend-ui-robustness.md | Request-status copy has four competing sources; raw enum text can reach the UI
 
 ## importer
 

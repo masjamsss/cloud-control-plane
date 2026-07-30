@@ -356,15 +356,16 @@ done independently.
 
 ## B-S2 — Status vocabulary follow-through
 
+**Status: BATCH COMPLETE — all 3 closed.** Nothing here needs picking up.
 
 **Model:** sonnet · **Findings:** 3 · **Touches:** `ccp/app/src/lib/requestStatus.ts and its consumers`
 
 
 | finding | sev | expected result |
 | --- | --- | --- |
-| **DOC-13** | medium | The YAML prose, the SPA union and the server writes agree. DEPENDS ON ARCH-7 (done): the closed set now lives in `ccp/app/src/lib/requestStatus.ts` — point the docs at it and add a check that keeps them agreeing. |
-| **FE-11** | low | `WINDOW_EXPIRED` appears in both status-filter vocabularies. Trivial now that the closed set exists. |
-| **UI-10** | low | Status copy has ONE source. `StatusBadge`'s label map is the natural home; raw enum text must not reach the UI. |
+| ~~**DOC-13**~~ | medium | **DONE.** The SPA union side was already closed by ARCH-7. The gap was the YAML contract's `ChangeRequest.status` prose, which omitted `APPLYING`, `HALTED_DRIFT`, `HALTED_APPLY_FAILED`, `CHANGES_REQUESTED` and `WITHDRAWN` — five statuses the server actually writes. Now names all thirteen, with a `test/openapi.test.ts` regression check that slices out exactly that description and asserts every one appears. |
+| ~~**FE-11**~~ | low | **DONE.** Both `MyRequests.tsx` and `ApprovalsQueue.tsx` hand-maintained an `ALL_STATUSES` array that omitted `WINDOW_EXPIRED` — the one status that *requires* user action was the one you could not filter to. Both now spread `[...REQUEST_STATUSES]` from the closed vocabulary instead of restating it by hand. |
+| ~~**UI-10**~~ | low | **DONE.** `StatusBadge.tsx` now exports `statusLabel()` — the one canonical label map. `MyRequests.tsx`, `ApprovalsQueue.tsx`, `lib/palette.ts` and `Notifications.tsx`'s silent-fallback branch (which rendered the raw enum, e.g. `· CHECKS_RUNNING`) all read it instead of re-deriving copy. |
 
 
 ## B-S3 — Documentation accuracy (with a check each)
