@@ -3149,6 +3149,9 @@ Kept as its own copy in `snapshot.ts` rather than imported, matching that module
       states the property explicitly so a reader does not need to re-derive it.
 - [x] **Evidence in the status line** — `fixed:685621d`.
 
+**Residue:** the fix duplicates `syncDir` and the temp-cleanup try/catch between
+`fileStore.ts` and `snapshot.ts` rather than sharing one implementation. See **R-53**.
+
 ## DATA-13
 
 Failed atomic writes leak temp files in the store path.

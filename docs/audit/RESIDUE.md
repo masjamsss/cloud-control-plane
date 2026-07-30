@@ -669,3 +669,22 @@ guaranteed outage on ordinary data. It becomes safe to do once there is a corpus
 snapshots to validate the shim against, or once the loader can quarantine a bad row and
 carry on rather than refusing the boot; either would be a good follow-up, and neither is
 something to guess at.
+
+### R-53 · `syncDir` is now duplicated between `fileStore.ts` and `snapshot.ts`
+*Residue on **DATA-6**.*
+
+The DATA-6/DATA-13 fix gave `store/snapshot.ts`'s standalone `writeFileAtomic` its own
+copy of `fileStore.ts`'s `syncDir` helper and its temp-cleanup try/catch, rather than
+importing either. Deliberate in the moment — `snapshot.ts`'s own header comment states it
+is "kept standalone so the scripts never touch the durable store's code path" — but it is
+the same duplicated-helper shape R-11 already names for the redaction/toolchain helpers,
+and it can drift exactly the way CTL-10's two literal-object walkers already did: a third
+fix to one copy's atomic-write discipline (a future ERR-10-shaped finding) can land in
+`fileStore.ts` and never reach `snapshot.ts`, silently reopening DATA-6/DATA-13 in the
+copy nobody was looking at.
+
+**Untracked.** No existing finding names this pair. Extracting both the temp-cleanup
+try/catch and `syncDir` into one dependency-free shared helper (`store/atomicWrite.ts` or
+similar) both modules import would close it structurally — the same shape ARCH-6's shared
+package is meant to eventually absorb for the api/app boundary, but this pair is
+api-internal and does not need to wait for that.
