@@ -3663,3 +3663,105 @@ build to catch it. **Not tracked by a separate finding**: DOC-17 (open, this
 same report) already covers the general "these derived docs drift from
 HEAD" problem, and a parity checker for this specific table would be a
 natural piece of that broader fix rather than its own finding.
+
+## IMP-9
+
+*Azure discover.py list-subscriptions crashes on a bare-list capture at the
+truncation-warning check.*
+
+`cmd_list_subscriptions` accepts either an ARG envelope dict or a bare list,
+but the truncation-warning check further down called `doc.get("skip_token")`
+unconditionally -- an AttributeError crash on exactly the large-tenant case
+(>=1000 rows) the warning exists to catch, rather than the documented
+REFUSE/exit-2 contract. The mainline `next-token` subcommand a few lines
+above already guards the identical shape correctly.
+
+**Fix:** guarded the `.get()` call with `isinstance(doc, dict)`, mirroring
+`cmd_next_token`'s existing correct pattern in the same file.
+
+- [x] **Reproduced first** -- confirmed at the REPL against a synthetic
+      1000-row bare-list capture: `AttributeError: 'list' object has no
+      attribute 'get'`, matching the finding's own description exactly.
+- [x] **Fix addresses the cause** -- the guard is the same shape the file's
+      own `cmd_next_token` already uses for the identical dict-or-list
+      ambiguity; no new pattern introduced.
+- [x] **Regression test** -- `test_bare_list_capture_of_1000_rows_does_not_crash`
+      in `importer/kit-azure/tests/test_discover.py`.
+- [x] **Negative test** -- confirmed to fail against the unfixed code with
+      the exact AttributeError above (via `git stash` on `discover.py`
+      alone).
+- [x] **Failure is loud** -- n/a in the crash sense; the fix restores the
+      REFUSE/exit-2 contract this crash was bypassing.
+- [x] **Evidence in the status line** -- `fixed:a52cdc5`.
+
+## IMP-10
+
+*gen-imports.py --id-region-suffix appends @region to global-service ids
+too.*
+
+The `@<region>` suffix was applied to every non-ARN id, including
+region-less resources the same manifest carries: IAM user/group/role/policy/
+instance-profile names, S3 bucket names. `terraform plan` over an
+`aws_iam_role` import id `my-role@ap-southeast-1` errors, because a global
+AWS principal has no region segment for the provider's import machinery to
+strip.
+
+**Fix:** added a `"global": true` flag to `services.json` for the six
+affected types, threaded it through `discover.py`'s manifest row
+construction, and had `gen-imports.py` skip the suffix when a row is marked
+global.
+
+- [x] **Reproduced first** -- ran discover.py build against the happy
+      fixture and confirmed `aws_iam_role.app-runtime` and
+      `aws_s3_bucket.example-app-logs` both carry non-ARN ids that would
+      receive the suffix under the unfixed code.
+- [x] **Fix addresses the cause** -- the flag lives on the one place that
+      already declares a type's shape (services.json), so a future global
+      type added there is covered automatically.
+- [x] **Regression test** -- `test_region_suffix_skips_global_service_ids`
+      in `importer/kit/tests/test_gen_imports.py`, with a control case
+      (a genuinely regional EBS volume id) proving the fix did not
+      over-widen.
+- [x] **Negative test** -- confirmed to fail against the unfixed
+      gen-imports.py with the exact id `"app-runtime@ap-southeast-1"` the
+      finding describes.
+- [x] **Failure is loud** -- n/a; the fix silently omits an incorrect
+      transformation rather than raising, which is correct here.
+- [x] **Evidence in the status line** -- `fixed:a52cdc5`.
+
+## IMP-12
+
+*normalize.py split silently drops non-resource top-level blocks.*
+
+`parse_resources` is deliberately resource-block-only (via python-hcl2), so
+`split` copied only `resource` block extents into per-service files;
+`moved`/`import`/`data`/`locals`/`terraform` blocks and free-standing
+comments in the input file were dropped without any warning -- contradicting
+the kits' stated "never silently dropped" doctrine (0007).
+
+**Fix:** track which source lines each extracted resource block (plus its
+attached leading comments) covers; collect any non-blank line NOT covered
+into contiguous runs and write them to `unclassified.tf` as their own block
+-- reusing the same loud destination the file's existing doctrine already
+uses for unmapped resource TYPES.
+
+- [x] **Reproduced first** -- appended a `moved` block to the happy fixture
+      and confirmed it vanished from every output file with zero warning
+      against the unfixed code.
+- [x] **Fix addresses the cause** -- covers the general class (any
+      top-level HCL construct `parse_resources` does not extract), not just
+      `moved` blocks specifically.
+- [x] **Regression test** -- `test_non_resource_top_level_block_is_not_silently_dropped`
+      in `importer/kit/tests/test_normalize.py`, which also asserts the
+      ordinary resource-splitting behaviour is unaffected.
+- [x] **Negative test** -- confirmed to fail against the unfixed
+      normalize.py: the appended `moved` block is entirely absent from
+      `unclassified.tf`'s content.
+- [x] **Failure is loud** -- unclassified.tf's existing header text ("NEVER
+      to be merged as-is") already covers this new content type.
+- [x] **Evidence in the status line** -- `fixed:a52cdc5`.
+
+**Verification (all three, one commit):** importer/kit unittest suite
+108/108 pass (was 106, +2 for IMP-10 and IMP-12's regression tests);
+importer/kit-azure suite 49/49 pass (was 48, +1 for IMP-9's regression
+test), against the repo-pinned python-hcl2==5.1.1.

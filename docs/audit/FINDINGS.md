@@ -166,7 +166,7 @@ Failures that produce no signal — swallowed rejections, best-effort compensati
 - [ ] ERR-14 | low | silent-failure | open | 09-error-handling.md | Drift-upload compensation is non-transactional best-effort
 - [ ] ERR-16 | low | silent-failure | open | 09-error-handling.md | The ccp-data CI lane goes green when the control plane is unreachable
 - [x] FE-15 | low | silent-failure | fixed:b5b703b | 05-frontend-flows.md | Notifications bell and CommandPalette swallow rejections silently
-- [ ] IMP-12 | low | silent-failure | open | 08-importer-schemadump.md | `normalize.py split` silently drops non-`resource` top-level blocks
+- [x] IMP-12 | low | silent-failure | fixed:a52cdc5 | 08-importer-schemadump.md | `normalize.py split` silently drops non-`resource` top-level blocks
 - [ ] IMP-15 | low | silent-failure | open | 08-importer-schemadump.md | Coverage-sweep family granularity marks undiscoverable resources as "covered" (documented, but with a concrete silent case)
 - [ ] UI-12 | low | silent-failure | open | 06-frontend-ui-robustness.md | Configure ⇄ Review step transitions never move focus, and the Suspense skeleton is silent for assistive tech
 
@@ -270,10 +270,10 @@ importer/kit, kit-azure and schemadump.
 - [x] IMP-7 | medium | importer | fixed:661d247 moved both Azure pins to 4.81.0; recurrence guard still missing | 08-importer-schemadump.md | Azure template provider pin (4.14.0) contradicts the committed azurerm schemadump tag (v4.81.0) it claims to bind to
 - [ ] IMP-8 | medium | importer | open | 08-importer-schemadump.md | Committed schemadump artifacts are not reproducible via the documented `gen.sh` pipeline; generated-catalog staleness detection is entirely manual
 - [x] ARCH-15 | low | importer | fixed:a6e0d53 | 01-architecture.md | ADR ledger statuses lag the built system
-- [ ] IMP-10 | low | importer | open | 08-importer-schemadump.md | `gen-imports.py --id-region-suffix` appends `@region` to global-service ids too
+- [x] IMP-10 | low | importer | fixed:a52cdc5 | 08-importer-schemadump.md | `gen-imports.py --id-region-suffix` appends `@region` to global-service ids too
 - [ ] IMP-13 | low | importer | open | 08-importer-schemadump.md | Shell scripts: minor robustness gaps around the deliberate no-`set -e` style
 - [x] IMP-14 | low | importer | fixed:a6e0d53 | 08-importer-schemadump.md | Stale numbers and dangling references in kit/schemadump docs and comments
-- [ ] IMP-9 | low | importer | open | 08-importer-schemadump.md | Azure `discover.py list-subscriptions` crashes on a bare-list capture at the truncation-warning check
+- [x] IMP-9 | low | importer | fixed:a52cdc5 | 08-importer-schemadump.md | Azure `discover.py list-subscriptions` crashes on a bare-list capture at the truncation-warning check
 
 ## test-quality
 
