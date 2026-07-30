@@ -133,7 +133,7 @@ OpenAPI vs reality, and docs citing things that do not exist.
 - [ ] ARCH-6 | medium | contracts-docs | open | 01-architecture.md | The backend depends on frontend-package internals; the shared-contract layer is a path alias plus a hand-synced copy
 - [ ] DOC-10 | medium | contracts-docs | open | 14-contracts-docs.md | ERROR-STATES.md's "every error code the API can return" is missing 8 taxonomy codes and 6 inline literals
 - [x] DOC-11 | medium | contracts-docs | fixed:a49b483 | 14-contracts-docs.md | OpenAPI types `ChangeRequest.planSummary` as a string; the API stores and serves a structured object
-- [ ] DOC-12 | medium | contracts-docs | open | 14-contracts-docs.md | DOMAIN-MODEL.md's entity catalog is missing a third of the store's item types
+- [x] DOC-12 | medium | contracts-docs | fixed:9e9a302 | 14-contracts-docs.md | DOMAIN-MODEL.md's entity catalog is missing a third of the store's item types
 - [x] DOC-4 | medium | contracts-docs | fixed:errors.ts cites the real contract; ERROR-STATES.md's grep-a-missing-file analysis re-measured and corrected | 14-contracts-docs.md | Multiple docs and a code header cite `ccp/docs/specs/ccp-api.md`, which does not exist in this repo
 - [x] DOC-5 | medium | contracts-docs | fixed:cdc5f2c | 14-contracts-docs.md | ~100 broken relative markdown links across the published tree
 - [x] DOC-6 | medium | contracts-docs | fixed:829a7b4 | 14-contracts-docs.md | API-SPEC.md states the opposite of current code on `PUT /projects/:id/identity` gating

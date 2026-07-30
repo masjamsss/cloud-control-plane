@@ -717,3 +717,18 @@ of a separate "built" column so decision status and build status stop sharing on
 Low severity: each individual ADR's status line is either accurate or self-aware about
 its own provisionality, so the ledger as a whole is not misleading a reader today, but
 nothing stops the next ADR from drifting the same way 0031/0028 did.
+
+### R-56 · DOMAIN-MODEL.md's entity catalog has no mechanical completeness check
+*Residue on **DOC-12**.*
+**Tracked by: DOC-17.**
+
+The fix added the eight missing `*Item` schema rows the finding named, but nothing
+verifies the catalog stays complete going forward. `TestSubcommandTableMatchesREADME`
+(DOC-8) is the worked example of the shape this would take — a script that greps
+`schema.ts` for every `export const .*Item = z.object` and cross-checks each name appears
+somewhere in `DOMAIN-MODEL.md` §2 — but writing it was out of scope for a single
+documentation-completeness fix and belongs with DOC-17's broader "these derived docs drift
+from HEAD, with no checker" problem, which this table is one instance of.
+
+Until that lands, a ninth `*Item` type can be added to the schema and go undocumented the
+same way these eight did, with nothing failing a build to catch it.

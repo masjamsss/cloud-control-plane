@@ -377,7 +377,7 @@ done independently.
 | finding | sev | expected result |
 | --- | --- | --- |
 | ~~**DOC-10**~~ | medium | *(open — pending)* ERROR-STATES.md lists every error code the API can return — all 8 missing taxonomy codes and 6 inline literals. ADD A GENERATED CHECK so it cannot drift again; a hand-updated list is the defect. |
-| **DOC-12** | medium | *(open — pending)* DOMAIN-MODEL.md's entity catalog covers every store item type, with a check that fails when a new one is added. |
+| ~~**DOC-12**~~ | medium | **DONE.** Added the 8 missing *Item schemas (InstanceItem, ProjectDataVersionItem, ProjectUploadTokenItem, ProjectScanJobItem, DriftReportItem, DriftPointerItem, DriftProposalItem, ProjectForgeCredentialItem) across two new subsections (2.1a, 2.1b). No mechanical parity check added (residue -- DOC-17 covers the general drift problem this would be a piece of). |
 | ~~**DOC-6**~~ | medium | **DONE.** API-SPEC.md's identity row was inverted vs code (claimed "not gated", code fails closed since ADR-0033 Decision 5). Fixed. |
 | ~~**DOC-8**~~ | medium | **DONE, with ARCH-12.** Both catalogctl README completeness claims were false (6/9 subcommands, 12/13 edit verbs listed). Fixed, plus a mechanical parity test (`TestSubcommandTableMatchesREADME`) so it cannot drift silently again. |
 | ~~**DOC-9**~~ | medium | **DONE.** All four env vars documented in `ccp/api/README.md`, plus `envVarsDocumented.test.ts` — which immediately caught a FIFTH undocumented var (`CCP_GITHUB_APP_KEY`) the manual audit missed. Fixed in `ccp/.env.example`. |

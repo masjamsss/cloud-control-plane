@@ -3605,3 +3605,61 @@ confirms its syntax is unchanged.
 Nothing is left behind: the 1677-vs-85 mismatch itself is IMP-8's scope, not
 this finding's -- this finding only asked that the docs stop claiming
 something false about the existing artifact, which they no longer do.
+
+## DOC-12
+
+*DOMAIN-MODEL.md's entity catalog is missing a third of the store's item
+types.*
+
+Eight of `schema.ts`'s exported `*Item` zod schemas had no row anywhere in
+the entity catalog (section 2): `InstanceItem`, `ProjectDataVersionItem`,
+`ProjectUploadTokenItem`, `ProjectScanJobItem`, `DriftReportItem`,
+`DriftPointerItem`, `DriftProposalItem`, `ProjectForgeCredentialItem`. A
+reader relying on the catalog as "the entity catalog" (its own section
+title) would not know these rows exist, including the forge credential --
+the one row in the whole schema deliberately kept off `ProjectItem` to keep
+a secret off the `GET /projects` wire, which is exactly the kind of
+invariant this catalog exists to surface.
+
+**Fix:** added two new subsections rather than folding into 2.1/2.2
+wholesale, because the eight rows split cleanly into two coherent groups
+with their own doc comments in the schema:
+- **2.1a** (project-scoped served data and scanning) -- the data-version
+  registry row, scan jobs, and forge credentials. Registry-adjacent but not
+  governance.
+- **2.1b** (drift telemetry) -- the report/pointer/proposal rows, which
+  share the on-disk-body/store-metadata split with 2.1a's data-version row
+  but belong to a distinct subsystem (drift-portal spec).
+
+Also promoted `ProjectUploadTokenItem` -- previously only cross-referenced
+from the onboard-token row's prose, never given its own row despite being
+independently exported -- to a full entry beside its sibling onboarding
+token, since the two credentials are the schema's clearest asymmetric pair
+(tombstone-revoke vs hard-delete-revoke) and are easier to compare side by
+side than via a cross-reference.
+
+- [x] **Reproduced first** -- `grep -n "export const .*Item = z.object"` on
+      `schema.ts` before editing, cross-checked against every entity name
+      already present in DOMAIN-MODEL.md §2; confirmed all eight names were
+      genuinely absent, not merely under a different label.
+- [x] **Fix addresses the cause** -- each added row was written from a
+      direct read of the corresponding schema.ts zod definition (fields,
+      SK pattern, doc comment), not from the audit report's paraphrase of
+      it, matching this doc's own stated citation discipline ("every claim
+      carries a file:line citation").
+- [x] **Regression test** -- n/a; this is a documentation-completeness fix
+      with no executable surface. `scripts/docs-link-check.py` was run
+      before and after (306 links checked, 0 broken both times) to confirm
+      no citation-format regression.
+- [x] **Failure is loud** -- n/a.
+- [x] **Evidence in the status line** -- `fixed:9e9a302`.
+
+**Residue:** this closes the specific eight-type gap the finding named, not
+a mechanical guarantee against future drift. No `grep`-based check enforces
+"every exported `*Item` schema has a §2 row" the way `TestSubcommandTableMatchesREADME`
+(DOC-8) does for the catalogctl README -- a ninth `*Item` type added later
+could go undocumented the same way these eight did, with nothing failing a
+build to catch it. **Not tracked by a separate finding**: DOC-17 (open, this
+same report) already covers the general "these derived docs drift from
+HEAD" problem, and a parity checker for this specific table would be a
+natural piece of that broader fix rather than its own finding.
