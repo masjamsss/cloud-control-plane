@@ -119,7 +119,7 @@ Unguarded full-row writes and lost updates. Largely one root cause — the store
 - [ ] TEST-6 | medium | concurrency | open | 12-testing-quality.md | No route-level concurrency/race tests; store-level concurrency only
 - [ ] API-14 | low | concurrency | open | 02-api-correctness.md | Conditional-write collisions inside `transactWithAudit` surface as the wrong error
 - [ ] CONC-12 | low | concurrency | open | 04-concurrency.md | The store-backed submit rate limiter is check-then-insert: concurrent submits breach both caps
-- [ ] CONC-13 | low | concurrency | open | 04-concurrency.md | Concurrent first-boot settlement can escape its own race handling and 500 early requests
+- [ ] CONC-13 | low | concurrency | open | 04-concurrency.md | SAME DEFECT AS API-20 (fix once, close both) — concurrent first-boot settlement can escape its own race handling and 500 early requests
 - [x] CONC-14 | low | concurrency | fixed:version guards on rename, set-services and stripFromOthers; test/teamWriteGuards.test.ts | 04-concurrency.md | Team CRUD writes bump `version` but never guard on it
 - [ ] CONC-15 | low | concurrency | open | 04-concurrency.md | `transactWithAudit` conflates a caller's domain guard failure with chain contention, producing dead error paths and mislabeled conflicts
 - [ ] REM-2 | low | concurrency | open | 15-remediation.md | Session rows are still written with blind full-row puts
@@ -316,7 +316,7 @@ Guards that pass when they should refuse.
 - [ ] API-13 | low | fail-open | open | 02-api-correctness.md | `maxOpen` rate-limit counts a nonexistent status and misses real open states
 - [ ] API-18 | low | fail-open | open | 02-api-correctness.md | Legitimize endpoint mints unlimited duplicate engineer requests for the same digest
 - [x] API-19 | medium | fail-open | fixed:fd3581e | 02-api-correctness.md | `settleCooling` stamps `APPLIED` during a change freeze, bypassing the freeze veto the approve handler enforces
-- [ ] API-20 | low | concurrency | open | 02-api-correctness.md | The one-time legacy settlement races itself: concurrent first requests get 409 CHAIN_CONTENTION on a plain read
+- [ ] API-20 | low | concurrency | open | 02-api-correctness.md | SAME DEFECT AS CONC-13 (fix once, close both) — the one-time legacy settlement races itself: concurrent first requests get 409 CHAIN_CONTENTION on a plain read
 - [ ] FE-14 | low | fail-open | open | 05-frontend-flows.md | DriftPage's post-trigger refetches bypass the staleness guard
 
 ## frontend-ux

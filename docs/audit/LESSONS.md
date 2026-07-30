@@ -883,3 +883,36 @@ fails loudly at the next call site somebody adds.
 check to `settleCooling` on its own would have converted a fail-open into a dead end — the
 exact defect API-8 was closing, one function over. They shipped together, sharing one
 marker and one exit, because a veto without a release is half a state machine.
+
+### L-31 — Search the ledger before raising a finding; a duplicate costs more than a missed one
+
+Findings: API-20, CONC-13
+
+While fixing API-8 a race test failed for a reason that had nothing to do with the seam under
+test: three concurrent authenticated reads returned `200, 409, 409`. I checked whether my own
+change had caused it (it had not — it reproduced on unmodified `src`), traced it to the
+one-time legacy settlement, and raised it as **API-20**.
+
+**CONC-13 already described it.** Same code, same race, from the cause end rather than the
+symptom end: the loser's `ifEquals roles: undefined` guard fails, `transactWithAudit`
+exhausts its budget, and the resulting `ApiError('CHAIN_CONTENTION')` is not a
+`ConditionError`, so it escapes `runSettlement`'s deliberate fail-open catch. It was sitting
+in batch B-O12, which I had not reached.
+
+The verification discipline worked — I did check that the defect was real and not mine. What
+I skipped was the cheaper check that should have come first: **does the ledger already know
+about this?** One `grep` over `FINDINGS.md` for `settlement` would have found it.
+
+**Why a duplicate is worse than it looks.** A missed finding is invisible and costs what it
+costs. A duplicate is *visible and wrong*: it inflates the declared count, so the ratchet is
+paid twice for one defect; it splits the evidence, so a future reader finds two partial
+accounts instead of one; and it can be "closed" from one side while the other stays open,
+which makes the ledger — the artifact whose entire job is to be trustworthy — lie. This repo
+already has that shape handled deliberately (API-17/DATA-14, CONC-15/API-14 are each one
+defect seen by two reports, and the triage says "fix once, close both"), which is exactly the
+convention a new duplicate should have been folded into rather than added alongside.
+
+**The rule: before writing a new finding, grep the ledger for the SUBSYSTEM, not for your
+phrasing.** I would never have found CONC-13 by searching for "409 on a plain read" — its
+title says "500 early requests". Searching for `settlement` finds it immediately. Findings
+are indexed by cause, and a symptom-shaped search misses the entry that names the cause.

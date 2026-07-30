@@ -746,7 +746,9 @@
           "title": "Concurrent first-boot settlement can escape its own race handling and 500 early requests",
           "lane": null,
           "expected_result": "Concurrent first-boot settlement stops escaping its own race handling and 500ing early requests.",
-          "verify_first": false
+          "verify_first": false,
+          "duplicate_of": null,
+          "same_defect_as": "API-20"
         },
         {
           "id": "TEST-6",

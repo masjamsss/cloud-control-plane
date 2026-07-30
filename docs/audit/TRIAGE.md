@@ -314,7 +314,7 @@ done independently.
 | **CONC-15** | low | `transactWithAudit` stops conflating a caller's domain guard failure with chain contention. NOTE: this session's CONC-9 fix leans on the current behaviour (a guarded write is refused rather than replayed) — do not break that property while separating the error paths. |
 | **API-14** | low | As CONC-15 — the same defect from the API report. Fix once, close both. |
 | **CONC-12** | low | The store-backed submit rate limiter stops being check-then-insert, so concurrent submits cannot breach both caps. |
-| **CONC-13** | low | Concurrent first-boot settlement stops escaping its own race handling and 500ing early requests. |
+| **CONC-13** | low | Concurrent first-boot settlement stops escaping its own race handling and 500ing early requests. **API-20 IS THE SAME DEFECT** (raised later from the symptom end, before the ledger was searched — L-31). Fix once, close both. A route-level repro exists: three concurrent authenticated reads against a cold store return `200, 409, 409`. |
 | **TEST-6** | medium | Route-level concurrency/race tests exist. THE PATTERN IS NOW IN THE REPO: `test/sessionRevokeRace.test.ts` and `test/pendingChangeCas.test.ts` use a store wrapper that commits a competing write between the read and the write. Choosing WHICH races to pin is the judgment. |
 
 

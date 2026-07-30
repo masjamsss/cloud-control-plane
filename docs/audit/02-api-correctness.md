@@ -207,6 +207,17 @@ Verified against the current code, not inferred: seeding an `APPROVED_COOLING` /
 
 ### API-20 — The one-time legacy settlement races itself: concurrent first requests get 409 CHAIN_CONTENTION on a plain read
 **Severity: low**
+
+> **DUPLICATE OF CONC-13 — fix once, close both.** This was raised from the observed symptom
+> (three concurrent authenticated reads returning `200, 409, 409`) while working an unrelated
+> finding, without first checking the concurrency report, where **CONC-13** already describes
+> the same defect from the cause end: the loser's `ifEquals roles: undefined` guard fails,
+> `transactWithAudit` exhausts its budget, and the resulting `ApiError('CHAIN_CONTENTION')` is
+> not a `ConditionError`, so it escapes `runSettlement`'s deliberate fail-open catch. Same
+> code, same race, same fix. Kept declared rather than deleted because a finding cannot be
+> retired by removing it from a report; CONC-13 carries the recommendation, and closing it
+> closes this. Recorded as a duplicate rather than quietly dropped because the *reason* it was
+> missed is itself the lesson — see L-31.
 **Location:** `ccp/api/src/middleware/session.ts:50` (`withSettlement`), `ccp/api/src/domain/settlement.ts:137,204,228` (`retroRegisterLegacyProject` via `transactWithAudit`)
 
 `ensureSettlement` runs the one-time legacy-estate materialization inside the request path, on whichever authenticated requests arrive first. It writes through `transactWithAudit`, which retries once against a fresh chain head and then throws `CHAIN_CONTENTION`. With three concurrent first requests on an unsettled deployment, one wins and the other two surface **409 on a plain `GET`** — a read failing because two other reads were doing the same one-time bootstrap.
