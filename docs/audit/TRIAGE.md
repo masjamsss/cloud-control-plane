@@ -376,17 +376,17 @@ done independently.
 
 | finding | sev | expected result |
 | --- | --- | --- |
-| **DOC-10** | medium | ERROR-STATES.md lists every error code the API can return — all 8 missing taxonomy codes and 6 inline literals. ADD A GENERATED CHECK so it cannot drift again; a hand-updated list is the defect. |
-| **DOC-12** | medium | DOMAIN-MODEL.md's entity catalog covers every store item type, with a check that fails when a new one is added. |
-| **DOC-6** | medium | API-SPEC.md matches the code on `PUT /projects/:id/identity` gating. Read the route first; the code is authoritative. |
-| **DOC-8** | medium | catalogctl README's two completeness claims are true, or removed. Same shape as ARCH-12 — batch them. |
-| **DOC-9** | medium | All four operator-facing env vars are documented. NOTE: `CCP_GIT_PROJECT` and `CCP_DATA_LOCK_TAKEOVER` were added this session and ARE documented — check the finding's list against HEAD before writing. |
-| **DOC-14** | low | PERMISSIONS.md no longer cites a '§2 apply row' that does not exist. |
-| **DOC-16** | low | The listed OpenAPI request/response gaps against route behaviour are closed. |
-| **DOC-17** | low | The code-derived docs' line citations match HEAD, with a checker so they stop drifting. |
-| **ARCH-12** | low | catalogctl README's subcommand table is complete. Batch with DOC-8. |
-| **ARCH-15** | low | The ADR ledger statuses match the built system. |
-| **IMP-14** | low | Stale numbers and dangling references in kit/schemadump docs and comments are corrected. |
+| ~~**DOC-10**~~ | medium | *(open — pending)* ERROR-STATES.md lists every error code the API can return — all 8 missing taxonomy codes and 6 inline literals. ADD A GENERATED CHECK so it cannot drift again; a hand-updated list is the defect. |
+| **DOC-12** | medium | *(open — pending)* DOMAIN-MODEL.md's entity catalog covers every store item type, with a check that fails when a new one is added. |
+| ~~**DOC-6**~~ | medium | **DONE.** API-SPEC.md's identity row was inverted vs code (claimed "not gated", code fails closed since ADR-0033 Decision 5). Fixed. |
+| ~~**DOC-8**~~ | medium | **DONE, with ARCH-12.** Both catalogctl README completeness claims were false (6/9 subcommands, 12/13 edit verbs listed). Fixed, plus a mechanical parity test (`TestSubcommandTableMatchesREADME`) so it cannot drift silently again. |
+| ~~**DOC-9**~~ | medium | **DONE.** All four env vars documented in `ccp/api/README.md`, plus `envVarsDocumented.test.ts` — which immediately caught a FIFTH undocumented var (`CCP_GITHUB_APP_KEY`) the manual audit missed. Fixed in `ccp/.env.example`. |
+| ~~**DOC-14**~~ | low | **DONE — verified already resolved, no code changed.** §2's matrix already carries the apply row §9 cites (added by earlier DOC-2 work). |
+| **DOC-16** | low | *(open — pending)* The listed OpenAPI request/response gaps against route behaviour are closed. |
+| **DOC-17** | low | *(open — pending)* The code-derived docs' line citations match HEAD, with a checker so they stop drifting. |
+| ~~**ARCH-12**~~ | low | **DONE, with DOC-8.** See above. |
+| **ARCH-15** | low | *(open — pending)* The ADR ledger statuses match the built system. |
+| **IMP-14** | low | *(open — pending)* Stale numbers and dangling references in kit/schemadump docs and comments are corrected. |
 
 
 ## B-S4 — OpenAPI / wire contract fixes

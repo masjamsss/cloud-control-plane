@@ -3394,3 +3394,116 @@ a host allowlist (the finding's alternative branch).
 
 **Verification (both findings, one commit):** api suite 1515/1515, typecheck clean; app
 suite 2752/2752, typecheck clean.
+
+## DOC-6
+
+*API-SPEC.md states the opposite of current code on `PUT /projects/:id/identity` gating.*
+
+API-SPEC.md's identity row claimed "Callable repeatedly to correct a mistake. Not gated
+on project status or archived." The route (`projects.ts`) fails closed with
+`if (!isOnboardable(project)) return apiError(c, "STATE_CONFLICT")` since ADR-0033
+Decision 5 landed — restricted to draft/pending-trust, refusing archived projects — exactly
+as the (already-updated) OpenAPI YAML describes. The human-readable doc asserted the
+*absence* of a safety gate that exists.
+
+**Fix:** rewrote the row to state the actual gate (draft/pending-trust only; 409
+`STATE_CONFLICT` once trusted/ready or archived) and the reasoning (the identity is which
+cloud account every future request targets, so leaving it open post-trust would let one
+admin silently re-point a trusted/live project).
+
+- [x] **Reproduced first** — read the route's own doc comment (`projects.ts:1385-1400`,
+      "GATED to draft/pending-trust (isOnboardable), and refused for an archived project")
+      directly against the doc's contradicting claim before editing either.
+- [x] **Fix addresses the cause** — this is a prose-only contract doc; no code changed
+      (the code was already correct; only this derived human-readable summary had not
+      caught up).
+- [x] **Regression test** — n/a; a doc-only correction. DOC-17 remains open to track the
+      general "these derived docs drift from HEAD" problem.
+- [x] **Failure is loud** — n/a.
+- [x] **Evidence in the status line** — `fixed:829a7b4`.
+
+## DOC-8
+
+*catalogctl README makes two explicit completeness claims that are false.*
+
+Two separate false "this is the complete list" claims in one file:
+1. The Subcommands table was prefaced "verified directly against `internal/cli/cli.go` —
+   this is the complete list, no more, no fewer" and listed 6 subcommands. `cli.go`
+   dispatches 9: `drift-edit`, `scan-worker`, and `window-check` were missing.
+2. "The `edit` verbs (12) … this is the exhaustive list" omitted `create_resource`,
+   dispatched via a fourth table (`createHandlers`, `create.go:32`) alongside the three the
+   prose named — 13 verbs, not 12.
+
+**Fix:** added the three missing subcommand rows and the missing verb (renumbering both
+headers to their real counts), AND — since a second untended copy is exactly how this
+class of doc rot happens — added `TestSubcommandTableMatchesREADME` to `cli_test.go`. It
+derives both sides mechanically (regex over `cli.go`'s own `case` labels; regex over the
+README's own table rows) and fails the build on any future drift.
+
+- [x] **Reproduced first** — read of both `cli.go`'s switch statement (9 cases) and the
+      README's table (6 rows) confirmed the exact 3-item gap before editing; separately
+      confirmed `create_resource` dispatches via `createHandlers` in `edit.go` and is
+      absent from the README's 12-verb list.
+- [x] **Fix addresses the cause** — the new test derives from the real source, so the
+      specific recurrence this finding describes is now caught mechanically.
+- [x] **Regression test** — `TestSubcommandTableMatchesREADME`, `cli_test.go`.
+- [x] **Negative test** — confirmed to fail against the unfixed state: temporarily
+      stripping the three added README rows reproduced the exact expected diagnostic;
+      restoring the rows passed all 64 tests in the package.
+- [x] **Failure is loud** — the test fails the `go test` exit code on drift.
+- [x] **Evidence in the status line** — `fixed:829a7b4`.
+
+## ARCH-12
+
+Same defect, same fix, filed twice — once in the contracts-docs report as DOC-8, once in
+the architecture report. See **DOC-8** above for the full reasoning, the negative test,
+and the regression test; both findings close on the identical commit.
+
+- [x] **Evidence in the status line** — `fixed:829a7b4`.
+
+## DOC-9
+
+*Four operator-facing env vars are undocumented (two of them documented nowhere at all).*
+
+`ccp/README.md` designates `ccp/api/README.md` as "the place every environment variable
+… is documented," but `CCP_APPLY_FROZEN`/`CCP_APPLY_AUTO_REVERT` (the auto-apply
+scheduler's freeze switch and auto-revert flag) were readable only in code comments;
+`CCP_DRIFT_IMPORT`/`CCP_DRIFT_CHECK_CMD` were documented only in the OpenAPI YAML / other
+prose docs, never in this designated deploy reference.
+
+**Fix:** added rows for all four to `ccp/api/README.md`'s env table. Also added
+`test/envVarsDocumented.test.ts`, which mechanically diffs every
+`process.env.CCP_*`/`env.CCP_*` reference under `src/` against every `CCP_*` token across
+this api's README, both `.env.example` files, and `docker-compose.yml`. Running it
+immediately caught a fifth, previously-unnoticed gap: `CCP_GITHUB_APP_KEY` (the inline-PEM
+alternative to the already-documented `_FILE` variant) was absent from every surface.
+Fixed in `ccp/.env.example` alongside its sibling.
+
+- [x] **Reproduced first** — `grep` confirmed zero occurrences of all four original names
+      across every doc surface before writing any doc row.
+- [x] **Fix addresses the cause** — the new test derives the "documented" side from the
+      real deploy-reference surfaces this repo ships, not a second hand list.
+- [x] **Regression test** — `envVarsDocumented.test.ts`; ran once before the
+      `.env.example` fix (failed on `CCP_GITHUB_APP_KEY`) and once after (passed).
+- [x] **Failure is loud** — a plain vitest assertion failure.
+- [x] **Evidence in the status line** — `fixed:829a7b4`.
+
+## DOC-14
+
+*PERMISSIONS.md §9 cites a "§2 apply row" that does not exist.*
+
+**Verified already resolved, no fix needed.** §9's cross-reference now correctly cites a
+row that exists: the "Run the apply bundle" row in §2's role×capability matrix (requester
+refused, approver refused, lead permitted, isAdmin permitted, citing `APPLY_FORBIDDEN` and
+the `BUNDLE_DISARMED` off-by-default gate) — added by earlier work closing DOC-2.
+
+- [x] **Reproduced first** — read of §2's matrix confirmed the row is present with the
+      exact content §9 describes, before concluding no fix was needed (verify before fix).
+- [x] **Fix addresses the cause** — n/a; no remaining defect.
+- [x] **Regression test** — n/a.
+- [x] **Failure is loud** — n/a.
+- [x] **Evidence in the status line** — `fixed:verified already resolved` (no code
+      change; the verification itself is the evidence).
+
+**Verification (DOC-6, DOC-8/ARCH-12, DOC-9, DOC-14, one commit):** ccp/api full suite
+1516/1516 passing; catalogctl `go test ./...` 64/64 passing.

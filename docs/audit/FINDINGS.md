@@ -136,10 +136,10 @@ OpenAPI vs reality, and docs citing things that do not exist.
 - [ ] DOC-12 | medium | contracts-docs | open | 14-contracts-docs.md | DOMAIN-MODEL.md's entity catalog is missing a third of the store's item types
 - [x] DOC-4 | medium | contracts-docs | fixed:errors.ts cites the real contract; ERROR-STATES.md's grep-a-missing-file analysis re-measured and corrected | 14-contracts-docs.md | Multiple docs and a code header cite `ccp/docs/specs/ccp-api.md`, which does not exist in this repo
 - [x] DOC-5 | medium | contracts-docs | fixed:cdc5f2c | 14-contracts-docs.md | ~100 broken relative markdown links across the published tree
-- [ ] DOC-6 | medium | contracts-docs | open | 14-contracts-docs.md | API-SPEC.md states the opposite of current code on `PUT /projects/:id/identity` gating
+- [x] DOC-6 | medium | contracts-docs | fixed:829a7b4 | 14-contracts-docs.md | API-SPEC.md states the opposite of current code on `PUT /projects/:id/identity` gating
 - [ ] DOC-7 | medium | contracts-docs | open | 14-contracts-docs.md | App `DriftProposal` type does not match the wire: `importPayload` has a different shape, and top-level `arn`/`tfType` are mock-only
-- [ ] DOC-8 | medium | contracts-docs | open | 14-contracts-docs.md | catalogctl README makes two explicit completeness claims that are false
-- [ ] DOC-9 | medium | contracts-docs | open | 14-contracts-docs.md | Four operator-facing env vars are undocumented (two of them documented nowhere at all)
+- [x] DOC-8 | medium | contracts-docs | fixed:829a7b4 | 14-contracts-docs.md | catalogctl README makes two explicit completeness claims that are false
+- [x] DOC-9 | medium | contracts-docs | fixed:829a7b4 | 14-contracts-docs.md | Four operator-facing env vars are undocumented (two of them documented nowhere at all)
 - [ ] TEST-7 | medium | contracts-docs | open | 12-testing-quality.md | The SPA has no DOM/interaction testing; ~25 test files pin UI by source-string inspection
 - [x] API-12 | low | contracts-docs | fixed:a49b483 | 02-api-correctness.md | `prNumberFromUrl` extracts a "PR number" from any URL ending in digits
 - [ ] ARCH-14 | low | contracts-docs | open | 01-architecture.md | The OpenAPI "parity test" is string containment, not parity
@@ -207,7 +207,7 @@ Roles, sessions, TOTP, dual control, quorum and idempotency.
 - [ ] FE-7 | medium | authz-identity | open | 05-frontend-flows.md | PendingChangesBanner count goes stale after any dual-control activity — and the mock branch reads an unsubscribed store
 - [ ] FE-9 | medium | authz-identity | open | 05-frontend-flows.md | apiSession role resolution falls back to another scope's role when the user has no binding on the active project
 - [ ] CTL-9 | low | authz-identity | open | 07-catalogctl.md | `pr-prepare`'s UNAPPROVED gate accepts any non-empty approvals list without checking `decision`
-- [ ] DOC-14 | low | authz-identity | open | 14-contracts-docs.md | PERMISSIONS.md §9 cites a "§2 apply row" that does not exist
+- [x] DOC-14 | low | authz-identity | fixed:verified already resolved -- PERMISSIONS.md §2's matrix carries the apply row the §9 cross-reference cites (requester/approver refused, lead/isAdmin permitted, APPLY_FORBIDDEN + BUNDLE_DISARMED note) | 14-contracts-docs.md | PERMISSIONS.md §9 cites a "§2 apply row" that does not exist
 - [ ] FE-12 | low | authz-identity | open | 05-frontend-flows.md | After a partial approval, the queue keeps a card the server's pending scope would drop
 
 ## ci-not-wired
@@ -406,7 +406,7 @@ SchemaForm, repeated blocks and pickers.
 Routing, redirects and current-page indication.
 
 - [ ] CI-6 | medium | frontend-nav | open | 13-ci-cd.md | release-images publishes on any tag with no quality gate, mutable version stamping, and an unconditional `latest`
-- [ ] ARCH-12 | low | frontend-nav | open | 01-architecture.md | `catalogctl` README's "complete, no more, no fewer" subcommand table omits a third of the subcommands
+- [x] ARCH-12 | low | frontend-nav | fixed:829a7b4 | 01-architecture.md | `catalogctl` README's "complete, no more, no fewer" subcommand table omits a third of the subcommands
 - [ ] FE-13 | low | frontend-nav | open | 05-frontend-flows.md | RequestDetail sub-panels hold un-keyed local state across request-id navigation
 
 ## resource-leak
