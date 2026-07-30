@@ -177,3 +177,17 @@ describe('queueAgeLabel — the approvals-queue age chip (0034 §4.3 / papercut 
     expect(queueAgeLabel('not-a-date')).toBeNull();
   });
 });
+
+/**
+ * FE-11 — same defect as MyRequests', in this file's own hand-maintained
+ * ALL_STATUSES: WINDOW_EXPIRED (and, before this fix, every status added to
+ * the vocabulary after this array was written) could not be filtered to.
+ * Both files' arrays are now derived from the one closed vocabulary
+ * (REQUEST_STATUSES) rather than kept in sync by hand.
+ */
+describe('FE-11 — WINDOW_EXPIRED is filterable in the approvals queue too', () => {
+  it('WINDOW_EXPIRED survives parseFilters unchanged, not coerced to "all"', () => {
+    const sp = new URLSearchParams('status=WINDOW_EXPIRED');
+    expect(parseFilters(sp)).toEqual({ status: 'WINDOW_EXPIRED', q: '' });
+  });
+});

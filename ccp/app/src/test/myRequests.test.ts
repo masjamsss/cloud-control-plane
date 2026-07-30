@@ -28,3 +28,25 @@ describe('MyRequests parseFilters — URL → filter state (valid, invalid, abse
     expect(parseFilters(sp)).toEqual({ status: 'all', q: '' });
   });
 });
+
+/**
+ * FE-11 — WINDOW_EXPIRED is the one status that REQUIRES user action
+ * (re-window or cancel), and the hand-maintained ALL_STATUSES array used to
+ * omit it: the dropdown could not select it, and parseFilters silently
+ * coerced `?status=WINDOW_EXPIRED` to 'all'. ALL_STATUSES is now derived from
+ * the one closed vocabulary (REQUEST_STATUSES), so this can no longer happen
+ * for ANY status in that vocabulary, not just this one.
+ */
+describe('FE-11 — WINDOW_EXPIRED (and every REQUEST_STATUSES value) is filterable', () => {
+  it('WINDOW_EXPIRED survives parseFilters unchanged, not coerced to "all"', () => {
+    const sp = new URLSearchParams('status=WINDOW_EXPIRED');
+    expect(parseFilters(sp)).toEqual({ status: 'WINDOW_EXPIRED', q: '' });
+  });
+
+  it('every scheduler-written status the app renders elsewhere is also filterable', () => {
+    for (const s of ['HALTED_DRIFT', 'HALTED_APPLY_FAILED', 'APPROVED_COOLING', 'CANCELLED']) {
+      const sp = new URLSearchParams(`status=${s}`);
+      expect(parseFilters(sp), s).toEqual({ status: s, q: '' });
+    }
+  });
+});

@@ -1,7 +1,8 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { StatusBadge } from '@/components/ui/StatusBadge';
+import { StatusBadge, statusLabel } from '@/components/ui/StatusBadge';
+import { REQUEST_STATUSES } from '@/types';
 
 /**
  * 0021 G1 — the two new RequestItem statuses (APPROVED_COOLING, CANCELLED)
@@ -54,5 +55,46 @@ describe('StatusBadge — WINDOW_EXPIRED (0024)', () => {
     expect(renderToStaticMarkup(React.createElement(StatusBadge, { status: 'WINDOW_EXPIRED' }))).toContain(
       'title="WINDOW_EXPIRED"',
     );
+  });
+});
+
+/**
+ * UI-10 — `statusLabel` is the one canonical source of status copy, exported
+ * specifically so `MyRequests.tsx`, `ApprovalsQueue.tsx` and `lib/palette.ts`
+ * stop each deriving their own words for the same status ("Awaiting code
+ * review" vs this map's "Awaiting review" for AWAITING_CODE_REVIEW). Every
+ * value in the closed vocabulary must resolve through it — the whole point is
+ * that no status can fall back to a raw-enum or ad hoc humanization anywhere
+ * that imports this function.
+ */
+describe('statusLabel — UI-10, the one canonical status-copy source', () => {
+  it('every status in the closed vocabulary has a defined, non-empty label', () => {
+    for (const status of REQUEST_STATUSES) {
+      const label = statusLabel(status);
+      expect(label, status).toBeTypeOf('string');
+      expect(label.length, status).toBeGreaterThan(0);
+    }
+  });
+
+  it('never returns the raw SCREAMING_SNAKE_CASE token — every label is human copy', () => {
+    for (const status of REQUEST_STATUSES) {
+      expect(statusLabel(status), status).not.toBe(status);
+      expect(statusLabel(status), status).not.toMatch(/^[A-Z_]+$/);
+    }
+  });
+
+  it('is exactly what StatusBadge renders — the same function, not a parallel copy', () => {
+    for (const status of REQUEST_STATUSES) {
+      const html = renderToStaticMarkup(React.createElement(StatusBadge, { status }));
+      expect(html, status).toContain(statusLabel(status));
+    }
+  });
+
+  it('deliberately differs from a mechanical humanization for several statuses — these are curated, not derived', () => {
+    // Pins the exact cases the old per-file humanizeStatus functions got
+    // wrong by construction: a plain underscore-to-space transform would
+    // produce "Noop" and "Approved cooling", not these.
+    expect(statusLabel('NOOP')).toBe('No change');
+    expect(statusLabel('APPROVED_COOLING')).toBe('Cooling off');
   });
 });

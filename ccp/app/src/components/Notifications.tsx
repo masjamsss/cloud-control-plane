@@ -8,6 +8,7 @@ import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
 import { useCurrentUser } from '@/lib/session';
 import { getServiceMeta } from '@/lib/serviceMeta';
+import { statusLabel } from '@/components/ui/StatusBadge';
 import './Notifications.css';
 
 interface Note {
@@ -60,7 +61,9 @@ function ownNote(req: ChangeRequest): Note {
       };
     }
     default:
-      return { ...base, tone: 'info', title: `Update: ${svc}`, detail: `${pr(req)} · ${req.status}` };
+      // UI-10 — the fallback for any status not given its own case above must
+      // never render the raw enum (e.g. "· CHECKS_RUNNING") to the bell.
+      return { ...base, tone: 'info', title: `Update: ${svc}`, detail: `${pr(req)} · ${statusLabel(req.status)}` };
   }
 }
 

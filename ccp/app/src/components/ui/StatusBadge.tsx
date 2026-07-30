@@ -57,6 +57,24 @@ const STATUS_SPEC: Record<RequestStatus, StatusSpec> = {
 };
 
 /**
+ * UI-10 — the one canonical label for a `RequestStatus`, exported so every other
+ * screen that needs status copy reads THIS map instead of re-deriving one. Three
+ * files (`MyRequests.tsx`, `ApprovalsQueue.tsx`, `lib/palette.ts`) each carried
+ * their own `humanizeStatus` — a mechanical underscore-to-space transform that
+ * produces different words for the same state right next to this badge
+ * ("Awaiting code review" vs this map's "Awaiting review"). `Notifications.tsx`'s
+ * default branch rendered the raw enum outright. None of that is catchable by the
+ * copyLint suite, because these are derived strings, not literals.
+ *
+ * A curated label — not a mechanical transform of the enum — because several
+ * entries deliberately differ from a literal humanization (`NOOP` -> "No change",
+ * not "Noop"; `APPROVED_COOLING` -> "Cooling off", not "Approved cooling").
+ */
+export function statusLabel(status: RequestStatus): string {
+  return STATUS_SPEC[status].label;
+}
+
+/**
  * Request lifecycle chip: an 8px dot + label. The dot carries the tone —
  * APPLIED/NOOP low, failures/REJECTED high, awaiting/changes med, in-flight
  * info, draft/withdrawn muted — so status never blurs into the Risk axis.

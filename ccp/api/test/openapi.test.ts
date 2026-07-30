@@ -298,3 +298,52 @@ describe('OpenAPI contract (spec §3, extracted verbatim)', () => {
     expect(claimBlock).toContain("'204': { description: Nothing queued }");
   });
 });
+
+/**
+ * DOC-13 — the request-status vocabulary is a THREE-way contract: the SPA union
+ * (ccp/app/src/lib/requestStatus.ts, closed since ARCH-7), the values the server actually
+ * writes to ChangeRequest.status, and this YAML's "known values" prose. The scheduler
+ * writes APPLYING/HALTED_DRIFT/HALTED_APPLY_FAILED and the submit/review routes write
+ * CHANGES_REQUESTED/WITHDRAWN — none of which the prose named, so a reader of the
+ * contract alone would not know the wire could carry them. Pinning every one by name
+ * (not just spot-checking a couple) is what stops this from drifting silently again the
+ * next time a status is added to one side and not the other.
+ */
+describe('DOC-13 — the ChangeRequest.status "known values" prose names every status the server writes', () => {
+  const statusBlock = (() => {
+    const start = yaml.indexOf('status: {type: string, description:');
+    if (start < 0) throw new Error('ChangeRequest.status description not found in the contract');
+    // The description is one long single-line scalar terminated by `"},` — slice just
+    // that value rather than the whole 900-line file, so a false match elsewhere in the
+    // spec (e.g. an unrelated code sample) cannot make this test pass for the wrong reason.
+    const end = yaml.indexOf('"},', start);
+    return yaml.slice(start, end);
+  })();
+
+  it('the block was actually found and is non-trivial (L-1 — a mis-slice must not pass vacuously)', () => {
+    expect(statusBlock.length).toBeGreaterThan(200);
+  });
+
+  it('names every status a real handler writes, including the three the scheduler introduced', () => {
+    // One entry per status the api's own source writes to `status:` on a request row —
+    // read from scheduler.ts's own exported constant plus the values documented in the
+    // route handlers above, not re-typed from memory.
+    for (const status of [
+      'AWAITING_CODE_REVIEW',
+      'CHANGES_REQUESTED',
+      'NEEDS_ENGINEER',
+      'APPROVED_COOLING',
+      'AWAITING_DEPLOY_APPROVAL',
+      'APPLYING',
+      'WINDOW_EXPIRED',
+      'HALTED_DRIFT',
+      'HALTED_APPLY_FAILED',
+      'APPLIED',
+      'CANCELLED',
+      'WITHDRAWN',
+      'REJECTED',
+    ]) {
+      expect(statusBlock, status).toContain(status);
+    }
+  });
+});

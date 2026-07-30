@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { JSX } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { ChangeRequest, Inventory, RequestStatus, ServiceManifest } from '@/types';
+import { REQUEST_STATUSES } from '@/types';
 import { api } from '@/lib/api';
 import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
@@ -12,46 +13,28 @@ import { formatProjectDate, formatProjectTime } from '@/lib/datetime';
 import { beyondCatalogTitle, isBeyondCatalogRequest } from '@/lib/beyondCatalog';
 import { provisionRequestTitle } from '@/lib/providerCatalog';
 import { RiskBadge } from '@/components/ui/RiskBadge';
-import { StatusBadge } from '@/components/ui/StatusBadge';
+import { StatusBadge, statusLabel } from '@/components/ui/StatusBadge';
 import { MacdTag } from '@/components/ui/MacdTag';
 import { ApprovalLadder } from '@/components/ui/ApprovalLadder';
 import { SearchBar } from '@/components/SearchBar';
 import { LoadError } from '@/components/LoadError';
 import './requests.css';
 
-/** Every RequestStatus value, for the status filter's option list (Task 3) —
- * a shared view must stay meaningful even for a status nothing currently has.
- * APPROVED_COOLING/CANCELLED are api-mode only — the mock never
- * produces them, so they simply never match anything under mock-mode, same
- * as any other status nothing currently has. */
-const ALL_STATUSES: RequestStatus[] = [
-  'DRAFT',
-  'SUBMITTED',
-  'GENERATING',
-  'CHECKS_RUNNING',
-  'PLAN_READY',
-  'AWAITING_CODE_REVIEW',
-  'CHANGES_REQUESTED',
-  'CODE_APPROVED',
-  'MERGED',
-  'AWAITING_DEPLOY_APPROVAL',
-  'APPLYING',
-  'APPLIED',
-  'NOOP',
-  'APPLY_FAILED',
-  'DIGEST_MISMATCH',
-  'REJECTED',
-  'NEEDS_ENGINEER',
-  'WITHDRAWN',
-  'APPROVED_COOLING',
-  'CANCELLED',
-];
+/** FE-11 — every `RequestStatus` value, for the status filter's option list
+ * (Task 3), derived from the one closed vocabulary (`REQUEST_STATUSES`) rather
+ * than restated as a hand-maintained array. The hand-maintained version omitted
+ * `WINDOW_EXPIRED` — the one status that *requires* user action (re-window or
+ * cancel) was the one status you could not filter to — because a plain array
+ * has no compile-time completeness check against the union. A shared view must
+ * stay meaningful even for a status nothing currently has; APPROVED_COOLING/
+ * CANCELLED/WINDOW_EXPIRED are api-mode only, so they simply never match
+ * anything under mock-mode, same as any other status nothing currently has. */
+const ALL_STATUSES: RequestStatus[] = [...REQUEST_STATUSES];
 const STATUS_SET = new Set<string>(ALL_STATUSES);
 
-/** "AWAITING_CODE_REVIEW" → "Awaiting code review" — readable option text. */
-function humanizeStatus(status: string): string {
-  const lower = status.toLowerCase().replace(/_/g, ' ');
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
+/** UI-10 — status copy for this dropdown reads the one canonical label map. */
+function humanizeStatus(status: RequestStatus): string {
+  return statusLabel(status);
 }
 
 export interface RequestFilters {

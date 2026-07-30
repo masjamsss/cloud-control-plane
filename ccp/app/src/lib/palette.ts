@@ -7,6 +7,7 @@ import type {
 } from '@/types';
 import { getSettings } from '@/lib/settings';
 import { getServiceMeta } from '@/lib/serviceMeta';
+import { statusLabel } from '@/components/ui/StatusBadge';
 import { catalogServiceKey } from '@/lib/catalog';
 import { AZURE_SERVICES } from '@/lib/azureServiceMap';
 import { AWS_SERVICES } from '@/lib/awsServiceMap';
@@ -96,9 +97,12 @@ function shortId(id: string): string {
   return id.length <= 10 ? id : id.slice(0, 8);
 }
 
-/** "AWAITING_CODE_REVIEW" → "awaiting code review" — quiet secondary text. */
-function humanizeStatus(status: string): string {
-  return status.toLowerCase().replace(/_/g, ' ');
+/** UI-10 — status copy here reads the one canonical label map, rather than a
+ * mechanical underscore-to-space transform that produced different words for
+ * the same state right next to the status badge (e.g. "Awaiting code review"
+ * here vs "Awaiting review" on the badge). */
+function humanizeStatus(status: ChangeRequest['status']): string {
+  return statusLabel(status);
 }
 
 /* ── Flat entry/row model ────────────────────────────────────────────────── */
