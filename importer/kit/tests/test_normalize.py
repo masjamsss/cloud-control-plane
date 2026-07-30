@@ -85,6 +85,35 @@ class SplitTest(unittest.TestCase):
         self.assertIn('resource "aws_gamelift_fleet" "unmapped_type_example"', uncls)
         self.assertIn("NEVER to be merged as-is", uncls)
 
+    def test_non_resource_top_level_block_is_not_silently_dropped(self):
+        """IMP-12: `moved`/`import`/`data`/`locals`/`terraform` blocks and
+        free-standing comments are legal top-level HCL that parse_resources
+        (deliberately resource-only) does not extract. split must never
+        silently omit them — a dropped `moved` block changes plan semantics
+        invisibly. Against the unfixed code, the moved block below vanishes
+        from every output file with no warning at all."""
+        with open(GENERATED_FIXTURE) as fh:
+            original = fh.read()
+        moved_block = (
+            '\nmoved {\n'
+            '  from = aws_instance.old_name\n'
+            '  to   = aws_instance.app_server_1\n'
+            '}\n'
+        )
+        with open(self.generated, "w") as fh:
+            fh.write(original + moved_block)
+
+        r = self.split()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        uncls = open(os.path.join(self.env, "unclassified.tf")).read()
+        self.assertIn("moved {", uncls)
+        self.assertIn("aws_instance.old_name", uncls)
+        self.assertIn("aws_instance.app_server_1", uncls)
+        # every other file must still be produced correctly — this must not
+        # regress the ordinary resource-splitting behaviour
+        ec2 = open(os.path.join(self.env, "ec2.tf")).read()
+        self.assertIn('resource "aws_instance" "app_server_1"', ec2)
+
     def test_rerun_is_idempotent_and_divergence_refuses_without_force(self):
         self.assertEqual(self.split().returncode, 0)
         r = self.split()

@@ -76,6 +76,23 @@ class GenImportsTest(unittest.TestCase):
         # the archive's DR convention: "vpc-...@ap-southeast-1"
         self.assertIn('id = "vol-0c0c0c0c0c0c0c001@ap-southeast-1"', text)
 
+    def test_region_suffix_skips_global_service_ids(self):
+        """IMP-10: --id-region-suffix must NOT append @<region> to a
+        region-less id (IAM role/user/group/policy names, S3 bucket names —
+        services.json marks these types 'global': true). Against the unfixed
+        code, `aws_iam_role.app_runtime` got id 'app-runtime@ap-southeast-1',
+        which `terraform plan` cannot resolve — a global AWS provider import
+        machinery has no region segment to strip."""
+        r = self.gen(["--id-region-suffix", "ap-southeast-1"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        text = self.read()
+        self.assertIn('id = "app-runtime"', text)          # aws_iam_role — unsuffixed
+        self.assertIn('id = "example-app-logs"', text)      # aws_s3_bucket — unsuffixed
+        self.assertNotIn("app-runtime@", text)
+        self.assertNotIn("example-app-logs@", text)
+        # control: a genuinely regional non-ARN id still gets the suffix
+        self.assertIn('id = "vol-0c0c0c0c0c0c0c001@ap-southeast-1"', text)
+
     def test_non_import_dispositions_are_excluded_and_counted(self):
         self.edit_manifest(lambda m: m["resources"][0].__setitem__("disposition", "deprecate"))
         r = self.gen()

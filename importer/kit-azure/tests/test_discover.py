@@ -127,6 +127,26 @@ class ListSubscriptions(unittest.TestCase):
             self.assertIn(": 0", r.stdout)          # count line shows zero subscriptions
             self.assertIn("Reader", r.stderr)        # loud "you likely lack Reader" gap warning
 
+    def test_bare_list_capture_of_1000_rows_does_not_crash(self):
+        """IMP-9: a bare-list capture (no envelope dict) hitting the 1000-row
+        truncation-warning check must not crash with AttributeError on
+        `doc.get(...)` — `doc` is a list here, not a dict. Against the unfixed
+        code this raised: AttributeError: 'list' object has no attribute 'get'."""
+        import json, os, tempfile
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "subs.json")
+            rows = [
+                {"subscriptionId": f"11111111-1111-1111-1111-{i:012d}", "name": f"sub-{i}",
+                 "tenantId": FIXTURE_TENANT}
+                for i in range(1000)
+            ]
+            json.dump(rows, open(p, "w"))  # bare list, no envelope
+            r = run_py(DISCOVER_PY, ["list-subscriptions", "--capture", p, "--tenant", FIXTURE_TENANT])
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertNotIn("Traceback", r.stderr)
+            self.assertNotIn("AttributeError", r.stderr)
+            self.assertIn(": 1000", r.stdout)
+
 
 class NextToken(unittest.TestCase):
     def test_prints_token_when_present(self):

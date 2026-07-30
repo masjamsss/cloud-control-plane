@@ -113,7 +113,7 @@ def main(argv=None):
     ]
     for row in selected:
         rid = row["id"]
-        if args.id_region_suffix and not rid.startswith("arn:"):
+        if args.id_region_suffix and not rid.startswith("arn:") and not row.get("global"):
             rid = f"{rid}@{args.id_region_suffix}"
         lines.append("import {")
         lines.append(f"  to = {row['type']}.{row['label']}")

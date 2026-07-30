@@ -339,7 +339,7 @@ def cmd_list_subscriptions(args):
             line += f"   [mgmt group: {mg}]"
         print(line)
 
-    if len(data) >= 1000 and (doc.get("skip_token") or doc.get("skipToken")):
+    if len(data) >= 1000 and isinstance(doc, dict) and (doc.get("skip_token") or doc.get("skipToken")):
         print("WARN: subscription list hit the 1000-row page and a continuation token is present "
               "— the list may be truncated (an unusually large tenant); page it before trusting "
               "completeness", file=sys.stderr)

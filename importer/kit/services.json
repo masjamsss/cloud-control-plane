@@ -38,6 +38,11 @@
     "  phase     importer/docs/strategy.md phase (2 low-risk · 3 networking · 4 compute · 5 stateful)",
     "  stateful  true ⇒ normalize.py `guard` inserts lifecycle { prevent_destroy = true }",
     "            (strategy.md rule 2: guards go in BEFORE import)",
+    "  global    true ⇒ this type's Terraform import id carries NO region component (IAM",
+    "            principals by name, S3 bucket names — both global namespaces). gen-imports.py's",
+    "            --id-region-suffix skips these ids entirely (IMP-10): appending '@<region>' to",
+    "            e.g. an aws_iam_role name produces an id the AWS provider v6 import machinery",
+    "            cannot resolve. Omit (defaults false) for every regionally-scoped type.",
     "",
     "Entry schema (manual[] groups) additionally carries:",
     "  arnHints  list of ARN service-namespace tokens this group's types are confidently known to",
@@ -288,6 +293,7 @@
       "records": "Buckets[]",
       "id": "Name",
       "name": "Name",
+      "global": true,
       "phase": 5,
       "stateful": true
     },
@@ -299,6 +305,7 @@
       "records": "Users[]",
       "id": "UserName",
       "name": "UserName",
+      "global": true,
       "phase": 2,
       "stateful": false
     },
@@ -310,6 +317,7 @@
       "records": "Groups[]",
       "id": "GroupName",
       "name": "GroupName",
+      "global": true,
       "phase": 2,
       "stateful": false
     },
@@ -324,6 +332,7 @@
       "skips": [
         { "field": "Path", "prefix": "/aws-service-role/", "reason": "service-linked role (AWS-managed) — disposition Ignore per importer/docs/discovery-guide.md §4" }
       ],
+      "global": true,
       "phase": 2,
       "stateful": false
     },
@@ -335,6 +344,7 @@
       "records": "Policies[]",
       "id": "Arn",
       "name": "PolicyName",
+      "global": true,
       "phase": 2,
       "stateful": false
     },
@@ -346,6 +356,7 @@
       "records": "InstanceProfiles[]",
       "id": "InstanceProfileName",
       "name": "InstanceProfileName",
+      "global": true,
       "phase": 2,
       "stateful": false
     },

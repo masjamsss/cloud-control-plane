@@ -383,6 +383,7 @@ def cmd_build(args):
                 "service": spec["service"],
                 "phase": spec["phase"],
                 "stateful": bool(spec["stateful"]),
+                "global": bool(spec.get("global", False)),
                 "disposition": disposition,
             }
             resources.append(row)

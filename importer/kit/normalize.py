@@ -186,6 +186,7 @@ def cmd_split(args):
 
     groups = {}
     unknown_types = set()
+    covered = set()
     for res in resources:
         svc = type_service.get(res["type"])
         if svc is None:
@@ -194,6 +195,36 @@ def cmd_split(args):
         start0 = leading_comments(lines, res["start"] - 1)
         chunk = "\n".join(lines[start0:res["end"]])
         groups.setdefault(svc, []).append((res["type"], res["label"], chunk))
+        covered.update(range(start0, res["end"]))  # 0-based, end-exclusive-safe (res["end"] is 1-based inclusive)
+
+    # IMP-12: `resource` blocks are not the only thing a generated/-hcl-only
+    # file can carry — `moved`, `import`, `data`, `locals`, `terraform` blocks
+    # and free-standing comments are all legal top-level HCL that this parser
+    # (deliberately resource-only) does not extract. Silently omitting them
+    # from every per-service file would change plan semantics invisibly — the
+    # exact silent-loss shape 0007 exists to forbid. Any non-blank line not
+    # already covered by a resource block (or its attached leading comments)
+    # is collected here and written to unclassified.tf as its own block, WITH
+    # a loud warning — never dropped.
+    uncovered_lines = [
+        i for i, line in enumerate(lines)
+        if i not in covered and line.strip()
+    ]
+    uncovered_chunk = None
+    if uncovered_lines:
+        # Group contiguous uncovered line runs into one or more blocks so the
+        # unclassified file reads as separate chunks, not one line-soup blob.
+        runs = []
+        run_start = uncovered_lines[0]
+        prev = uncovered_lines[0]
+        for i in uncovered_lines[1:]:
+            if i != prev + 1:
+                runs.append((run_start, prev))
+                run_start = i
+            prev = i
+        runs.append((run_start, prev))
+        uncovered_chunk = "\n\n".join("\n".join(lines[a:b + 1]) for a, b in runs)
+        groups.setdefault("unclassified", []).append(("(uncovered top-level content)", "-", uncovered_chunk))
 
     os.makedirs(args.env_dir, exist_ok=True)
     written = []
