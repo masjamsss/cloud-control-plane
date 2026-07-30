@@ -12,7 +12,13 @@ authoritative ForceNew source.
 Since 0039 (Azure seam, lanes F1/F2) the tool is **per-provider**: the SAME
 compile-and-reflect engine also produces **`azurerm-v4.81.0-schema.json`** for
 a bounded 12-type spike scope. Everything below describes the AWS run first
-(the mature, 85-type case); see [**azurerm (a second provider)**](#azurerm-a-second-provider-0039-f1f2)
+(originally scoped to the 85 catalog-relevant types in `types.txt`; **the
+committed `aws-v6.53.0-schema.json` artifact was in fact generated with no
+`-types` filter and reflects the full provider — 1677 types, per its own
+`summary.requested` field, not 85. `gen.sh` as currently written always
+passes `-types types.txt`, so re-running it produces a differently-scoped
+85-type artifact than the one committed — see IMP-8, which tracks that
+pipeline/artifact mismatch and is still open**); see [**azurerm (a second provider)**](#azurerm-a-second-provider-0039-f1f2)
 for what differs.
 
 ## Why this tool exists (L1)
@@ -63,10 +69,14 @@ The AWS provider is a **mux of two frameworks**:
   ForceNew **unknown** — consumers must treat them **fail-closed** (engineer-only /
   WARN), per `0013d §6.4` and the `0010 §3` "unresolved ⇒ treat AS ForceNew" rule.
 
-Of the 85 types in scope, **84 are SDKv2** (fully reflected) and **1 is
-framework**: `aws_s3_bucket_lifecycle_configuration` (migrated to the framework in
-v6). The dump marks it `framework_unreflected` rather than guessing — exactly the
-fail-closed behavior that prevents a B7-class hidden-ForceNew incident.
+Of the 85 catalog-relevant types `types.txt` names, **84 are SDKv2** (fully
+reflected) and **1 is framework**: `aws_s3_bucket_lifecycle_configuration`
+(migrated to the framework in v6). The dump marks it `framework_unreflected`
+rather than guessing — exactly the fail-closed behavior that prevents a
+B7-class hidden-ForceNew incident. (This SDKv2/framework split is stated for
+the 85-type catalog-relevant subset; the full 1677-type committed artifact —
+see the caveat above and IMP-8 — has not had this ratio independently
+verified across its entire scope.)
 
 ## Artifact structure
 
@@ -170,8 +180,11 @@ Same pipeline, same engine (`schemadump.go` is provider-agnostic — see
   (`framework.NewFrameworkV5Provider()`) is enumerated for type names inside a
   `recover()` — framework construction there is unverified outside the F1
   spike's own run and must never take the whole SDKv2 dump down with it.
-- **Scope is a 12-type mechanism-proof spike, not the AWS run's 85-type estate
-  scan.** `types-azure.txt` lists exactly the 12 types the F1 spike walked
+- **Scope is a 12-type mechanism-proof spike, not the AWS run's full-provider
+  scan** (the committed `aws-v6.53.0-schema.json` — see the caveat above; not
+  merely the 85-type `types.txt` input, which the pipeline as documented
+  would apply but the committed artifact bypassed). `types-azure.txt` lists
+  exactly the 12 types the F1 spike walked
   (`azurerm_resource_group`, `azurerm_storage_account`,
   `azurerm_linux_virtual_machine`, `azurerm_windows_virtual_machine`,
   `azurerm_managed_disk`, `azurerm_virtual_network`, `azurerm_subnet`,

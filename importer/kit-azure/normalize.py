@@ -98,7 +98,9 @@ def parse_resources(path):
     try:
         with open(path) as fh:
             # with_meta=True attaches __start_line__/__end_line__ per block — required on the
-            # repo-pinned python-hcl2 5.1.1 (terraform.yml), where a plain load() omits them.
+            # repo-pinned python-hcl2 5.1.1 (the pin lives in scripts/gen-project-data.sh's
+            # PIN_PYTHON_HCL2, not a "terraform.yml" — that workflow was never shipped in
+            # this repo), where a plain load() omits them.
             doc = hcl2.load(fh, with_meta=True)
     except Exception as e:  # lark raises its own exception types
         refuse("UNPARSEABLE", f"{path} does not parse as HCL: {e}")

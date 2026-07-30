@@ -98,7 +98,11 @@ DEFAULT_IGNORE = os.path.join(REPO_ROOT, "scripts", "drift", "sweep-ignore.json"
 DEFAULT_WATCHLIST = os.path.join(REPO_ROOT, "scripts", "drift", "security-watchlist.json")
 
 FINDING_CLASS = "unmanaged_resource"
-SWEEP_METHOD = "importer-kit discover: 43 per-type listers + resourcegroupstaggingapi family sweep"
+def sweep_method(services):
+    """IMP-14: derive the type count from services.json rather than a
+    hardcoded literal, so this description cannot silently go stale the
+    next time a type is added to or removed from the allowlist."""
+    return f"importer-kit discover: {len(services['types'])} per-type listers + resourcegroupstaggingapi family sweep"
 CANDIDATE_CAP = 20
 IGNORE_KINDS = ("id", "arn", "tagKey", "idPrefix")
 
@@ -476,7 +480,7 @@ def main(argv=None):
     out_doc = {
         "schema": 1,
         "generator": "importer/kit/statediff.py",
-        "method": SWEEP_METHOD,
+        "method": sweep_method(services),
         "account": manifest.get("account", "unknown"),
         "region": region,
         "capturedAt": manifest.get("capturedAt", "unknown"),
