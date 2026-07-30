@@ -57,7 +57,7 @@ onboarding runbook.
 - **API / domain / permissions / settings:** [`ccp/docs/`](ccp/docs/)
 - **Architecture decisions:** [`docs/adr/`](docs/adr/)
 - **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md) · **Security:** [`SECURITY.md`](SECURITY.md)
-- **Working here with an AI coding agent:** [`AGENTS.md`](AGENTS.md)
+- **AI coding-agent operating contract:** [`AGENTS.md`](AGENTS.md)
 
 ## Status
 

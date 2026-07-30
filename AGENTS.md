@@ -1,19 +1,52 @@
 # AGENTS.md
 
-Orientation for AI coding agents working in this repository. Humans should read
-[`README.md`](README.md) and [`CONTRIBUTING.md`](CONTRIBUTING.md) first — this file adds what
-an agent needs that a human contributor already knows: where authority lives, which commands
-prove a change, and which rules are hard refusals rather than preferences.
+Orientation and operating contract for AI coding agents working in this repository.
+**Read this file completely before acting.** It identifies where authority lives, which
+documents to load for a task, which commands prove a change, and which rules are hard
+refusals rather than preferences.
 
 **Authority order.** [`PRD.md`](PRD.md) is the single source of truth for what this product
 is; if any other document disagrees with it, the PRD wins. Settled decisions live in the
 [ADR ledger](docs/adr/README.md). [`docs/FUNDAMENTALS.md`](docs/FUNDAMENTALS.md) is the map
 of which document owns which topic — **read it before writing any documentation.**
 
+The PRD and ADRs describe product intent and accepted decisions; they do not prove that a
+feature is shipped. For current behavior, inspect the implementation, its tests, and the
+code-derived docs together. If they disagree, report the discrepancy instead of silently
+choosing the most convenient source.
+
+## Start every session here
+
+Do this once at the start of a new session, before editing:
+
+1. Run `git status --short --branch`. Existing changes belong to the user; preserve them
+   and do not rewrite, discard, stage, or commit them unless the task explicitly includes
+   that work.
+2. Read [`README.md`](README.md), [`PRD.md`](PRD.md),
+   [`CONTRIBUTING.md`](CONTRIBUTING.md), and
+   [`docs/FUNDAMENTALS.md`](docs/FUNDAMENTALS.md). These are the minimum orientation set,
+   not optional background.
+3. Use `FUNDAMENTALS.md` and the repository map below to open only the documents, ADRs,
+   schemas, and component READMEs relevant to the task. Do **not** read every Markdown file
+   indiscriminately; the audit reports and historical ADRs are large and often describe
+   superseded or deliberately unresolved states.
+4. Inspect the affected code and tests before proposing a change. Search first (`rg`,
+   `rg --files`); do not infer current behavior from filenames, an old line citation, or a
+   planning statement.
+5. If the task touches an area named in [`docs/audit/FINDINGS.md`](docs/audit/FINDINGS.md),
+   read the applicable finding, its triage batch, and any fix/residue entry before editing.
+   The audit ledger may contain known constraints that are not obvious from the code.
+6. Decide the smallest relevant validation set before editing, then run it after editing.
+   For cross-layer or safety-sensitive work, run the full applicable gate rather than only
+   the nearest unit test.
+
+For a read-only question, the same authority and routing rules apply, but do not install
+dependencies, generate artifacts, or mutate external systems merely to produce an answer.
+
 ## What this repository is
 
 A self-service change-management control plane for Terraform-managed cloud estates (AWS
-today, Azure landing, GCP proposed). An operator fills in a form → people approve it →
+and Azure today; GCP proposed). An operator fills in a form → people approve it →
 the tool deterministically writes the Terraform → it becomes a pull/merge request →
 automated gates verify the plan matches exactly what was reviewed → it applies to that one
 account.
@@ -41,6 +74,21 @@ Component-level detail lives in each component's own README — [`ccp/README.md`
 [`ccp/api/README.md`](ccp/api/README.md) (the deploy reference: env vars, preflight,
 backup/restore), [`tools/catalogctl/README.md`](tools/catalogctl/README.md) (subcommands,
 refusal codes, exit-code contract). Don't restate them; link to them.
+
+### Task-specific reading
+
+After the minimum orientation set, use this table rather than guessing what to load:
+
+| If the task concerns… | Read before editing |
+|---|---|
+| Frontend navigation, forms, or visual behavior | [`ccp/app/README.md`](ccp/app/README.md), the relevant feature/component and tests, [ADR-0014](docs/adr/0014-ccp-ledger-redesign.md); add [`PERMISSIONS.md`](ccp/docs/PERMISSIONS.md) for anything role-gated |
+| API routes, authentication, or authorization | [`ccp/api/README.md`](ccp/api/README.md), [`ccp/api/openapi/ccp-api.yaml`](ccp/api/openapi/ccp-api.yaml), [`PERMISSIONS.md`](ccp/docs/PERMISSIONS.md), [`ERROR-STATES.md`](ccp/docs/ERROR-STATES.md), and the route/middleware tests |
+| Persistence, concurrency, audit, backup, or restore | [`DOMAIN-MODEL.md`](ccp/docs/DOMAIN-MODEL.md), [`ccp/api/docs/PERFORMANCE.md`](ccp/api/docs/PERFORMANCE.md), and the matching topics in [`docs/audit/`](docs/audit/README.md) |
+| Catalog manifests or Terraform edits | [`MAINTAINING-THE-CATALOG.md`](ccp/docs/MAINTAINING-THE-CATALOG.md), [`tools/catalogctl/README.md`](tools/catalogctl/README.md), provider safety data, and the nearest golden/manifest tests |
+| Provider schema or `forcesReplace` behavior | [`tools/schemadump/README.md`](tools/schemadump/README.md), [`tools/schemadump/COMPARISON.md`](tools/schemadump/COMPARISON.md), and the provider-version pins consumed by the target |
+| Onboarding, scanner, or importer flows | [`ccp/docs/onboarding-runbook.md`](ccp/docs/onboarding-runbook.md), [`ccp/docs/onboarding-security.md`](ccp/docs/onboarding-security.md), ADRs [0031](docs/adr/0031-ccp-first-scan-in-estate-ci.md)–[0033](docs/adr/0033-ccp-zero-touch-first-scan.md), and the applicable importer README |
+| Deployment, environment variables, or operations | [`ccp/docs/go-live.md`](ccp/docs/go-live.md), [`ccp/api/README.md`](ccp/api/README.md), [`SECURITY.md`](SECURITY.md), and the compose/setup script being changed |
+| A product or architectural decision | The relevant PRD section, [`docs/FUNDAMENTALS.md`](docs/FUNDAMENTALS.md), the ADR ledger, and every ADR being superseded |
 
 ## Prove your change
 
@@ -75,17 +123,20 @@ Doc-only changes still have gates: `python3 scripts/docs-link-check.py` (every r
 markdown link must resolve) and, for anything under `docs/audit/`,
 `bash scripts/findings-gate.sh`.
 
-**Toolchain traps.** `ccp/app` needs Node ≥ 20 and `ccp/api` needs Node ≥ 22 — one local
-major cannot satisfy both `engines` blocks; `gate.sh` deliberately **skips**
-`lint`/`format:check` unless local Node is exactly 20 (CI's version) and skips the install
-smoke below Node 22, deferring to CI in both cases. A skip is not a pass. The Python gate
-requires `python-hcl2` and `pytest` and fails rather than skipping when they're missing —
-install with the pin read out of `scripts/gen-project-data.sh`.
+**Toolchain traps.** Node ≥ 22 satisfies both packages' `engines` ranges, but it does not
+reproduce every CI lane: `gate.sh` deliberately **skips** the app's `lint`/`format:check`
+unless local Node is exactly 20 (the app CI version), while the API and install smoke require
+Node ≥ 22. A skip is not a pass. The Python gate requires `python-hcl2` and `pytest` and
+fails rather than skipping when they're missing — install with the pin read out of
+`scripts/gen-project-data.sh`. The scanner-worker security suite expects a scanner-image-like
+environment with no Terraform binary or cloud credentials available; do not weaken that
+preflight merely to make a developer machine green.
 
 ## Hard rules
 
-These are refusals, not style preferences. Each one is machine-enforced, and working around
-the enforcement is never the fix.
+These are refusals, not style preferences. Many are machine-enforced; the rest are reviewed
+governance constraints. Working around an enforcement or omitting the test that proves it is
+never the fix.
 
 1. **Keep it estate-agnostic.** No organisation name, account id, region, person, hostname,
    or workload belongs in shared code, tests, docs, or the catalog. Real values are operator
@@ -123,6 +174,21 @@ the enforcement is never the fix.
    `ccp/app/src/data/`, `tools/catalogctl/internal/hclops/`. Change one, change all three;
    a sync test in both engines checks it. (`catalog/azure-redaction-rules.json` is its own
    separate file.)
+10. **Never operate a live estate from a development or agent session.** Do not run
+    `terraform apply`, `terraform destroy`, or `terraform import` against a real estate; do
+    not issue cloud-provider write commands; and do not approve a deployment, arm an apply
+    lane, or invoke a production bundle as part of repository validation. The supported
+    apply path is reviewed and gated CI. Local work stops at static analysis, isolated
+    fixtures, build/test, and explicitly scoped read-only inspection.
+11. **Treat secrets and runtime state as out of scope for source changes.** Never commit,
+    print, or copy real `.env` values, credentials, onboarding/upload tokens, TOTP material,
+    Terraform state/plans, `.ccp-data`, or `/data/ccp` contents. Do not bootstrap an instance
+    or generate deployment configuration unless the user explicitly asks for deployment
+    work and provides the target context. Examples and fixtures must use the neutral
+    placeholders from rule 1.
+12. **Do not turn aspirational behavior into a shipped claim.** ADRs can be Proposed,
+    Accepted-but-unbuilt, partially built, or off by default. Preserve those distinctions in
+    code, docs, reviews, and summaries; verify status from the current tree and tests.
 
 ## Common changes, and what each one drags with it
 
@@ -133,8 +199,10 @@ the enforcement is never the fix.
   new `inventory://` types declared, and a regenerated ForceNew map. Keep ops in the shared
   catalog; per-project manifests are the exception, not the default.
 - **Change an API route.** `ccp/api/openapi/ccp-api.yaml` is authoritative and a parity test
-  keeps code honest; [`ccp/docs/API-SPEC.md`](ccp/docs/API-SPEC.md) is the derived summary.
-  Authz belongs on the server — the SPA's checks are UX, never the enforcement point
+  keeps the contract honest; [`ccp/docs/API-SPEC.md`](ccp/docs/API-SPEC.md) is the derived
+  summary, while route code is the runtime behavior. A disagreement among them is a defect
+  to reconcile, not permission to pick one silently. Authz belongs on the server — the
+  SPA's checks are UX, never the enforcement point
   ([`ccp/docs/PERMISSIONS.md`](ccp/docs/PERMISSIONS.md) says per row who enforces).
 - **Add or change a setting.** [`ccp/docs/SETTINGS-CATALOG.md`](ccp/docs/SETTINGS-CATALOG.md)
   is generated from code. There is no separate feature-flag system — change-freeze and
@@ -163,3 +231,17 @@ the enforcement is never the fix.
   ([ADR-0023](docs/adr/0023-ccp-instance-identity.md)); code identifiers (`ccp/` paths,
   `CCP_*` env vars, package and css names) never rebrand. ADRs numbered 0005–0011 keep the
   old "gerbang" codename — they are dated records, not a rename to finish.
+
+## Before you finish
+
+1. Review `git diff --check`, `git diff`, and `git status --short`. Confirm the diff contains
+   only intended work and no generated runtime state, secrets, or unrelated user changes.
+2. Run the applicable gates named above. If a gate cannot run, say exactly why and identify
+   the CI lane or environment that remains authoritative; never translate “not run,”
+   “skipped,” or “timed out” into “passed.”
+3. Reconcile every behavior change with its canonical documentation, OpenAPI/schema surface,
+   and tests. Do not update a generated/code-derived table without running its own verify
+   recipe.
+4. Report the outcome first: what changed, what was verified, and what remains risky or
+   unverified. Do not claim the repository is clean or the task complete while required work
+   remains.
