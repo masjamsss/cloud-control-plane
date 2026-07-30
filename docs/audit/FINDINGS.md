@@ -235,7 +235,7 @@ Durability, rollback, schema validation on load, and store-seam fidelity against
 - [x] DATA-4 | high | data-persistence | fixed:813a6d9 | 03-data-integrity.md | Full-file rewrite + fsync on every mutation, including a session write on every authenticated request, against a store that only ever grows
 - [ ] CTL-5 | medium | data-persistence | open | 07-catalogctl.md | `drift-edit` writes are neither atomic nor transactional: a mid-batch refusal leaves earlier edits in the checkout
 - [ ] DATA-10 | medium | data-persistence | open | 03-data-integrity.md | Backup/restore covers only the store JSON; the on-disk project-data/drift root it references is out of scope, with no consistency check
-- [ ] DATA-6 | medium | data-persistence | open | 03-data-integrity.md | `rename` durability is not guaranteed: no directory fsync after the atomic swap
+- [x] DATA-6 | medium | data-persistence | fixed:685621d | 03-data-integrity.md | `rename` durability is not guaranteed: no directory fsync after the atomic swap
 - [x] ERR-10 | medium | data-persistence | fixed:0d4c3a4 | 09-error-handling.md | FileStore persist failure leaves memory ahead of disk: the client gets a 500 for a write that took effect
 - [ ] UI-8 | medium | data-persistence | open | 06-frontend-ui-robustness.md | DiffView corrupts `~` change lines whose old value contains " -> "
 - [x] API-17 | low | data-persistence | fixed:68b360c | 02-api-correctness.md | Store-seam divergences from the DynamoDB semantics it mirrors
@@ -414,7 +414,7 @@ Routing, redirects and current-page indication.
 Workspaces, temp files and unbounded resources.
 
 - [ ] API-16 | low | resource-leak | open | 02-api-correctness.md | Bundle workspace leaks and unchecked git steps
-- [ ] DATA-13 | low | resource-leak | open | 03-data-integrity.md | Failed atomic writes leak temp files in the store path
+- [x] DATA-13 | low | resource-leak | fixed:685621d | 03-data-integrity.md | Failed atomic writes leak temp files in the store path
 - [ ] ERR-13 | low | resource-leak | open | 09-error-handling.md | `prepare()` leaks the cloned workspace when `rev-parse` fails
 
 ## scheduler

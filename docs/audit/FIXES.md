@@ -3118,3 +3118,70 @@ stays above the backoff.
 - [x] **Evidence in the status line** — 1,498 api tests pass (110 files).
 
 **Residue:** the fix does not close **API-20**, and writing the test proved it. See **R-52**.
+
+## DATA-6
+
+`rename` durability is not guaranteed — no directory fsync after the atomic swap.
+
+`FileStore.writeAtomic` fsyncs the containing directory after the rename (added under
+ERR-10): the rename itself is atomic against a process kill regardless, but the *directory
+entry* pointing at the new inode is not durable against power loss until the directory's
+own metadata is flushed — a crash right after a "successful" write could still resurrect
+the OLD file on the next boot.
+
+`store/snapshot.ts` has its own standalone `writeFileAtomic` — used by `scripts/backup.ts`
+and `scripts/restore.ts`, deliberately kept separate from `FileStore`'s so the scripts never
+touch the durable store's code path. It duplicates the temp+fsync+rename shape but was
+written before ERR-10 landed and was never given the directory fsync. A backup, or a
+restore's install of a new store file, had no better durability guarantee than the very
+defect ERR-10 closed everywhere else.
+
+**Fix:** the same `syncDir` helper `FileStore.writeAtomic` uses, called after the rename.
+Kept as its own copy in `snapshot.ts` rather than imported, matching that module's existing
+"deliberately standalone" doctrine stated in its header comment.
+
+- [x] **Reproduced first** — read at HEAD: `snapshot.ts`'s `writeFileAtomic` had no
+      `syncDir` call anywhere, confirmed against `fileStore.ts`'s working copy.
+- [x] **Regression test** — `test/snapshotWriteAtomic.test.ts` batches this with DATA-13
+      (below); the leaked-temp-file assertion is the one that actually exercises the failure
+      path, since a missing `syncDir` has no directly observable effect in a unit test (it
+      is a power-loss guarantee, not a behaviour a test can trigger). The doc comment
+      states the property explicitly so a reader does not need to re-derive it.
+- [x] **Evidence in the status line** — `fixed:685621d`.
+
+## DATA-13
+
+Failed atomic writes leak temp files in the store path.
+
+Same root cause as DATA-6: `store/snapshot.ts`'s standalone `writeFileAtomic` predates
+ERR-10 and never got its temp-file cleanup either. ERR-10's fix wraps EVERY step from temp
+file creation to the rename in a try/catch that removes the temp file on any failure — not
+just a failing `writeFile`/`sync`, which misses the case a failing `rename` itself produces
+(a directory sitting where the target belongs, a cross-device target). Under sustained
+ENOSPC — the very condition that makes writes fail in the first place — one leaked file per
+attempt fills the directory that recovery depends on.
+
+`scripts/backup.ts` and `scripts/restore.ts` are the only two callers, so this was a leak on
+every failed backup attempt and every failed restore install, with no cleanup path at all.
+
+**Fix:** the identical try/catch-and-`rm` shape `FileStore.writeAtomic` uses, applied to
+`snapshot.ts`'s copy.
+
+- [x] **Reproduced first** — a directory placed at the target path makes a real filesystem
+      failure: the temp file is genuinely created and written, and the `rename` onto the
+      directory fails with `EISDIR` (root cannot bypass this the way it bypasses permission
+      bits, which is why `storeDurabilityFault.test.ts`'s equivalent `FileStore` suite uses
+      the same shape rather than `chmod`).
+- [x] **Negative test result** — `test/snapshotWriteAtomic.test.ts`'s first case fails
+      against the unfixed code with `leaked temp files: backup.json.tmp-<pid>-<hex>:
+      expected [ Array(1) ] to deeply equal []`, confirmed by stashing the fix and
+      re-running. Passes after restoring it.
+- [x] **Assert the setup fired** — the test asserts the write actually failed
+      (`rejects.toThrow()`) before checking for the leak, so a silently-succeeding write
+      could not make the assertion pass for the wrong reason.
+- [x] **Two more cases** pin the non-regressions: a successful write leaves no temp file,
+      and missing parent directories are still created (`mkdir -p` semantics preserved).
+- [x] **Gates** — `npx tsc --noEmit` clean; full api suite 1501/1502 (the one failure,
+      `snapshotChunking.test.ts`'s 5s timeout under full-suite load, reproduces on `main`
+      and passes in isolation — pre-existing flake, not caused by this change).
+- [x] **Evidence in the status line** — `fixed:685621d`.

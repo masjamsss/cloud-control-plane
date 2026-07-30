@@ -343,17 +343,15 @@ done independently.
 
 ## B-S1 — Verify-and-close: likely already fixed
 
-
-**Model:** sonnet · **Findings:** 5 · **Touches:** `docs/audit/ (plus targeted checks)`
-
+**Status: BATCH COMPLETE — all 5 closed.** Nothing here needs picking up.
 
 | finding | sev | expected result |
 | --- | --- | --- |
-| **API-13** | low | VERIFY ONLY. ARCH-7 (this session) replaced the hand-maintained `OPEN_STATUSES` with a derived not-terminal rule, which should close both halves ('counts a nonexistent status' and 'misses real open states'). Confirm against `middleware/rateLimit.ts` + `@app-lib/requestStatus`, then close with evidence. Do NOT re-implement. |
-| **ERR-7** | medium | VERIFY ONLY. OPS-2 added server-side logging for unexpected errors. Confirm every 500 path logs, then close — or fix only the paths that do not. |
-| **OPS-11** | medium | VERIFY ONLY. PERF-4 made `/readyz` verify incrementally (253ms -> 1.05ms). Confirm, then close. NOTE R-34: the memo is deliberately NOT a tamper-detector, and that stays true. |
-| **DATA-6** | medium | VERIFY ONLY. ERR-10 added `syncDir` after the rename in `fileStore.ts`. Confirm it covers every atomic-write site (`store/snapshot.ts` too), then close or extend. |
-| **DATA-13** | low | VERIFY, THEN EXTEND. ERR-10 fixed the temp-file leak in `fileStore.writeAtomic`. Check the OTHER atomic-write sites for the same shape and fix any that leak. |
+| ~~**API-13**~~ | low | **DONE — verified closed by ARCH-7, no code changed.** `middleware/rateLimit.ts` derives occupancy from `@app-lib/requestStatus#occupiesQuotaSlot` (a not-terminal rule), not a hand-maintained list; `test/statusVocabulary.test.ts` pins it, including that an unknown future status still occupies a slot. |
+| ~~**ERR-7**~~ | medium | **DONE — verified closed by OPS-2, no code changed.** `registerErrorHandler` calls `logServerError` for every path that is not a decided `ApiError`, i.e. every unexpected 500. Confirmed against the current `errors.ts`. |
+| ~~**OPS-11**~~ | medium | **DONE — verified closed by PERF-4, no code changed.** `/readyz` verifies incrementally via the per-store audit-chain memo (`readiness.ts` → `verifyProjectChain`); confirmed the memo is not treated as a tamper-detector (R-34 still holds). |
+| ~~**DATA-6**~~ | medium | **DONE.** `store/snapshot.ts`'s standalone `writeFileAtomic` (used by `scripts/backup.ts`/`scripts/restore.ts`) had NOT inherited ERR-10's directory-fsync fix — confirmed by reading it, not assumed. Given the same `syncDir`-after-rename discipline as `FileStore.writeAtomic`. |
+| ~~**DATA-13**~~ | low | **DONE.** Same gap as DATA-6, same file: no temp-file cleanup on a failing rename. Given the same try/catch-and-`rm` shape. `test/snapshotWriteAtomic.test.ts` reproduces the leak with a real EISDIR failure (a directory at the target path) and confirms the negative run fails against the unfixed code. |
 
 
 ## B-S2 — Status vocabulary follow-through
