@@ -132,7 +132,7 @@ const RejectBody = z.object({ reason: z.string().optional() });
 const RewindowBody = z.object({ at: z.string(), endAt: z.string().optional() });
 
 // POST /:id/link-pr body. `prNumber` optional — derived from a
-// /pull/<n>-shaped URL tail when omitted (prNumberFromUrl below).
+// /pull/<n>- or /merge_requests/<n>-shaped URL tail when omitted (prNumberFromUrl below).
 const LinkPrBody = z.object({
   prUrl: z.string().min(1).max(500),
   prNumber: z.number().int().min(1).optional(),
@@ -194,10 +194,19 @@ function planCountPhrase(c: PlanCounts): string {
   return parts.length > 0 ? parts.join(', ') : 'no changes';
 }
 
-/** The PR number from a `/pull/123`-shaped URL tail, or undefined. Assumes the
- * URL already parsed (the route validates that before calling this). */
+/**
+ * The PR number from a `/pull/123`-shaped (GitHub) or `/merge_requests/123`-shaped
+ * (GitLab) URL tail, or undefined. Assumes the URL already parsed (the route
+ * validates that before calling this).
+ *
+ * API-12: the previous pattern (`/\/(\d{1,9})\/?$/`) matched the trailing numeric
+ * segment of ANY https URL, so `.../issues/42` and even a bare `https://example.com/9999`
+ * both derived a "PR number" that was never a pull request — silently mislabeling the
+ * timeline and the audit chain. Requiring the `/pull/` or `/merge_requests/` segment
+ * immediately before the number is what the doc comment always claimed this did.
+ */
 function prNumberFromUrl(prUrl: string): number | undefined {
-  const m = /\/(\d{1,9})\/?$/.exec(new URL(prUrl).pathname);
+  const m = /\/(?:pull|merge_requests)\/(\d{1,9})\/?$/.exec(new URL(prUrl).pathname);
   return m ? Number(m[1]) : undefined;
 }
 

@@ -155,6 +155,19 @@ describe('OpenAPI contract (spec §3, extracted verbatim)', () => {
     expect(apply).toContain('BundleOutcome');
   });
 
+  it('DOC-11: ChangeRequest.planSummary references the PlanSummary schema, not a bare string', () => {
+    // The YAML used to declare `planSummary: {type: string}` — a Stage-0 fiction no route
+    // ever wrote, per the schema comment at store/schema.ts. The structured shape has
+    // existed on the wire since the plan-summary route shipped; the contract just never
+    // caught up. Sliced to the ChangeRequest schema's own property line so an unrelated
+    // `planSummary` string elsewhere cannot make this pass for the wrong reason (L-1).
+    const start = yaml.indexOf('ChangeRequest:');
+    const end = yaml.indexOf('SubmitDraft:');
+    const changeRequestBlock = yaml.slice(start, end);
+    expect(changeRequestBlock).toContain("planSummary: {$ref: '#/components/schemas/PlanSummary'}");
+    expect(changeRequestBlock).not.toContain('planSummary: {type: string}');
+  });
+
   it('DOC-2/DOC-4 residue: the codes the docs claimed this contract pinned are now actually in it', () => {
     // DOC-4 re-measured errors.ts's transcription claim against the REAL contract and found
     // exactly two codes genuinely absent (DUPLICATE_TEAM, ENGINEER_REVIEW_REQUIRED), plus

@@ -66,7 +66,8 @@ components:
         approvals: {type: array, items: {$ref: '#/components/schemas/Approval'}},
         schedule: {type: object, description: "{kind:'now'} | {kind:'window', at, endAt} — Schedule v2 (0024 §2.1 V5): endAt is always stamped server-side (explicit or at+4h default) for a fresh submit/rewindow; absent only on legacy pre-v2 rows"},
         createdAt: {type: string}, updatedAt: {type: string}, prNumber: {type: integer}, prUrl: {type: string},
-        planSummary: {type: string}, events: {type: array, items: {$ref: '#/components/schemas/RequestEvent'}},
+        planSummary: {$ref: '#/components/schemas/PlanSummary'},   # DOC-11 — was {type: string}, a Stage-0 fiction no route ever wrote; the real shape is PlanSummary (src/store/planSummarySchema.ts), set by POST .../plan-summary
+        events: {type: array, items: {$ref: '#/components/schemas/RequestEvent'}},
         policyVersion: {type: integer}, interimProfile: {type: boolean}, earliestApplyAt: {type: string},
         eligibleApprovers: {type: integer, description: "submit-time snapshot (0021 G5); see /requests/{id}/feasibility for the live count"},
         feasible: {type: boolean, description: "0037: enough distinct eligible signers to fill every ladder step, incl. a lead for any L3 step"},
@@ -127,9 +128,9 @@ components:
     PlanSummary:   # DOC-2 — the POST /requests/{id}/plan-summary body, src/store/planSummarySchema.ts
       type: object
       required: [resourceChanges, counts]
-      description: "The structured `terraform plan` summary CI records onto a request. NOTE: the
-        ChangeRequest.planSummary property below is still typed `string` and does NOT match this —
-        that mismatch is tracked separately as DOC-11 and is deliberately not touched here."
+      description: "The structured `terraform plan` summary CI records onto a request via
+        POST /requests/{id}/plan-summary. ChangeRequest.planSummary below $refs this SAME schema
+        (DOC-11 — it used to be typed `string`, a Stage-0 fiction no route ever wrote)."
       properties:
         resourceChanges: { type: array, maxItems: 400, items: { type: object, required: [address, type, action],
           properties: { address: {type: string, minLength: 1, maxLength: 512}, type: {type: string, minLength: 1, maxLength: 512},

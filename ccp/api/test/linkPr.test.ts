@@ -126,6 +126,29 @@ describe('POST /requests/:id/link-pr — recording the fulfilling PR', () => {
     expect(body.prNumber).toBeUndefined();
   });
 
+  it('API-12: a non-PR URL (issues, or a bare path) never derives a fake "PR number"', async () => {
+    const { store, app } = await harness();
+    const { id } = await needsEngineerRequest(store, app);
+    const cookie = await sessionCookieFor(store, 'putra');
+
+    // Before the fix, `/\/(\d{1,9})\/?$/` matched the trailing numeric segment of ANY
+    // https URL — an issues link or even a bare numeric path both derived a "PR number"
+    // that was never a pull request.
+    const issuesRes = await linkPr(app, cookie, id, { prUrl: 'https://github.com/masjamsss/cloud-control-plane/issues/42' });
+    expect(issuesRes.status).toBe(200);
+    expect((await issuesRes.json()).prNumber).toBeUndefined();
+
+    const bareRes = await linkPr(app, cookie, id, { prUrl: 'https://example.com/9999' });
+    expect(bareRes.status).toBe(200);
+    expect((await bareRes.json()).prNumber).toBeUndefined();
+
+    // The GitLab shape must still derive correctly — the fix widens the pattern, it
+    // does not narrow it to GitHub only.
+    const mrRes = await linkPr(app, cookie, id, { prUrl: 'https://gitlab.com/org/repo/-/merge_requests/55' });
+    expect(mrRes.status).toBe(200);
+    expect((await mrRes.json()).prNumber).toBe(55);
+  });
+
   it('re-linking is allowed and audited with before/after (correcting a wrong URL)', async () => {
     const { store, app } = await harness();
     const { id } = await needsEngineerRequest(store, app);
