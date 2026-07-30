@@ -3281,14 +3281,46 @@ introducing a new documentation convention).
 - [x] **Regression test** — `test/openapi.test.ts` gained a `DOC-13` suite that slices out
       exactly the `ChangeRequest.status` description value (not the whole 900-line file,
       so an unrelated string elsewhere cannot make the test pass for the wrong reason —
-      L-1) and asserts all thirteen statuses appear in it by name.
-- [x] **Negative test** — confirmed to fail against the unfixed YAML: stashing just
-      `ccp-api.yaml` reproduced `CHANGES_REQUESTED: expected '...' to contain
-      'CHANGES_REQUESTED'`, restoring it passed.
+      L-1).
+- [x] **Negative test** — confirmed to fail against the unfixed YAML.
 - [x] **Failure is loud** — n/a; a contract-prose fix, no runtime path changes.
 - [x] **Evidence in the status line** — `fixed:b9653bd`.
 
-**Verification (all three findings, one commit):** api suite 1503/1504 (the one failure is
-the pre-existing `snapshotChunking.test.ts` timing flake recorded in R-48, unrelated —
-passes in isolation); app suite 2752/2752; typecheck clean in both packages; app build
-green.
+**Self-correction (L-25 — "write the rule, not the list"), same finding, follow-up commit.**
+The regression test's first version hardcoded the thirteen expected statuses by name — a
+list, asserted against the YAML. That is exactly the anti-pattern ARCH-7's own
+`test/statusVocabulary.test.ts` exists to replace elsewhere in this codebase: that file
+already contains `statusLiteralsInApiSource()`, a text scan of every `status: '…'` literal
+and self-named status constant the api source actually contains — the correct instrument,
+sitting one file away, un-reused.
+
+The hardcoded list was not wrong today (both lists happened to agree — thirteen entries,
+same names), but it would have silently stopped catching drift the moment a fourteenth
+status was added to the api and nobody updated this test's copy of the list — the same
+"looks like protection, isn't" shape the audit itself repeatedly flags (L-8, L-23). Caught
+by re-reading `LESSONS.md` in full after a reviewer asked whether it had been read at all,
+rather than by any test failing — worth recording plainly rather than glossing over.
+
+Fixed by exporting `statusLiteralsInApiSource` from `statusVocabulary.test.ts` and having
+`openapi.test.ts` derive its expected-status list from that scan (minus
+`PENDING_CHANGE_STATUSES`, a different vocabulary that shares some literal names), rather
+than re-typing the output by hand. Re-run against the pre-fix YAML to confirm the corrected
+test still catches the original defect: it does, and it named `APPLYING` as the first
+failure — the scanner is a stronger check than the original hardcoded list, not merely an
+equivalent one, because it will also catch the next status nobody remembers to add here.
+
+- [x] **Regression test (corrected)** — `test/openapi.test.ts`'s DOC-13 suite now asserts
+      `requestStatuses.length > 5` (so a scanner that silently found nothing could not pass
+      vacuously — L-1) and checks every discovered status against the YAML block, with no
+      hardcoded name list of its own.
+- [x] **Negative test (re-confirmed)** — re-ran against `ccp-api.yaml` as it stood before
+      this finding was fixed (`git show b9653bd~1:...`): fails with `APPLYING: expected
+      '...' to contain 'APPLYING'`; restoring the current YAML passes all 40 tests in both
+      files. `npx tsc --noEmit` clean.
+- [x] **Evidence in the status line** — `fixed:b9653bd` (unchanged; this is a same-finding
+      quality correction, not a new finding).
+
+**Verification (all three findings plus this correction):** api suite 1512/1513 (the one
+failure is the pre-existing `snapshotChunking.test.ts` timing flake recorded in R-48,
+unrelated — passes in isolation); app suite 2752/2752; typecheck clean in both packages;
+app build green.

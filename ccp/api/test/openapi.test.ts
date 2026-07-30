@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store/memoryStore';
+import { statusLiteralsInApiSource } from './statusVocabulary.test';
+import { PENDING_CHANGE_STATUSES } from '../src/store/schema';
 
 const SPEC_URL = new URL('../openapi/ccp-api.yaml', import.meta.url);
 
@@ -305,9 +307,15 @@ describe('OpenAPI contract (spec §3, extracted verbatim)', () => {
  * writes to ChangeRequest.status, and this YAML's "known values" prose. The scheduler
  * writes APPLYING/HALTED_DRIFT/HALTED_APPLY_FAILED and the submit/review routes write
  * CHANGES_REQUESTED/WITHDRAWN — none of which the prose named, so a reader of the
- * contract alone would not know the wire could carry them. Pinning every one by name
- * (not just spot-checking a couple) is what stops this from drifting silently again the
- * next time a status is added to one side and not the other.
+ * contract alone would not know the wire could carry them.
+ *
+ * L-25 ("write the rule, not the list"): the first version of this check hardcoded the
+ * thirteen statuses by name — exactly the anti-pattern ARCH-7's own
+ * `test/statusVocabulary.test.ts` exists to replace elsewhere in this repo. That file
+ * already has the correct instrument (`statusLiteralsInApiSource`, a text scan of every
+ * `status: '…'` literal and self-named status constant the api source contains) — this
+ * suite now reuses it rather than re-typing its output, so a status added to the api
+ * tomorrow is caught here too without anyone remembering to update a second list.
  */
 describe('DOC-13 — the ChangeRequest.status "known values" prose names every status the server writes', () => {
   const statusBlock = (() => {
@@ -324,26 +332,24 @@ describe('DOC-13 — the ChangeRequest.status "known values" prose names every s
     expect(statusBlock.length).toBeGreaterThan(200);
   });
 
-  it('names every status a real handler writes, including the three the scheduler introduced', () => {
-    // One entry per status the api's own source writes to `status:` on a request row —
-    // read from scheduler.ts's own exported constant plus the values documented in the
-    // route handlers above, not re-typed from memory.
-    for (const status of [
-      'AWAITING_CODE_REVIEW',
-      'CHANGES_REQUESTED',
-      'NEEDS_ENGINEER',
-      'APPROVED_COOLING',
-      'AWAITING_DEPLOY_APPROVAL',
-      'APPLYING',
-      'WINDOW_EXPIRED',
-      'HALTED_DRIFT',
-      'HALTED_APPLY_FAILED',
-      'APPLIED',
-      'CANCELLED',
-      'WITHDRAWN',
-      'REJECTED',
-    ]) {
+  it('the scanner finds a known-present status (a broken scanner must not read as parity — L-10)', () => {
+    const found = statusLiteralsInApiSource();
+    expect(found.size).toBeGreaterThan(5);
+    expect([...found.keys()]).toContain('AWAITING_DEPLOY_APPROVAL');
+  });
+
+  it('names every REQUEST status the api source actually writes — derived, not hand-typed', () => {
+    // Every status literal the scan finds, MINUS the ones that belong to the pending-config-
+    // change vocabulary (a different entity that happens to share some literal names, e.g.
+    // APPLIED/REJECTED — see statusVocabulary.test.ts's own "belongs to SOME declared closed
+    // vocabulary" test, which is what already tells the two apart for ARCH-7's purposes).
+    const pendingChangeOnly: Set<string> = new Set(PENDING_CHANGE_STATUSES);
+    const requestStatuses = [...statusLiteralsInApiSource().keys()].filter((s) => !pendingChangeOnly.has(s));
+    for (const status of requestStatuses) {
       expect(statusBlock, status).toContain(status);
     }
+    // The rule found something — a scan that silently returned zero request statuses
+    // would make the loop above pass vacuously (L-1).
+    expect(requestStatuses.length).toBeGreaterThan(5);
   });
 });

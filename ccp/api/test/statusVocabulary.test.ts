@@ -34,7 +34,7 @@ function walk(dir: string): string[] {
  * store schema types status as `z.string()`, so the type system has nothing to ask, which
  * is the finding's root cause and the reason a scan is the honest instrument here.
  */
-function statusLiteralsInApiSource(): Map<string, string> {
+export function statusLiteralsInApiSource(): Map<string, string> {
   const found = new Map<string, string>();
   for (const file of walk(API_SRC)) {
     const text = readFileSync(file, 'utf8');
