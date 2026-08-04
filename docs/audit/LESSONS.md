@@ -797,3 +797,27 @@ points anywhere.** The same shape appears in the audit itself — `fixed:` with 
 nobody runs, a residue "tracked by" a finding nobody reopened, a doc citing a line that
 moved. A reference is only evidence if something dereferences it. The check that would have
 caught this is one line: every `fixed:<sha>` must be an ancestor of `HEAD`.
+
+**Coda — that one line was written, and for a while it did not catch these eight.**
+`git merge-base --is-ancestor` needs an object to test, so the check first asked whether the
+sha resolved at all and *skipped* it when it did not, commented "not in this clone". That is
+the correct instinct for a shallow CI checkout and precisely wrong here: **a commit destroyed
+by `--amend` resolves in no clone anywhere**, so all eight of the shas above took the skip.
+The check passed on the case it was built for, and its output blamed a shallow checkout while
+standing in a complete clone.
+
+What separates the two is a property of clones rather than anything about this repo: a
+complete clone containing `HEAD` contains **every ancestor of `HEAD`**, so where git reports
+the clone is not shallow, "cannot resolve" *is* the answer — the sha is not an ancestor.
+Where it is shallow, nothing is proven and the reference is reported unverified instead,
+because refusing there would fail on the checkout depth rather than on the ledger.
+
+**Transferable, and the reason this is a coda rather than a new lesson:** a check derived
+from a defect must be run against **that same defect**, not against a tidier cousin of it.
+The cousin here was a sha that still resolves but sits on an unmerged branch — a real case,
+caught from day one, and similar enough that the gap never showed. What surfaced it was the
+count: `25 of 31 verified reachable`, with a `PASS` under it and nothing saying what the
+other six were. **A total that does not add up is a defect report** — if a check reports
+`n of m` and cannot account for `m - n`, the missing ones are not passing, they are
+unexamined, and the summary line has to say which. See `scripts/ci/findings-gate-selftest.sh`,
+whose scenario B is exactly the eight shas above.

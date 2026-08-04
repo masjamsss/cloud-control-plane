@@ -45,32 +45,74 @@ BASELINE_FILE="$ROOT/scripts/findings-baseline.txt"
 # branch was merged and the shas were checked against main by hand. A reference is only
 # evidence if something dereferences it.
 #
-# Skipped outside a git work tree, and skipped for a sha this clone genuinely cannot see
-# (a shallow CI checkout) — refusing there would fail on the checkout depth rather than on
-# the ledger, which is the "a check that cannot run must not look like a pass" trap wearing
-# the other hat: it must not look like a FAILURE either.
+# A reference fails in two distinct ways, and for a long time this check caught only the
+# second one:
+#
+#   1. **The sha resolves to nothing.** A `commit --amend` or a rebase destroyed the
+#      object, so no clone anywhere can see it. **All eight of L-28's own entries are this
+#      shape** — and the first version of this check skipped exactly them, as "not in this
+#      clone". It passed on the case it was written to catch.
+#   2. **The sha resolves but is not an ancestor of HEAD** — recorded on a branch that was
+#      never merged, or superseded by a rewrite that left the original reachable.
+#
+# What makes case 1 safe to fail on is a property of clones, not of this repo: **a complete
+# clone containing HEAD contains every ancestor of HEAD.** So when git says the clone is not
+# shallow, "cannot resolve" is not a limit of the checkout — it is proof the sha is not an
+# ancestor, which is the whole question. In a shallow clone it proves nothing, and refusing
+# there would fail on the checkout depth rather than on the ledger.
+#
+# That unverifiable case must not look like a pass either — "PASS" would mean "I could not
+# look" (L-1) — so it is counted and named on its own rather than folded into the verified
+# total. `findings.yml` checks out full history precisely so this branch never runs in CI.
 check_fixed_shas() {
   git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 || return 0
-  local bad=0 seen=0 checked=0 sha
+
+  # Only a positive "false" earns the right to fail on an unresolvable sha. If the query
+  # itself cannot answer (older git, unusual checkout), assume the weaker position and
+  # report the references as unverified instead of calling them dangling.
+  local complete=0
+  if [ "$(git -C "$ROOT" rev-parse --is-shallow-repository 2>/dev/null)" = "false" ]; then
+    complete=1
+  fi
+
+  local seen=0 verified=0 destroyed=0 dangling=0 unverified=0 sha
   for sha in $(grep -oE 'fixed:[0-9a-f]{7,40}' "$LEDGER" | sed 's/fixed://' | sort -u); do
     seen=$((seen + 1))
-    git -C "$ROOT" cat-file -e "${sha}^{commit}" 2>/dev/null || continue  # not in this clone
-    checked=$((checked + 1))
-    if ! git -C "$ROOT" merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then
+    if ! git -C "$ROOT" cat-file -e "${sha}^{commit}" 2>/dev/null; then
+      if [ "$complete" -eq 1 ]; then
+        echo "ERROR: FINDINGS.md cites fixed:${sha}, which resolves to NOTHING in a complete clone — every ancestor of HEAD is present here, so that sha is not one of them. A \`git commit --amend\` or rebase destroyed it after it was recorded (L-28)." >&2
+        destroyed=$((destroyed + 1))
+      else
+        unverified=$((unverified + 1))
+      fi
+      continue
+    fi
+    if git -C "$ROOT" merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then
+      verified=$((verified + 1))
+    else
       echo "ERROR: FINDINGS.md cites fixed:${sha}, which exists but is NOT an ancestor of HEAD — it was probably recorded before a \`git commit --amend\` rewrote it (L-28)." >&2
-      bad=$((bad + 1))
+      dangling=$((dangling + 1))
     fi
   done
-  # Say how many were actually DEREFERENCED, not just how many were looked at. On a
-  # shallow checkout `checked` is 0 and this check has verified nothing — which must be
-  # visible, or "PASS" means "I could not look" (L-1). `findings.yml` therefore checks out
-  # full history; anywhere else, a 0 here is the reader's cue.
-  if [ "$checked" -eq 0 ] && [ "$seen" -gt 0 ]; then
-    echo "findings-gate: NOTE — 0 of $seen fixed:<sha> references could be resolved in this clone (shallow checkout?); their reachability was NOT verified."
-  else
-    echo "findings-gate: $checked of $seen fixed:<sha> references verified reachable from HEAD."
+
+  # Report what was DEREFERENCED, never what was looked at. Each failing category is named
+  # on the summary line as well as on stderr: a reader who sees only the last line of a
+  # green-looking run still learns that part of the ledger went unchecked.
+  if [ "$seen" -gt 0 ]; then
+    local summary="findings-gate: $verified of $seen fixed:<sha> reference(s) verified reachable from HEAD"
+    if [ "$dangling" -gt 0 ]; then
+      summary="$summary; $dangling DANGLING"
+    fi
+    if [ "$destroyed" -gt 0 ]; then
+      summary="$summary; $destroyed resolve to NOTHING"
+    fi
+    if [ "$unverified" -gt 0 ]; then
+      summary="$summary; $unverified NOT VERIFIED (shallow clone — \`git fetch --unshallow\` to check them)"
+    fi
+    echo "$summary."
   fi
-  [ "$bad" -eq 0 ]
+
+  [ "$((destroyed + dangling))" -eq 0 ]
 }
 
 AUDIT_DIR="$ROOT/docs/audit"

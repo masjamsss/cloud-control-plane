@@ -909,7 +909,14 @@ For each finding you close:
 
 1. **`docs/audit/FINDINGS.md`** — flip the line to `- [x] … | fixed:<short-sha> | …`.
    The evidence field must be a commit sha, PR ref, or test name; `fixed:` with nothing is
-   rejected. Commit first, then amend the sha in.
+   rejected.
+
+   **Record the sha in a SECOND commit — never `git commit --amend` it in.** The amend
+   replaces the very commit the sha you just read names, so the reference is dangling from
+   the moment it is written. That is L-28, it is how eight entries got broken, and the gate
+   now **fails** on it rather than skipping past it. Same for a rebase or cherry-pick that
+   rewrites a commit after its sha is recorded: re-read the sha afterwards and correct the
+   line. `bash scripts/findings-gate.sh` tells you, in a full clone.
 2. **`docs/audit/FIXES.md`** — append a section. **The heading must be exactly `## <ID>`,
    one per finding.** A combined `## API-10 / CONC-4` header FAILS the gate — when two
    findings are the same defect, write the reasoning under one and a short cross-reference

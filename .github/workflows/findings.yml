@@ -14,10 +14,10 @@ name: findings
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['docs/audit/**', 'scripts/findings-gate.sh', 'scripts/findings-baseline.txt', 'scripts/findings-topics.txt', '.github/workflows/findings.yml']
+    paths: ['docs/audit/**', 'scripts/findings-gate.sh', 'scripts/ci/findings-gate-selftest.sh', 'scripts/findings-baseline.txt', 'scripts/findings-topics.txt', '.github/workflows/findings.yml']
   push:
     branches: [main]
-    paths: ['docs/audit/**', 'scripts/findings-gate.sh', 'scripts/findings-baseline.txt', 'scripts/findings-topics.txt', '.github/workflows/findings.yml']
+    paths: ['docs/audit/**', 'scripts/findings-gate.sh', 'scripts/ci/findings-gate-selftest.sh', 'scripts/findings-baseline.txt', 'scripts/findings-topics.txt', '.github/workflows/findings.yml']
 permissions:
   contents: read
 
@@ -33,5 +33,13 @@ jobs:
           # one is skipped, and the check passes having dereferenced nothing. That is the
           # same defect the check exists to catch, one level up.
           fetch-depth: 0
+      - name: the sha check can still catch a dangling reference
+        # Runs BEFORE the gate it tests. The gate's own verdict is only worth reading if
+        # the check behind it still bites, and the version that shipped first did not: it
+        # skipped every sha destroyed by `git commit --amend` as "not in this clone",
+        # which is the exact shape L-28 was written about. This drives it against
+        # synthetic repositories where the answer is known.
+        run: bash scripts/ci/findings-gate-selftest.sh
+
       - name: findings ledger is complete and ratcheting
         run: bash scripts/findings-gate.sh
