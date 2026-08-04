@@ -258,6 +258,33 @@ Nothing open covers the free-form gate command today.
 Note also that the verification is **inert on every real request today**: no request carries
 a plan pin, because the pin-writer does not exist (R-21 / API-3).
 
+### R-48 · A release can still be half-published
+*Residue on **CI-6**.*
+
+The three publishing jobs are independent. If `api` pushes and `app-demo` fails, the release
+is half-published with no rollback and no retry story — the preflight gate this fix added
+decides *whether* to publish, not what happens when one of three publishes succeeds.
+
+Closing it means either a coordinated build-then-push (build all three, push only if every
+build succeeded) or a documented rollback. Both are real design work, and guessing at one
+under a batch about gate trust would have shipped a mechanism nobody had thought through.
+
+Also left: the overwrite refusal is proxied by `git rev-parse refs/tags/v$VERSION` rather than
+asking the registry what is already published. A tag deleted after release, or an image pushed
+by some other route, is outside what that proxy can see.
+
+### R-49 · The OpenAPI contract is checked for its operation set, not its response shapes
+*Residue on **ARCH-14** and **TEST-11**.*
+
+`openapi.test.ts` now diffs the live Hono route table against the contract in both directions,
+so a route the spec forgot and a path the spec invents both fail. What it still does not do is
+what TEST-11's recommendation ends with: validate live responses against the spec's response
+schemas. A route can serve a shape the contract does not describe and nothing notices.
+
+That is a different kind of check — it needs a fixture request per operation and a JSON-schema
+validator, and the honest version has to decide what to do about the operations whose responses
+depend on estate state. Recorded rather than half-built.
+
 ## accepted — deliberately permanent
 
 ### R-7 · A fix landed inside another finding's commit
@@ -483,3 +510,17 @@ ambiguous value with no way to tell the two cases apart after the fact, and ever
 the quota list above included, where both readings are correctly terminal — would need
 auditing against the new pair. Recorded here rather than folded into a consistency pass
 that could not have done it honestly.
+
+### R-47 · PG-1…PG-6 are still blind inside binary-classified files
+*Residue on **CI-8**.*
+
+The content checks scan with `grep -I`, so a secret inside any file git's heuristics call
+binary is invisible to all six; PG-8 only catches known blob *extensions*. CI-8 names this and
+it is not fixed here.
+
+**Accepted, because the layered design now actually holds.** The reason to accept it was
+previously false: PG-9 was the entropy-aware detector meant to cover what the heuristics miss,
+and CI-2 had left it scanning nothing in CI. With `PUBLISH_GATE_REQUIRE_ALL=1` making a missing
+gitleaks a red gate, the backstop is present wherever it is claimed to be — which is the
+condition under which "the heuristic is deliberately approximate" is an honest statement rather
+than the whole story.

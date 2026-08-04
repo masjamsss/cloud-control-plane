@@ -142,11 +142,11 @@ OpenAPI vs reality, and docs citing things that do not exist.
 - [ ] DOC-9 | medium | contracts-docs | open | 14-contracts-docs.md | Four operator-facing env vars are undocumented (two of them documented nowhere at all)
 - [ ] TEST-7 | medium | contracts-docs | open | 12-testing-quality.md | The SPA has no DOM/interaction testing; ~25 test files pin UI by source-string inspection
 - [ ] API-12 | low | contracts-docs | open | 02-api-correctness.md | `prNumberFromUrl` extracts a "PR number" from any URL ending in digits
-- [ ] ARCH-14 | low | contracts-docs | open | 01-architecture.md | The OpenAPI "parity test" is string containment, not parity
+- [x] ARCH-14 | low | contracts-docs | fixed:verified closed by DOC-1 and DOC-2 — openapi.test.ts diffs the live Hono route table against the contract both ways | 01-architecture.md | The OpenAPI "parity test" is string containment, not parity
 - [x] DOC-15 | low | contracts-docs | fixed:ec95bd2 | 14-contracts-docs.md | MAINTAINING-THE-CATALOG.md points at a generated-output directory that does not exist in the tree
 - [ ] DOC-16 | low | contracts-docs | open | 14-contracts-docs.md | Assorted OpenAPI request/response gaps against route behavior
 - [ ] DOC-17 | low | contracts-docs | open | 14-contracts-docs.md | The code-derived docs' line citations have drifted from HEAD
-- [ ] TEST-11 | low | contracts-docs | open | 12-testing-quality.md | OpenAPI contract test is substring matching, not conformance
+- [x] TEST-11 | low | contracts-docs | fixed:verified closed by DOC-1 and DOC-2 — same defect as ARCH-14, fixed once | 12-testing-quality.md | OpenAPI contract test is substring matching, not conformance
 
 ## silent-failure
 
@@ -156,7 +156,7 @@ Failures that produce no signal — swallowed rejections, best-effort compensati
 - [x] TEST-4 | high | silent-failure | fixed:fdda986 | 12-testing-quality.md | The highest-value integration tests skip silently when a toolchain is missing, and nothing asserts they ran in CI
 - [ ] ARCH-10 | medium | silent-failure | open | 01-architecture.md | Unaudited governance transition: dual-control proposals expire silently
 - [ ] ARCH-9 | medium | silent-failure | open | 01-architecture.md | Single-process, single-file scaling ceiling with in-process singletons the planned DynamoDB path would silently break
-- [ ] CI-9 | medium | silent-failure | open | 13-ci-cd.md | The recurring data lane keeps the silent-skip gate its own sibling workflow documents as a trap
+- [x] CI-9 | medium | silent-failure | fixed:scripts/ci/check-workflow-safety.sh (no job gated on vars.CI_RUNNER) | 13-ci-cd.md | The recurring data lane keeps the silent-skip gate its own sibling workflow documents as a trap
 - [ ] DATA-5 | medium | silent-failure | open | 03-data-integrity.md | Store rows are not validated against the schemas on load: corrupt-but-parseable state is accepted silently
 - [ ] ERR-6 | medium | silent-failure | open | 09-error-handling.md | `executor.replan()` failures are an unmodeled halt: unbounded silent retry, and they abort the rest of the project's due list
 - [ ] FE-8 | medium | silent-failure | open | 05-frontend-flows.md | AuditHistory silently truncates to the first page (100 entries) — the cursor is fetched and thrown away
@@ -220,7 +220,7 @@ Checks that exist but run nowhere, or run and prove nothing.
 - [x] CI-4 | high | ci-not-wired | fixed:dd1c241 | 13-ci-cd.md | The product's core "CI applies" pipeline is not shipped: nothing invokes plancheck-gate.sh or apply-window-gate.sh, and docs/scripts reference a workflow that no longer exists
 - [x] IMP-3 | high | ci-not-wired | fixed:21fd092 | 08-importer-schemadump.md | No CI executes any importer test suite; two shipped regressions prove the gap
 - [x] TEST-2 | high | ci-not-wired | fixed:21fd092 | 12-testing-quality.md | No CI lane executes any Python test suite; `gate.sh` omits them too
-- [ ] CI-8 | medium | ci-not-wired | open | 13-ci-cd.md | PG-5's secret heuristic misses the most common real-world shapes, and its designated backstop is dead in CI
+- [x] CI-8 | medium | ci-not-wired | fixed:scripts/ci/publish-gate-selftest.sh | 13-ci-cd.md | PG-5's secret heuristic misses the most common real-world shapes, and its designated backstop is dead in CI
 - [ ] OPS-9 | medium | ci-not-wired | open | 10-reliability-operations.md | The documented CI-runner cutover only routes 2 of 8 workflows
 - [ ] CI-10 | low | ci-not-wired | open | 13-ci-cd.md | Push-trigger path filters omit the workflow file itself on ccp-api and ccp-smoke
 - [ ] CI-11 | low | ci-not-wired | open | 13-ci-cd.md | Stale toolchain claims: gate.sh advertises checks CI does not run
@@ -335,7 +335,7 @@ Bootstrap, install, migration, compose and overlays.
 
 - [x] OPS-1 | critical | install-ops | fixed:install.sh + intranet-setup.sh decide bootstrap before the first up; ccp/scripts/test/install-bootstrap-decision.test.sh | 10-reliability-operations.md | Fresh-install bootstrap deadlock: boot-time settlement creates the store file, then `CCP_BOOTSTRAP=1` is refused
 - [x] OPS-5 | high | install-ops | fixed:f33aa29 | 10-reliability-operations.md | `migrate-data.sh`'s post-cutover byte-identical check is tripped by the new code's own boot writes: legacy migrations auto-roll back
-- [ ] CI-5 | medium | install-ops | open | 13-ci-cd.md | Whether the api's live parity/integration suites run in CI depends on unpinned runner-preinstalled toolchains; nothing asserts they ran
+- [x] CI-5 | medium | install-ops | fixed:verified closed by TEST-4 — requireToolchain.ts plus pinned toolchains in ccp-api.yml | 13-ci-cd.md | Whether the api's live parity/integration suites run in CI depends on unpinned runner-preinstalled toolchains; nothing asserts they ran
 - [ ] CI-7 | medium | install-ops | open | 13-ci-cd.md | The Docker build path (the documented production install) is never exercised by CI; images are first built at release time
 - [x] DOC-3 | medium | install-ops | fixed:cdc5f2c | 14-contracts-docs.md | OpenAPI `servers: [{url: /v2}]` does not match any deployed base path
 - [ ] OPS-13 | low | install-ops | open | 10-reliability-operations.md | `doctor.sh` reports an unhealthy container as OK
@@ -403,7 +403,7 @@ SchemaForm, repeated blocks and pickers.
 
 Routing, redirects and current-page indication.
 
-- [ ] CI-6 | medium | frontend-nav | open | 13-ci-cd.md | release-images publishes on any tag with no quality gate, mutable version stamping, and an unconditional `latest`
+- [x] CI-6 | medium | frontend-nav | fixed:scripts/ci/check-workflow-safety.sh (preflight gate, conditional latest, concurrency) | 13-ci-cd.md | release-images publishes on any tag with no quality gate, mutable version stamping, and an unconditional `latest`
 - [ ] ARCH-12 | low | frontend-nav | open | 01-architecture.md | `catalogctl` README's "complete, no more, no fewer" subcommand table omits a third of the subcommands
 - [ ] FE-13 | low | frontend-nav | open | 05-frontend-flows.md | RequestDetail sub-panels hold un-keyed local state across request-id navigation
 

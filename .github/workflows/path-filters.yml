@@ -30,3 +30,9 @@ jobs:
       # the change that breaks either relationship is the change a narrow filter excludes.
       - name: shipped lanes have consumers and every workflow reference resolves
         run: bash scripts/ci/check-shipped-lanes.sh
+      # CI-9 / CI-6 — gating and publishing invariants that span workflows: no job gated on
+      # the runner override, nothing published from an unchecked commit, `latest` never
+      # moved unconditionally. Same reason this lane has no path filter: a rule about all
+      # workflows must run on every change, not only when a workflow file is edited.
+      - name: workflow gating and publishing rules hold
+        run: bash scripts/ci/check-workflow-safety.sh

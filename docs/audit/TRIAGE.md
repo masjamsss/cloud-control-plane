@@ -221,6 +221,23 @@ at HEAD first, and if it is closed, close it with evidence rather than a patch.
 
 **Model:** opus · **Findings:** 8 · **Touches:** `scripts/, .github/workflows/`
 
+> **PARTIALLY COMPLETE — 6 of 8 closed. `TEST-5` and `CI-13` are still open and unclaimed.**
+> Closed: CI-9, CI-8, CI-6 (fixed), CI-5, ARCH-14, TEST-11 (verified already closed by the
+> TEST-4 and DOC-1/DOC-2 work — three of the eight needed no code, which is **L-29** again).
+> New rules live in `scripts/ci/check-workflow-safety.sh` and
+> `scripts/ci/publish-gate-selftest.sh`; residue in `R-47`–`R-49`.
+>
+> **Read this before taking TEST-5.** The api suite is RED on `main` as of 2026-08-04, from
+> two date bombs rather than anything in the code: `test/windowExpiry.test.ts:46` queries the
+> audit partition for the REAL current month while the suite runs at a fixed
+> `NOW = 2026-07-12`, so every audit assertion reads an empty partition once the wall clock
+> crosses a month boundary; and `test/cooling.test.ts:28` pins a window at `2026-08-01`, now
+> in the past, so windowed requests settle `WINDOW_EXPIRED`. 12 failures, 6 files. It is not
+> environmental — it reproduces with and without coverage instrumentation, and the suite was
+> green on 2026-07-30. TEST-5 wants a coverage floor measured and gated; measuring one against
+> a red suite would bake in an understated number, so **fix the clock coupling first**. That
+> is not in this batch and has no finding yet.
+
 
 | finding | sev | expected result |
 | --- | --- | --- |

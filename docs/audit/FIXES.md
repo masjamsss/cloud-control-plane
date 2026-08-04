@@ -2361,3 +2361,148 @@ used ±14 lines and reported a correctly-guarded handler as an offender, because
       sanity assertion that it finds the writers at all, the store-level property the
       handlers rely on, and the rewind demonstrated directly rather than described.
 - [x] **Evidence in the status line** — 1,386 api tests pass.
+
+## CI-9
+
+*The recurring data lane keeps the silent-skip gate its own sibling workflow documents as a
+trap.*
+
+- [x] **Defect reproduced first** — `ccp-data.yml:56` gated on `if: vars.CI_RUNNER != ''`,
+      and `scripts/ci/check-workflow-safety.sh` reproduces it mechanically against the
+      pre-fix tree: the rule names the file, the job and the condition.
+- [x] **Cause, not symptom** — the lane gated on a variable **the runbook never required**.
+      `ccp-onboard.yml` had already called this exact construct a trap in its own header and
+      moved to `CCP_PROJECT_ID`; a comment in one workflow cannot bind another, which is why
+      the fix is a rule over all of them rather than a third careful comment.
+- [x] **Regression test** — the CI-9 rule in `check-workflow-safety.sh`, wired into the
+      unfiltered `path-filters` lane. Negative test confirmed: it fails against `origin/main`,
+      naming `ccp-data.yml: job generate-and-upload`.
+- [x] **Failure is loud** — it prints the offending file, job and condition, and refuses to
+      run vacuously: a missing `ccp-data.yml` or `release-images.yml` exits non-zero rather
+      than passing on finding nothing (**L-1**).
+- [x] **Evidence in the status line** — `scripts/ci/check-workflow-safety.sh`.
+
+**The runbook was part of the defect, not a mitigation of it.** `account-data-ci.md` had
+grown a bold warning that `CI_RUNNER` is "required, and easy to miss … this lane's single
+most common setup failure" — documentation standing in for a design that fails in practice.
+With the gate moved, that variable is genuinely optional and the runbook now says so; the
+trap is recorded as history rather than as a warning the operator must carry.
+
+## CI-8
+
+*PG-5's secret heuristic misses the most common real-world shapes, and its designated
+backstop is dead in CI.*
+
+- [x] **Defect reproduced first** — the finding's probe table re-run against the shipped
+      pattern before anything changed: `ADMIN_PASSWORD=`, `DB_PASSWD:` and `apikey =` all
+      pass the gate. Plus one the finding did not name — `client_secret:`, the OAuth shape —
+      because `_SECRET` only ever matched uppercase.
+- [x] **Cause, not symptom** — `[Pp]assword` cannot match all-caps `PASSWORD`, and all-caps
+      **is** the env-var convention, so the single most common accidental-commit shape was
+      the one shape the check could not see.
+- [x] **Regression test** — `scripts/ci/publish-gate-selftest.sh`, driving the real gate
+      through `--tree` against synthetic trees, wired into the `publish-gate` lane ahead of
+      the gate itself. Negative test confirmed: 1 of 5 shapes caught before, 5 of 5 after.
+- [x] **Failure is loud** — and the verdict line is the fix's other half: it now names any
+      check that DID NOT RUN, so `PASS` can no longer mean "I could not look" (**L-1**).
+- [x] **Evidence in the status line** — `scripts/ci/publish-gate-selftest.sh`.
+
+**Case-insensitivity is the obvious fix and it is wrong.** Measured on this tree, `-i` takes
+PG-5 from 7 hits to 49, and all 42 additions are camelCase identifier assignments —
+`tKey = uploadTokenKey(id)`, `const driftVersionKey = …` — because the value class matches a
+plain identifier as happily as a secret. A check with 42 false positives gets switched off,
+which is how a repo ends up with no check at all. What separates the two is **case
+uniformity**, so that is what the pattern keys on: an env-var shape or a snake_case shape,
+never a camelCase word boundary. Scenario 2 of the selftest is that property, pinned.
+
+**The recommendation's other half was rejected on measurement.** It suggests lowering the
+value floor from 16 to 12. Done, and counted: 12 adds seven matches to this tree and every
+one is a false positive — `aws_iam_role` as a `_key:` value, EFS idempotency tokens
+(`d-eoyniqjaesh5`), `app-shared-fs`. The floor stays at 16. The recommendation was a guess at
+a trade-off; the count is the answer to it.
+
+**The backstop.** CI-2 restored PG-9 in CI, but "PG-5 is deliberately approximate *because*
+gitleaks backs it up" was still only true where someone had installed gitleaks.
+`PUBLISH_GATE_REQUIRE_ALL=1` (set by `publish-gate.yml`) turns a missing gitleaks into a red
+gate naming what is absent — the same shape as `test/helpers/requireToolchain.ts`, and for
+the same reason. Unset, a developer's laptop still degrades to a clean SKIP.
+
+**Residue:** see `R-47` — the content checks remain blind inside binary-classified files.
+
+## CI-6
+
+*release-images publishes on any tag with no quality gate, mutable version stamping, and an
+unconditional `latest`.*
+
+- [x] **Defect reproduced first** — `check-workflow-safety.sh` run against `origin/main`
+      fails all three publishing rules: no job depends on a gate, no concurrency group, and
+      three tag rules move `latest` unconditionally.
+- [x] **Cause, not symptom** — publishing had no precondition at all. The fix is a
+      `preflight` job every publishing job `needs:`, so the gate cannot be bypassed by adding
+      a fourth image.
+- [x] **Regression test** — three rules in `check-workflow-safety.sh`, and the publisher set
+      is **derived from the steps** (any job using `build-push-action`) rather than listed,
+      so a new image is covered without editing the check. It refuses to pass if it can no
+      longer find a publishing job at all.
+- [x] **Failure is loud** — every refusal names the commit and what was missing.
+- [x] **Evidence in the status line** — `scripts/ci/check-workflow-safety.sh`.
+
+**What "checked" means here had to be decided, not assumed.** Requiring every lane to have
+run would refuse legitimate releases, because path filters mean a lane's absence usually just
+means "nothing in its scope changed". `gate` and `filters` are the two lanes deliberately
+built *without* path filters, so they run on every commit that went through CI — which makes
+their absence proof the commit was never checked, and them the honest required set.
+
+**`latest` moves on a comparison, not on an event.** `flavor: latest=auto` would still tag a
+maintenance release, since it cannot know `v0.1.1` is older than `v0.2.0`. The preflight
+compares the pushed tag against the highest `v*` tag in the repository, and a dispatch build
+never moves `latest` at all — a dispatch is not a release.
+
+**Residue:** see `R-48` — a release can still be half-published, and the overwrite refusal is
+proxied by the git tag rather than by the registry.
+
+## CI-5
+
+*Whether the api's live parity/integration suites run in CI depends on unpinned
+runner-preinstalled toolchains; nothing asserts they ran.*
+
+**Verified closed by the TEST-4 work. No code changed here.**
+
+`ccp-api.yml` pins Go via `go-version-file: tools/catalogctl/go.mod`, installs Terraform, and
+sets `CCP_REQUIRE_INTEGRATION=1`; `test/helpers/requireToolchain.ts` throws at module scope
+when a required toolchain is absent, and all four files the finding names use it.
+
+- [x] **Confirmed end to end, not by reading the fix** (**L-29**) — with
+      `CCP_REQUIRE_INTEGRATION=1` and `go` removed from `PATH`,
+      `scheduleWindowCheckParity.test.ts` **fails** ("1 failed | no tests", throwing from
+      `skipUnless`) instead of skipping. With the variable unset it skips cleanly, 16 skipped,
+      so a developer without the toolchain is not broken. Both halves of the guarantee hold.
+- [x] **Evidence in the status line** — the verification above.
+
+## ARCH-14
+
+*The OpenAPI "parity test" is string containment, not parity.*
+
+**Verified closed by the DOC-1/DOC-2 work. No code changed here.**
+
+`openapi.test.ts` enumerates the live Hono route table and the contract's declared operations
+and diffs them **both ways**: a path the spec declares that no route serves fails, and a route
+the spec does not declare fails. There is no list to keep in sync, so the check cannot rot into
+agreeing with itself.
+
+- [x] **Confirmed end to end** (**L-29**) — deleting `/requests/{id}/approve` from the
+      contract turns the suite red (2 failed of 21). Restored, 21 pass. The suite also pins
+      its own extractors against a known-present operation, so a Hono upgrade that drops
+      `.routes` cannot make two empty sets read as perfect parity.
+- [x] **Evidence in the status line** — the verification above.
+
+**Residue:** see `R-49` — the operation set is checked, the response shapes are not.
+
+## TEST-11
+
+*OpenAPI contract test is substring matching, not conformance.*
+
+Same defect as **ARCH-14**, reported twice; fixed once and verified once — see that entry for
+the end-to-end check. The one piece of TEST-11's recommendation that ARCH-14's does not
+contain, validating live responses against the spec's response schemas, is recorded as `R-49`
+rather than claimed.

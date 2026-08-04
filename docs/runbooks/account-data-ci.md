@@ -79,17 +79,18 @@ and `upload-status.json` (what the upload attempt concluded).
    - **Variable `CCP_PROJECT_ID`** — the project id from Admin → Projects.
    - **Variable `CCP_SCAN_ROOT`** — only if the Terraform root is not
      `environments/prod`.
-   - **Variable `CI_RUNNER`** — **required, and easy to miss.** The job is gated on
-     it (`if: vars.CI_RUNNER != ''`), so while it is unset the job **skips silently
-     on every push**: no data is ever uploaded, no error explains why, and the
-     project never reaches `ready`. Set it to the runner label you want
-     (`ubuntu-latest` is fine if you have no self-hosted runner). The gate exists so
-     this file stays inert in the control-plane repo, which ships it as a template.
-     *(The one-shot onboarding lane deliberately gates on `CCP_PROJECT_ID` instead,
-     for exactly this reason — see `ccp/docs/onboarding-runbook.md` step 2.)*
-3. Merge something (or run the workflow manually) and watch the job. If the run
-   appears but the job is grey/skipped, `CI_RUNNER` is unset — that is this lane's
-   single most common setup failure.
+   - **Variable `CI_RUNNER`** — **optional.** Set it only to pin a self-hosted runner
+     label; unset means the standard hosted runner. It no longer gates the job.
+3. Merge something (or run the workflow manually) and watch the job.
+
+> **CI-9 — this used to be the lane's most common setup failure.** The job was gated on
+> `if: vars.CI_RUNNER != ''`, an undocumented-by-the-runbook variable, so leaving it unset
+> made the job **skip silently on every push**: no data uploaded, no error, no explanation,
+> and the project never reached `ready`. It is now gated on `CCP_PROJECT_ID` — a variable
+> step 2 already requires — exactly as the one-shot onboarding lane has always been
+> (`ccp/docs/onboarding-runbook.md` step 2). The template stays inert in the control-plane
+> repo either way, because that repo sets no project id. `scripts/ci/check-workflow-safety.sh`
+> keeps the trap from coming back.
 
 ## Setting it up on a GitLab repo
 
