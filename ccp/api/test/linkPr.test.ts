@@ -6,6 +6,7 @@ import type { ConfigStore } from '../src/store/configStore';
 import type { AppEnv } from '../src/appEnv';
 import type { AuditItem } from '../src/store/schema';
 import { seed, sessionCookieFor } from './helpers/seed';
+import { nowIso } from '../src/clock';
 
 /**
  * 0033 A12/P6 — POST /requests/:id/link-pr: the engineer-track loop closer.
@@ -63,7 +64,7 @@ function reject(app: Hono<AppEnv>, cookie: string, id: string) {
 }
 
 async function auditActions(store: ConfigStore, action: string, requestId: string): Promise<AuditItem[]> {
-  const yyyymm = new Date().toISOString().slice(0, 7).replace('-', '');
+  const yyyymm = nowIso().slice(0, 7).replace('-', '');
   const entries = (await store.query(`P#sample#AUDIT#${yyyymm}`)) as AuditItem[];
   return entries.filter((e) => e.action === action && e.requestId === requestId);
 }

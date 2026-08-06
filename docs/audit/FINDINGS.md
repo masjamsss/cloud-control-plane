@@ -288,6 +288,7 @@ Red suites, silent skips, fixtures that pin the wrong premise.
 - [ ] FE-10 | low | test-quality | open | 05-frontend-flows.md | Mock `rejectRequest` skips the status guard the real API enforces
 - [ ] TEST-10 | low | test-quality | open | 12-testing-quality.md | Functional test plan drift: stale counts, loose citations, and "new" rows with no tracking
 - [ ] TEST-12 | low | test-quality | open | 12-testing-quality.md | One test file consumes ~60% of the api suite wall time by rebuilding catalogctl per run
+- [x] TEST-13 | high | test-quality | fixed:the suite passes with the system clock shifted 4 months; 12 failures without the fix | 12-testing-quality.md | The api suite is coupled to the wall-clock calendar: it goes red on a month boundary with no code change
 - [ ] TEST-9 | low | test-quality | open | 12-testing-quality.md | Sleep-based synchronization in async API tests (flake and false-pass risk)
 
 ## blocking-io

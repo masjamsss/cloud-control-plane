@@ -9,6 +9,7 @@ import { record } from '../src/domain/audit';
 import { verifyChain, type ChainEntry } from '../scripts/verify-audit-chain';
 import { bootstrap } from '../scripts/bootstrap';
 import type { AccountItem, AuditItem, ChainHeadItem } from '../src/store/schema';
+import { nowIso } from '../src/clock';
 
 let dir: string;
 let file: string;
@@ -123,7 +124,9 @@ describe('FileStore durability (simulated restart = new instance reading disk)',
     const headBefore = (await a.get(S.chainHead('sample').PK, 'CHAINHEAD')) as ChainHeadItem;
 
     const b = await restart(a);
-    const entries = (await b.query('P#sample#AUDIT#202607')) as AuditItem[];
+    // TEST-13 — `record` stamped these five from the app clock, so the partition is the
+    // month of the write, not the literal 202607 this used to assert against.
+    const entries = (await b.query(`P#sample#AUDIT#${nowIso().slice(0, 7).replace('-', '')}`)) as AuditItem[];
     expect(entries).toHaveLength(5);
     const headAfter = (await b.get(S.chainHead('sample').PK, 'CHAINHEAD')) as ChainHeadItem;
     expect(headAfter).toEqual(headBefore); // chain head durable

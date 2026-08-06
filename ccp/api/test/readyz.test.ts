@@ -4,6 +4,7 @@ import { MemoryStore } from '../src/store/memoryStore';
 import { seed } from './helpers/seed';
 import { record } from '../src/domain/audit';
 import { auditKey, type AuditItem } from '../src/store/schema';
+import { nowIso } from '../src/clock';
 
 /**
  * Task 4 — readiness that does not lie. The audit found /healthz stays green even on
@@ -61,7 +62,7 @@ describe('/readyz reflects real store health (unlike /healthz)', () => {
       await record(store, 'sample', { action: `a${i}`, actor: 'putra', targetType: 'session', targetId: 'putra' });
     }
     // Corrupt one persisted audit entry's hash so the §7 chain no longer verifies.
-    const monthPk = auditKey('sample', new Date().toISOString().slice(0, 7).replace('-', ''), '').PK;
+    const monthPk = auditKey('sample', nowIso().slice(0, 7).replace('-', ''), '').PK;
     const entries = (await store.query(monthPk)) as AuditItem[];
     expect(entries.length).toBeGreaterThan(0);
     await store.put({ ...entries[0]!, hash: 'tampered-hash' });

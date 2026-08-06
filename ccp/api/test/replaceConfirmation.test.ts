@@ -4,6 +4,7 @@ import { MemoryStore } from '../src/store/memoryStore';
 import type { AuditItem, RequestItem } from '../src/store/schema';
 import { requestKey } from '../src/store/schema';
 import { seed, seedAccount, sessionCookieFor } from './helpers/seed';
+import { nowIso } from '../src/clock';
 
 /**
  * The forces-replace confirmed-override lane (ccp-api half). A destroy+recreate op
@@ -223,7 +224,7 @@ describe('forces-replace lane — audit', () => {
     const app = createApp(store);
     const created = await (await submit(app, await sessionCookieFor(store, 'sari'), REPLACE_DRAFT)).json();
 
-    const yyyymm = new Date().toISOString().slice(0, 7).replace('-', '');
+    const yyyymm = nowIso().slice(0, 7).replace('-', '');
     const entries = (await store.query(`P#sample#AUDIT#${yyyymm}`)) as AuditItem[];
     const submitted = entries.find((e) => e.action === 'request-submit' && e.requestId === created.id);
     expect(submitted).toBeTruthy();

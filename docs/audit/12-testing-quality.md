@@ -341,6 +341,36 @@ examples, all verified by reading the code:
   `tools/catalogctl` or the go.sum hash) shared by both parity files, or split the parity harness
   into an explicitly toolchain-gated CI job.
 
+### TEST-13 — The api suite is coupled to the wall-clock calendar: it goes red on a month boundary with no code change
+
+- **Severity:** high
+- **Location:** `ccp/api/test/windowExpiry.test.ts:46`, `cooling.test.ts:28,73`, and the same
+  partition derivation in `approvalLadder`, `changeSet`, `exposure`, `feasibility`, `linkPr`,
+  `planSummary`, `projectAuthz`, `readyz`, `replaceConfirmation`, `rewindow`, `scheduleQuorum`;
+  the mirror-image hardcoding in `audit.test.ts:79` and `fileStore.test.ts:126`
+- **Description:** Audit entries are partitioned by the month of the write, stamped from
+  `src/clock.ts`. Two families of test disagree with that clock:
+  1. **The helper reads wall time while the app is frozen.** `auditActions()` derived the
+     partition key from `new Date()` while every request in the file was made under a frozen
+     July-2026 clock. The two agreed only while real time happened to also be July 2026.
+  2. **The assertion hardcodes a month while the app reads wall time.** `audit.test.ts` and
+     `fileStore.test.ts` query the literal `P#sample#AUDIT#202607` for entries that `record()`
+     stamped from the real clock.
+
+  Separately, `cooling.test.ts` pinned a *window* fixture at the literal `2026-08-01`; tests
+  that needed it to be in the future froze the clock one at a time (the repeated comment
+  "(else wall-clock elapses it)" is the dependency being worked around rather than removed),
+  and the tests that did not freeze settled `WINDOW_EXPIRED` once that date passed.
+- **Impact:** **The suite was green on 2026-07-30 and red on 2026-08-04 with no commit in
+  between** — 12 failures across 6 files. It recurs on every month boundary. Because
+  `ccp-api.yml` is path-filtered, a PR touching nothing under `ccp/api/**` never runs it, so
+  the breakage is invisible until an unrelated PR happens to touch the api and inherits a red
+  lane it did not cause.
+- **Recommendation:** Derive the partition from the same clock the write path used
+  (`nowIso()`), never from `new Date()` or a literal; and express fixture dates relative to a
+  named suite clock rather than as absolute calendar dates. Both are one-line disciplines; the
+  reason they were not followed is that nothing failed until the calendar moved.
+
 ---
 
 ## Minor observations

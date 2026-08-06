@@ -8,6 +8,7 @@ import { accountKey, type AccountItem, type AuditItem } from '../src/store/schem
 import { ladderFor, nextLadderStep, requiredApprovalsFor } from '../src/domain/exposure';
 import { canSignStep } from '../src/domain/eligibility';
 import { seed, seedRequests, sessionCookieFor, setPolicy } from './helpers/seed';
+import { nowIso } from '../src/clock';
 
 /**
  * 0037 Feature B — the static two-level approval ladder (L2 → L3) that replaces the
@@ -75,7 +76,7 @@ async function disable(store: ConfigStore, id: string): Promise<void> {
   await store.put({ ...acc, status: 'disabled' });
 }
 async function approveEntries(store: ConfigStore, requestId: string): Promise<AuditItem[]> {
-  const yyyymm = new Date().toISOString().slice(0, 7).replace('-', '');
+  const yyyymm = nowIso().slice(0, 7).replace('-', '');
   const entries = (await store.query(`P#sample#AUDIT#${yyyymm}`)) as AuditItem[];
   return entries.filter((e) => e.action === 'request-approve' && e.requestId === requestId);
 }

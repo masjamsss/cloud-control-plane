@@ -11,13 +11,21 @@ name: ccp-smoke
 on:
   workflow_dispatch:
   pull_request:
+    # CI-13 — `ccp/**` includes `ccp/docs/**`, so a typo fix in a runbook spent a full
+    # SPA build + api boot proving nothing about the install journey. Expressed as a
+    # NEGATED pattern rather than `paths-ignore:`, because GitHub rejects a workflow
+    # that sets both filters on one event — the obvious spelling is an invalid file.
+    # Order is load-bearing: the negation must follow the positive it narrows, and the
+    # workflow's own path follows the negation so editing this file still triggers it.
     paths:
       - 'ccp/**'
+      - '!ccp/docs/**'
       - '.github/workflows/ccp-smoke.yml'
   push:
     branches: [main]
     paths:
       - 'ccp/**'
+      - '!ccp/docs/**'
 
 permissions:
   contents: read

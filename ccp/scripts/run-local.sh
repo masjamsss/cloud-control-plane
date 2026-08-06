@@ -13,10 +13,14 @@
 #
 #   scripts/run-local.sh --smoke  automated proof: bring up in PRODUCTION posture (so
 #                                 the fail-closed preflight is exercised for real),
-#                                 assert /readyz == 200 and that the bundle was built
+#                                 assert /readyz == 200, that authorization is enforced,
+#                                 that credentials are verified, that the bootstrap admin
+#                                 can actually authenticate, and that the bundle was built
 #                                 in api-mode, then tear down. Exit 0 = proven.
 #
-# Env overrides: API_PORT (default 8801), APP_PORT (default 4173).
+# Env overrides: API_PORT (default 8801), APP_PORT (default 8800).
+# (CI-13: this line read "APP_PORT (default 4173)" while the code below has always
+# defaulted to 8800 — a doc drift that sent readers to the wrong port.)
 # =============================================================================
 set -uo pipefail
 set -m   # each background job gets its own process group, so cleanup can reap the tree
@@ -101,6 +105,53 @@ printf '   '; curl -s "$API_BASE/readyz"; echo
 # The one-time password bootstrap printed (interactive mode surfaces it below).
 OTP="$(grep -oE 'one-time password: .*' "$DATA_DIR/api.log" | sed 's/one-time password: //' | head -1)"
 
+# ---- CI-13: prove the portal FUNCTIONS, not just that it booted -------------
+#
+# What this smoke proved was: /readyz is 200, and the served bundle is not the mock.
+# Both are real, and neither distinguishes "the control plane is up" from "a process
+# is answering two health endpoints". A regression that broke every route except the
+# health pair, or one that stopped verifying credentials entirely, smoked GREEN.
+#
+# WHAT IT SHOULD ASSERT — the design question the finding leaves open. The smoke's job
+# is the install journey: a fresh checkout comes up as the REAL portal. Three properties
+# are what make it a control plane rather than a web server, and all three are reachable
+# without any estate, cloud credential, or fixture:
+#
+#   1. authorization is WIRED      — a protected read refuses an anonymous caller
+#   2. credentials are VERIFIED    — a wrong password is refused, not rubber-stamped
+#   3. the real credential path WORKS — the bootstrap admin can actually authenticate
+#
+# Exact status codes, never ranges: a 500 from a broken route must not read as a pass
+# just because it isn't 200 (L-1's shape — "not the success code" is not "the refusal
+# I asserted"). The finding also suggested `GET /catalog`; there is no such route in
+# ccp/api/src — it is one of the phantom paths DOC-1 deleted from the contract for
+# exactly that reason. `GET /requests` is the real project-scoped protected read.
+api_code() { # api_code METHOD PATH [json-body]
+  if [ -n "${3:-}" ]; then
+    curl -s -o /dev/null -w '%{http_code}' -X "$1" -H 'content-type: application/json' -d "$3" "$API_BASE$2" 2>/dev/null || echo 000
+  else
+    curl -s -o /dev/null -w '%{http_code}' -X "$1" "$API_BASE$2" 2>/dev/null || echo 000
+  fi
+}
+
+code="$(api_code GET /requests)"
+[ "$code" = "401" ] || die "GET /requests answered $code unauthenticated, expected 401 — the session guard is not enforcing"
+ok "authorization is enforced (anonymous GET /requests → 401)"
+
+code="$(api_code POST /auth/login '{"username":"putra","password":"definitely-not-the-otp"}')"
+[ "$code" = "401" ] || die "login with a wrong password answered $code, expected 401 — credentials are not being verified"
+ok "credentials are verified (wrong password → 401)"
+
+[ -n "$OTP" ] || die "no bootstrap one-time password in api.log — cannot prove the credential path end to end"
+LOGIN_BODY="$(curl -s -X POST -H 'content-type: application/json' \
+  -d "{\"username\":\"putra\",\"password\":$(node -p 'JSON.stringify(process.argv[1])' "$OTP")}" \
+  "$API_BASE/auth/login" 2>/dev/null || echo '')"
+case "$LOGIN_BODY" in
+  *'"mustChangePassword":true'*) ok "the bootstrap admin authenticates, and is held at the password gate" ;;
+  *) echo "--- login response ---"; printf '%s\n' "$LOGIN_BODY"
+     die "the bootstrap admin could not authenticate, or the first-run password gate is gone" ;;
+esac
+
 # ---- serve the SPA (vite preview provides the SPA deep-link fallback) --------
 say "serving the SPA on $APP_BASE"
 ( cd "$APP_DIR" && exec npm run preview -- --port "$APP_PORT" --strictPort ) >"$DATA_DIR/app.log" 2>&1 &
@@ -121,7 +172,7 @@ fi
 
 if [ "$SMOKE" = "1" ]; then
   echo
-  ok "SMOKE PASSED — api answers /readyz (200, bootstrapped) and the SPA is served in api-mode"
+  ok "SMOKE PASSED — /readyz 200, authz enforced, credentials verified, bootstrap admin authenticates, SPA served in api-mode"
   exit 0
 fi
 

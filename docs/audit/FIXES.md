@@ -2506,3 +2506,45 @@ Same defect as **ARCH-14**, reported twice; fixed once and verified once — see
 the end-to-end check. The one piece of TEST-11's recommendation that ARCH-14's does not
 contain, validating live responses against the spec's response schemas, is recorded as `R-49`
 rather than claimed.
+
+## TEST-13
+
+*The api suite is coupled to the wall-clock calendar: it goes red on a month boundary with no
+code change.*
+
+- [x] **Defect reproduced first** — and it reproduced itself, without help: the suite was green
+      on 2026-07-30 (PR #11's CI) and red on 2026-08-04 with no commit in between. 12 failures,
+      6 files, every one of the shape `expected [] to have a length of N but got +0`. Confirmed
+      it was not environmental by re-running with and without coverage instrumentation, and by
+      confirming no file under `ccp/api/src` or `ccp/api/test` had been modified.
+- [x] **Cause, not symptom** — audit entries are partitioned by the month of the write, stamped
+      from `src/clock.ts`. The tests disagreed with that clock in two mirror-image ways: eleven
+      files derived the partition from `new Date()` (wall time) while the requests were made
+      under a frozen July clock; two files hardcoded `202607` for entries `record()` stamped
+      from the real clock. Fixing only the twelve failing assertions would have left every
+      other instance of the same derivation to fire on a later boundary, so **all thirteen call
+      sites were converted**, not just the red ones.
+- [x] **Regression test** — the suite itself, run under a shifted system clock. `test/setup.ts`
+      was temporarily prepended with a 4-month `Date` shift (not committed — it is a probe, not
+      a fixture) and the whole suite re-run:
+
+      | tests | real clock | clock +4 months |
+      | --- | --- | --- |
+      | unfixed | 12 failed / 6 files | **12 failed / 6 files** |
+      | fixed | 1386 passed | **1386 passed** |
+
+      That is the property the finding is about — the outcome no longer depends on the date the
+      suite is run on — and it is checked by moving the calendar rather than by reasoning.
+- [x] **Failure is loud** — it always was; the problem was that nothing ran it. See the residue.
+- [x] **Evidence in the status line** — the shifted-clock run above.
+
+**The window fixture needed a different fix from the partition.** `cooling.test.ts` pinned
+`at: '2026-08-01'` as a literal and froze the clock per-test to keep it in the future — the
+comment "(else wall-clock elapses it)" repeated at five call sites is the coupling being
+noticed and worked around each time instead of removed once. It now derives from a named
+`SUITE_NOW` and freezes in `beforeEach`, so "a window that has not opened yet" is a property of
+the suite rather than of the date. The redundant per-test freezes are kept: where a test means
+"before the deadline", saying so beats inheriting it.
+
+**Residue:** see `R-50` — the lane that would have caught this is path-filtered, so a
+time-triggered breakage still waits for an unrelated PR to surface it.

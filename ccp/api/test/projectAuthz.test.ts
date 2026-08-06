@@ -7,6 +7,7 @@ import { accountKey, type AccountItem } from '../src/store/schema';
 import { __setKnownProjects, isBoundToProject, projectsOf, roleFor } from '../src/projects';
 import { classify } from '../src/domain/dualControl';
 import { seed, seedAccount, seedRequests, sessionCookieFor } from './helpers/seed';
+import { nowIso } from '../src/clock';
 
 /**
  * Account↔project authorization binding (0014 dim-5 finding #1, CRITICAL-latent):
@@ -123,7 +124,7 @@ describe('account↔project binding — enforcement on every project-scoped rout
     const lina = await sessionCookieFor(store, 'lina');
     await app.request('/requests?scope=mine', { headers: hdrs(lina, 'bootstrap') });
 
-    const yyyymm = new Date().toISOString().slice(0, 7).replace('-', '');
+    const yyyymm = nowIso().slice(0, 7).replace('-', '');
     const entries = (await store.query(`P#bootstrap#AUDIT#${yyyymm}`)) as AuditItem[];
     const denial = entries.find((e) => e.action === 'project-scope-denied');
     expect(denial).toBeTruthy();
@@ -136,7 +137,7 @@ describe('account↔project binding — enforcement on every project-scoped rout
     const { store, app } = await setup();
     const res = await app.request('/requests?scope=mine', { headers: { 'x-ccp-project': 'bootstrap' } });
     expect(res.status).toBe(401);
-    const yyyymm = new Date().toISOString().slice(0, 7).replace('-', '');
+    const yyyymm = nowIso().slice(0, 7).replace('-', '');
     const entries = (await store.query(`P#bootstrap#AUDIT#${yyyymm}`)) as AuditItem[];
     expect(entries.find((e) => e.action === 'project-scope-denied')).toBeUndefined();
   });
@@ -176,7 +177,7 @@ describe('account↔project binding — admin-managed + audited', () => {
 
     // and the grant is in the audit chain: the dual-control pair (propose by root,
     // apply by putra) carrying the per-project {projectId, role} delta
-    const yyyymm = new Date().toISOString().slice(0, 7).replace('-', '');
+    const yyyymm = nowIso().slice(0, 7).replace('-', '');
     const entries = (await store.query(`P#sample#AUDIT#${yyyymm}`)) as AuditItem[];
     const propose = entries.find(
       (e) => e.action === 'config-propose' && (e.after as { targetKey?: string }).targetKey === 'ACCOUNT#lina',

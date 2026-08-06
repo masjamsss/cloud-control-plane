@@ -285,6 +285,20 @@ That is a different kind of check — it needs a fixture request per operation a
 validator, and the honest version has to decide what to do about the operations whose responses
 depend on estate state. Recorded rather than half-built.
 
+### R-50 · A time-triggered breakage still waits for an unrelated PR to surface it
+*Residue on **TEST-13**.*
+
+The suite is no longer coupled to the calendar, but the reason nobody noticed for days is
+untouched: `ccp-api.yml` is path-filtered, so a PR that changes nothing under `ccp/api/**`
+never runs it. The breakage was introduced by *time passing*, which no path filter can model —
+the first person to touch the api inherits a red lane they did not cause.
+
+A scheduled run of the api suite would close it, and that is a lane-shape decision (cost,
+who gets paged on a red nightly, whether it blocks) rather than a test fix, so it is recorded
+rather than guessed at. Note CI-13's sibling case: the smoke lane's filter was *widened*
+wrongly, and this one is *narrow* wrongly, for the same underlying reason — a path filter
+answers "did the inputs change", and neither the calendar nor a runner image is an input.
+
 ## accepted — deliberately permanent
 
 ### R-7 · A fix landed inside another finding's commit
