@@ -350,9 +350,9 @@ Full scans, unpaged reads, work proportional to total data.
 - [x] PERF-5 | high | scale-and-paging | fixed:2fd1794 | 11-performance-scalability.md | Frontend main bundle is 3.76 MB (663 KB gzip) with all 115 manifest JSONs inlined and zod-parsed at module init
 - [ ] PERF-10 | medium | scale-and-paging | open | 11-performance-scalability.md | Submit-path full scans: rate-limit check and feasibility each re-scan whole collections per submission
 - [ ] PERF-8 | medium | scale-and-paging | open | 11-performance-scalability.md | Admin audit "pagination" materializes and re-sorts the whole chain per page; cursor lookup is a linear scan
-- [ ] PERF-9 | medium | scale-and-paging | open | 11-performance-scalability.md | `ServiceConsole` loads the entire block-source corpus on every service page mount, fetching server chunks sequentially
-- [ ] PERF-13 | low | scale-and-paging | open | 11-performance-scalability.md | SchemaForm recomputes inventory-derived enums for every field on every keystroke
-- [ ] PERF-15 | low | scale-and-paging | open | 11-performance-scalability.md | Request-history views render unbounded lists without windowing
+- [x] PERF-9 | medium | scale-and-paging | fixed:blockSourcesFor fetches only the chunks the given addresses live in; test/block-source.test.ts | 11-performance-scalability.md | `ServiceConsole` loads the entire block-source corpus on every service page mount, fetching server chunks sequentially
+- [x] PERF-13 | low | scale-and-paging | fixed:resolveEnum's inventory scan is memoized per (inventory, resourceType, field) in a WeakMap; test/interpreter.test.ts | 11-performance-scalability.md | SchemaForm recomputes inventory-derived enums for every field on every keystroke
+- [x] PERF-15 | low | scale-and-paging | fixed:windowSlice caps MyRequests/ApprovalsQueue/LeadDashboard to DEFAULT_WINDOW_SIZE with a "Show more" control; test/windowing.test.ts | 11-performance-scalability.md | Request-history views render unbounded lists without windowing
 
 ## audit-chain
 
@@ -372,7 +372,7 @@ The codemod, plan-check and drift-edit.
 - [x] IMP-1 | high | catalogctl | fixed:with_meta=True back-ported from the azure kit; importer/kit suite 106 pass | 08-importer-schemadump.md | `importer/kit/normalize.py` `split`/`guard` crash under the repo-pinned python-hcl2 (KeyError, not a refusal)
 - [ ] CTL-2 | medium | catalogctl | open | 07-catalogctl.md | `moved_block` writes invalid or duplicate-resource HCL at exit 0: no identifier validation, no destination-collision check, no dangling-reference handling
 - [ ] IMP-5 | medium | catalogctl | open | 08-importer-schemadump.md | kit-azure `discover.sh` never clears stale page files: a re-run can resurrect deleted resources into the manifest
-- [ ] PERF-6 | medium | catalogctl | open | 11-performance-scalability.md | API mode re-downloads and re-parses the full inventory + manifest set on every route mount; the serve endpoints send no caching headers
+- [x] PERF-6 | medium | catalogctl | fixed:client caches inventory/manifests per project + revalidates via If-None-Match; server sends ETag off the stored digest and reads async; test/httpApiProjectData.test.ts, test/projectData.test.ts | 11-performance-scalability.md | API mode re-downloads and re-parses the full inventory + manifest set on every route mount; the serve endpoints send no caching headers
 
 ## frontend-a11y
 

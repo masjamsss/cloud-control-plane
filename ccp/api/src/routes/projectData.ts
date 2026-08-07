@@ -484,6 +484,36 @@ export function projectDataRoutes(dataRoot: string): Hono<AppEnv> {
   /* ── the serve endpoints — the ACTIVE version only, target-bound sessions ── */
 
   /**
+   * PERF-6 — the digest this served part is content-addressed by, quoted as a
+   * strong ETag: the SAME `ProjectDataVersionItem.digests` value the upload
+   * pipeline verified and stores post-redaction (schema.ts) — the exact bytes
+   * this handler is about to serve, not a freshly recomputed hash, so this
+   * costs nothing beyond the row read `serveActive` already does. Only
+   * inventory/manifests carry a whole-part digest today (the upload bundle
+   * hashes the inventory/blocks/manifests triple, not each block chunk
+   * individually — `digestsOf`, domain/projectData.ts) — blocks-index/
+   * blocks-chunk fall through with no ETag, same as before this fix.
+   */
+  function servedEtag(
+    file: ServedFile,
+    digests: ProjectDataVersionItem['digests'] | undefined,
+  ): string | undefined {
+    if (!digests) return undefined;
+    const sha =
+      file.kind === 'inventory'
+        ? digests.inventorySha256
+        : file.kind === 'manifests'
+          ? digests.manifestsSha256
+          : undefined;
+    return sha ? `"${sha}"` : undefined;
+  }
+
+  /** RFC 7232 `If-None-Match`: a comma-separated list of ETags, or `*`. */
+  function ifNoneMatchSatisfies(headerValue: string, etag: string): boolean {
+    return headerValue.split(',').some((v) => v.trim() === '*' || v.trim() === etag);
+  }
+
+  /**
    * Shared gate for the three reads: the caller must hold a binding ON THE
    * TARGET project (":id" — not merely the acting scope, which the group
    * middleware already checked), the project must not be archived, and only an
@@ -503,21 +533,36 @@ export function projectDataRoutes(dataRoot: string): Hono<AppEnv> {
       return c.json({ code: 'NOT_FOUND', reason: 'This project has no active data to serve.' }, 404);
     }
     const version = project.dataActive.version;
+    const vKey = projectDataVersionKey(id, version);
+    const row = (await store.get(vKey.PK, vKey.SK)) as ProjectDataVersionItem | null;
     if (file.kind === 'blocks-chunk') {
-      const vKey = projectDataVersionKey(id, version);
-      const row = (await store.get(vKey.PK, vKey.SK)) as ProjectDataVersionItem | null;
       // The stored chunk list is the serve-time allowlist — never the filesystem.
       if (!row || !row.chunks.includes(file.chunk)) {
         return c.json({ code: 'NOT_FOUND', reason: 'No such block chunk.' }, 404);
       }
     }
-    const text = readProjectDataFile(dataRoot, id, version, file);
+    // PERF-6 — a client that already holds this exact content (by digest) is
+    // told so without a body: the served bytes for an unchanged active
+    // version never cross the wire twice to the same client.
+    const etag = servedEtag(file, row?.digests);
+    if (etag) {
+      const inm = c.req.header('If-None-Match');
+      if (inm && ifNoneMatchSatisfies(inm, etag)) {
+        return c.body(null, 304, { ETag: etag, 'Cache-Control': 'private, must-revalidate' });
+      }
+    }
+    const text = await readProjectDataFile(dataRoot, id, version, file);
     if (text === null) {
       // Manifests are optional per version; everything else vanishing is a
       // served-data integrity problem — still a fail-closed 404, never a partial.
       return c.json({ code: 'NOT_FOUND', reason: 'This project has no such data file.' }, 404);
     }
-    return c.newResponse(text, 200, { 'Content-Type': 'application/json; charset=utf-8' });
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'private, must-revalidate',
+    };
+    if (etag) headers.ETag = etag;
+    return c.newResponse(text, 200, headers);
   }
 
   p.get('/:id/manifests', async (c) => serveActive(c, { kind: 'manifests' }));

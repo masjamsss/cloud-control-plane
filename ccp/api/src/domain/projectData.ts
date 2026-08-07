@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, existsSync } from 'node:fs';
-import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { mkdirSync, rmSync, existsSync } from 'node:fs';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { redactHcl, redactTfJson } from '@app-lib/redact';
@@ -362,13 +362,19 @@ export type ServedFile =
  * vanished file serves 404, never a partial). `chunk` MUST already be validated
  * against the version row's stored chunk list; the shape guard here is defense
  * in depth, not the authorization.
+ *
+ * PERF-6 — async `fs.promises.readFile`, not sync: the serve endpoints are on
+ * the app's hot read path (every route mount, pre-fix), and a served file can
+ * be most of the 16 MiB upload cap — a sync read blocks the WHOLE event loop
+ * (every other in-flight request, on any project) for the duration of that one
+ * disk read.
  */
-export function readProjectDataFile(
+export async function readProjectDataFile(
   root: string,
   projectId: string,
   version: number,
   file: ServedFile,
-): string | null {
+): Promise<string | null> {
   let rel: string;
   switch (file.kind) {
     case 'inventory':
@@ -388,7 +394,7 @@ export function readProjectDataFile(
   }
   const path = join(versionDir(root, projectId, version), rel);
   try {
-    return readFileSync(path, 'utf8');
+    return await readFile(path, 'utf8');
   } catch {
     return null;
   }

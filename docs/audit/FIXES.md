@@ -2810,3 +2810,166 @@ through the shared `requestStatusLabel()` makes the palette hint match the badge
 which is the finding's whole point — at the cost of that hint's casing changing from
 "awaiting code review" to "Awaiting review" in the command palette. No test asserted the
 old casing; checked before making the change, not after.
+
+## PERF-9
+
+*`ServiceConsole` loads the entire block-source corpus on every service page mount, fetching
+server chunks sequentially.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `ServiceConsole`'s mount effect called
+      `allBlockSources()` (documented on itself as "the rare panel that needs a whole-estate
+      answer, never on initial load") to feed the family-rollup join, and in api mode
+      `allBlockSources` fetches every chunk of the project sequentially — a `for…await` loop, not
+      even `Promise.all`.
+- [x] **Cause, not symptom** — the console had no way to ask for "just the chunks these
+      resources live in"; only "give me everything" existed. Added `blockSourcesFor(addresses)`:
+      computes the needed file bases up front from the address→chunk index (deduplicated), then
+      fetches each unique chunk exactly once, concurrently (`Promise.all`). `ServiceConsole`'s
+      mount effect no longer touches block sources at all; a new effect gated on
+      `[manifest, inventory]` (so it has the resolved resource-type set to scope by) calls
+      `blockSourcesFor` with only this page's addresses. `allBlockSources()` is kept, unchanged,
+      for `lib/dependents.ts`'s genuine whole-estate replace-dependents scan.
+- [x] **Regression test** — `test/block-source.test.ts`, new `describe` block against the real
+      bundled sample estate (no mocking): a single address returns only its own chunk's two
+      addresses (asserted by name, not just count); two addresses spanning different chunks return
+      the union, still far short of `allBlockSources()`'s ~40+; an unknown address and an empty
+      list both resolve to `{}`. **Negative test confirmed**: reverting `blockSourcesFor` to `return
+      allBlockSources()` fails all four new assertions.
+- [x] **Failure is loud** — a scoping regression shows up as `scoped.length` no longer being
+      `< whole.length`, named explicitly in the test.
+- [x] **Evidence in the status line** — `test/block-source.test.ts`; full app suite (155 files /
+      2768 tests) green.
+
+## PERF-13
+
+*SchemaForm recomputes inventory-derived enums for every field on every keystroke.*
+
+- [x] **Defect reproduced first** — confirmed `resolveEnum`'s inventory branch ran a fresh
+      `inventory.resources.filter().map()` scan on every call, called inline in `SchemaForm`'s
+      render for every inventory-sourced param. Any field's `onChange` lifts state to the parent
+      and re-renders the whole form, so at the 50k-resource cap this was ~200k filter/map
+      operations per keystroke across a form's several enum fields.
+- [x] **Cause, not symptom** — no memoization existed anywhere in `resolveEnum`. Added
+      `inventoryEnumValues`, keyed by a `WeakMap<Inventory, Map<type, Map<field, string[]>>>` —
+      keyed on the inventory OBJECT (not a manual cache with explicit invalidation), so a project
+      switch or refresh (which always produces a new inventory reference) is automatically a cache
+      miss, and the old entry is garbage-collected once nothing references that inventory anymore.
+      **Deliberately NOT extended to the allowlist branch**: `narrowAllowlist` reads a live,
+      mutable admin override that can change while a form is open — caching that branch would let
+      a form keep offering a value an admin had just revoked.
+- [x] **Regression test** — `test/interpreter.test.ts`, new `describe` block, reference-identity
+      assertions (`.toBe`, not `.toEqual` — a fresh scan always allocates a new array even with
+      identical contents, so only identity proves a cache hit): two calls with the same inventory
+      return the SAME array; two different params sharing one `enumSource` (real manifest data —
+      `ec2-resize` and `ec2-add-instance-tag` both reference `inventory://aws_instance/address`)
+      share the cached scan; a cloned inventory object does not share the cache (`.not.toBe`) but
+      matches structurally (`.toEqual`); the allowlist branch stays live across a
+      `setAllowlistOverride` call between two otherwise-identical calls. **Negative test
+      confirmed**: reverting to the unmemoized function fails the two `.toBe()` identity
+      assertions with vitest's own "replace toBe with toStrictEqual" hint — proving those
+      assertions actually distinguish "cached" from "recomputed but coincidentally equal."
+- [x] **Failure is loud** — an identity assertion, not a structural one; a future change that
+      accidentally re-introduces a fresh allocation on a cache hit fails immediately.
+- [x] **Evidence in the status line** — `test/interpreter.test.ts`; full app suite green.
+
+## PERF-15
+
+*Request-history views render unbounded lists without windowing.*
+
+- [x] **Defect reproduced first** — confirmed all three cited locations render one DOM node per
+      item with no cap: `MyRequests.tsx`'s per-lane `items.map(...)`, `ApprovalsQueue.tsx`'s
+      `filtered.map(...)` over full `ReviewCard`s (the heaviest per-item cost in the app — each
+      carries a full diff/plan panel), and `LeadDashboard.tsx`'s `rows.map(...)` into one `<tr>`
+      per request across every team, forever (initially mis-guessed as chart-only aggregation;
+      corrected by reading the file directly — it is a real unbounded `<table>`).
+- [x] **Cause, not symptom** — no windowing existed on any of the three. Added
+      `lib/windowing.ts`'s `windowSlice` — a pure `(items, size) → {visible, hiddenCount}` — and
+      applied it identically at all three sites: `MyRequests` keeps a per-lane visible-count
+      (so "Show more" in Active never also reveals Done rows), `ApprovalsQueue` and
+      `LeadDashboard` each keep one counter. All three reset to `DEFAULT_WINDOW_SIZE` (50)
+      whenever their own filters change.
+- [x] **Regression test** — `test/windowing.test.ts`: the slice caps at `size`, hiddenCount is the
+      exact overflow, a shorter-than-window list and an exact-length list both report `hiddenCount:
+      0` (no off-by-one), an empty list is untouched, a non-positive size clamps to 1 rather than
+      rendering nothing. **Negative test confirmed**: reverting `windowSlice` to
+      `{visible: [...items], hiddenCount: 0}` fails the over-length and clamp assertions exactly.
+      DOM-node-count itself is untestable here — this repo ships no `@testing-library/react` and
+      no jsdom/happy-dom environment (see `package.json`; tracked separately as TEST-7) — so the
+      test coverage is deliberately the pure slicing law every screen shares, not the JSX.
+- [x] **Failure is loud** — an off-by-one in the slice fails the exact-length/shorter-than-window
+      assertions by name.
+- [x] **Evidence in the status line** — `test/windowing.test.ts`; typecheck clean; full app suite
+      (155 files / 2768 tests) green.
+
+**Deviated from the finding's literal hint, on purpose.** TRIAGE.md's compressed description says
+"virtualization already exists in this codebase — reuse it" (`VirtualRows.tsx`,
+`@tanstack/react-virtual`). The finding's own prose in `11-performance-scalability.md` offers
+"windowing (or VirtualRows-style virtualization)" as two distinct alternatives, and windowing was
+chosen: `VirtualRows` is tightly coupled to service-console-specific row types (not a drop-in for
+a grouped lane list or a semantic `<table>`), has zero test coverage of its own today, and this
+repo's total lack of DOM-testing infrastructure means a `useVirtualizer`-based rewrite of these
+three screens could not be regression-tested at all — while the windowing law is pure and fully
+covered. `LeadDashboard`'s table is included (not deferred as residue): capping rendered `<tr>`s
+needs no markup rewrite, unlike true virtualization of a semantic table, so it carried none of the
+risk that would have justified leaving it out.
+
+## PERF-6
+
+*API mode re-downloads and re-parses the full inventory + manifest set on every route mount; the
+serve endpoints send no caching headers.*
+
+- [x] **Defect reproduced first** — confirmed both halves at HEAD: `getProjectManifests`/
+      `getProjectInventory` (`httpApi.ts`) issued a fresh, unconditional `GET` on every call with
+      no client-side memory of a prior response, and `serveActive` (`routes/projectData.ts`) sent
+      only `Content-Type` — no `ETag`, no `Cache-Control`, no 304 path — while reading the file
+      with synchronous `readFileSync` (`domain/projectData.ts`), blocking the whole event loop for
+      the read.
+- [x] **Cause, not symptom, on all three sub-parts**:
+      - **Client cache**: added a module-scoped `servedCache` inside `createHttpApiClient`'s
+        closure, keyed by `<projectId>:<manifests|inventory>`, storing `{etag, body}`. A cache hit
+        sends the remembered ETag as `If-None-Match`; a 304 returns the cached body directly —
+        skipping BOTH the transfer and the re-parse (`parseManifests`'s zod pass included), which
+        is the finding's actual concern, not just the transfer. A response with no ETag is never
+        cached, so this can only ever be as stale as the server allows.
+      - **Server ETag**: `servedEtag` quotes the SAME digest the upload pipeline already verified
+        and stores post-redaction (`ProjectDataVersionItem.digests` — the exact served bytes, not
+        a recomputed hash), so this costs nothing beyond the row read `serveActive` already
+        performs. `If-None-Match` (comma-list or `*`) short-circuits to a bodyless 304.
+      - **Async read**: `readProjectDataFile` switched from `fs.readFileSync` to
+        `fs.promises.readFile`; its one call site awaits it.
+- [x] **Regression test**:
+      - `test/httpApiProjectData.test.ts`, new `describe` block: a repeat call sends the
+        remembered ETag and a 304 returns the exact SAME object as the first call (`.toBe`, not
+        `.toEqual` — proving the re-parse was skipped, not just that the values happen to match);
+        manifests and inventory get independent cache entries; a response with no ETag is never
+        cached (every call stays unconditional); different projects never cross-share an entry; a
+        fresh 200 (simulating a new active version/digest) replaces a stale cached ETag rather
+        than the client trusting its old one forever.
+      - `test/projectData.test.ts`, new `describe` block against the real route (no mocking):
+        inventory/manifests carry an `ETag` equal to `digest(servedBody)`, blocks index/chunk
+        carry none (no whole-part digest exists for them); a matching `If-None-Match` gets a
+        bodyless 304 carrying the same ETag; a wrong or stale one still gets the fresh 200 body; a
+        wildcard `*` also short-circuits; activating a NEW version changes the ETag, so a client
+        still holding the old one gets a fresh 200 with the new content, never a stale 304.
+      - **Negative test confirmed** on both files: reverting the client cache back to an
+        unconditional fetch fails the identity/If-None-Match assertions; reverting the server back
+        to no-ETag fails all four new server-side assertions (`expected null to be
+        '"<sha256>"'`, `expected 200 to be 304`, etc.) exactly as expected.
+- [x] **Failure is loud** — an identity mismatch on a 304 (client) or a missing/wrong `ETag`
+      header (server) both fail their exact assertions, not a generic smoke check.
+- [x] **Evidence in the status line** — `test/httpApiProjectData.test.ts` (19 tests),
+      `test/projectData.test.ts` (39 tests); app typecheck clean; api typecheck clean; full app
+      suite (155 files / 2768 tests) and full api suite (98 files / 1393 tests, 1 pre-existing
+      skip) both green.
+
+**Scope note.** The finding's recommendation also mentions caching "per `(projectId,
+activeVersion)`" using the version from the project registry. That would require an extra
+network round trip most navigations don't already make just to learn the current version. The
+ETag mechanism gives the same correctness guarantee — the server's digest IS the version identity
+— without inventing a second, independently-maintained cache key that could itself drift out of
+sync with what the server actually has active; the finding's own text calls even a simpler
+project-id-keyed cache "enough to remove >90% of fetches," so this satisfies it. Only the
+`manifests`/`inventory` serve endpoints got an ETag — `blocks-index`/`blocks-chunk` have no
+whole-part digest stored today (only the inventory/blocks/manifests triple is hashed at upload)
+and are out of this finding's cited scope; their repeat-fetch cost was already addressed
+separately by PERF-9's chunk-level cache in `blockSource.ts`.

@@ -213,6 +213,39 @@
   color: var(--text-muted);
   padding: var(--space-8) !important;
 }
+/* PERF-15: the "Show more" row windowSlice's hiddenCount gates on — a real
+   tbody row (not a wrapper below the table) so it stays inside dash__table-wrap's
+   own horizontal scroll instead of drifting from the columns above it. */
+.dash-table__more {
+  text-align: center;
+  padding: var(--space-5) !important;
+}
+.dash-table__more-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: var(--space-3) var(--space-5);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: border-color var(--dur-base) var(--ease-standard), background-color var(--dur-base) var(--ease-standard);
+}
+.dash-table__more-btn:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.dash-table__more-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dash-table__more-btn {
+    transition: none;
+  }
+}
 .dash-table__muted {
   color: var(--text-muted);
 }

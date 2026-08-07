@@ -1,12 +1,13 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { manifests } from '@/data/manifests';
 import { getOperation } from '@/lib/interpreter';
 import { redactHcl } from '@/lib/redact';
 import { buildFullBlockDiff } from '@/lib/blockDiff';
-import type { BlockSource } from '@/lib/blockSource';
+import { allBlockSources, blockSourcesFor, type BlockSource } from '@/lib/blockSource';
+import { setProjectScopeForTests } from '@/lib/projectScope';
 
 const BLOCKS = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'blocks');
 
@@ -44,6 +45,50 @@ describe('extracted block source — safety + integrity', () => {
       expect(b.block.line).toBeGreaterThan(0);
       expect(b.block.source).toMatch(/^resource "/);
     }
+  });
+});
+
+/**
+ * PERF-9 — `blockSourcesFor` fetches only the chunks a given address set actually lives
+ * in, not the whole project's corpus `allBlockSources` returns. Against the real bundled
+ * sample estate (no mocking, same "no network" invariant `sgRules.test.ts` and
+ * `bootstrapProject.test.ts` already rely on): 53 addresses across 20 chunk files.
+ */
+describe('blockSourcesFor — scoped to the requested addresses, not the whole corpus', () => {
+  beforeEach(() => {
+    setProjectScopeForTests('sample');
+  });
+
+  it('a single address returns only its own chunk\'s addresses, not the full estate', async () => {
+    const whole = await allBlockSources();
+    expect(Object.keys(whole).length).toBeGreaterThan(40); // the whole corpus — the regression this guards against
+
+    const scoped = await blockSourcesFor(['aws_security_group.app']);
+    // security-groups.json holds exactly these two addresses (fixtures-estate/sg.tf) —
+    // asserted by name, not just by count, so a fixture edit that keeps the count the
+    // same but changes WHICH addresses land here still catches a scoping regression.
+    expect(Object.keys(scoped).sort()).toEqual(['aws_security_group.app', 'aws_security_group.db']);
+    expect(scoped['aws_security_group.app']).toEqual(whole['aws_security_group.app']);
+    // The actual regression this test exists to catch: scoping to one address must not
+    // silently degrade back into fetching everything.
+    expect(Object.keys(scoped).length).toBeLessThan(Object.keys(whole).length);
+  });
+
+  it('addresses spanning two chunks return the union, still far short of the whole corpus', async () => {
+    const scoped = await blockSourcesFor(['aws_security_group.app', 'aws_ebs_volume.app01_data']);
+    expect(scoped['aws_security_group.app']).toBeTruthy();
+    expect(scoped['aws_ebs_volume.app01_data']).toBeTruthy();
+    const whole = await allBlockSources();
+    expect(Object.keys(scoped).length).toBeLessThan(Object.keys(whole).length);
+  });
+
+  it('an address with no committed block resolves to an empty result, not an error', async () => {
+    const scoped = await blockSourcesFor(['aws_s3_bucket.does_not_exist_in_the_fixture']);
+    expect(scoped).toEqual({});
+  });
+
+  it('an empty address list fetches nothing', async () => {
+    expect(await blockSourcesFor([])).toEqual({});
   });
 });
 

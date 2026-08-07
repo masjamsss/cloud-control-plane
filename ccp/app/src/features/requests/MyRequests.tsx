@@ -19,6 +19,7 @@ import { MacdTag } from '@/components/ui/MacdTag';
 import { ApprovalLadder } from '@/components/ui/ApprovalLadder';
 import { SearchBar } from '@/components/SearchBar';
 import { LoadError } from '@/components/LoadError';
+import { DEFAULT_WINDOW_SIZE, windowSlice } from '@/lib/windowing';
 import './requests.css';
 
 /**
@@ -275,6 +276,28 @@ export function MyRequests(): JSX.Element {
     return grouped;
   }, [filteredRequests]);
 
+  // PERF-15: each lane renders at most DEFAULT_WINDOW_SIZE rows at a time — an
+  // estate with thousands of requests must not lay out one DOM row per request on
+  // every load. Kept per-lane (not one counter for the whole page) so "Show more"
+  // in Active never has to also reveal Done rows nobody asked for. Resets to the
+  // default whenever the filters change, so a narrowed search/status always
+  // starts windowed again rather than staying pinned open at a previous, larger
+  // result set's count.
+  const [visibleCounts, setVisibleCounts] = useState<Record<Lane, number>>({
+    active: DEFAULT_WINDOW_SIZE,
+    review: DEFAULT_WINDOW_SIZE,
+    done: DEFAULT_WINDOW_SIZE,
+  });
+  useEffect(() => {
+    setVisibleCounts({
+      active: DEFAULT_WINDOW_SIZE,
+      review: DEFAULT_WINDOW_SIZE,
+      done: DEFAULT_WINDOW_SIZE,
+    });
+  }, [filters]);
+  const showMore = (lane: Lane): void =>
+    setVisibleCounts((c) => ({ ...c, [lane]: c[lane] + DEFAULT_WINDOW_SIZE }));
+
   const isFiltered = filters.status !== 'all' || filters.q.trim() !== '';
 
   return (
@@ -346,6 +369,7 @@ export function MyRequests(): JSX.Element {
           {LANE_ORDER.map((lane) => {
             const items = lanes[lane];
             if (items.length === 0) return null;
+            const { visible, hiddenCount } = windowSlice(items, visibleCounts[lane]);
             return (
               <section key={lane} className="reqs__lane">
                 <h2 className="reqs__lane-title">
@@ -353,7 +377,7 @@ export function MyRequests(): JSX.Element {
                   <span className="reqs__lane-count">{items.length}</span>
                 </h2>
                 <div className="reqs__list">
-                  {items.map((r) => (
+                  {visible.map((r) => (
                     <RequestRow
                       key={r.id}
                       request={r}
@@ -362,6 +386,11 @@ export function MyRequests(): JSX.Element {
                     />
                   ))}
                 </div>
+                {hiddenCount > 0 && (
+                  <button type="button" className="reqs__show-more" onClick={() => showMore(lane)}>
+                    Show {Math.min(hiddenCount, DEFAULT_WINDOW_SIZE)} more ({hiddenCount} remaining)
+                  </button>
+                )}
               </section>
             );
           })}

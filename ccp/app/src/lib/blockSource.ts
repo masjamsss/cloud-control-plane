@@ -179,6 +179,55 @@ export function peekBlockSource(address: string): BlockSource | null {
 }
 
 /**
+ * PERF-9 — the block sources for a SPECIFIC set of resource addresses, not the whole
+ * estate. `allBlockSources()` below exists for the one panel that genuinely needs a
+ * whole-estate answer (lib/dependents.ts's replace-dependents scan); the family-rollup
+ * join (lib/resourceFamily.ts, from ServiceConsole) only ever reads block text for
+ * resources already on the current page, and calling this instead turns "every chunk
+ * file in the project, sequentially" into "the few chunk files this page's resources
+ * actually live in" — usually one or two, never the full corpus. `ServiceConsole` used to
+ * call `allBlockSources()` on every mount, at up to 2,000 chunk files (the server-side
+ * cap) fetched one at a time.
+ *
+ * Same fail-closed 3-source order as `getBlockSource`, batched: the needed FILE BASES are
+ * computed from the given addresses up front via the index (deduplicated — several
+ * addresses commonly share one chunk file, so N addresses never means N round trips),
+ * then each unique chunk is fetched exactly once, concurrently. Bounded by the page's own
+ * resource count rather than the estate's, so no separate concurrency cap is needed the
+ * way a truly unbounded corpus fetch would want one.
+ */
+export async function blockSourcesFor(addresses: readonly string[]): Promise<Record<string, BlockSource>> {
+  const id = currentProjectId();
+  const out: Record<string, BlockSource> = {};
+  if (wantsServerBlocks(id)) {
+    const sIndex = await serverIndexFor(id);
+    if (sIndex) {
+      const fileBases = [...new Set(addresses.map((a) => sIndex[a]).filter((f): f is string => !!f))];
+      const chunks = await Promise.all(fileBases.map((f) => serverChunkFor(id, f)));
+      for (const chunk of chunks) if (chunk) Object.assign(out, chunk);
+      return out;
+    }
+    // no active server data → the vendored-or-empty resolution below
+  }
+  const idx = activeIndex();
+  const fileBases = [...new Set(addresses.map((a) => idx[a]).filter((f): f is string => !!f))];
+  await Promise.all(
+    fileBases.map(async (fileBase) => {
+      const cacheKey = `${id}:${fileBase}`;
+      let chunk = cache.get(cacheKey);
+      if (!chunk) {
+        const loader = activeChunkLoader(fileBase);
+        if (!loader) return;
+        chunk = (await loader()).default;
+        cache.set(cacheKey, chunk);
+      }
+      Object.assign(out, chunk);
+    }),
+  );
+  return out;
+}
+
+/**
  * EVERY committed block of the active project, keyed by address — the corpus
  * the replace-dependents scan (lib/dependents.ts) searches for references to
  * a to-be-replaced address. Loads every chunk of the active project once

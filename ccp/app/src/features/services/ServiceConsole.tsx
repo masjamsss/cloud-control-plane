@@ -5,7 +5,7 @@ import type { Inventory, InventoryResource, ManifestOperation, ServiceManifest }
 import { api } from '@/lib/api';
 import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId, useProject } from '@/lib/ProjectContext';
-import { allBlockSources, type BlockSource } from '@/lib/blockSource';
+import { blockSourcesFor, type BlockSource } from '@/lib/blockSource';
 import { buildResourceFamilies, summarizeChildren, type FamilyRow } from '@/lib/resourceFamily';
 import { isOpDisabled, useSettings } from '@/lib/settings';
 import { useCurrentUser } from '@/lib/session';
@@ -153,7 +153,31 @@ export function ServiceConsole(): JSX.Element {
       if (outcome.ok) setInventory(outcome.value);
       else setLoadError(outcome.reason);
     });
-    void allBlockSources().then(
+    return () => {
+      alive = false;
+    };
+  }, [projectId, reloadToken]);
+
+  // UI-2: one implementation, shared with ResourceDetail. The two MUST agree — a
+  // drill-in that resolves the slug differently from the list it was reached from is
+  // precisely the dead-end this closes. See lib/catalog.ts#manifestForServiceSlug.
+  const manifest = useMemo(() => manifestForServiceSlug(manifests ?? [], slug), [manifests, slug]);
+
+  // PERF-9 — a SEPARATE effect, gated on manifest+inventory rather than folded into the
+  // mount effect above: the address set this page needs blocks for is drawn from BOTH
+  // (manifest.resourceTypes selects which of inventory.resources matter here), so it
+  // cannot be computed until both have arrived. This used to call allBlockSources() —
+  // every chunk file in the whole project, sequentially — from the mount effect, before
+  // either was even fetched; the server permits up to 2,000 chunk files, and a mid-size
+  // estate's worth of them at network RTT was a multi-second stall on the console's first
+  // visit per project. blockSourcesFor() fetches only the chunks this page's own
+  // resources live in, concurrently.
+  useEffect(() => {
+    if (!manifest || !inventory) return;
+    let alive = true;
+    const types = new Set(manifest.resourceTypes);
+    const addresses = inventory.resources.filter((r) => types.has(r.resourceType)).map((r) => r.address);
+    void blockSourcesFor(addresses).then(
       (b) => {
         if (alive) setBlocks(b);
       },
@@ -164,12 +188,7 @@ export function ServiceConsole(): JSX.Element {
     return () => {
       alive = false;
     };
-  }, [projectId, reloadToken]);
-
-  // UI-2: one implementation, shared with ResourceDetail. The two MUST agree — a
-  // drill-in that resolves the slug differently from the list it was reached from is
-  // precisely the dead-end this closes. See lib/catalog.ts#manifestForServiceSlug.
-  const manifest = useMemo(() => manifestForServiceSlug(manifests ?? [], slug), [manifests, slug]);
+  }, [manifest, inventory]);
   // The active project's provider disambiguates the three slugs both clouds name
   // ('batch','dms','resource-groups') so this console shows the same identity its
   // browse tile did (getServiceMeta docblock); harmless for every other slug.

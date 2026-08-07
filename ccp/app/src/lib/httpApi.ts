@@ -1172,6 +1172,56 @@ export function createHttpApiClient(baseUrl: string, opts?: HttpApiOptions): Htt
     };
   }
 
+  /**
+   * PERF-6 — a client-side cache for the two "download the whole estate"
+   * serve-reads (`getProjectManifests`/`getProjectInventory`), keyed by
+   * `<projectId>:<kind>`. A cache HIT sends the remembered ETag as
+   * `If-None-Match`; a server digest match answers 304 with no body, so a
+   * repeat navigation (catalog → console → resource → back) skips BOTH the
+   * multi-MB transfer AND the re-parse this finding is about (zod's
+   * `parseManifests` pass included) — not just the transfer.
+   *
+   * Keyed per project id, so a project switch is already "invalidation on
+   * switch" for free — a different key, never a stale hit across estates. An
+   * admin activating a NEW version on the SAME project changes the server's
+   * digest, so the very next call is a fresh 200 that replaces the entry —
+   * no separate client-side "activeVersion" bookkeeping is needed to stay
+   * correct; the server's ETag already IS that version identity. A response
+   * with no ETag (nothing to revalidate against — see `servedEtag` in
+   * `routes/projectData.ts`) is never cached, so this can only ever be as
+   * stale as the server allows, not stale by a missed invalidation here.
+   *
+   * One entry per client instance — module-scoped inside this closure, same
+   * lifetime as `apiSession` itself (a fresh login gets a fresh client).
+   */
+  const servedCache = new Map<string, { etag: string; body: unknown }>();
+
+  async function fetchServed<T>(
+    kind: 'manifests' | 'inventory',
+    id: string,
+    path: string,
+    isValid: (body: unknown) => body is T,
+  ): Promise<T | null> {
+    const cacheKey = `${id}:${kind}`;
+    const cached = servedCache.get(cacheKey);
+    const res = await request(path, cached ? { headers: { 'If-None-Match': cached.etag } } : {});
+    if (res.status === 304 && cached) return cached.body as T;
+    if (res.status === 404) {
+      servedCache.delete(cacheKey);
+      return null;
+    }
+    if (!res.ok) throw new Error((await readError(res)).reason);
+    const body = (await res.json()) as unknown;
+    if (!isValid(body)) {
+      servedCache.delete(cacheKey);
+      return null;
+    }
+    const etag = res.headers.get('ETag');
+    if (etag) servedCache.set(cacheKey, { etag, body });
+    else servedCache.delete(cacheKey); // nothing to revalidate against — never serve a stale guess
+    return body;
+  }
+
   /** The projects surface throws {@link ApiRefusalError} (code + reason) so
    * the wizard can map each refusal onto one plain fix-sentence. Other
    * surfaces keep throwing plain Error — their callers read `.message` only. */
@@ -2128,23 +2178,24 @@ export function createHttpApiClient(baseUrl: string, opts?: HttpApiOptions): Htt
     /* ── the serve-reads (active data only; null = nothing served) ───────────── */
 
     async getProjectManifests(id: string): Promise<unknown[] | null> {
-      const res = await request(`/projects/${encodeURIComponent(id)}/manifests`);
-      if (res.status === 404) return null;
-      if (!res.ok) throw new Error((await readError(res)).reason);
-      const body = (await res.json()) as unknown;
-      return Array.isArray(body) ? body : null;
+      return fetchServed(
+        'manifests',
+        id,
+        `/projects/${encodeURIComponent(id)}/manifests`,
+        (body): body is unknown[] => Array.isArray(body),
+      );
     },
 
     async getProjectInventory(id: string): Promise<Inventory | null> {
-      const res = await request(`/projects/${encodeURIComponent(id)}/inventory`);
-      if (res.status === 404) return null;
-      if (!res.ok) throw new Error((await readError(res)).reason);
-      const body = (await res.json()) as { resources?: unknown };
       // Fail closed on junk: a served inventory must at least carry a resources
       // array — anything else falls back to the caller's local resolution.
-      return body !== null && typeof body === 'object' && Array.isArray(body.resources)
-        ? (body as unknown as Inventory)
-        : null;
+      return fetchServed(
+        'inventory',
+        id,
+        `/projects/${encodeURIComponent(id)}/inventory`,
+        (body): body is Inventory =>
+          body !== null && typeof body === 'object' && Array.isArray((body as { resources?: unknown }).resources),
+      );
     },
 
     async getProjectBlocksChunk(

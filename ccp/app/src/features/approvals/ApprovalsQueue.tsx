@@ -38,6 +38,7 @@ import { Button } from '@/components/ui/Button';
 import { ApprovalLadder } from '@/components/ui/ApprovalLadder';
 import { SearchBar } from '@/components/SearchBar';
 import { LoadError } from '@/components/LoadError';
+import { DEFAULT_WINDOW_SIZE, windowSlice } from '@/lib/windowing';
 import { describeApproveError } from './approveError';
 import { approveRequestVia, rejectRequestVia } from './approvalsFlow';
 import './approvals.css';
@@ -697,6 +698,15 @@ export function ApprovalsQueue(): JSX.Element {
 
   const isFiltered = filters.status !== 'all' || filters.q.trim() !== '';
 
+  // PERF-15: render at most DEFAULT_WINDOW_SIZE review cards at a time —
+  // ReviewCard is the heaviest per-item DOM cost in the app (a full diff/plan
+  // panel per card), so this is the highest-value screen of the three windowed
+  // here. Resets to the default whenever the filters change, same rule as
+  // MyRequests' per-lane counters.
+  const [visibleCount, setVisibleCount] = useState(DEFAULT_WINDOW_SIZE);
+  useEffect(() => setVisibleCount(DEFAULT_WINDOW_SIZE), [filters]);
+  const { visible, hiddenCount } = windowSlice(filtered, visibleCount);
+
   return (
     <div className="apv">
       {/* S-09: visually-hidden polite live region — announces a successful
@@ -785,25 +795,36 @@ export function ApprovalsQueue(): JSX.Element {
         // isPending: dimmed for the brief low-priority commit after a
         // mutation patches the list — same affordance/values as
         // CommandPalette's cmdp__list--stale.
-        <div
-          className={isPending ? 'apv__list apv__list--pending' : 'apv__list'}
-          aria-busy={isPending}
-        >
-          {filtered.map((r) => (
-            <ReviewCard
-              key={r.id}
-              request={r}
-              manifests={manifests}
-              inventory={inventory}
-              onApprove={approve}
-              rejecting={rejectingId === r.id}
-              onStartReject={startReject}
-              onCancelReject={cancelReject}
-              onConfirmReject={confirmReject}
-              busy={busyId === r.id}
-            />
-          ))}
-        </div>
+        <>
+          <div
+            className={isPending ? 'apv__list apv__list--pending' : 'apv__list'}
+            aria-busy={isPending}
+          >
+            {visible.map((r) => (
+              <ReviewCard
+                key={r.id}
+                request={r}
+                manifests={manifests}
+                inventory={inventory}
+                onApprove={approve}
+                rejecting={rejectingId === r.id}
+                onStartReject={startReject}
+                onCancelReject={cancelReject}
+                onConfirmReject={confirmReject}
+                busy={busyId === r.id}
+              />
+            ))}
+          </div>
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              className="apv__show-more"
+              onClick={() => setVisibleCount((n) => n + DEFAULT_WINDOW_SIZE)}
+            >
+              Show {Math.min(hiddenCount, DEFAULT_WINDOW_SIZE)} more ({hiddenCount} remaining)
+            </button>
+          )}
+        </>
       )}
     </div>
   );
