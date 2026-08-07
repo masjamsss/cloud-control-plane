@@ -69,17 +69,20 @@ site, deciding for each whether "absent" means "expected absent" or "cannot guar
 Kept as an **executable demonstration** in `ccp/api/test/requestRowLostUpdate.test.ts`
 rather than a comment, so it fails visibly if anyone assumes it is fixed.
 
+### R-5 · The scan worker does not report its own terminal failure
+*Recorded as residue on **ERR-3**, tracked by **ERR-15**.*
+
+`worker.go` returned without attempting a terminal `failed` report after a progress-report
+failure. The server-side lease (OPS-4) makes recovery independent of the worker, which is
+the stronger guarantee — but it did not make the worker better behaved.
+
+**Resolved by ERR-15**: a failed "cloning"/"scanning" progress report now routes through
+`fail()`, the same best-effort terminal-report attempt every other failure path in `runJob`
+already gets.
+
 ---
 
 ## tracked — an open finding covers it
-
-### R-5 · The scan worker does not report its own terminal failure
-*Residue on **ERR-3**.*
-**Tracked by: ERR-15.**
-
-`worker.go` returns without attempting a terminal `failed` report after a progress-report
-failure. The server-side lease (OPS-4) makes recovery independent of the worker, which is
-the stronger guarantee — but it does not make the worker better behaved.
 
 ### R-6 · The bundle's landed-but-untriggered half state
 *Residue on **ERR-2**.*

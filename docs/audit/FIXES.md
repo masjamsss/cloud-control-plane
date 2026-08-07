@@ -2973,3 +2973,260 @@ project-id-keyed cache "enough to remove >90% of fetches," so this satisfies it.
 whole-part digest stored today (only the inventory/blocks/manifests triple is hashed at upload)
 and are out of this finding's cited scope; their repeat-fetch cost was already addressed
 separately by PERF-9's chunk-level cache in `blockSource.ts`.
+
+## API-6
+
+*The 72-hour dual-control expiry is dead code: `sweepExpired` has no callers and `ackPending`
+never checks `expiresAt`.*
+
+- [x] **Defect reproduced first** — confirmed both halves at HEAD: `sweepExpired` was called
+      only from tests (`grep` across `src/` and `test/` — zero production call sites), and
+      `ackPending` checked `pending.status !== 'PENDING'` but never compared `expiresAt` against
+      the clock, so an admin could ack a proposal any amount of time past its 72h window as long
+      as nothing had swept it first.
+- [x] **Cause, not symptom** — no lazy-settlement path existed for dual-control proposals at
+      all, unlike every OTHER lease in this codebase. Followed the SETTLE-ON-READ doctrine
+      `domain/cooling.ts#settleCooling`, `domain/schedule.ts#settleWindow`, and
+      `domain/scanJobLease.ts#settleScanJobLease` already establish (TRIAGE.md names this
+      explicitly as the pattern to copy): added `pendingExpired` (a pure predicate) and
+      `settlePendingExpiry` (the lazy, guarded, audited settle — see ARCH-10 below for its
+      audit half), then wired it into the THREE acts that actually touch a proposal:
+      `GET /admin/config-changes` list-settles every row it returns (this is `sweepExpired`'s
+      real production caller — the finding's "no callers" gap), and `ackPending`/`rejectPending`
+      each settle the ONE row they are about to act on before checking its status, so a
+      genuinely-expired-but-unswept row is refused rather than acted on regardless of whether a
+      list read happened to run first.
+- [x] **Regression test** — `test/dualControl.test.ts`, three new HTTP-level tests: (f) an
+      expired proposal's ack returns 409 STATE_CONFLICT and the config change does NOT apply
+      (the row is left EXPIRED, not APPLIED); (g) the same for reject; (h) `GET
+      /admin/config-changes` settles an expired row on the read that discovers it (no explicit
+      `sweepExpired` call anywhere in the test) and it is gone from the NEXT read — proving the
+      list route is genuinely `sweepExpired`'s production caller, not just a function that
+      exists. **Negative test confirmed**: reverting `dualControl.ts`/`admin.ts` to HEAD fails
+      all three with the exact old-bug shapes (`expected 200 to be 409`, `expected 'PENDING' to
+      be 'EXPIRED'`).
+      `test/pendingChangeCas.test.ts`'s existing sweep race test was adjusted to move its ack
+      BEFORE expiry rather than after — its old premise ("ack an already-expired row and expect
+      it to apply") was itself API-6's bug; the fix correctly refuses that now, so the test's
+      shape had to change to keep testing the invariant it actually cares about (a row resolved
+      well before expiry is not later overwritten by a stale sweep pass).
+- [x] **Failure is loud** — an ack/reject on an expired row gets the same explicit
+      `STATE_CONFLICT` as any other already-resolved proposal, not a silent success.
+- [x] **Evidence in the status line** — `test/dualControl.test.ts`; full api suite (99 files /
+      1408 tests, 1 pre-existing skip) green.
+
+## DATA-7
+
+*The 72-hour dual-control expiry is unenforced: `sweepExpired` is dead code and `ackPending`
+never checks `expiresAt`.*
+
+**Identical defect to API-6 — two reports, one root cause, fixed once.** See API-6's entry for
+the fix, evidence, and negative test. No separate code change.
+
+## ARCH-10
+
+*Unaudited governance transition: dual-control proposals expire silently.*
+
+- [x] **Defect reproduced first** — confirmed `sweepExpired`'s pre-fix transact wrote
+      `status: 'EXPIRED'` with NO audit entry at all — a governance transition (a proposal that
+      would have loosened privilege silently timing out) left no trail, in sharp contrast to
+      every other resolution of a pending change (`config-propose`, `config-apply`,
+      `config-reject` all audit).
+- [x] **Cause, not symptom** — expiry was bolted on as a bare status flip when DATA-8 first
+      guarded it, never given the `recordIn`/chain-head write every other transition gets.
+      `settlePendingExpiry` (API-6's fix, same function) now writes a `config-expire` audit
+      entry — `actor: 'system:dual-control-expiry'`, `targetType: 'config-change'` — through the
+      SAME chain-head-read + `recordIn` + retry-on-contention shape
+      `domain/scanJobLease.ts#settleScanJobLease` already uses, so expiry is no longer a special
+      case that skips the ledger.
+- [x] **Regression test** — `test/dualControl.test.ts`, test (i): expires a proposal via
+      `sweepExpired`, reads the project's real audit chain partition, and asserts a
+      `config-expire` entry exists naming the correct actor and target. **Negative test
+      confirmed**: reverting the fix fails with `expected undefined not to be undefined` — no
+      entry was ever written.
+- [x] **Failure is loud** — the entry's `action` field is the literal string the test searches
+      for; a regression that stops writing it fails by absence, not by a wrong value slipping
+      through.
+- [x] **Evidence in the status line** — `test/dualControl.test.ts`.
+
+## ERR-15
+
+*Scan worker: a failed progress report abandons the job without a terminal status; a claim
+non-2xx is process-fatal with no backoff.*
+
+- [x] **Defect reproduced first** — confirmed both halves in `worker.go` at HEAD: a failed
+      `ctrl.Report(ctx, job, "cloning"/"scanning", "")` returned bare
+      (`fmt.Errorf("report %s: %w", ...)`) with no attempt at the terminal `failed` report every
+      OTHER failure path in `runJob` gets via `fail()` — the job's server-side row was left
+      wherever it last was. Separately, `Run`'s claim loop treated ANY `ctrl.Claim` error
+      (connection refused during a control-plane restart, the 409 `CHAIN_CONTENTION` the claim
+      route can emit) as fatal, returning an error that `cli.go`'s `run()` turns into exit 1 —
+      relying entirely on Docker's `restart: unless-stopped` to crash-loop back in.
+- [x] **Cause, not symptom** — a "cloning"/"scanning" report failure had never been routed
+      through `fail()`; now it is (`fail(ctx, ctrl, job, "could not report cloning/scanning: "
+      + err.Error())`), so it gets the SAME best-effort terminal-report attempt as a clone
+      failure, an upload failure, or a refused clone URL. The claim loop no longer treats a
+      transient failure as fatal in the ordinary LOOPING case: logged and retried after the same
+      `poll` backoff idle already waits, rather than returning an error and exiting. `--once`
+      keeps the old fatal behavior on purpose — a single shot has no loop to retry into.
+- [x] **Regression test** — `worker_test.go`: `TestCloningReportFailureStillAttemptsTerminalFailed`
+      / `TestScanningReportFailureStillAttemptsTerminalFailed` (a report fails for ONE status
+      only via `fakeControl.failReportStatuses`, proving the follow-up "failed" report still
+      gets through); `TestTransientClaimFailureRetriesInsteadOfExiting` (`fakeControl.claimFailures`
+      fails the first 2 claim attempts, the 3rd recovers and its job still runs to completion in
+      the SAME process — `Run` never returns an error). `TestAnUnreachableControlPlaneStopsTheWorker`
+      kept and re-documented as the `--once` case that stays fatal on purpose.
+      `covscanworker_cov_test.go`'s existing `TestCovscanworkerAFailedStatusReportIsSurfaced` table
+      test had its "cloning"/"scanning" cases updated — their OLD expected statuses
+      (`["cloning"]`, `["cloning","scanning"]`, no "failed") were literally this bug's signature;
+      updated to `[..., "failed"]` with the new "could not report …" message. **Negative test
+      confirmed**: reverting `worker.go` fails all 5 with the exact pre-fix shapes (`statuses =
+      [cloning], want [cloning failed]`; `Run returned an error for a TRANSIENT claim failure:
+      claim: connection refused`).
+- [x] **Failure is loud** — a job with no terminal status was previously invisible (nothing
+      distinguishes it from one still legitimately running); now it always ends in a real
+      terminal status the operator can see.
+- [x] **Evidence in the status line** — `worker_test.go`, `covscanworker_cov_test.go`; `go test
+      ./...` (15 packages) and `go vet ./...` both clean.
+
+## OPS-12
+
+*Scanner service: no healthcheck, and the worker exits on any control-plane error.*
+
+- [x] **Defect reproduced first** — confirmed `ccp/docker-compose.yml`'s `scanner` service was
+      the only long-running service in the stack with no `healthcheck` (api/app each declare one
+      in their own Dockerfiles) — a wedged worker (hung poll, a prescan that never returns) looks
+      "Up" indefinitely. The claim-exits-the-process half is ERR-15's other half, fixed together
+      (same root cause, same commit).
+- [x] **Cause, not symptom, on both halves**:
+      - **Claim retry** — see ERR-15 above; this closes "the worker exits on any control-plane
+        error."
+      - **Healthcheck** — added `--heartbeat <path>` (touched once per `Run` loop iteration,
+        `worker.go`) and `--healthcheck` (reads that file's mtime back, exits 0/1,
+        `HeartbeatStaleness` = 20 minutes — comfortably above `DefaultCloneTimeout`). Because the
+        file is touched only at the TOP of the loop, a hang ANYWHERE in one iteration — a hung
+        poll, or a prescan phase with no timeout of its own — is caught the same way: the loop
+        never comes back around to touch it again, and staleness eventually trips. Runs the SAME
+        BINARY (`catalogctl scan-worker --healthcheck --heartbeat ...`) as a Docker `HEALTHCHECK
+        CMD` array, not a shell one-liner over `stat`/`find`/`date` — this image ships no shell
+        tooling on purpose (`scanner/Dockerfile`'s own header: "no curl, no jq, no unzip, no
+        bash"), so exec-form was the only option. `docker-compose.yml`'s `scanner.command` was
+        updated to pass the same `--heartbeat` path the Dockerfile's `HEALTHCHECK` reads back
+        (compose's `command:` fully replaces the image's default `CMD`, so it has to be repeated
+        there, not inherited).
+- [x] **Regression test** — `worker_test.go`: `TestHeartbeatTouchedEachLoopIteration` (a real
+      idle loop, the file's mtime is fresh after `Run` returns);
+      `TestHeartbeatDisabledByDefaultIsANoOp` (empty path, no crash — every other test in the
+      file relies on this); `TestHealthcheckFreshHeartbeatIsHealthy` /
+      `TestHealthcheckMissingHeartbeatIsUnhealthy` / `TestHealthcheckStaleHeartbeatIsUnhealthy`
+      (mtime backdated past `HeartbeatStaleness` via `os.Chtimes`) /
+      `TestHealthcheckWithNoHeartbeatPathIsUnhealthy`. **Negative test confirmed**: reverting to
+      HEAD fails to even COMPILE (`unknown field Heartbeat in struct literal of type Opts`,
+      `undefined: runHealthcheck`, `undefined: HeartbeatStaleness`) — proof this is genuinely new
+      surface, not a tautological test.
+      `docker-compose.yml`/`scanner/Dockerfile` validated with `docker compose config` (a
+      minimal single-service compose file, `--profile scanner`, real env vars) and manual review
+      of the `HEALTHCHECK` exec-form syntax (no Docker daemon available in this sandbox to run a
+      full image build).
+- [x] **Failure is loud** — `--healthcheck` prints WHY it failed (`heartbeat: <stat error>` or
+      `heartbeat is <age> old (limit <limit>) — the worker looks wedged`) to stderr, which
+      `docker inspect`/`docker ps` surface.
+- [x] **Evidence in the status line** — `worker_test.go`; `go build ./...` and `go vet ./...`
+      clean; `docker compose config` validates the compose changes.
+
+## API-16
+
+*Bundle workspace leaks and unchecked git steps.*
+
+- [x] **Defect reproduced first** — confirmed all three at HEAD: `prepare()`'s clone-failure
+      arm called `rmSync` before returning, but its `rev-parse HEAD` failure arm returned bare
+      — the ONE failure path nothing else was ever going to clean up (`runBundle` only reaches
+      `steps.cleanup` once `prepare` has already succeeded). `commit()` discarded `git add -A`'s
+      exit status outright, and used the post-commit `git rev-parse HEAD` output as `sha`
+      unchecked — a shape that lands on the request row and the audit trail as "the landed
+      commit" (`routes/requests.ts:1203-1206`) with nothing downstream re-verifying it.
+- [x] **Cause, not symptom** — added `SHA_RE = /^[0-9a-f]{7,64}$/` (the finding's own
+      recommended pattern) as the one place a rev-parse result is trusted, applied at BOTH
+      occurrences in the file (`prepare`'s `baseSha` and `commit`'s post-commit `sha` — the
+      finding only named the second, but the same class of bug sat at the first too, one call
+      earlier in the same function). `prepare()`'s rev-parse-failure arm now `rmSync`s before
+      returning, matching its own clone-failure arm one branch up. `commit()` now checks `add`'s
+      status and refuses (`git add failed: ...`) rather than falling through to a `commit` that
+      can still succeed against whatever the index already held — silently missing the gate's
+      own edits, the opposite of ADR-0016's "what was reviewed is exactly what runs."
+- [x] **Regression test** — `test/bundle.test.ts`, three new tests against the REAL local bare
+      origin (no network, same fixture the file's existing `realSteps` tests use), with the ONE
+      git call each test needs to fail intercepted via `vi.spyOn(execMod, 'execCapture')`
+      (delegating to the real implementation for everything else, including the clone that must
+      actually create the workspace under test — reproducing a genuinely pathological git
+      failure, e.g. a fresh clone whose HEAD will not resolve, is not otherwise reliably
+      constructible with real git): rev-parse-after-clone-success leaves no directory behind;
+      `git add` failing refuses with `git add failed` and nothing lands on `main`; a malformed
+      post-commit rev-parse output refuses with `did not resolve to a real sha` and
+      `BundleOutcome.sha` is `undefined`, never the bogus string. **Negative test confirmed**:
+      reverting `bundle.ts` fails all three exactly as expected (`clone workspace ... was left
+      behind`, the wrong/misleading `commit failed (gate left no change?)` detail instead of
+      `git add failed`, and the `commitLanded` sha-check flow not refusing).
+- [x] **Failure is loud** — each refusal detail names the actual cause (`git add failed: ...`,
+      `did not resolve to a real sha: ...`), not the misleading downstream symptom the unfixed
+      code produced (`commit failed (gate left no change?)` for an `add` failure).
+- [x] **Evidence in the status line** — `test/bundle.test.ts` (14 tests); full api suite (99
+      files / 1408 tests) green.
+
+## ERR-13
+
+*`prepare()` leaks the cloned workspace when `rev-parse` fails.*
+
+**Same fix as API-16's `prepare()` half — one code change, one finding closed alongside its
+sibling report.** See API-16's entry for the fix, evidence, and negative test.
+
+## REM-2
+
+*Session rows are still written with blind full-row puts.*
+
+- [x] **Defect reproduced first** — confirmed all three sites CONC-3/API-10/CONC-4 left
+      uncovered: `auth.ts`'s reauth-success handler did `store.put(updatedSession)` after
+      stamping `reauthAt`; `account.ts`'s `POST /auth/totp-devices` did the same after minting an
+      enrollment offer's `enrollSecretEnc`/`enrollOfferedAt`; `POST
+      /auth/totp-devices/confirm`'s cleanup step did the same clearing them. Each follows a slow
+      `await` (an argon2id verify, a TOTP verify) over a row read at request start — the same
+      shape CONC-3 closed for the account row and API-10/CONC-4 closed for the session's OWN
+      idle-slide write.
+- [x] **Cause, not symptom** — the finding's literal recommendation ("a version attribute
+      bumped on every write, reusing the `putAccountGuarded` shape") predates a BETTER pattern
+      this session's own API-10/CONC-4 fix already established for `SessionItem` specifically:
+      TRIAGE.md's own note says to copy THAT shape instead. Added `putSessionFieldGuarded`
+      (`auth/sessions.ts`, beside `slideIdleWindow`) — a narrowed, guarded `update` on ONE
+      attribute's captured OLD value, never a whole-row `put`, so a write can no longer clobber a
+      concurrent mutation to any OTHER field on the same row (`putAccountGuarded`'s
+      version-counter shape would not have this property — two unrelated fields racing would
+      still collide on the shared counter). Unlike `slideIdleWindow` (whose one caller always
+      treats a lost condition as "fine, someone else did the work"), `putSessionFieldGuarded`
+      deliberately does NOT decide what a lost condition means — the three call sites disagree:
+      a lost reauth stamp is harmless if the row still exists (a racing tab's fresher stamp is
+      equally valid elevation proof — reported back to the caller instead of silently
+      discarded); a lost enrollment-offer MINT refuses outright (409 STATE_CONFLICT — the
+      secret/QR this call is about to hand back would not be what `confirm` later checks
+      against); a lost enrollment-offer CLEAR is best-effort (the device it is cleaning up
+      after was already committed via the account's own guarded write, and clobbering a NEWER
+      concurrent offer would erase an unrelated enrollment in progress). Any lost condition
+      whose re-read finds the row GONE fails closed (401 NO_SESSION) at all three sites.
+- [x] **Regression test** — new `test/sessionFieldGuard.test.ts`, 8 HTTP-level tests against
+      REAL concurrency (a `racingStore` wrapper — same shape `sessionRevokeRace.test.ts`'s own —
+      injects a genuine concurrent write between this request's session read and its own guarded
+      write, not just a unit test of the helper in isolation): reauth's lost race reports the
+      RACER's stamp and does not clobber it (200, not a failure); reauth revoked mid-request
+      fails closed (401 NO_SESSION); the enrollment mint's lost race refuses (409
+      STATE_CONFLICT) and leaves the racer's offer untouched; the mint revoked mid-request fails
+      closed; confirm's cleanup declines to clobber a NEWER concurrent offer while the device it
+      confirmed is still added to the account; plus three CONTROL tests (uncontended reauth,
+      uncontended mint, uncontended confirm-clears) proving the guards are not just refusing
+      everything. **Negative test confirmed**: reverting `sessions.ts`/`auth.ts`/`account.ts`
+      fails the 5 race tests exactly as expected (`expected '<real timestamp>' to be '<racer's
+      stamp>'`, `expected 200 to be 401/409`, `expected undefined to be '<racer's offer>'`) while
+      the 3 CONTROL tests correctly keep passing (the uncontended happy path was never broken).
+- [x] **Failure is loud** — a lost mint reports `STATE_CONFLICT`/`NO_SESSION` explicitly rather
+      than silently handing back a secret that can never confirm; a lost reauth reports the
+      value ACTUALLY stored rather than a value that was silently discarded.
+- [x] **Evidence in the status line** — `test/sessionFieldGuard.test.ts`; full api suite (99
+      files / 1408 tests, 1 pre-existing skip) green; typecheck clean.

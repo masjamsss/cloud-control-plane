@@ -136,15 +136,20 @@ describe('CONC-9 / DATA-8 — a resolved proposal cannot be re-resolved', () => 
     expect(await targetValue(store)).toBe('after');
   });
 
-  it('THE SWEEP: an ack landing mid-sweep is not overwritten with EXPIRED', async () => {
+  it('THE SWEEP: a row already resolved (well before expiry) is not overwritten by a later sweep pass', async () => {
     // The blind whole-row put was the worst-placed of the three: the sweep walks rows it
     // read in a previous step, so its write is stale by construction.
-    __setNow(() => Date.parse('2026-07-05T00:00:00.000Z')); // past expiresAt
+    //
+    // Acked WITHIN the 72h window (API-6/DATA-7 now makes an ack past expiresAt refuse
+    // outright — see dualControl.test.ts's "ackPending refuses an expired..." — so this
+    // scenario is "resolved, THEN the clock ran out", not "resolved after it already had").
+    __setNow(() => Date.parse('2026-07-02T00:00:00.000Z'));
     const store = new MemoryStore();
     await seed(store);
     const id = await seedPending(store);
-    await ackPending(store, PROJECT, 'lina', id); // resolves it before the sweep writes
+    await ackPending(store, PROJECT, 'lina', id); // resolves it well before expiresAt
 
+    __setNow(() => Date.parse('2026-07-05T00:00:00.000Z')); // NOW the window has closed
     const swept = await sweepExpired(store, PROJECT, Date.parse('2026-07-05T00:00:00.000Z'));
     expect(swept, 'a resolved proposal is not this pass to expire').toBe(0);
     expect((await readPending(store, id)).status).toBe('APPLIED');

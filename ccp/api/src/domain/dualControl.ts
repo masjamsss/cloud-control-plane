@@ -244,8 +244,16 @@ export async function ackPending(
   pendingId: string,
 ): Promise<PendingConfigChangeItem> {
   const k = configChangeKey(projectId, pendingId);
-  const pending = (await store.get(k.PK, k.SK)) as PendingConfigChangeItem | null;
+  let pending = (await store.get(k.PK, k.SK)) as PendingConfigChangeItem | null;
   if (!pending) throw new ApiError('STATE_CONFLICT');
+  // API-6 / DATA-7 — settle-on-read: a proposal past its 72h lease is expired
+  // HERE, lazily, before anything else — the doctrine every other lease in
+  // this codebase already uses (settleCooling/settleWindow/
+  // settleScanJobLease). Without this, the only check below was `status !==
+  // 'PENDING'`, which a genuinely-expired-but-still-PENDING row always
+  // passed: the 72h window existed in the schema and was enforced nowhere an
+  // ack could reach it.
+  ({ item: pending } = await settlePendingExpiry(store, projectId, pending));
   if (pending.status !== 'PENDING') throw new ApiError('STATE_CONFLICT');
   if (pending.proposedBy === ackerId) throw new ApiError('SELF_ACK');
   const apply = pending.apply;
@@ -348,8 +356,14 @@ export async function rejectPending(
   pendingId: string,
 ): Promise<PendingConfigChangeItem> {
   const k = configChangeKey(projectId, pendingId);
-  const pending = (await store.get(k.PK, k.SK)) as PendingConfigChangeItem | null;
+  let pending = (await store.get(k.PK, k.SK)) as PendingConfigChangeItem | null;
   if (!pending) throw new ApiError('STATE_CONFLICT');
+  // Same settle-on-read as ackPending, for the same reason and the same
+  // symmetry CONC-9 already gave these two functions' CAS guards: an admin
+  // "rejecting" a row that had already silently expired must see the SAME
+  // STATE_CONFLICT an ack of it would, not a REJECTED write racing an
+  // EXPIRED one.
+  ({ item: pending } = await settlePendingExpiry(store, projectId, pending));
   if (pending.status !== 'PENDING') throw new ApiError('STATE_CONFLICT');
   const now = nowIso();
   const rejected: PendingConfigChangeItem = { ...pending, status: 'REJECTED', ackBy: actorId, ackAt: now };
@@ -378,35 +392,107 @@ export async function rejectPending(
   return rejected;
 }
 
-/** Flip PENDING items past their 72h TTL to EXPIRED. Returns the count swept. */
+/** Is `pending` past its 72h lease and still unresolved? Pure — the one place the
+ * rule is decided, so `ackPending`/`rejectPending`/`sweepExpired` cannot disagree
+ * about what "expired" means. */
+export function pendingExpired(
+  pending: Pick<PendingConfigChangeItem, 'status' | 'expiresAt'>,
+  now: number,
+): boolean {
+  return pending.status === 'PENDING' && Date.parse(pending.expiresAt) < now;
+}
+
+/**
+ * API-6 / DATA-7 / ARCH-10 — lazily flip ONE pending change past its 72h lease to
+ * EXPIRED, settled ON READ: the same write-on-read doctrine
+ * `domain/cooling.ts#settleCooling`, `domain/schedule.ts#settleWindow`, and
+ * `domain/scanJobLease.ts#settleScanJobLease` already use for every other lease in
+ * this codebase, and for the same reason — there is no background timer anywhere in
+ * this system, so a recovery path nobody remembers to run is not a recovery path.
+ * The acts a stale PENDING row would otherwise defeat (acking it, rejecting it,
+ * listing the queue) are exactly the acts that settle it.
+ *
+ * A no-op (no write, `swept:false`) for anything not expired. Idempotent-safe like
+ * its siblings: the write is guarded on the status THIS call observed, and a lost
+ * guard means someone else (a concurrent settle of the same row, or a genuine
+ * ack/reject) already resolved it — re-read and report that, not an error.
+ *
+ * ARCH-10's fix is this function existing at all: the OLD `sweepExpired` wrote the
+ * EXPIRED transition with no audit entry whatsoever — a governance transition
+ * (a proposal that would have loosened privilege quietly timing out) left NO trail.
+ * This now audits exactly like every other settle: `recordIn` + chain-head retry,
+ * same shape as `settleScanJobLease`.
+ */
+export async function settlePendingExpiry(
+  store: ConfigStore,
+  projectId: string,
+  pending: PendingConfigChangeItem,
+  now: number = nowMs(),
+): Promise<{ item: PendingConfigChangeItem; swept: boolean }> {
+  if (!pendingExpired(pending, now)) return { item: pending, swept: false };
+
+  const k = configChangeKey(projectId, pending.id);
+  const auditChain = pending.auditProjectId ?? projectId;
+  const hKey = { PK: `P#${auditChain}#AUDIT`, SK: 'CHAINHEAD' };
+  const entry: AuditEntryInput = {
+    action: 'config-expire',
+    actor: 'system:dual-control-expiry',
+    targetType: 'config-change',
+    targetId: pending.id,
+    before: { status: 'PENDING', proposedBy: pending.proposedBy, kind: pending.kind, targetKey: pending.targetKey },
+    after: { status: 'EXPIRED' },
+  };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
+    const { writes } = recordIn(auditChain, head, entry);
+    const domain: TransactWrite[] = [
+      {
+        kind: 'update',
+        pk: k.PK,
+        sk: k.SK,
+        set: { status: 'EXPIRED', GSI1PK: undefined },
+        // DATA-8's guard, unchanged: a blind whole-row put here was the original
+        // defect this function replaces — an ack/reject landing between the sweep's
+        // read and its write was overwritten with EXPIRED, recording a timeout for a
+        // change that had actually applied.
+        ifEquals: { attr: 'status', value: 'PENDING' },
+      },
+    ];
+    try {
+      await store.transact([...domain, ...writes]);
+      return { item: { ...pending, status: 'EXPIRED' }, swept: true };
+    } catch (e) {
+      if (e instanceof ConditionError) {
+        const fresh = (await store.get(k.PK, k.SK)) as PendingConfigChangeItem | null;
+        if (fresh && fresh.status !== 'PENDING') return { item: fresh, swept: false }; // ack/reject/another settle won
+        if (attempt === 0) continue; // chain contention (a DIFFERENT write) → retry once
+        throw new ApiError('CHAIN_CONTENTION');
+      }
+      throw e;
+    }
+  }
+  return { item: pending, swept: false };
+}
+
+/**
+ * Settle every PENDING row in a project past its 72h lease. Returns the count this
+ * call itself transitioned (never one raced away by a concurrent ack/reject/settle —
+ * see `settlePendingExpiry`). Sequential, not `Promise.all`: concurrent transacts
+ * against the SAME per-project audit chain head would only self-contend, the same
+ * reasoning `routes/requests.ts`'s list-settle loop and
+ * `scanJobLease.ts#settleScanJobLeases` already document.
+ *
+ * Called from `GET /admin/config-changes` (list-settle, so the queue never shows a
+ * row past its own stated expiry) — the finding's "no callers" gap. `ackPending`/
+ * `rejectPending` additionally settle the ONE row they act on directly, so an ack
+ * that races ahead of the next list read is still caught.
+ */
 export async function sweepExpired(store: ConfigStore, projectId: string, now: number = nowMs()): Promise<number> {
   const pending = (await store.queryGSI1(pendingConfigGsi(projectId))) as PendingConfigChangeItem[];
   let swept = 0;
   for (const p of pending) {
-    if (p.status === 'PENDING' && Date.parse(p.expiresAt) < now) {
-      const k = configChangeKey(projectId, p.id);
-      try {
-        // DATA-8 — the sweep's blind whole-row put was the third unguarded transition,
-        // and the worst-placed: it runs on a timer against rows it read in a previous
-        // step, so an ack landing in between was overwritten with EXPIRED. The change had
-        // applied; the record said it timed out.
-        await store.transact([
-          {
-            kind: 'update',
-            pk: k.PK,
-            sk: k.SK,
-            set: { status: 'EXPIRED', GSI1PK: undefined },
-            ifEquals: { attr: 'status', value: 'PENDING' },
-          },
-        ]);
-        swept++;
-      } catch (e) {
-        // Losing this race is not an error: somebody resolved the proposal while the
-        // sweep was walking, which is the outcome the sweep exists to avoid needing.
-        // It is simply no longer this pass's to expire, so it is not counted.
-        if (!(e instanceof ConditionError)) throw e;
-      }
-    }
+    const { swept: didSweep } = await settlePendingExpiry(store, projectId, p, now);
+    if (didSweep) swept++;
   }
   return swept;
 }

@@ -162,6 +162,11 @@ services:
       - ${CCP_SCANNER_SERVER:-http://api:${PORT:-8801}}
       - --workdir
       - /workspace
+      # OPS-12 — MUST match scanner/Dockerfile's HEALTHCHECK: that probe reads
+      # this exact path back. compose's `command:` fully replaces the image's
+      # default CMD, so it has to be repeated here rather than inherited.
+      - --heartbeat
+      - /workspace/.heartbeat
     environment:
       # The ONLY credential this container gets. Same value as the api's
       # CCP_SCANNER_KEY — it is the shared key for the /scan-jobs lane, and it

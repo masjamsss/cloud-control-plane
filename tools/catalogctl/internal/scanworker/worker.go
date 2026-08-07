@@ -101,6 +101,40 @@ type Opts struct {
 	// CloneTimeout bounds a single clone. A repository that will not finish in
 	// this long is a failed job, not a stuck worker.
 	CloneTimeout time.Duration
+	// Heartbeat, if set, is a path `Run` touches (creates, or updates the mtime
+	// of) once per loop iteration — OPS-12's liveness signal, read back by the
+	// `--healthcheck` probe below. Empty disables it entirely; a write failure
+	// is best-effort and never stops the loop, matching every other failure
+	// posture in this file (one bad thing must not take the worker down).
+	Heartbeat string
+}
+
+// HeartbeatStaleness is how old Opts.Heartbeat may get before `--healthcheck`
+// calls the worker unhealthy.
+//
+// The file is touched once per `Run` LOOP ITERATION — at the top, before the
+// next claim — so its age is bounded by however long the CURRENT iteration
+// has been running: an idle wait (capped at Poll), or one full job (clone,
+// bounded by CloneTimeout; then prescan+upload, which has no explicit
+// timeout of its own). If a job's prescan phase hangs forever — OPS-12's
+// "stuck prescan" case, same as a hung poll — `runJob` never returns, the
+// loop never comes back around, and the file simply stops being touched: the
+// staleness check is what eventually notices, not a per-phase heartbeat.
+// Comfortably above `DefaultCloneTimeout` (10m) so a normal job's clone
+// finishing right at its own bound is never mistaken for a wedge.
+const HeartbeatStaleness = 20 * time.Minute
+
+// touchHeartbeat creates or updates path's mtime. Best-effort and silent on
+// failure (a misconfigured heartbeat path must never take an otherwise-healthy
+// worker down) — `path == ""` is the ordinary "disabled" case, not an error.
+func touchHeartbeat(path string) {
+	if path == "" {
+		return
+	}
+	now := time.Now()
+	if err := os.Chtimes(path, now, now); err != nil {
+		_ = os.WriteFile(path, nil, 0o600) // first run: the file does not exist yet
+	}
 }
 
 // Defaults for the two timing knobs, chosen so an idle worker is cheap and a
@@ -138,10 +172,19 @@ type Scanner interface {
 }
 
 // Run polls for work until the context is cancelled (or once, with Opts.Once).
-// It returns an error ONLY for a condition that makes the worker itself
-// unusable — a refused startup, or a control plane it cannot talk to. A job
-// that fails is reported as a failed job and the worker keeps going: one bad
-// repository must not take the scanner down.
+// It returns an error for a refused startup, for `--once` hitting a claim it
+// could not make (a single shot has no loop to retry into), or for anything
+// that makes the process itself unusable. In the ordinary LOOPING case, a
+// claim failure is transient by default — ERR-15 / OPS-12: a connection
+// refused during a control-plane restart, or the 409 CHAIN_CONTENTION the
+// claim route can emit, used to be treated exactly like "the deployment is
+// broken", exiting the process and leaving Docker's restart policy to
+// crash-loop it back in. It is instead logged and retried after the SAME
+// poll backoff an idle "nothing queued" result already waits out — the
+// worker just looks like it is idling through an outage, which is what an
+// outage that recovers on its own should look like. A job that fails is
+// reported as a failed job and the worker keeps going regardless: one bad
+// repository must not take the scanner down either.
 func Run(ctx context.Context, opts Opts, ctrl Control, cloner Cloner, scanner Scanner, out io.Writer) error {
 	if err := Preflight(); err != nil {
 		return err
@@ -151,9 +194,19 @@ func Run(ctx context.Context, opts Opts, ctrl Control, cloner Cloner, scanner Sc
 		poll = DefaultPoll
 	}
 	for {
+		touchHeartbeat(opts.Heartbeat)
 		job, err := ctrl.Claim(ctx)
 		if err != nil {
-			return fmt.Errorf("claim: %w", err)
+			if opts.Once {
+				return fmt.Errorf("claim: %w", err)
+			}
+			fmt.Fprintf(out, "claim: %v (retrying in %s)\n", err, poll)
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(poll):
+			}
+			continue
 		}
 		if job != nil {
 			// A job's own failure is reported and swallowed on purpose: the
@@ -203,7 +256,16 @@ func runJob(ctx context.Context, opts Opts, ctrl Control, cloner Cloner, scanner
 	}
 
 	if err := ctrl.Report(ctx, job, "cloning", ""); err != nil {
-		return fmt.Errorf("report cloning: %w", err)
+		// ERR-15 — a transient failure to report "cloning" used to abandon the
+		// job right here with no terminal status at all: the server-side row
+		// stays wherever it last was (often still "claimed"), and nothing tells
+		// the operator the worker gave up rather than still being at work —
+		// domain/scanJobLease.ts's 30-minute lease is the only thing that would
+		// eventually notice, and only after sitting wedged that whole time.
+		// `fail` makes a best-effort attempt at the terminal "failed" report
+		// before returning — the same one every other failure path here
+		// already gets (clone failure, scan failure, a refused clone URL).
+		return fail(ctx, ctrl, job, "could not report cloning: "+err.Error())
 	}
 	timeout := opts.CloneTimeout
 	if timeout <= 0 {
@@ -217,7 +279,9 @@ func runJob(ctx context.Context, opts Opts, ctrl Control, cloner Cloner, scanner
 	}
 
 	if err := ctrl.Report(ctx, job, "scanning", ""); err != nil {
-		return fmt.Errorf("report scanning: %w", err)
+		// ERR-15 — same reasoning as the "cloning" report above: attempt the
+		// terminal report rather than just walking away.
+		return fail(ctx, ctrl, job, "could not report scanning: "+err.Error())
 	}
 	uploaded, serr := scanner.ScanAndUpload(job, repoDir, outDir, opts.Server, out)
 	if !uploaded {

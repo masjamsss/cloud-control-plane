@@ -4,7 +4,7 @@ import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store/memoryStore';
 import type { ConfigStore } from '../src/store/configStore';
 import type { AppEnv } from '../src/appEnv';
-import { accountKey, accountsGsi, yyyymm, type AccountItem, type AuditItem, type PendingConfigChangeItem } from '../src/store/schema';
+import { accountKey, accountsGsi, configChangeKey, yyyymm, type AccountItem, type AuditItem, type PendingConfigChangeItem } from '../src/store/schema';
 import { classify, publicPendingChange, sweepExpired } from '../src/domain/dualControl';
 import { __setKnownProjects, roleFor } from '../src/projects';
 import { seed, sessionCookieFor } from './helpers/seed';
@@ -171,6 +171,74 @@ describe('§6 dual-control acceptance (two seeded admins)', () => {
     const list = await (await get(app, A, '/admin/config-changes')).json();
     // swept items leave the pending GSI, but the item's status is EXPIRED
     expect(list).toHaveLength(0);
+  });
+
+  /** Directly push a stored pending row's `expiresAt` into the past, relative
+   * to the REAL wall clock — deliberately no `__setNow` mock here, so
+   * `auditActors`'s `yyyymm(new Date())` real-time read (used below) stays
+   * correct without needing to also mock the audit partition's clock. */
+  async function expireNow(store: ConfigStore, pendingId: string): Promise<void> {
+    const k = configChangeKey('sample', pendingId);
+    const row = (await store.get(k.PK, k.SK)) as PendingConfigChangeItem;
+    await store.put({ ...row, expiresAt: new Date(Date.now() - 1000).toISOString() });
+  }
+
+  it('(f) API-6 / DATA-7 — ackPending refuses an expired proposal (409 STATE_CONFLICT), and settles it to EXPIRED rather than applying it', async () => {
+    const { store, app, A, B } = await setup();
+    const pending = await (await put(app, A, '/admin/policy', { ...P, high: 1 })).json();
+    await expireNow(store, pending.id);
+
+    const res = await post(app, B, `/admin/config-changes/${pending.id}/ack`);
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('STATE_CONFLICT');
+    // The config change must NOT have applied — this is the actual defect:
+    // before this fix, ackPending never checked expiresAt at all, so an ack
+    // landing after the 72h window (nobody had swept it yet) still applied.
+    expect((await (await get(app, A, '/admin/policy')).json()).high).toBe(2);
+    // Settled by the ack's OWN settle-on-read call, not left dangling PENDING.
+    const k = configChangeKey('sample', pending.id);
+    expect(((await store.get(k.PK, k.SK)) as PendingConfigChangeItem).status).toBe('EXPIRED');
+  });
+
+  it('(g) API-6 / DATA-7 — rejectPending is refused the same way on an expired proposal', async () => {
+    const { store, app, A, B } = await setup();
+    const pending = await (await put(app, A, '/admin/policy', { ...P, high: 1 })).json();
+    await expireNow(store, pending.id);
+
+    const res = await post(app, B, `/admin/config-changes/${pending.id}/reject`);
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('STATE_CONFLICT');
+    const k = configChangeKey('sample', pending.id);
+    // EXPIRED, not REJECTED — the lease had already run out; a reject cannot
+    // retroactively be the reason it left PENDING.
+    expect(((await store.get(k.PK, k.SK)) as PendingConfigChangeItem).status).toBe('EXPIRED');
+  });
+
+  it('(h) API-6 / DATA-7 — GET /admin/config-changes settles an expired row itself: THIS is sweepExpired\'s real (production) caller', async () => {
+    const { store, app, A } = await setup();
+    const pending = await (await put(app, A, '/admin/policy', { ...P, high: 1 })).json();
+    await expireNow(store, pending.id);
+
+    // No explicit sweepExpired call anywhere in this test — only the list route.
+    const first = await (await get(app, A, '/admin/config-changes')).json();
+    expect(first).toHaveLength(1);
+    expect(first[0].status).toBe('EXPIRED'); // settled on THIS read, not silently omitted
+    const second = await (await get(app, A, '/admin/config-changes')).json();
+    expect(second).toHaveLength(0); // and gone from the GSI on the next read, same as an explicit sweep
+  });
+
+  it('(i) ARCH-10 — an expired proposal is not a silent transition: a config-expire audit entry is written, naming the system actor', async () => {
+    const { store, app, A } = await setup();
+    const pending = await (await put(app, A, '/admin/policy', { ...P, high: 1 })).json();
+    await expireNow(store, pending.id);
+
+    const swept = await sweepExpired(store, 'sample');
+    expect(swept).toBe(1);
+    const items = (await store.query(`P#sample#AUDIT#${yyyymm(new Date())}`)) as AuditItem[];
+    const expireEntry = items.find((i) => i.action === 'config-expire');
+    expect(expireEntry, 'no config-expire entry was written for the expired proposal').toBeDefined();
+    expect(expireEntry!.actor).toBe('system:dual-control-expiry');
+    expect(expireEntry!.targetId).toBe(pending.id);
   });
 
   it('(e) an open HIGH request keeps its 2-approval bar after the policy downgrade (tighten-only)', async () => {

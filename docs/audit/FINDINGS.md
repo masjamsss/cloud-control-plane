@@ -122,7 +122,7 @@ Unguarded full-row writes and lost updates. Largely one root cause — the store
 - [ ] CONC-13 | low | concurrency | open | 04-concurrency.md | Concurrent first-boot settlement can escape its own race handling and 500 early requests
 - [x] CONC-14 | low | concurrency | fixed:version guards on rename, set-services and stripFromOthers; test/teamWriteGuards.test.ts | 04-concurrency.md | Team CRUD writes bump `version` but never guard on it
 - [ ] CONC-15 | low | concurrency | open | 04-concurrency.md | `transactWithAudit` conflates a caller's domain guard failure with chain contention, producing dead error paths and mislabeled conflicts
-- [ ] REM-2 | low | concurrency | open | 15-remediation.md | Session rows are still written with blind full-row puts
+- [x] REM-2 | low | concurrency | fixed:putSessionFieldGuarded narrows every SessionItem write to one guarded attribute (reauthAt, enrollSecretEnc+enrollOfferedAt); test/sessionFieldGuard.test.ts | 15-remediation.md | Session rows are still written with blind full-row puts
 
 ## contracts-docs
 
@@ -154,7 +154,7 @@ Failures that produce no signal — swallowed rejections, best-effort compensati
 
 - [x] DATA-3 | high | silent-failure | fixed:0d4c3a4 | 03-data-integrity.md | A failed disk persist is not rolled back from memory: served state diverges from disk, and "failed" writes silently commit later
 - [x] TEST-4 | high | silent-failure | fixed:fdda986 | 12-testing-quality.md | The highest-value integration tests skip silently when a toolchain is missing, and nothing asserts they ran in CI
-- [ ] ARCH-10 | medium | silent-failure | open | 01-architecture.md | Unaudited governance transition: dual-control proposals expire silently
+- [x] ARCH-10 | medium | silent-failure | fixed:settlePendingExpiry writes a config-expire audit entry on every lazy expiry; test/dualControl.test.ts | 01-architecture.md | Unaudited governance transition: dual-control proposals expire silently
 - [ ] ARCH-9 | medium | silent-failure | open | 01-architecture.md | Single-process, single-file scaling ceiling with in-process singletons the planned DynamoDB path would silently break
 - [x] CI-9 | medium | silent-failure | fixed:scripts/ci/check-workflow-safety.sh (no job gated on vars.CI_RUNNER) | 13-ci-cd.md | The recurring data lane keeps the silent-skip gate its own sibling workflow documents as a trap
 - [ ] DATA-5 | medium | silent-failure | open | 03-data-integrity.md | Store rows are not validated against the schemas on load: corrupt-but-parseable state is accepted silently
@@ -189,8 +189,8 @@ States nothing can leave: wedged jobs, dead-end requests, permanently disabled c
 - [x] UI-4 | medium | stuck-state | fixed:b5b703b | 06-frontend-ui-robustness.md | Mutation handlers `await` API calls without try/catch: a network failure permanently wedges busy/submitting state
 - [ ] API-15 | low | stuck-state | open | 02-api-correctness.md | A dangling idempotency marker makes its key permanently unusable
 - [ ] DATA-12 | low | stuck-state | open | 03-data-integrity.md | Crash between the version-row transact and the file write leaves an activatable orphan row in the upload lane
-- [ ] ERR-15 | low | stuck-state | open | 09-error-handling.md | Scan worker: a failed progress report abandons the job without a terminal status; a claim non-2xx is process-fatal with no backoff
-- [ ] OPS-12 | low | stuck-state | open | 10-reliability-operations.md | Scanner service: no healthcheck, and the worker exits on any control-plane error
+- [x] ERR-15 | low | stuck-state | fixed:progress-report failures route through fail() for a best-effort terminal report; claim failures retry with backoff instead of exiting (--once excepted); worker_test.go, covscanworker_cov_test.go | 09-error-handling.md | Scan worker: a failed progress report abandons the job without a terminal status; a claim non-2xx is process-fatal with no backoff
+- [x] OPS-12 | low | stuck-state | fixed:--heartbeat/--healthcheck liveness probe wired into scanner/Dockerfile's HEALTHCHECK and docker-compose.yml; claim retry (shared fix with ERR-15); worker_test.go | 10-reliability-operations.md | Scanner service: no healthcheck, and the worker exits on any control-plane error
 
 ## authz-identity
 
@@ -199,10 +199,10 @@ Roles, sessions, TOTP, dual control, quorum and idempotency.
 - [x] ARCH-1 | high | authz-identity | fixed:4af8a46 | 01-architecture.md | Bundle apply route accepts pre-quorum requests, contradicting ADR-0016's "fully approved" contract
 - [x] ARCH-2 | high | authz-identity | fixed:b7059cd | 01-architecture.md | The armed apply/drift-generation lanes are single-estate by construction in a multi-account product
 - [x] FE-5 | high | authz-identity | fixed:85f2980 | 05-frontend-flows.md | Api-mode session expiry is never detected in-app — the UI stays "signed in" while every call fails
-- [ ] API-6 | medium | authz-identity | open | 02-api-correctness.md | The 72-hour dual-control expiry is dead code: `sweepExpired` has no callers and `ackPending` never checks `expiresAt`
+- [x] API-6 | medium | authz-identity | fixed:GET /admin/config-changes list-settles expired proposals (sweepExpired's real caller); ackPending/rejectPending settle-on-read before acting; test/dualControl.test.ts | 02-api-correctness.md | The 72-hour dual-control expiry is dead code: `sweepExpired` has no callers and `ackPending` never checks `expiresAt`
 - [x] ARCH-4 | medium | authz-identity | fixed:80f024e | 01-architecture.md | No mutual exclusion between the two apply lanes; both act on `AWAITING_DEPLOY_APPROVAL`
 - [ ] DATA-11 | medium | authz-identity | open | 03-data-integrity.md | v1 migration writes rows that violate the store schemas, including an `id`≠`username` shape that breaks session resolution
-- [ ] DATA-7 | medium | authz-identity | open | 03-data-integrity.md | The 72-hour dual-control expiry is unenforced: `sweepExpired` is dead code and `ackPending` never checks `expiresAt`
+- [x] DATA-7 | medium | authz-identity | fixed:identical defect to API-6, fixed once (dualControl.ts); test/dualControl.test.ts | 03-data-integrity.md | The 72-hour dual-control expiry is unenforced: `sweepExpired` is dead code and `ackPending` never checks `expiresAt`
 - [x] FE-4 | medium | authz-identity | fixed:b5b703b | 05-frontend-flows.md | ApprovalsQueue's stale-response guard is dead code — overlapping project-switch fetches can commit the wrong project's queue
 - [ ] FE-7 | medium | authz-identity | open | 05-frontend-flows.md | PendingChangesBanner count goes stale after any dual-control activity — and the mock branch reads an unsubscribed store
 - [ ] FE-9 | medium | authz-identity | open | 05-frontend-flows.md | apiSession role resolution falls back to another scope's role when the user has no binding on the active project
@@ -412,9 +412,9 @@ Routing, redirects and current-page indication.
 
 Workspaces, temp files and unbounded resources.
 
-- [ ] API-16 | low | resource-leak | open | 02-api-correctness.md | Bundle workspace leaks and unchecked git steps
+- [x] API-16 | low | resource-leak | fixed:prepare() rmSyncs on a rev-parse failure; commit() checks add's status and validates the post-commit sha; test/bundle.test.ts | 02-api-correctness.md | Bundle workspace leaks and unchecked git steps
 - [ ] DATA-13 | low | resource-leak | open | 03-data-integrity.md | Failed atomic writes leak temp files in the store path
-- [ ] ERR-13 | low | resource-leak | open | 09-error-handling.md | `prepare()` leaks the cloned workspace when `rev-parse` fails
+- [x] ERR-13 | low | resource-leak | fixed:same fix as API-16's prepare() half; test/bundle.test.ts | 09-error-handling.md | `prepare()` leaks the cloned workspace when `rev-parse` fails
 
 ## scheduler
 

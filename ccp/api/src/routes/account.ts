@@ -19,7 +19,7 @@ import {
   withDevices,
 } from '../auth/totp';
 import { generateRecoveryCodes, remainingRecoveryCodes } from '../auth/recovery';
-import { REAUTH_MS, TOTP_PENDING_MS, findUserSessionBySha, killOtherSessions, listLiveSessions } from '../auth/sessions';
+import { REAUTH_MS, TOTP_PENDING_MS, findUserSessionBySha, killOtherSessions, listLiveSessions, putSessionFieldGuarded } from '../auth/sessions';
 import { record } from '../domain/audit';
 import { nowIso, nowMs } from '../clock';
 import { ConditionError, type ConfigStore } from '../store/configStore';
@@ -114,7 +114,20 @@ export function accountRoutes(): Hono<AppEnv> {
 
     const secret = generateTotpSecret();
     const secretEnc = getCipher().enc(secret);
-    await store.put({ ...session, enrollSecretEnc: secretEnc, enrollOfferedAt: nowIso() });
+    // REM-2 — guarded on the `enrollSecretEnc` this handler read, narrowed to the
+    // pair of fields that always change together (an offer's secret and its
+    // timestamp). Unlike the reauth stamp, a lost condition here is NOT
+    // best-effort: the secret/QR this handler is about to hand back would not be
+    // what `confirm` later checks against, so returning it anyway would hand the
+    // caller a QR code that can never successfully confirm.
+    const write = await putSessionFieldGuarded(
+      store,
+      { PK: session.PK, SK: session.SK },
+      'enrollSecretEnc',
+      session.enrollSecretEnc,
+      { enrollSecretEnc: secretEnc, enrollOfferedAt: nowIso() },
+    );
+    if (!write.ok) return apiError(c, write.current ? 'STATE_CONFLICT' : 'NO_SESSION');
 
     const issuer = await resolveTotpIssuer(store);
     return c.json({ secret, otpauthUri: otpauthUri(account.username, secret, issuer) });
@@ -155,10 +168,19 @@ export function accountRoutes(): Hono<AppEnv> {
     if (!(await putAccountGuarded(store, account, updated))) return apiError(c, 'STATE_CONFLICT');
 
     // Clear the offer holding fields — the session moves on from "mid-enrollment".
-    const clearedSession = { ...session };
-    delete clearedSession.enrollSecretEnc;
-    delete clearedSession.enrollOfferedAt;
-    await store.put(clearedSession);
+    // REM-2 — guarded and best-effort: the device this handler is confirming was
+    // already committed above (the account's own guarded write), so losing this
+    // narrow cleanup is not a reason to fail an otherwise-successful confirm. A
+    // lost condition here specifically means a NEWER totp-devices offer started
+    // concurrently on the same session — clobbering it would erase a legitimate,
+    // unrelated enrollment attempt, so this deliberately does not retry or force it.
+    await putSessionFieldGuarded(
+      store,
+      { PK: session.PK, SK: session.SK },
+      'enrollSecretEnc',
+      session.enrollSecretEnc,
+      { enrollSecretEnc: undefined, enrollOfferedAt: undefined },
+    );
 
     await record(store, projectId, {
       action: 'totp-device-add',

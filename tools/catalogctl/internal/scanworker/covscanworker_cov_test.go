@@ -584,18 +584,22 @@ func TestCovscanworkerAFailedStatusReportIsSurfaced(t *testing.T) {
 		wantOut      []string
 	}{
 		{
+			// ERR-15 — a failed progress report is no longer a silent walk-away:
+			// `fail` makes a best-effort attempt at the terminal "failed" report,
+			// which SUCCEEDS here (failOn is scoped to "cloning" only), so the
+			// job ends with a real terminal status instead of none at all.
 			name:         "cloning could not be reported",
 			cloneURL:     "https://github.com/o/r.git",
 			failOn:       "cloning",
-			wantStatuses: []string{"cloning"},
-			wantOut:      []string{"job J1 (project acme) failed: report cloning:", "503"},
+			wantStatuses: []string{"cloning", "failed"},
+			wantOut:      []string{"job J1 (project acme) failed: could not report cloning:", "503"},
 		},
 		{
 			name:         "scanning could not be reported",
 			cloneURL:     "https://github.com/o/r.git",
 			failOn:       "scanning",
-			wantStatuses: []string{"cloning", "scanning"},
-			wantOut:      []string{"job J1 (project acme) failed: report scanning:", "503"},
+			wantStatuses: []string{"cloning", "scanning", "failed"},
+			wantOut:      []string{"job J1 (project acme) failed: could not report scanning:", "503"},
 		},
 		{
 			name:         "the failure itself could not be reported",
