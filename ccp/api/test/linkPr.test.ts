@@ -113,6 +113,27 @@ describe('POST /requests/:id/link-pr — recording the fulfilling PR', () => {
     expect((await res.json()).prNumber).toBe(999);
   });
 
+  it('API-12: a URL tail is only a PR number under /pull/ or /merge_requests/ — an issue link, or any other trailing digits, derives nothing', async () => {
+    const { store, app } = await harness();
+    const cookie = await sessionCookieFor(store, 'putra');
+    // Same forge, same trailing digits, but /issues/ — not a PR at all.
+    const { id: issueLink } = await needsEngineerRequest(store, app);
+    const issueRes = await linkPr(app, cookie, issueLink, { prUrl: 'https://github.com/masjamsss/cloud-control-plane/issues/42' });
+    expect(issueRes.status).toBe(200);
+    expect((await issueRes.json()).prNumber).toBeUndefined();
+    // An arbitrary URL that merely ends in digits — no forge shape at all.
+    const { id: bareLink } = await needsEngineerRequest(store, app);
+    const bareRes = await linkPr(app, cookie, bareLink, { prUrl: 'https://example.com/9999' });
+    expect(bareRes.status).toBe(200);
+    expect((await bareRes.json()).prNumber).toBeUndefined();
+    // The GitLab shape the fix's OWN comment claims to support — the positive case,
+    // so the fix cannot pass by being unconditionally strict.
+    const { id: mrLink } = await needsEngineerRequest(store, app);
+    const mrRes = await linkPr(app, cookie, mrLink, { prUrl: 'https://gitlab.com/org/repo/-/merge_requests/55' });
+    expect(mrRes.status).toBe(200);
+    expect((await mrRes.json()).prNumber).toBe(55);
+  });
+
   it('a URL with no numeric tail links URL-only (no stale/guessed number)', async () => {
     const { store, app } = await harness();
     const { id } = await needsEngineerRequest(store, app);

@@ -173,10 +173,18 @@ function planCountPhrase(c: PlanCounts): string {
   return parts.length > 0 ? parts.join(', ') : 'no changes';
 }
 
-/** The PR number from a `/pull/123`-shaped URL tail, or undefined. Assumes the
- * URL already parsed (the route validates that before calling this). */
+/**
+ * API-12 — The PR number from a `/pull/123`-shaped URL tail, or undefined. Assumes the
+ * URL already parsed (the route validates that before calling this).
+ *
+ * The doc comment above always said "/pull/123-shaped"; the regex did not — `/(\d{1,9})\/?$/`
+ * matches ANY trailing digits, so `.../issues/42` (not a PR at all) and even a bare
+ * `https://example.com/9999` both "derived" a number. `pathname` already strips the query
+ * string and fragment, so this only needs the two shapes forges actually use:
+ * GitHub/Bitbucket's `/pull/<n>` and GitLab's `/merge_requests/<n>`.
+ */
 function prNumberFromUrl(prUrl: string): number | undefined {
-  const m = /\/(\d{1,9})\/?$/.exec(new URL(prUrl).pathname);
+  const m = /\/(?:pull|merge_requests)\/(\d{1,9})\/?$/.exec(new URL(prUrl).pathname);
   return m ? Number(m[1]) : undefined;
 }
 

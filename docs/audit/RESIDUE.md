@@ -43,6 +43,15 @@ Being written three times without being tracked is the reason this file exists.
 
 **Not fully closed at the seam** — see R-2.
 
+### R-4 · `planSummary` is typed `string` in the contract
+*Recorded as residue on **DOC-2**, tracked by **DOC-11**.*
+
+The `PlanSummary` schema DOC-2 added carried a note that `ChangeRequest.planSummary` still
+declared `{type: string}` and did not `$ref` it — deliberately, so this residue would be
+picked up as its own finding rather than folded silently into DOC-2's fix.
+
+**Resolved by DOC-11**: `ChangeRequest.planSummary` now `$ref`s `PlanSummary` directly.
+
 ### R-2 · `ifEquals` passes when the attribute is absent
 *Residue on **DATA-1**.*
 
@@ -63,13 +72,6 @@ rather than a comment, so it fails visibly if anyone assumes it is fixed.
 ---
 
 ## tracked — an open finding covers it
-
-### R-4 · `planSummary` is typed `string` in the contract
-*Residue on **DOC-2**.*
-**Tracked by: DOC-11.**
-
-The API stores and serves a structured object. The new `PlanSummary` schema carries a note
-where a reader comparing the two will hit it.
 
 ### R-5 · The scan worker does not report its own terminal failure
 *Residue on **ERR-3**.*

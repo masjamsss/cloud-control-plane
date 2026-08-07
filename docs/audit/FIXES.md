@@ -2635,3 +2635,54 @@ sending readers to the wrong port.
 **Residue:** none. The smoke still serves via `vite preview` rather than the shipped nginx
 config, so the SPA-fallback/caching behaviour remains untested — but that is CI-7's subject
 (the Docker build path is never exercised), already open and unchanged by this fix.
+
+## DOC-11
+
+*OpenAPI types `ChangeRequest.planSummary` as a string; the API stores and serves a structured
+object.*
+
+- [x] **Defect reproduced first** — the mismatch was already documented in the contract itself:
+      the `PlanSummary` component (added by DOC-2) carried a note saying `ChangeRequest.planSummary`
+      "is still typed `string` and does NOT match this — that mismatch is tracked separately as
+      DOC-11 and is deliberately not touched here." The schema comment on
+      `store/planSummarySchema.ts` independently calls the string shape "the Stage-0 fiction — no
+      route ever wrote it."
+- [x] **Cause, not symptom** — the `PlanSummary` schema existed and was correct; only the
+      `$ref` from `ChangeRequest.planSummary` was missing, left for this finding on purpose.
+- [x] **Regression test** — `openapi.test.ts`'s existing route↔contract parity suite (DOC-1/DOC-2)
+      re-parses the YAML on every run; a syntactically broken `$ref` fails it. Verified: 21/21
+      pass, plus `test/planSummary.test.ts` (the schema's own suite) and the full api suite
+      (98 files / 1387 tests) unaffected.
+- [x] **Failure is loud** — a malformed `$ref` fails contract parsing outright, not silently.
+- [x] **Evidence in the status line** — the YAML diff itself.
+
+**No code changed.** `planSummary` was already `.optional()` in the store schema and never
+assigned `null`, so `$ref: PlanSummary` (itself `required: [resourceChanges, counts]`) is correct
+as an optional property — OpenAPI lets a property be entirely absent regardless of its own
+schema's internal `required` list. The stale "deliberately not touched here" note in the
+component's description was updated to say what actually references it now.
+
+## API-12
+
+*`prNumberFromUrl` extracts a "PR number" from any URL ending in digits.*
+
+- [x] **Defect reproduced first** — the doc comment on `prNumberFromUrl` always said
+      "`/pull/123`-shaped"; the regex `/(\d{1,9})\/?$/` never enforced that. Reproduced: a GitHub
+      *issue* link (`.../issues/42`, not a PR) and a bare `https://example.com/9999` both
+      "derived" a number.
+- [x] **Cause, not symptom** — the regex matched trailing digits with no path-segment
+      constraint at all. Now requires `/pull/<n>` or `/merge_requests/<n>` immediately before the
+      number — the two shapes GitHub/Bitbucket and GitLab actually use, per the finding's own
+      recommendation.
+- [x] **Regression test** — `test/linkPr.test.ts`, three assertions in one test so the fix
+      cannot pass by being unconditionally strict: an issue link and a bare URL both derive
+      nothing; a GitLab `/merge_requests/55` URL still derives `55`. **Negative test confirmed**:
+      run against the unfixed regex, the issue-link assertion fails (`expected 42 to be
+      undefined`); against the fix, all three pass.
+- [x] **Failure is loud** — a mis-derived number is not silently accepted anywhere; it renders
+      directly in timeline labels and link text, which is exactly the impact the finding named.
+- [x] **Evidence in the status line** — `test/linkPr.test.ts`.
+
+**Existing precedent, not a new pattern.** `linkPr.test.ts` already asserted the *no-numeric-tail*
+negative case (`.../pulls` derives nothing); this fix and its test extend that same shape rather
+than inventing a new convention.
