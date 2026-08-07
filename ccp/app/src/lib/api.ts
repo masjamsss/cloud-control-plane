@@ -9,7 +9,13 @@ import type {
   ServiceManifest,
   User,
 } from '@/types';
-import type { DriftFinding, DriftProposal, DriftReport, DriftSweep, DriftStatus } from '@/types/drift';
+import type {
+  DriftFinding,
+  DriftProposal,
+  DriftReport,
+  DriftSweep,
+  DriftStatus,
+} from '@/types/drift';
 import type { PlanAction, PlanSummary } from '@/lib/planSummary';
 import { config } from '@/config';
 import { canApprove, approvalsRequiredFor } from '@/lib/permissions';
@@ -189,7 +195,8 @@ export type SubmitResult =
  * taxonomy code when the http client has one (never set by the mock, same
  * doctrine as {@link MutationResult.code}).
  */
-export type DriftCheckResult = { ok: true; at: string } | { ok: false; reason: string; code?: string };
+export type DriftCheckResult =
+  { ok: true; at: string } | { ok: false; reason: string; code?: string };
 
 /**
  * The outcome of the "Fix the drift" generation-refresh trigger (spec
@@ -201,8 +208,7 @@ export type DriftCheckResult = { ok: true; at: string } | { ok: false; reason: s
  * to see its result. Same `ok:false` shape as {@link DriftCheckResult}.
  */
 export type DriftGenerateResult =
-  | { ok: true; reportVersion: number }
-  | { ok: false; reason: string; code?: string };
+  { ok: true; reportVersion: number } | { ok: false; reason: string; code?: string };
 
 function prUrl(n: number): string {
   return `https://github.com/${config.github.owner}/${config.github.repo}/pull/${n}`;
@@ -659,7 +665,8 @@ function seedSweepFindings(): DriftFinding[] {
       importPayload: {
         address: 'aws_instance.oob_bastion_2',
         targetFile: 'oob-adopted.tf',
-        importBlock: 'import {\n  to = aws_instance.oob_bastion_2\n  id = "i-0abc123def456789a"\n}\n',
+        importBlock:
+          'import {\n  to = aws_instance.oob_bastion_2\n  id = "i-0abc123def456789a"\n}\n',
         skeletonHcl:
           'resource "aws_instance" "oob_bastion_2" {\n  ami           = "ami-0abcd1234efgh5678"\n  instance_type = "t3.micro"\n  tags = {\n    Name = "bastion-2"\n  }\n}\n',
       },
@@ -882,7 +889,12 @@ function seedDriftProposals(report: DriftReport): DriftProposal[] {
     if (!digest) continue; // defensive: no mapped digest for this address
     const attrs = (v.changedAttrs ?? [])
       .filter((a) => a.liveJson !== undefined)
-      .map((a) => ({ address: v.address, path: a.path, liveJson: a.liveJson, codeJson: a.codeJson }));
+      .map((a) => ({
+        address: v.address,
+        path: a.path,
+        liveJson: a.liveJson,
+        codeJson: a.codeJson,
+      }));
     out.push({
       digest,
       flavor: bucket,
@@ -1154,7 +1166,8 @@ export function createMockApiClient(): ApiClient {
         return {
           ok: false,
           code: 'FORBIDDEN',
-          reason: 'Only an approver or a lead can start a legitimize request for security-posture drift.',
+          reason:
+            'Only an approver or a lead can start a legitimize request for security-posture drift.',
         };
       }
       // :digest must name an OPEN, revert-flavored proposal (the same row
@@ -1174,12 +1187,15 @@ export function createMockApiClient(): ApiClient {
       // classifyDrift/isSecurityPosture enforce everywhere else): every
       // verdict covering this proposal's addresses must still be
       // security-posture.
-      const coveredVerdicts = driftReport.verdicts.filter((v) => proposal.addresses.includes(v.address));
+      const coveredVerdicts = driftReport.verdicts.filter((v) =>
+        proposal.addresses.includes(v.address),
+      );
       if (coveredVerdicts.length === 0 || !coveredVerdicts.every((v) => isSecurityPosture(v))) {
         return {
           ok: false,
           code: 'FORBIDDEN',
-          reason: 'Re-derived eligibility failed: not every covered verdict is still security-posture drift.',
+          reason:
+            'Re-derived eligibility failed: not every covered verdict is still security-posture drift.',
         };
       }
       const op = SYSTEM_OPERATIONS.find((o) => o.id === SYSTEM_DRIFT_LEGITIMIZE)!;
@@ -1254,7 +1270,8 @@ export function createMockApiClient(): ApiClient {
         return {
           ok: false,
           code: 'FORBIDDEN',
-          reason: 'This drift proposal is no longer open — it may already be submitted or superseded.',
+          reason:
+            'This drift proposal is no longer open — it may already be submitted or superseded.',
         };
       }
       // Role gate (drift-portal spec, extended by the out-of-band
@@ -1268,7 +1285,11 @@ export function createMockApiClient(): ApiClient {
       // each batch ONLY with their own flavor (never mixed with
       // adopt/revert/each other) — the every-item-same-op rule, generalized
       // below via `row.flavor !== primary.flavor`.
-      if (primary.flavor === 'revert' || primary.flavor === 'import' || primary.flavor === 'restore') {
+      if (
+        primary.flavor === 'revert' ||
+        primary.flavor === 'import' ||
+        primary.flavor === 'restore'
+      ) {
         if (actor.role !== 'approver' && actor.role !== 'lead') {
           return {
             ok: false,
@@ -1282,7 +1303,11 @@ export function createMockApiClient(): ApiClient {
           };
         }
         if (primary.flavor === 'revert' && input.alsoDigests && input.alsoDigests.length > 0) {
-          return { ok: false, code: 'FORBIDDEN', reason: 'A revert proposal always submits alone.' };
+          return {
+            ok: false,
+            code: 'FORBIDDEN',
+            reason: 'A revert proposal always submits alone.',
+          };
         }
       }
       const alsoRows: DriftProposal[] = [];
@@ -1312,7 +1337,8 @@ export function createMockApiClient(): ApiClient {
             return {
               ok: false,
               code: 'FORBIDDEN',
-              reason: 'This import proposal’s finding is no longer present in the current drift report.',
+              reason:
+                'This import proposal’s finding is no longer present in the current drift report.',
             };
           }
         }
@@ -1346,12 +1372,18 @@ export function createMockApiClient(): ApiClient {
                 proposalDigest: row.digest,
                 reportVersion: row.lastSeenReportVersion,
               }
-            : { attrs: row.attrs, proposalDigest: row.digest, reportVersion: row.lastSeenReportVersion },
+            : {
+                attrs: row.attrs,
+                proposalDigest: row.digest,
+                reportVersion: row.lastSeenReportVersion,
+              },
         exposure: op.exposure,
         reviewTier: reviewTierForExposure(op.exposure),
       }));
       const primaryItem = items[0]!;
-      const req = combinedRequirement(items.map((it) => ({ exposure: it.exposure, forcesReplace: false })));
+      const req = combinedRequirement(
+        items.map((it) => ({ exposure: it.exposure, forcesReplace: false })),
+      );
       const now = new Date().toISOString();
       const createdLabel = isSet
         ? `Drift ${primary.flavor} proposal — ${items.length} resources (auto-generated; submitted by ${actor.name})`
@@ -1425,7 +1457,8 @@ export function createMockApiClient(): ApiClient {
         return {
           ok: false,
           code: 'FORBIDDEN',
-          reason: 'Drift-fix requests are submitted only from the Drift page, never a manual request.',
+          reason:
+            'Drift-fix requests are submitted only from the Drift page, never a manual request.',
         };
       }
       const now = new Date().toISOString();
@@ -1485,7 +1518,10 @@ export function createMockApiClient(): ApiClient {
         updatedAt: now,
         prNumber: n,
         prUrl: prUrl(n),
-        planSummary: { ...mockPlanSummaryFor(op, draft.macd, draft.targetAddress), recordedAt: now },
+        planSummary: {
+          ...mockPlanSummaryFor(op, draft.macd, draft.targetAddress),
+          recordedAt: now,
+        },
         events: [
           ...draft.events,
           { at: now, type: 'submitted', label: 'Submitted — Terraform generated, PR opened' },
@@ -1523,7 +1559,8 @@ export function createMockApiClient(): ApiClient {
           return {
             ok: false,
             code: 'FORBIDDEN',
-            reason: 'Drift-fix requests are submitted only from the Drift page, never a manual request.',
+            reason:
+              'Drift-fix requests are submitted only from the Drift page, never a manual request.',
           };
         }
         const op = getOperation(it.operationId, catalog);
@@ -1699,6 +1736,14 @@ export function createMockApiClient(): ApiClient {
       }
       if (req.requester === actor.id) {
         return { ok: false, reason: 'You cannot reject your own request.' };
+      }
+      // FE-10 — mirrors approveRequest's status guard above (and ccp-api's
+      // OPEN_STATUSES/STATE_CONFLICT gate, requests.ts) — a terminal request
+      // (APPLIED/REJECTED/WITHDRAWN/…) must refuse a reject exactly like the
+      // real server does, not silently flip a decided or withdrawn request
+      // back to REJECTED.
+      if (req.status !== 'AWAITING_CODE_REVIEW' && req.status !== 'NEEDS_ENGINEER') {
+        return { ok: false, reason: 'This request is not open for rejection.' };
       }
       const now = new Date().toISOString();
       req.status = 'REJECTED';

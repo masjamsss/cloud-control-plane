@@ -159,7 +159,7 @@ Failures that produce no signal — swallowed rejections, best-effort compensati
 - [x] CI-9 | medium | silent-failure | fixed:scripts/ci/check-workflow-safety.sh (no job gated on vars.CI_RUNNER) | 13-ci-cd.md | The recurring data lane keeps the silent-skip gate its own sibling workflow documents as a trap
 - [ ] DATA-5 | medium | silent-failure | open | 03-data-integrity.md | Store rows are not validated against the schemas on load: corrupt-but-parseable state is accepted silently
 - [ ] ERR-6 | medium | silent-failure | open | 09-error-handling.md | `executor.replan()` failures are an unmodeled halt: unbounded silent retry, and they abort the rest of the project's due list
-- [ ] FE-8 | medium | silent-failure | open | 05-frontend-flows.md | AuditHistory silently truncates to the first page (100 entries) — the cursor is fetched and thrown away
+- [x] FE-8 | medium | silent-failure | fixed:loadAuditRows returns {rows, cursor}; AuditHistory adds a "Load older events" control + honest "N events loaded ... more available" caption | 05-frontend-flows.md | AuditHistory silently truncates to the first page (100 entries) — the cursor is fetched and thrown away
 - [ ] OPS-6 | medium | silent-failure | open | 10-reliability-operations.md | Plain `compose up` (including every self-update cycle) silently strips the armed overlay
 - [x] TEST-8 | medium | silent-failure | fixed:treeDiff() now walks gotDir too, catching extra files golden.go never accounted for; golden_test.go TestTreeDiff | 12-testing-quality.md | Golden-tree comparison is one-directional: extra files created by an edit go unnoticed
 - [ ] CTL-8 | low | silent-failure | open | 07-catalogctl.md | `atomicWrite` silently changes edited-file permissions to 0600 and skips fsync
@@ -168,7 +168,7 @@ Failures that produce no signal — swallowed rejections, best-effort compensati
 - [x] FE-15 | low | silent-failure | fixed:b5b703b | 05-frontend-flows.md | Notifications bell and CommandPalette swallow rejections silently
 - [ ] IMP-12 | low | silent-failure | open | 08-importer-schemadump.md | `normalize.py split` silently drops non-`resource` top-level blocks
 - [ ] IMP-15 | low | silent-failure | open | 08-importer-schemadump.md | Coverage-sweep family granularity marks undiscoverable resources as "covered" (documented, but with a concrete silent case)
-- [ ] UI-12 | low | silent-failure | open | 06-frontend-ui-robustness.md | Configure ⇄ Review step transitions never move focus, and the Suspense skeleton is silent for assistive tech
+- [x] UI-12 | low | silent-failure | fixed:RequestForm moves focus to the Review/Configure heading on each step transition (rAF, mirroring the existing invalid-path errorRef focus); RouteSkeleton is role="status" aria-busy with a visually-hidden "Loading…" text | 06-frontend-ui-robustness.md | Configure ⇄ Review step transitions never move focus, and the Suspense skeleton is silent for assistive tech
 
 ## stuck-state
 
@@ -204,11 +204,11 @@ Roles, sessions, TOTP, dual control, quorum and idempotency.
 - [ ] DATA-11 | medium | authz-identity | open | 03-data-integrity.md | v1 migration writes rows that violate the store schemas, including an `id`≠`username` shape that breaks session resolution
 - [x] DATA-7 | medium | authz-identity | fixed:identical defect to API-6, fixed once (dualControl.ts); test/dualControl.test.ts | 03-data-integrity.md | The 72-hour dual-control expiry is unenforced: `sweepExpired` is dead code and `ackPending` never checks `expiresAt`
 - [x] FE-4 | medium | authz-identity | fixed:b5b703b | 05-frontend-flows.md | ApprovalsQueue's stale-response guard is dead code — overlapping project-switch fetches can commit the wrong project's queue
-- [ ] FE-7 | medium | authz-identity | open | 05-frontend-flows.md | PendingChangesBanner count goes stale after any dual-control activity — and the mock branch reads an unsubscribed store
+- [x] FE-7 | medium | authz-identity | fixed:lib/pendingChanges.ts got the emitter/subscribeWithStorage/useSyncExternalStore treatment (usePendingCount); the server branch's effect is re-keyed on the route path so it refetches on every admin sub-route change | 05-frontend-flows.md | PendingChangesBanner count goes stale after any dual-control activity — and the mock branch reads an unsubscribed store
 - [ ] FE-9 | medium | authz-identity | open | 05-frontend-flows.md | apiSession role resolution falls back to another scope's role when the user has no binding on the active project
 - [ ] CTL-9 | low | authz-identity | open | 07-catalogctl.md | `pr-prepare`'s UNAPPROVED gate accepts any non-empty approvals list without checking `decision`
 - [x] DOC-14 | low | authz-identity | fixed:verified already closed by DOC-2's fix (cdc5f2c) — §2 now has the apply row, §9's cross-reference resolves | 14-contracts-docs.md | PERMISSIONS.md §9 cites a "§2 apply row" that does not exist
-- [ ] FE-12 | low | authz-identity | open | 05-frontend-flows.md | After a partial approval, the queue keeps a card the server's pending scope would drop
+- [x] FE-12 | low | authz-identity | fixed:applyMutatedRequestToList now takes the viewer and applies the same open-status ∧ canApprove ∧ can-sign-next-step predicate routes/requests.ts's scope=pending uses | 05-frontend-flows.md | After a partial approval, the queue keeps a card the server's pending scope would drop
 
 ## ci-not-wired
 
@@ -237,7 +237,7 @@ Durability, rollback, schema validation on load, and store-seam fidelity against
 - [ ] DATA-10 | medium | data-persistence | open | 03-data-integrity.md | Backup/restore covers only the store JSON; the on-disk project-data/drift root it references is out of scope, with no consistency check
 - [ ] DATA-6 | medium | data-persistence | open | 03-data-integrity.md | `rename` durability is not guaranteed: no directory fsync after the atomic swap
 - [x] ERR-10 | medium | data-persistence | fixed:0d4c3a4 | 09-error-handling.md | FileStore persist failure leaves memory ahead of disk: the client gets a 500 for a write that took effect
-- [ ] UI-8 | medium | data-persistence | open | 06-frontend-ui-robustness.md | DiffView corrupts `~` change lines whose old value contains " -> "
+- [x] UI-8 | medium | data-persistence | fixed:toRows splits a change line on body.lastIndexOf(' -> ') instead of split(' -> '); the trim()-discards-indentation sub-claim did not reproduce against current code (indent is always captured before trim runs) and was left unfixed, noted honestly | 06-frontend-ui-robustness.md | DiffView corrupts `~` change lines whose old value contains " -> "
 - [ ] API-17 | low | data-persistence | open | 02-api-correctness.md | Store-seam divergences from the DynamoDB semantics it mirrors
 - [ ] DATA-14 | low | data-persistence | open | 03-data-integrity.md | Seam-fidelity gaps between MemoryStore and the promised DynamoDB semantics
 - [ ] DATA-15 | low | data-persistence | open | 03-data-integrity.md | Map key concatenation with a space separator is aliasable in principle; client-controlled bytes reach PKs unconstrained
@@ -285,7 +285,7 @@ Red suites, silent skips, fixtures that pin the wrong premise.
 - [x] TEST-3 | medium | test-quality | fixed:synthetic unmanaged type in the fixture + suite wired into .github/workflows/importer.yml | 12-testing-quality.md | `ccp/app/scripts/test_build_inventory.py` fails at HEAD (stale fixture premise)
 - [x] TEST-5 | medium | test-quality | fixed:@vitest/coverage-v8 floors in ccp/api/vitest.config.ts and ccp/app/vite.config.ts, enforced by both CI lanes | 12-testing-quality.md | No code-coverage measurement anywhere; `coverage.test.ts` is not code coverage
 - [ ] CTL-7 | low | test-quality | open | 07-catalogctl.md | plancheck's `inventoryAddr` does not skip `role:"reference"` inventory params, diverging from the executor's `targetAddress`
-- [ ] FE-10 | low | test-quality | open | 05-frontend-flows.md | Mock `rejectRequest` skips the status guard the real API enforces
+- [x] FE-10 | low | test-quality | fixed:mock rejectRequest refuses a terminal request (status != AWAITING_CODE_REVIEW/NEEDS_ENGINEER), mirroring approveRequest's own status guard and ccp-api's OPEN_STATUSES/STATE_CONFLICT | 05-frontend-flows.md | Mock `rejectRequest` skips the status guard the real API enforces
 - [x] TEST-10 | low | test-quality | fixed:§15 counts regenerated + command-quoted; ADMIN-01/ADMIN-04/REQ-16 dead citations repointed; deferred-XLAYER table added; scripts/docs-test-plan-citations-check.py | 12-testing-quality.md | Functional test plan drift: stale counts, loose citations, and "new" rows with no tracking
 - [x] TEST-12 | low | test-quality | fixed:test/helpers/catalogctlBuild.ts — content-hash-keyed, renameSync'd build cache shared by both parity files; test/catalogctlBuild.test.ts | 12-testing-quality.md | One test file consumes ~60% of the api suite wall time by rebuilding catalogctl per run
 - [x] TEST-13 | high | test-quality | fixed:the suite passes with the system clock shifted 4 months; 12 failures without the fix | 12-testing-quality.md | The test suites are coupled to the wall-clock calendar: they go red on a month boundary with no code change
@@ -316,7 +316,7 @@ Guards that pass when they should refuse.
 - [ ] API-11 | low | fail-open | open | 02-api-correctness.md | Audit-chain read path bypasses the injected clock and truncates at 120 months
 - [x] API-13 | low | fail-open | fixed:verified closed by ARCH-7 — rateLimit.ts's occupiesQuotaSlot is derived from the closed vocabulary; test/statusVocabulary.test.ts covers all four missing statuses | 02-api-correctness.md | `maxOpen` rate-limit counts a nonexistent status and misses real open states
 - [ ] API-18 | low | fail-open | open | 02-api-correctness.md | Legitimize endpoint mints unlimited duplicate engineer requests for the same digest
-- [ ] FE-14 | low | fail-open | open | 05-frontend-flows.md | DriftPage's post-trigger refetches bypass the staleness guard
+- [x] FE-14 | low | fail-open | fixed:refreshStatus now captures the project id via a ref before its request and discards the response if the project switched or the page unmounted before it resolved, mirroring the main effect's own active-flag guard | 05-frontend-flows.md | DriftPage's post-trigger refetches bypass the staleness guard
 
 ## frontend-ux
 
@@ -326,9 +326,9 @@ Missing error and retry paths; permanent loading states.
 - [x] FE-2 | high | frontend-ux | fixed:b5b703b | 05-frontend-flows.md | Initial page loads have no error state — any failed fetch leaves an eternal "Loading…" with no retry
 - [x] UI-1 | high | frontend-ux | fixed:b5b703b | 06-frontend-ui-robustness.md | Non-admin data pages have no fetch-error path: any API failure leaves a permanent "Loading…" with no message or retry
 - [ ] ERR-9 | medium | frontend-ux | open | 09-error-handling.md | GitHub App credential fetches have no timeout, and any failure terminally fails the scan job with no retry
-- [ ] UI-9 | medium | frontend-ux | open | 06-frontend-ui-robustness.md | `/login`, `/onboarding`, and the LegacyRedirect route have no errorElement: a render error there shows React Router's raw default error screen
+- [x] UI-9 | medium | frontend-ux | fixed:the whole route tree wraps in a pathless root layout route carrying one errorElement (routeConfig.tsx, split out of router.tsx so it's importable as plain data for the structural regression test) | 06-frontend-ui-robustness.md | `/login`, `/onboarding`, and the LegacyRedirect route have no errorElement: a render error there shows React Router's raw default error screen
 - [ ] IMP-11 | low | frontend-ux | open | 08-importer-schemadump.md | `payloads.py` block scanner: a column-0 `}` inside a heredoc body truncates the skeleton and ships it
-- [ ] UI-15 | low | frontend-ux | open | 06-frontend-ui-robustness.md | CommandPalette data is fetched once per shell mount, so "My requests" rows go stale within a session
+- [x] UI-15 | low | frontend-ux | fixed:"My requests" split into its own effect keyed additionally on `open`, mirroring Notifications.tsx's UIUX-13 fix, while manifests/inventory stay mount-only (legitimately static) | 06-frontend-ui-robustness.md | CommandPalette data is fetched once per shell mount, so "My requests" rows go stale within a session
 
 ## install-ops
 
@@ -379,9 +379,9 @@ The codemod, plan-check and drift-edit.
 Focus management, dialog semantics, duplicate DOM ids.
 
 - [x] UI-3 | high | frontend-a11y | fixed:64dfc38 | 06-frontend-ui-robustness.md | Primary/admin navigation is built from unscoped absolute paths: current-page indication (aria-current + active styling) never renders, and every nav click detours through a full unmount/redirect
-- [ ] UI-5 | medium | frontend-a11y | open | 06-frontend-ui-robustness.md | RepeatedBlockField renders duplicate DOM ids and a shared radio-group `name` across instances
-- [ ] UI-6 | medium | frontend-a11y | open | 06-frontend-ui-robustness.md | Hand-rolled drift drawers are dialogs in name only: no aria-modal, no focus move, no focus trap, no Escape
-- [ ] UI-7 | medium | frontend-a11y | open | 06-frontend-ui-robustness.md | ErrorSummary links are dead anchors for radio-group and repeated-block fields
+- [x] UI-5 | medium | frontend-a11y | fixed:Field/RepeatedBlockField take an idPrefix so nested instance ids/radio-group names are unique per instance (field-<prefix>.<name>) | 06-frontend-ui-robustness.md | RepeatedBlockField renders duplicate DOM ids and a shared radio-group `name` across instances
+- [x] UI-6 | medium | frontend-a11y | fixed:new shared useModal hook gives every drift drawer + ReauthDialog aria-modal, initial focus, Tab/Shift+Tab trap (tabTrapTarget extracted pure for unit testing), Escape-to-close, and focus restoration to the trigger | 06-frontend-ui-robustness.md | Hand-rolled drift drawers are dialogs in name only: no aria-modal, no focus move, no focus trap, no Escape
+- [x] UI-7 | medium | frontend-a11y | fixed:the radiogroup div and the RepeatedBlockField fieldset both carry the id ErrorSummary's #field-<name> anchor needs, via the same idPrefix plumbing as UI-5 | 06-frontend-ui-robustness.md | ErrorSummary links are dead anchors for radio-group and repeated-block fields
 
 ## observability
 
@@ -396,9 +396,9 @@ No request logging, no request ids, missing healthchecks.
 
 SchemaForm, repeated blocks and pickers.
 
-- [ ] UI-11 | low | frontend-form | open | 06-frontend-ui-robustness.md | Nested repeated blocks skip their instance-count bounds
-- [ ] UI-13 | low | frontend-form | open | 06-frontend-ui-robustness.md | RepeatedBlockField keys instances and touched-state by array index: state misattributes after a mid-list removal
-- [ ] UI-14 | low | frontend-form | open | 06-frontend-ui-robustness.md | InventoryPicker: an optional single-select can never be cleared
+- [x] UI-11 | low | frontend-form | fixed:repeatedInstanceErrors' f.repeated branch now applies the same bounds.minItems/maxItems check validateParams applies at the top level, before recursing into per-instance sub-field validity | 06-frontend-ui-robustness.md | Nested repeated blocks skip their instance-count bounds
+- [x] UI-13 | low | frontend-form | fixed:new reindexTouchedAfterRemove pure function; RepeatedBlockField's remove() calls it so a sub-field's touched state stays attached to the row it belonged to, not the row that slides into its old index | 06-frontend-ui-robustness.md | RepeatedBlockField keys instances and touched-state by array index: state misattributes after a mid-list removal
+- [x] UI-14 | low | frontend-form | fixed:a "×" clear button renders over a committed, closed, non-required selection; aria-controls now only present while the listbox is open | 06-frontend-ui-robustness.md | InventoryPicker: an optional single-select can never be cleared
 
 ## frontend-nav
 
@@ -406,7 +406,7 @@ Routing, redirects and current-page indication.
 
 - [x] CI-6 | medium | frontend-nav | fixed:scripts/ci/check-workflow-safety.sh (preflight gate, conditional latest, concurrency) | 13-ci-cd.md | release-images publishes on any tag with no quality gate, mutable version stamping, and an unconditional `latest`
 - [x] ARCH-12 | low | frontend-nav | fixed:drift-edit/scan-worker/window-check added to the subcommand table (shared fix with DOC-8); tools/catalogctl/readme_test.go#TestReadmeSubcommandsComplete | 01-architecture.md | `catalogctl` README's "complete, no more, no fewer" subcommand table omits a third of the subcommands
-- [ ] FE-13 | low | frontend-nav | open | 05-frontend-flows.md | RequestDetail sub-panels hold un-keyed local state across request-id navigation
+- [x] FE-13 | low | frontend-nav | fixed:WindowPanel and LinkPrPanel are both keyed key={request.id} so a request-id navigation forces a fresh mount (and fresh initial rewindowAt/prUrl state) instead of reusing the prior request's | 05-frontend-flows.md | RequestDetail sub-panels hold un-keyed local state across request-id navigation
 
 ## resource-leak
 

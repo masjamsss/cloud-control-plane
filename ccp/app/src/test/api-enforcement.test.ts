@@ -19,11 +19,23 @@ async function seedPeople(): Promise<void> {
   signOut();
   await ensureSeeded(); // full engineer roster — alice (lead/admin), bob (lead), etc.
   await enroll(
-    { username: 'dewi', displayName: 'Dewi', role: 'requester', teamId: 'erp-basis', password: 'sunflower7' },
+    {
+      username: 'dewi',
+      displayName: 'Dewi',
+      role: 'requester',
+      teamId: 'erp-basis',
+      password: 'sunflower7',
+    },
     SEED_LEAD.username,
   );
   await enroll(
-    { username: 'rizky', displayName: 'Rizky', role: 'approver', teamId: 'erp-basis', password: 'password1' },
+    {
+      username: 'rizky',
+      displayName: 'Rizky',
+      role: 'approver',
+      teamId: 'erp-basis',
+      password: 'password1',
+    },
     SEED_LEAD.username,
   );
 }
@@ -124,6 +136,34 @@ describe('rejectRequest — same authority checks + reason', () => {
     await login('dewi', 'sunflower7');
     const res = await api.rejectRequest('seed-review-01', 'no');
     expect(res.ok).toBe(false);
+  });
+
+  // FE-10 — the mock's approveRequest already re-checks status ("not awaiting
+  // approval"); rejectRequest had no equivalent, so a terminal request could
+  // be flipped to REJECTED in mock mode where the real API refuses with
+  // STATE_CONFLICT (requests.ts's OPEN_STATUSES gate).
+  it('an already-REJECTED (terminal) request refuses a second reject', async () => {
+    const api = createMockApiClient();
+    await login('rizky', 'password1');
+    const first = await api.rejectRequest('seed-review-01', 'first pass');
+    expect(first.ok).toBe(true);
+    if (first.ok) expect(first.request.status).toBe('REJECTED');
+    const second = await api.rejectRequest('seed-review-01', 'second pass');
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.reason).toMatch(/not open for rejection/i);
+  });
+
+  it('an APPLIED request refuses a reject', async () => {
+    const api = createMockApiClient();
+    await login('dewi', 'sunflower7');
+    const submitted = await submit(api, draft({ id: 'fe10-applied-01' })); // MEDIUM, needs 1
+    await login('rizky', 'password1');
+    const approved = await api.approveRequest(submitted.id);
+    expect(approved.ok).toBe(true);
+    if (approved.ok) expect(approved.request.status).toBe('APPLIED');
+    const res = await api.rejectRequest(submitted.id, 'too late');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.reason).toMatch(/not open for rejection/i);
   });
 });
 

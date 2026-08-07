@@ -6,6 +6,7 @@ import {
   addRepeatedInstance,
   deriveFormPlan,
   readRepeatedInstances,
+  reindexTouchedAfterRemove,
   removeRepeatedInstance,
   repeatedBlockValid,
   repeatedInstanceErrors,
@@ -100,6 +101,19 @@ describe('repeated-block state helpers (pure)', () => {
     expect(removeRepeatedInstance([{ a: 1 }], 9)).toEqual([{ a: 1 }]);
   });
 
+  it('UI-13: reindexTouchedAfterRemove shifts later rows down and drops the removed row', () => {
+    // Instance 0 untouched, 1 blurred on 'a', 2 blurred on 'b' — remove instance 0.
+    const before = { '1.a': true, '2.b': true };
+    expect(reindexTouchedAfterRemove(before, 0)).toEqual({ '0.a': true, '1.b': true });
+    // Removing a row drops ONLY that row's own flags; earlier rows are untouched by the shift.
+    const before2 = { '0.a': true, '1.b': true, '2.c': true };
+    expect(reindexTouchedAfterRemove(before2, 1)).toEqual({ '0.a': true, '1.c': true });
+    // A sub-field name that itself contains a dot round-trips correctly (split-then-rejoin,
+    // not truncated at the first dot past the index).
+    const before3 = { '0.nested.field': true, '2.nested.field': true };
+    expect(reindexTouchedAfterRemove(before3, 0)).toEqual({ '1.nested.field': true });
+  });
+
   it('updateRepeatedInstance sets one sub-field without mutating the input', () => {
     const before = [{ port: 80 }, { port: 443 }];
     const after = updateRepeatedInstance(before, 1, 'port', 8443);
@@ -123,6 +137,62 @@ describe('repeated-block state helpers (pure)', () => {
   it('repeatedBlockValid is true only when every instance validates', () => {
     expect(repeatedBlockValid(spec, [{ port: 80, proto: 'tcp' }])).toBe(true);
     expect(repeatedBlockValid(spec, [{ port: 80, proto: 'tcp' }, { proto: 'tcp' }])).toBe(false);
+  });
+
+  it('UI-11: a NESTED repeated sub-field applies its own minItems/maxItems to the instance count', () => {
+    // A repeated block ("tags") nested one level inside another repeated
+    // block ("rules") — same shape a security-group rule's per-rule tag list
+    // would take. `tags` requires at least 2 entries.
+    const tagSpec: RepeatedBlockSpec = {
+      mode: 'list',
+      fields: [{ name: 'key', label: 'Key', type: 'string', source: 'user_input', required: true }],
+    };
+    const specWithNested: RepeatedBlockSpec = {
+      ...spec,
+      fields: [
+        ...spec.fields,
+        {
+          name: 'tags',
+          label: 'Tags',
+          type: 'list',
+          source: 'user_input',
+          required: true,
+          bounds: { minItems: 2, maxItems: 3 },
+          repeated: tagSpec,
+        },
+      ],
+    };
+    const validInner = { port: 80, proto: 'tcp' };
+
+    // Below minItems (one row where two are required) — this is exactly the
+    // gap UI-11 named: the per-instance recursion alone sees one VALID row
+    // and reports no error, silently accepting a count the top-level
+    // validateParams law would reject.
+    expect(repeatedInstanceErrors(specWithNested, { ...validInner, tags: [{ key: 'a' }] })).toEqual(
+      { tags: 'Tags needs at least 2 entries' },
+    );
+
+    // Above maxItems.
+    expect(
+      repeatedInstanceErrors(specWithNested, {
+        ...validInner,
+        tags: [{ key: 'a' }, { key: 'b' }, { key: 'c' }, { key: 'd' }],
+      }),
+    ).toEqual({ tags: 'Tags allows at most 3 entries' });
+
+    // Within bounds but one sub-row itself invalid — the existing per-instance
+    // recursion still catches this (unaffected by the new count check).
+    expect(
+      repeatedInstanceErrors(specWithNested, { ...validInner, tags: [{ key: 'a' }, {}] }),
+    ).toEqual({ tags: 'Tags has an entry that needs attention' });
+
+    // Within bounds and every row valid — clean.
+    expect(
+      repeatedInstanceErrors(specWithNested, {
+        ...validInner,
+        tags: [{ key: 'a' }, { key: 'b' }],
+      }),
+    ).toEqual({});
   });
 });
 
@@ -161,6 +231,31 @@ describe('RepeatedBlockField (SSR markup)', () => {
     expect(html).toContain('value="443"');
     // a const sub-field is never rendered as an input
     expect(html).not.toContain('Locked');
+  });
+
+  it('UI-5/UI-7: two instances render unique field ids and a unique radio-group name each', () => {
+    const html = renderRepeated([
+      { port: 80, proto: 'tcp' },
+      { port: 443, proto: 'udp' },
+    ]);
+    // `proto` is a 2-option allowlist (<= RADIO_MAX), so it renders as a radiogroup —
+    // exactly the shape UI-5 says shared a native `name` across instances before the fix.
+    const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]);
+    expect(new Set(ids).size).toBe(ids.length); // no duplicate id= anywhere in the markup
+    // 2 instances x 2 radio options (tcp/udp) each = 4 `name=` occurrences, but only 2
+    // DISTINCT values — one per instance's radio group.
+    const names = [...html.matchAll(/\bname="(field-[^"]+)"/g)].map((m) => m[1]);
+    expect(names).toHaveLength(4);
+    expect(new Set(names).size).toBe(2); // each instance's radio group has its OWN name
+    // UI-7: the radiogroup itself carries an id an ErrorSummary anchor (or a keyboard
+    // user's Tab) can actually land on — not just the radios' shared `name`.
+    expect(html).toContain(`id="field-rules.0.proto"`);
+    expect(html).toContain(`id="field-rules.1.proto"`);
+  });
+
+  it("UI-7: the block fieldset carries the exact id ErrorSummary's `#field-<name>` anchors to", () => {
+    const html = renderRepeated([{ port: 80, proto: 'tcp' }]);
+    expect(html).toMatch(/<fieldset[^>]*\bid="field-rules"/);
   });
 
   it('honors instance-count bounds: Remove disabled at min, Add disabled at max', () => {

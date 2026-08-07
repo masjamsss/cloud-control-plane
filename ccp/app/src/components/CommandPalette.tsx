@@ -113,12 +113,32 @@ export function CommandPalette({
     // is an ambient surface with no page-level error slot, so a failed
     // group degrades to "absent" — but it must not be an unhandled
     // rejection, and a stale group must not silently replace a fresh one.
+    //
+    // Deliberately NOT keyed on `open` (unlike the requests effect below):
+    // the catalog and inventory are legitimately static within a session —
+    // refetching either on every palette open would be pure waste, the
+    // exact tradeoff Notifications.tsx's own UIUX-13 comment calls out.
     void attempt(() => api.listManifests()).then((outcome) => {
       if (alive && outcome.ok) setManifests(outcome.value);
     });
     void attempt(() => api.getInventory()).then((outcome) => {
       if (alive && outcome.ok) setResources(outcome.value.resources);
     });
+    return () => {
+      alive = false;
+    };
+  }, [user, projectId]);
+
+  // UI-15 — "My requests" is its OWN effect, keyed on `open` in addition to
+  // `[user, projectId]`, mirroring Notifications.tsx's UIUX-13 fix: a request
+  // submitted (or approved) since the palette last loaded used to be
+  // absent — or shown with a stale status — until a user/project change,
+  // because this slice shared the mount-only effect above with the static
+  // catalog/inventory groups. Split out so refetching it on every open
+  // doesn't also re-pull the (much heavier, genuinely static) manifest
+  // catalog and full inventory.
+  useEffect(() => {
+    let alive = true;
     // Approvers/leads additionally see requests pending THEIR approval — which
     // may belong to other people — merged into the same "My requests" group.
     const canApproveRole = user.role === 'approver' || user.role === 'lead';
@@ -137,7 +157,7 @@ export function CommandPalette({
     return () => {
       alive = false;
     };
-  }, [user, projectId]);
+  }, [user, projectId, open]);
 
   // Deferred so the expensive build/filter pipeline never blocks a
   // keystroke's paint — the input below stays controlled by the

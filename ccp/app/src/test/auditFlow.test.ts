@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AuditEntry as LocalAuditEntry } from '@/lib/audit';
 import type { AuditEntry as ServerAuditEntry, AuditExport, HttpApiClient } from '@/lib/httpApi';
@@ -209,21 +212,49 @@ describe('loadAuditRows — which store answers the timeline', () => {
   it('authoritative + client: reads ccp-api (GET /admin/audit), not the local list', async () => {
     const items = [serverEntry({ id: 'srv-1' })];
     const listAuditEntries = spy(async () => ({ items }));
-    const rows = await loadAuditRows(true, fakeClient({ listAuditEntries }), localEntries);
-    expect(listAuditEntries.calls).toEqual([[]]);
-    expect(rows).toEqual([serverEntryToRow(items[0]!)]);
+    const page = await loadAuditRows(true, fakeClient({ listAuditEntries }), localEntries);
+    expect(listAuditEntries.calls).toEqual([[undefined]]);
+    expect(page.rows).toEqual([serverEntryToRow(items[0]!)]);
+    expect(page.cursor).toBeUndefined();
   });
 
   it('not authoritative: the exact pre-existing local list — the server is never called', async () => {
     const listAuditEntries = spy(NEVER_CALLED);
-    const rows = await loadAuditRows(false, fakeClient({ listAuditEntries }), localEntries);
+    const page = await loadAuditRows(false, fakeClient({ listAuditEntries }), localEntries);
     expect(listAuditEntries.calls).toEqual([]);
-    expect(rows).toEqual(localEntries.map(localEntryToRow));
+    expect(page.rows).toEqual(localEntries.map(localEntryToRow));
+    expect(page.cursor).toBeUndefined();
   });
 
   it('authoritative but no client (defensive): still falls back to the local list', async () => {
-    const rows = await loadAuditRows(true, null, localEntries);
-    expect(rows).toEqual(localEntries.map(localEntryToRow));
+    const page = await loadAuditRows(true, null, localEntries);
+    expect(page.rows).toEqual(localEntries.map(localEntryToRow));
+  });
+
+  // FE-8
+  it('the server page carries a cursor forward when the chain has more entries', async () => {
+    const items = [serverEntry({ id: 'srv-1' })];
+    const listAuditEntries = spy(async () => ({ items, cursor: 'srv-1' }));
+    const page = await loadAuditRows(true, fakeClient({ listAuditEntries }), localEntries);
+    expect(page.cursor).toBe('srv-1');
+  });
+
+  it('a passed-in cursor is forwarded to the server call — walking the rest of the chain', async () => {
+    const listAuditEntries = spy(async () => ({ items: [] }));
+    await loadAuditRows(true, fakeClient({ listAuditEntries }), localEntries, 'srv-1');
+    expect(listAuditEntries.calls).toEqual([[{ cursor: 'srv-1' }]]);
+  });
+
+  it('the local/advisory branch never paginates — no cursor even when one is passed in (it has nothing to page)', async () => {
+    const listAuditEntries = spy(NEVER_CALLED);
+    const page = await loadAuditRows(
+      false,
+      fakeClient({ listAuditEntries }),
+      localEntries,
+      'ignored-cursor',
+    );
+    expect(listAuditEntries.calls).toEqual([]);
+    expect(page.cursor).toBeUndefined();
   });
 });
 
@@ -247,8 +278,22 @@ describe('exportAuditVia', () => {
 describe('localAuditExport — the demo export document (no fake chain)', () => {
   it('wraps the local entries with the project id, a count, and an explicit local source', () => {
     const entries: LocalAuditEntry[] = [
-      { id: '1', at: '2026-07-16T01:00:00Z', actor: 'putra', action: 'Created team', summary: 'Network', projectId: 'sample' },
-      { id: '2', at: '2026-07-16T02:00:00Z', actor: 'putra', action: 'Reset TOTP', summary: '@dewi', projectId: 'sample' },
+      {
+        id: '1',
+        at: '2026-07-16T01:00:00Z',
+        actor: 'putra',
+        action: 'Created team',
+        summary: 'Network',
+        projectId: 'sample',
+      },
+      {
+        id: '2',
+        at: '2026-07-16T02:00:00Z',
+        actor: 'putra',
+        action: 'Reset TOTP',
+        summary: '@dewi',
+        projectId: 'sample',
+      },
     ];
     const doc = localAuditExport('sample', entries);
     expect(doc).toEqual({ projectId: 'sample', source: 'browser-local', count: 2, entries });
@@ -264,5 +309,32 @@ describe('localAuditExport — the demo export document (no fake chain)', () => 
       count: 0,
       entries: [],
     });
+  });
+});
+
+/**
+ * FE-8 — AuditHistory's "Load older" control (the consumer of
+ * loadAuditRows's cursor, proven above) can't be driven through a real
+ * click without a DOM (no jsdom in this repo — see TEST-7), so its wiring
+ * is pinned at the source level, the same technique router.tsx's own
+ * registration tests already use.
+ */
+describe('AuditHistory — "Load older" wiring is pinned (FE-8)', () => {
+  const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const source = readFileSync(join(SRC, 'features/admin/AuditHistory.tsx'), 'utf8');
+
+  it('the initial load and onLoadMore both flow through loadAuditRows and track its returned cursor', () => {
+    expect(source).toContain('setCursor(page.cursor)');
+    // onLoadMore forwards the CURRENT cursor back into loadAuditRows — the
+    // one call that actually walks further into the chain.
+    expect(source).toMatch(/loadAuditRows\(authoritative, authClient, listAudit\(\), cursor\)/);
+  });
+
+  it('a loaded-older page is appended, never replaces what is already shown', () => {
+    expect(source).toContain('setEntries((prev) => [...prev, ...page.rows])');
+  });
+
+  it('the "Load older" control only renders while a cursor is present', () => {
+    expect(source).toMatch(/\{cursor && \(/);
   });
 });

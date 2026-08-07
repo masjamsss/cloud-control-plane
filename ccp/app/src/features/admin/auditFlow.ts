@@ -83,23 +83,40 @@ export function localEntryToRow(e: LocalAuditEntry): AuditRow {
   return { id: e.id, at: e.at, actor: e.actor, action: e.action, summary: e.summary };
 }
 
+/** One page of the timeline. `cursor` mirrors `httpApi.ts`'s `AuditPage.cursor` —
+ * present only when the server has more entries beyond this page. The
+ * local/advisory branch has no pagination at all (the whole log is always
+ * one page), so it never sets one. */
+export interface AuditRowsPage {
+  rows: AuditRow[];
+  cursor?: string;
+}
+
 /**
  * Which store answers the timeline: ccp-api's hash-chained log when it
  * serves this flow (`authoritative` — exactly `can('audit')`), else the exact
  * pre-existing local/advisory list, unchanged. `localEntries` is passed in
  * (rather than read here via lib/audit) so this stays a pure function of its
  * arguments, same as the rest of this module.
+ *
+ * FE-8 — the server call used to always ask for the default page (no
+ * `cursor`) and threw the returned `cursor` away, so anything past the
+ * server's default 100-entry limit was silently absent — an important gap
+ * on an evidence surface. `cursor` (present only in the authoritative
+ * branch — the local branch is never paginated) lets a caller (AuditHistory's
+ * "Load older" control) walk the rest of the chain.
  */
 export async function loadAuditRows(
   authoritative: boolean,
   client: HttpApiClient | null,
   localEntries: LocalAuditEntry[],
-): Promise<AuditRow[]> {
+  cursor?: string,
+): Promise<AuditRowsPage> {
   if (authoritative && client) {
-    const page = await client.listAuditEntries();
-    return page.items.map(serverEntryToRow);
+    const page = await client.listAuditEntries(cursor ? { cursor } : undefined);
+    return { rows: page.items.map(serverEntryToRow), cursor: page.cursor };
   }
-  return localEntries.map(localEntryToRow);
+  return { rows: localEntries.map(localEntryToRow) };
 }
 
 /** The whole hash-chained log as a self-verifying evidence document — only

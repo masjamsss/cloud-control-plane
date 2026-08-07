@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { JSX } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import type { ChangeRequest, Inventory, RequestStatus, ServiceManifest } from '@/types';
+import type { ChangeRequest, Inventory, RequestStatus, ServiceManifest, User } from '@/types';
 import { REQUEST_STATUSES } from '@/types';
 import { api } from '@/lib/api';
 import { attempt } from '@/lib/asyncGuard';
@@ -122,6 +122,25 @@ function withFilters(current: URLSearchParams, patch: Partial<RequestFilters>): 
 }
 
 /**
+ * The same `scope=pending` predicate `routes/requests.ts` applies server-side
+ * (open status ∧ `canApprove` ∧ the viewer's role can sign the request's
+ * NEXT ladder step) — re-expressed client-side over the fields the read
+ * projection already carries, so `applyMutatedRequestToList` below can decide
+ * "would a fresh `listPendingApprovals()` still return this row" without a
+ * follow-up read. `nextApprovalStep === undefined` (mock-mode, which never
+ * sets the ladder fields) falls back to the base `canApprove` rule alone —
+ * the exact same fallback `ReviewCard`'s own `mayApprove` already uses for
+ * the Approve button.
+ */
+function pendingForViewer(x: ChangeRequest, viewer: User): boolean {
+  if (x.status !== 'AWAITING_CODE_REVIEW' && x.status !== 'NEEDS_ENGINEER') return false;
+  if (!canApprove(viewer, x)) return false;
+  const next = x.nextApprovalStep;
+  if (next === undefined) return true;
+  return next !== null && canSignApprovalStep(next, viewer.role);
+}
+
+/**
  * Patch (or drop) one request from a mutation's returned result — pure, so
  * this is unit-testable without mounting the queue. Replaces
  * `load()`'s post-mutation triple refetch: the mock's
@@ -129,16 +148,21 @@ function withFilters(current: URLSearchParams, patch: Partial<RequestFilters>): 
  * `ChangeRequest` (approvals, the tighten-only re-gated `approvalsRequired`
  * and the post-mutation `status`), so no follow-up read is
  * needed to know whether the request should stay in this "pending review"
- * queue or drop out of it. A request stays only while still
- * AWAITING_CODE_REVIEW — approve pushing it past quorum (APPLIED /
- * AWAITING_DEPLOY_APPROVAL) or a reject (always REJECTED) both remove it,
- * matching what a fresh `listPendingApprovals()` would have returned anyway.
+ * queue or drop out of it.
+ *
+ * FE-12 — a bare `status === 'AWAITING_CODE_REVIEW'` check kept a row past a
+ * PARTIAL approval on a two-step ladder ([L2, L3]): the viewer's own
+ * signature leaves the status unchanged, but the server's `scope=pending`
+ * excludes it for THIS viewer (already signed, or the next step — L3 —
+ * isn't theirs to sign). {@link pendingForViewer} is that exact predicate,
+ * so a patch-in-place and a fresh refetch can never disagree again.
  */
 export function applyMutatedRequestToList(
   requests: ChangeRequest[],
   updated: ChangeRequest,
+  viewer: User,
 ): ChangeRequest[] {
-  return updated.status === 'AWAITING_CODE_REVIEW'
+  return pendingForViewer(updated, viewer)
     ? requests.map((r) => (r.id === updated.id ? updated : r))
     : requests.filter((r) => r.id !== updated.id);
 }
@@ -602,7 +626,9 @@ export function ApprovalsQueue(): JSX.Element {
   // the estate, so the ONE targeted refetch the plan allowed for isn't
   // needed either).
   const applyMutatedRequest = useCallback((updated: ChangeRequest): void => {
-    setRequests((prev) => applyMutatedRequestToList(prev, updated));
+    // Actor comes from the session, same as every mutation call in this
+    // file — never a prop, so it can't drift from who actually mutated it.
+    setRequests((prev) => applyMutatedRequestToList(prev, updated, getCurrentUser()));
   }, []);
 
   const approve = useCallback(

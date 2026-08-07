@@ -5,6 +5,7 @@ import { isParamActive } from '@/lib/dependsOn';
 import {
   addRepeatedInstance,
   readRepeatedInstances,
+  reindexTouchedAfterRemove,
   removeRepeatedInstance,
   repeatedInstanceErrors,
   updateRepeatedInstance,
@@ -24,6 +25,11 @@ export interface RepeatedBlockFieldProps {
   /** Whether the parent has revealed errors (a failed Review reveals every
    * sub-field error at once, matching the flat form's behavior). */
   touched?: boolean;
+  /** UI-5 — set by an ENCLOSING RepeatedBlockField when this one is itself a
+   * nested repeated sub-field; undefined at the top level, which keeps this
+   * block's own `id="field-<param.name>"` matching what ErrorSummary's
+   * `#field-<name>` anchor expects for a top-level repeated param (UI-7). */
+  idPrefix?: string;
   onChange: (name: string, value: unknown) => void;
   onBlur: (name: string) => void;
 }
@@ -50,6 +56,7 @@ export function RepeatedBlockField({
   inventory,
   error,
   touched,
+  idPrefix,
   onChange,
   onBlur,
 }: RepeatedBlockFieldProps): JSX.Element {
@@ -65,11 +72,20 @@ export function RepeatedBlockField({
   const canAdd = max === undefined || instances.length < max;
 
   const noun = param.label;
+  const id = idPrefix ? `field-${idPrefix}.${param.name}` : `field-${param.name}`;
   const add = (): void => onChange(param.name, addRepeatedInstance(value, spec));
-  const remove = (i: number): void => onChange(param.name, removeRepeatedInstance(value, i));
+  // UI-13 — removal shifts every later instance down one index; subTouched's
+  // OWN keys must shift with it (reindexTouchedAfterRemove), or a blurred
+  // field on the removed row keeps its "touched" flag attached to the row
+  // that slides into its old slot, revealing that row's errors before it was
+  // ever blurred.
+  const remove = (i: number): void => {
+    onChange(param.name, removeRepeatedInstance(value, i));
+    setSubTouched((t) => reindexTouchedAfterRemove(t, i));
+  };
 
   return (
-    <fieldset className="sf-repeat">
+    <fieldset id={id} className="sf-repeat" tabIndex={-1}>
       <legend className="sf-repeat__legend">
         {noun}
         {param.required ? (
@@ -90,6 +106,10 @@ export function RepeatedBlockField({
       {instances.map((row, i) => {
         const errs = repeatedInstanceErrors(spec, row);
         const active = spec.fields.filter((f) => f.role !== 'const' && isParamActive(f, row));
+        // UI-5 — every id/name a sub-field derives is scoped to THIS instance, so two
+        // instances of the same block never collide (duplicate ids, or worse, a shared
+        // native radio-group `name` that lets only one instance visually show as checked).
+        const instanceIdPrefix = idPrefix ? `${idPrefix}.${param.name}.${i}` : `${param.name}.${i}`;
         return (
           <div className="sf-repeat__item" key={i}>
             <div className="sf-repeat__item-head">
@@ -125,6 +145,7 @@ export function RepeatedBlockField({
                       inventory={inventory}
                       error={errs[sub.name]}
                       touched={reveal}
+                      idPrefix={instanceIdPrefix}
                       onChange={onSubChange}
                       onBlur={onSubBlur}
                     />
@@ -141,6 +162,7 @@ export function RepeatedBlockField({
                     value={row[sub.name]}
                     error={errs[sub.name]}
                     touched={reveal}
+                    idPrefix={instanceIdPrefix}
                     options={options}
                     inventory={inventory}
                     onChange={onSubChange}

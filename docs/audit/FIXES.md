@@ -3898,3 +3898,501 @@ convention.)
 - [x] **Evidence in the status line** — `cd importer/kit && python3 -m pytest -q` (106 passed);
       `cd importer/kit-azure && python3 -m pytest -q` (48 passed); `bash -n
       importer/kit/discover.sh` (syntax OK); `python3 scripts/docs-link-check.py` unaffected.
+
+## UI-5
+
+*RepeatedBlockField renders duplicate DOM ids and a shared radio-group `name` across instances.*
+
+- [x] **Defect reproduced first** — confirmed `Field.tsx` built a radio-group input `name` from
+      `param.name` alone (no instance index), so two `RepeatedBlockField` instances of the same
+      sub-schema emitted native `<input name="proto">` twice — a browser radio group is scoped
+      by `name` alone, so checking option A on instance 2 silently unchecked it on instance 1.
+      Field/element `id`s had the identical collision (`field-proto` on both instances).
+- [x] **Cause, not symptom** — added an optional `idPrefix` to `Field`/`RepeatedBlockField`; the
+      repeated block computes `instanceIdPrefix = <blockPrefix>.<index>` and passes it down to
+      every nested `Field`/`RepeatedBlockField` call, so `id`/`name` become
+      `field-<prefix>.<name>` — unique per instance, and recursively unique for nested repeated
+      blocks too (each level appends its own index).
+- [x] **Regression test** — `repeatedBlockField.test.ts`'s new SSR test renders 2 instances of a
+      2-option allowlist sub-field and asserts every `id=` is unique and the 4 raw `name=`
+      occurrences resolve to exactly 2 distinct values (one radio group per instance).
+      **Negative test confirmed**: reverting the `idPrefix` plumbing collapsed both assertions
+      (duplicate ids, one shared `name=`); restored, re-ran clean.
+- [x] **Failure is loud** — the test asserts `new Set(ids).size === ids.length` (any collision
+      fails immediately, naming nothing extra needed — the set-size mismatch is self-evident).
+- [x] **Evidence in the status line** — `npx vitest run src/test/repeatedBlockField.test.ts`
+      (20 passed); `npx tsc --noEmit -p .` clean.
+
+## UI-7
+
+*ErrorSummary links are dead anchors for radio-group and repeated-block fields.*
+
+- [x] **Defect reproduced first** — confirmed the radiogroup `<div>` in `Field.tsx` had no `id`
+      at all before this pass, and `RepeatedBlockField`'s `<fieldset>` likewise carried no `id`
+      — `ErrorSummary`'s `href="#field-<name>"` anchors resolved to nothing for either shape,
+      so clicking the error summary entry silently did nothing (no scroll, no focus) instead of
+      jumping to the field.
+- [x] **Cause, not symptom** — same `idPrefix`-derived `id` UI-5 added now lands on the
+      radiogroup div (`id="field-rules.0.proto"`) and the repeated-block fieldset
+      (`id="field-rules"`), plus `tabIndex={-1}` so the anchor target is actually focusable, not
+      just scrollable — matching the convention `ErrorSummary`'s own container already used.
+- [x] **Regression test** — `repeatedBlockField.test.ts`'s new tests assert the exact
+      `id="field-rules.0.proto"` / `id="field-rules.1.proto"` strings appear, and that the block
+      fieldset carries `id="field-rules"` via a regex match on the `<fieldset ...>` tag.
+      **Negative test confirmed**: reverting the `id`/`idPrefix` additions failed both
+      assertions with the expected ids absent; restored, re-ran clean.
+- [x] **Failure is loud** — each assertion names the exact expected `id=` string, so a
+      regression names precisely which anchor broke.
+- [x] **Evidence in the status line** — `npx vitest run src/test/repeatedBlockField.test.ts`
+      (20 passed); `npx tsc --noEmit -p .` clean.
+
+## UI-8
+
+*DiffView corrupts `~` change lines whose old value contains " -> ".*
+
+- [x] **Defect reproduced first** — confirmed `DiffView.tsx`'s `toRows` split a `~` line's body
+      on the FIRST occurrence of `' -> '` (`body.split(' -> ')`); when the OLD value itself
+      contains the literal substring `" -> "` (any requester/estate-controlled string —
+      description, tag, name), the split yields 3+ parts: the removal row shows a truncated old
+      value, the addition row shows a FRAGMENT of the old value, and the real new value is
+      silently dropped from the rendered diff entirely. Confirmed `generateDiff` always writes
+      the new value LAST on the line, so the FINAL `' -> '` is always the real separator even
+      when the old value embeds one.
+- [x] **Cause, not symptom** — changed the split to `body.lastIndexOf(' -> ')`, slicing on the
+      LAST occurrence instead of the first — correct for every case (no embedded arrow: only one
+      occurrence, identical behavior; an embedded arrow: the real separator is always the last
+      one, since `generateDiff` never appends anything after the new value on that line).
+      Investigated the finding's secondary sub-claim ("`.trim()` also discards nested
+      indentation") by tracing `asAddition`'s regex and `renderBody`'s padding scheme through
+      every `hclSkeleton.ts`/`diff.ts` code path that emits `+`/`-` prefixed lines — leading
+      whitespace is ALWAYS captured into `indent` in `toRows` BEFORE `.trim()` ever runs on the
+      remainder, for every reachable case. No reproducible defect found; left unfixed rather
+      than speculatively "fixing" a claim that doesn't hold against current code (L-29).
+- [x] **Regression test** — new `diffView.test.ts`: one test drives a synthetic diff string with
+      an old value containing a literal `" -> "` and asserts the full old value survives in the
+      removal row, the real new value appears, and the addition row is the clean new value (not
+      a truncated fragment of the old one); a second test pins the ordinary no-embedded-arrow
+      case is unaffected. **Negative test confirmed**: reverted `lastIndexOf` back to `.split`,
+      the embedded-arrow test failed (old value truncated, new value absent); restored, re-ran
+      clean.
+- [x] **Failure is loud** — the test asserts the SPECIFIC failure mode directly (`clean` — the
+      real new value — must appear; `"after"` alone — the truncated fragment — must NOT appear
+      as a standalone addition row), not just "something changed."
+- [x] **Evidence in the status line** — `npx vitest run src/test/diffView.test.ts` (2 passed);
+      `npx tsc --noEmit -p .` clean (required one incidental null-safety fix,
+      `m[1] ?? ''`, unrelated to the core defect).
+
+## UI-13
+
+*RepeatedBlockField keys instances and touched-state by array index: state misattributes after a mid-list removal.*
+
+- [x] **Defect reproduced first** — confirmed `RepeatedBlockField`'s local `subTouched` map is
+      keyed `<instanceIndex>.<subFieldName>`, and `remove()` dropped the removed instance from
+      the DATA array without ever reindexing `touched`'s keys — removing instance 0 left
+      instance 1's touched flags stored under key `1.*` even though instance 1 (now shifted into
+      slot 0) is a DIFFERENT row; a sub-field's blurred/touched display attached to the wrong row
+      after any removal but the last.
+- [x] **Cause, not symptom** — new pure `reindexTouchedAfterRemove(touched, removedIndex)` in
+      `lib/catalog.ts`: drops the removed row's own keys, shifts every later row's index down by
+      one, and leaves earlier rows untouched — `RepeatedBlockField`'s `remove()` now calls it
+      before updating state, so touched state always tracks the SAME row across a removal.
+- [x] **Regression test** — `repeatedBlockField.test.ts`'s new pure-function test covers 3
+      cases: a middle removal reindexes later rows and drops the removed row's own flags; an
+      earlier removal leaves prior rows alone; a sub-field name that itself contains a dot
+      round-trips correctly (split-then-rejoin on the FIRST dot only, not truncated).
+      **Negative test confirmed**: reverting `remove()`'s call to `reindexTouchedAfterRemove`
+      (falling back to a bare filter) left stale/misaligned keys and failed the assertions;
+      restored, re-ran clean.
+- [x] **Failure is loud** — each assertion pins the exact expected key→value map, so a
+      regression names precisely which key misindexed.
+- [x] **Evidence in the status line** — `npx vitest run src/test/repeatedBlockField.test.ts`
+      (20 passed); `npx tsc --noEmit -p .` clean.
+
+## UI-6
+
+*Hand-rolled drift drawers are dialogs in name only: no aria-modal, no focus move, no focus trap, no Escape.*
+
+- [x] **Defect reproduced first** — confirmed all 4 drift drawers
+      (Import/Legitimize/Proposal/Restore) and `ReauthDialog` rendered a `role="dialog"` div with
+      NO `aria-modal`, no focus movement on open, no Tab/Shift+Tab cycling (the page behind stayed
+      fully tab-reachable and screen-reader-browsable despite being visually obscured), no
+      Escape-to-close, and no focus restoration to the trigger on close.
+- [x] **Cause, not symptom** — new shared `lib/useModal.ts` hook (not a new dependency — the app
+      already has 2 other Radix packages wired for different overlay classes, and these
+      dialogs are simple enough not to need Radix's fuller feature set): captures the trigger
+      and moves focus in on mount (a mount-only effect, deliberately NOT re-run every render, so
+      a controlled-input re-render never yanks focus back to the top mid-keystroke); a separate
+      keydown effect traps Tab/Shift+Tab within the container and closes on Escape (capture
+      phase, so a descendant input never eats it first); restores focus to the trigger on
+      unmount. The Tab-cycle DECISION logic is extracted into a pure `tabTrapTarget(itemCount,
+      activeIndex, shiftKey)` function specifically so it's unit-testable without a DOM (no
+      jsdom in this repo). Wired into all 5 components: `dialogRef` + `useModal(dialogRef,
+      onClose)` + `ref={dialogRef}` + `aria-modal="true"` + `tabIndex={-1}` on each dialog root.
+- [x] **Regression test** — new `useModal.test.ts` unit-tests `tabTrapTarget` directly: no
+      items (always null — caller suppresses Tab unconditionally), a single item (Tab/Shift+Tab
+      both redirect back to it), wrap-around at both ends, a middle item left alone, focus
+      outside the container pulled back in either direction, and the `-1` "contained but not an
+      enumerated item" case (the container's own tabIndex fallback) correctly treated as a
+      middle item, not "outside." **Negative test confirmed**: flipped the `shiftKey` branch's
+      target from `'last'` to `'first'`, 4 of 9 tests failed exactly as expected; restored,
+      re-ran clean. The DOM-touching parts of `useModal` itself (actual focus movement, the
+      keydown listener, restoration) rely on the existing SSR/markup tests on each dialog's
+      rendered output (136 tests across 5 files, unaffected) plus this pure-logic proof — a
+      stated scope boundary, the same TEST-7 gap the rest of this app's interactive components
+      already carry, not an oversight.
+- [x] **Failure is loud** — each `tabTrapTarget` test asserts the exact expected target
+      (`'first'` / `'last'` / `null`), not a bare truthy check.
+- [x] **Evidence in the status line** — `npx vitest run src/test/useModal.test.ts` (9 passed);
+      `npx vitest run src/test/accountSecurityUi.test.tsx src/test/driftProposalUi.test.tsx
+      src/test/driftResolutionFlow.test.tsx src/test/unmanagedResources.test.tsx
+      src/test/driftPanel.test.tsx` (136 passed, unaffected); `npx tsc --noEmit -p .` clean.
+
+## UI-9
+
+*`/login`, `/onboarding`, and the LegacyRedirect route have no errorElement: a render error there shows React Router's raw default error screen.*
+
+- [x] **Defect reproduced first** — confirmed only the `/p/:projectId` route carried
+      `errorElement: <RouteError />`; `/login`, the first-run route, and the catch-all
+      `LegacyRedirect` route sat as SIBLINGS at the top level with no ancestor errorElement — a
+      throw during any of them (including a stale deployment's 404'd lazy-chunk load, which
+      rejects the `lazy()` promise and surfaces as a route error) fell through to React
+      Router's raw, unstyled default error screen.
+- [x] **Cause, not symptom** — wrapped the entire route array in a pathless root layout route
+      carrying one `errorElement: <RouteError />`, covering `/login`/first-run/`/p/:projectId`/
+      LegacyRedirect uniformly (React Router renders a route with no `element` as a plain
+      `<Outlet />`, confirmed against the library's own dev-mode source). Split the route tree
+      out of `router.tsx` into a new `routeConfig.tsx` (plain data, no `createBrowserRouter`
+      call) specifically so the structural regression test below can import it directly —
+      `router.tsx` itself can't be imported outside a browser (`createBrowserRouter` reaches for
+      `window`/`history` immediately), which is exactly why no test in this repo previously
+      imported it.
+- [x] **Regression test** — new `routeConfig.test.ts` walks the whole tree and asserts every
+      route (not just the 3 named ones) has an `errorElement` somewhere in its own ancestor
+      chain, with dedicated checks for `/login`, the first-run route, `/p/:projectId`, and the
+      top-level catch-all. **Negative test confirmed**: rebuilt the pre-fix flat top-level array
+      (no wrapping errorElement) — the walker correctly named exactly the 3 unprotected routes
+      (`/login`, `/onboarding`, `*`); restored, re-ran clean. Also updated 5 existing tests
+      (`adminSurfaceCompleteness.test.ts`, `notInControlPlane.test.ts`,
+      `accountSecurityUi.test.tsx`, `driftPanel.test.tsx`) that pinned route registration via
+      source-inspection of `router.tsx` to read `routeConfig.tsx` instead.
+- [x] **Failure is loud** — the "every route protected" test reports the exact unprotected
+      paths as an array, not a bare boolean.
+- [x] **Evidence in the status line** — `npx vitest run src/test/routeConfig.test.ts
+      src/test/entryGraph.test.ts src/test/projectRoutes.test.ts` (25 passed); full suite `npx
+      vitest run` (159 files, 2788 passed at the time); `npx tsc --noEmit -p .` clean.
+
+## UI-11
+
+*Nested repeated blocks skip their instance-count bounds.*
+
+- [x] **Defect reproduced first** — confirmed `repeatedInstanceErrors`' `f.repeated` branch (a
+      nested repeated sub-field inside a repeated block) only recursed into per-instance
+      sub-field validity (`rows.some(r => Object.keys(repeatedInstanceErrors(...)).length > 0)`)
+      — it never checked `f.bounds.minItems`/`maxItems` against the nested block's own instance
+      COUNT, unlike the top-level `validateParams` (`lib/interpreter.ts`), which does. A nested
+      block with `minItems: 2` and one valid row passed silently.
+- [x] **Cause, not symptom** — added the identical min/maxItems count check `validateParams`
+      applies at the top level, run BEFORE the per-instance recursion (short-circuiting it when
+      the count itself is already out of bounds, same precedence as the top-level law), same
+      message format ("X needs at least N entries" / "X allows at most N entries").
+- [x] **Regression test** — `repeatedBlockField.test.ts`'s new test nests a `tags` repeated
+      sub-field (`minItems: 2, maxItems: 3`) inside `rules`' schema and covers: below minItems
+      (one row where two required — this IS the finding's exact gap), above maxItems, within
+      bounds but one row itself invalid (unaffected — proves the new check doesn't break the
+      existing recursion), and a fully valid case. **Negative test confirmed**: reverted the
+      `f.repeated` branch to its pre-fix form (recursion only, no count check) — the
+      below-minItems case returned `{}` instead of the expected error; restored, re-ran clean.
+- [x] **Failure is loud** — the test asserts the exact error object
+      (`{ tags: 'Tags needs at least 2 entries' }`), not a bare truthy/falsy check.
+- [x] **Evidence in the status line** — `npx vitest run src/test/repeatedBlockField.test.ts`
+      (20 passed); `npx tsc --noEmit -p .` clean.
+
+## UI-12
+
+*Configure ⇄ Review step transitions never move focus, and the Suspense skeleton is silent for assistive tech.*
+
+- [x] **Defect reproduced first** — confirmed `RequestForm.tsx`'s `onReview` (valid path) and
+      the `onEdit={() => setStep('configure')}` inline handler both swapped the whole page
+      content with no focus management at all — keyboard focus died on the unmounted button
+      (falls back to `<body>`), and nothing told assistive tech the step changed; only the
+      INVALID path (`errorRef`) was handled. Separately, confirmed `RouteSkeleton` was
+      `aria-hidden="true"` on its entire container — correct for the decorative shimmer bars
+      themselves, but it hid the whole loading state, so a route's Suspense fallback was pure
+      silence for a screen reader, not "loading."
+- [x] **Cause, not symptom** — added `reviewHeadingRef`/`configureHeadingRef`, each moved to via
+      `requestAnimationFrame` (the same technique the pre-existing `errorRef` focus call already
+      used) right after the corresponding `setStep(...)` call, targeting each step's own `<h1>`
+      (`ReviewStep` gained an optional `headingRef` prop, `tabIndex={-1}` on both headings so
+      they're real focus targets). Renamed the inline `onEdit` handler to a named `onBackToEdit`
+      function so it could carry the same focus-move logic. `RouteSkeleton` changed to
+      `role="status"` + `aria-busy="true"` + a visually-hidden "Loading…" text (`.rskel__sr-only`,
+      the same clip-rect technique `approvals.css`'s `.apv__sr-only` already uses); the
+      decorative shimmer bars kept their own `aria-hidden="true"`.
+- [x] **Regression test** — new `uiRobustnessFocus.test.ts`: an SSR test on `ReviewStep`
+      confirms its `<h1>` carries `tabIndex={-1}`; source-pinned tests confirm `RequestForm.tsx`
+      calls `reviewHeadingRef.current?.focus()`/`configureHeadingRef.current?.focus()` AFTER
+      (not before) their respective `setStep` calls, and that `onEdit={onBackToEdit}` replaced
+      the old bare inline handler; an SSR test on `RouteSkeleton` confirms `role="status"`,
+      `aria-busy="true"`, the "Loading" text, and that the shimmer bars stay `aria-hidden`.
+      **Negative test confirmed**: reverted each of the 4 pieces independently (heading
+      tabIndex, the two focus-move call sites, RouteSkeleton's aria wiring) — each reversion
+      failed its own targeted assertion(s) exactly as expected; all 4 restored, re-ran clean.
+- [x] **Failure is loud** — the source-pinned tests check strict ORDERING (the `setStep` call
+      index must precede the `.focus()` call index), not just substring presence, so a
+      reordering that broke the actual runtime sequence would still be caught.
+- [x] **Evidence in the status line** — `npx vitest run src/test/uiRobustnessFocus.test.ts`
+      (6 passed); full suite `npx vitest run` (159 files, 2795 passed at the time); `npx tsc
+      --noEmit -p .` clean.
+
+## UI-14
+
+*InventoryPicker: an optional single-select can never be cleared.*
+
+- [x] **Defect reproduced first** — confirmed once a single-select address was committed, typing
+      reopened the query but Escape/blur always restored the committed value — there was no
+      affordance to return an OPTIONAL `source:"inventory"` param to empty short of reloading the
+      form. Separately confirmed `aria-controls={listId}` was present on the `<input
+      role="combobox">` even while the listbox panel was not in the DOM (only rendered while
+      `open`).
+- [x] **Cause, not symptom** — added a "×" clear button (`.sf-combo__clear`), shown only for the
+      closed, committed view of a NON-required param (`!multiple && !open && selected !==
+      undefined && !param.required` — a required param has no valid empty state to clear TO, so
+      it gets no affordance); clicking it clears the value, resets the query, and refocuses the
+      input. `aria-controls` changed to `open ? listId : undefined`.
+- [x] **Regression test** — new tests in `inventoryPicker.test.ts` (via `Field`, SSR): an
+      optional param with a committed value renders the clear button; a REQUIRED param with a
+      committed value does NOT; an optional param with no selection yet does not either;
+      `aria-controls` is absent while closed. **Negative test confirmed**: reverted the button
+      JSX and the `aria-controls` change independently — 2 of the 4 new assertions failed
+      exactly as expected (the other 2 target the `--clearable` CSS class, unaffected by that
+      partial revert); restored, re-ran clean.
+- [x] **Failure is loud** — each assertion checks a specific substring/absence
+      (`sf-combo__clear` present/absent, `aria-controls` present/absent), naming exactly which
+      half of the fix regressed.
+- [x] **Evidence in the status line** — `npx vitest run src/test/inventoryPicker.test.ts`
+      (20 passed); `npx tsc --noEmit -p .` clean.
+
+## UI-15
+
+*CommandPalette data is fetched once per shell mount, so "My requests" rows go stale within a session.*
+
+- [x] **Defect reproduced first** — confirmed the palette's manifests/inventory/requests fetches
+      all shared ONE effect keyed only on `[user, projectId]` (mount-only in practice, since
+      neither changes within a session for most users) — unlike `Notifications.tsx`'s bell,
+      which was fixed for the identical reason under UIUX-13 (keyed additionally on `open`). A
+      request submitted or approved after the palette first loaded stayed absent, or showed a
+      stale status, in "My requests" results until a user/project change.
+- [x] **Cause, not symptom** — split the requests fetch (`listRequests`/`listPendingApprovals`)
+      into its OWN effect keyed on `[user, projectId, open]`, mirroring Notifications.tsx's
+      fix exactly. Deliberately did NOT key the manifests/inventory effect on `open` too — the
+      finding itself notes those are legitimately static, and refetching the full catalog +
+      inventory on every palette open would be pure waste for data that never changes within a
+      session.
+- [x] **Regression test** — new tests in `palette.test.ts` (source-pinned — mounting the
+      palette through a real open/close cycle needs jsdom, none in this repo): confirms two
+      distinct `useEffect` dependency arrays exist (`[user, projectId]` and `[user, projectId,
+      open]`), and that the requests-fetch code (`api.listRequests`) sits in the `open`-keyed
+      effect while the catalog effect's deps close BEFORE the requests fetch even starts (proof
+      the two calls aren't sharing one effect body). **Negative test confirmed**: reverted to
+      one shared effect — both new assertions failed exactly as expected; restored, re-ran
+      clean.
+- [x] **Failure is loud** — the ordering assertion (catalog effect's deps close before the
+      requests fetch starts) would catch a re-merge even if someone renamed variables around it.
+- [x] **Evidence in the status line** — `npx vitest run src/test/palette.test.ts` (41 passed);
+      full suite `npx vitest run` (159 files, 2801 passed at the time); `npx tsc --noEmit -p .`
+      clean.
+
+## FE-7
+
+*PendingChangesBanner count goes stale after any dual-control activity — and the mock branch reads an unsubscribed store.*
+
+- [x] **Defect reproduced first** — confirmed `lib/pendingChanges.ts` had NO emitter at all
+      (unlike settings.ts/audit.ts's same-pattern stores) — propose/ack/reject wrote straight to
+      storage and nothing told a mounted `PendingChangesBanner` to re-render on a same-tab
+      write. Separately confirmed `AdminLayout` mounts the banner ONCE for the whole admin area
+      (nested admin routes swap under it, not around it) and its server-count effect was keyed
+      only on `[authoritative]` — a mount-only fetch that never saw a decision/proposal made on
+      another admin tab until a full admin-area re-entry.
+- [x] **Cause, not symptom** — gave `pendingChanges.ts` the identical `createEmitter` +
+      `subscribeWithStorage` + `useSyncExternalStore` treatment settings.ts already has (new
+      `usePendingCount()` hook; `pendingCount()` itself doubles as the getSnapshot function —
+      no cached-object dance needed since it returns a primitive `number`, which is
+      `Object.is`-stable by value). `PendingChangesBanner`'s mock branch now reads
+      `usePendingCount()` instead of a bare `pendingCount()` call. The server branch's effect
+      gained `location.pathname` (via `useLocation()`) in its dependency array, so it refetches
+      on every admin sub-route change — the exact "leaves and re-enters" cadence the finding
+      names, without needing every propose/ack/reject call site (scattered across
+      SettingsAdmin/UsersAdmin/RiskAdmin/PendingChanges) to know about this banner.
+- [x] **Regression test** — new `subscribePendingChangesChanged` tests in
+      `pendingChanges.test.ts` mirror `settings.test.ts`'s own subscribe-source tests exactly:
+      fires on a write, fires once per write across propose/ack/reject, stops firing after
+      unsubscribe, and a no-op write (unknown id) doesn't fire. Source-pinned tests confirm
+      `PendingChangesBanner.tsx` uses `usePendingCount` (not a bare call) and that the effect's
+      deps include `location.pathname`. **Negative test confirmed**: reverted the emitter's
+      `emit()` call, the component's `usePendingCount` usage, and the route-keyed dependency
+      independently — each reversion failed its own targeted assertions (3, 1, and 1 tests
+      respectively) exactly as expected; all restored, re-ran clean.
+- [x] **Failure is loud** — the subscribe tests count actual invocations (`calls` variable), not
+      a bare "did it fire at all" — a double-fire or a missed unsubscribe both surface precisely.
+- [x] **Evidence in the status line** — `npx vitest run src/test/pendingChanges.test.ts`
+      (24 passed); full suite `npx vitest run` (159 files, 2807 passed at the time); `npx tsc
+      --noEmit -p .` clean.
+
+## FE-8
+
+*AuditHistory silently truncates to the first page (100 entries) — the cursor is fetched and thrown away.*
+
+- [x] **Defect reproduced first** — confirmed `loadAuditRows` called `client.listAuditEntries()`
+      with no options and returned only `page.items`, discarding `page.cursor` entirely — the
+      server pages at a default limit, so anything past it was silently absent, with the screen
+      captioning the truncated count as if it were the whole history and no "load more"
+      affordance at all.
+- [x] **Cause, not symptom** — `loadAuditRows` now returns `{ rows, cursor }` (`AuditRowsPage`)
+      and accepts an optional `cursor` parameter forwarded to `client.listAuditEntries()`;
+      `AuditHistory.tsx` tracks the returned `cursor` in state and offers a "Load older events"
+      button (visible only while a cursor is present) that appends the next page rather than
+      replacing what's shown. The caption changed to "N events loaded ... more available" —
+      honest about a partial window instead of implying completeness.
+- [x] **Regression test** — updated `auditFlow.test.ts`'s existing `loadAuditRows` tests to the
+      new `{rows, cursor}` shape and added: a server page carries its cursor forward, a
+      passed-in cursor is forwarded to the server call, and the local/advisory branch never
+      paginates even if a cursor is passed in (nothing to page). New source-pinned tests
+      confirm `AuditHistory.tsx`'s initial load and `onLoadMore` both track `page.cursor`, that
+      loaded-older pages are APPENDED (not replacing), and the control only renders while a
+      cursor is present. **Negative test confirmed**: reverted the cursor plumbing in
+      `auditFlow.ts` and the append/onLoadMore wiring in `AuditHistory.tsx` independently — 1
+      and 2 tests failed respectively, exactly as expected; both restored, re-ran clean.
+- [x] **Failure is loud** — the cursor-forwarding test asserts the EXACT call arguments
+      (`[[{ cursor: 'srv-1' }]]`), not just that a call happened.
+- [x] **Evidence in the status line** — `npx vitest run src/test/auditFlow.test.ts` (24 passed);
+      `npx vitest run src/test/advisoryGate.test.ts` (46 passed, unaffected); full suite `npx
+      vitest run` (159 files, 2813 passed at the time); `npx tsc --noEmit -p .` clean.
+
+## FE-10
+
+*Mock `rejectRequest` skips the status guard the real API enforces.*
+
+- [x] **Defect reproduced first** — confirmed the mock's `approveRequest` re-checks
+      `req.status !== 'AWAITING_CODE_REVIEW'` before mutating, but `rejectRequest` checked only
+      role and self-rejection — a terminal request (APPLIED/REJECTED/WITHDRAWN/…) could be
+      flipped to REJECTED in mock mode, where ccp-api's real `OPEN_STATUSES` gate
+      (`routes/requests.ts`) returns `STATE_CONFLICT`.
+- [x] **Cause, not symptom** — added the identical status guard `approveRequest` already has
+      (adjusted for reject's wider OPEN set — `AWAITING_CODE_REVIEW` OR `NEEDS_ENGINEER`,
+      matching the server's `OPEN_STATUSES`), so the mock's fail-closed doctrine ("mirror the
+      server's fail-closed gates") no longer has this hole.
+- [x] **Regression test** — new tests in `api-enforcement.test.ts`: an already-REJECTED
+      (terminal) request refuses a second reject; a fully-approved APPLIED request refuses a
+      reject. **Negative test confirmed**: removed the new guard — both tests failed (`ok` was
+      `true` instead of the expected `false`) exactly as expected; restored, re-ran clean.
+- [x] **Failure is loud** — each test also asserts the specific refusal reason string
+      (`/not open for rejection/i`), not just `ok: false`.
+- [x] **Evidence in the status line** — `npx vitest run src/test/api-enforcement.test.ts`
+      (13 passed); full suite `npx vitest run` (159 files, 2815 passed at the time); `npx tsc
+      --noEmit -p .` clean.
+
+## FE-12
+
+*After a partial approval, the queue keeps a card the server's pending scope would drop.*
+
+- [x] **Defect reproduced first** — confirmed `applyMutatedRequestToList` kept a row iff
+      `status === 'AWAITING_CODE_REVIEW'` — on a two-step ladder ([L2, L3]), the approver's OWN
+      signature leaves the status unchanged (still `AWAITING_CODE_REVIEW`, 1 of 2 signed), so
+      the patch kept the card even though the server's `scope=pending` predicate
+      (`routes/requests.ts`: open status ∧ `canApprove` ∧ the viewer's role can sign the NEXT
+      ladder step) would exclude it for THAT viewer — already signed, or L3 isn't theirs to
+      sign. The retained card was non-actionable for Approve but Reject stayed offered, and the
+      header count included it, until a manual refresh made it vanish.
+- [x] **Cause, not symptom** — new `pendingForViewer(x, viewer)` re-expresses the server's exact
+      predicate client-side, reusing the already-existing `canApprove` (lib/permissions.ts) and
+      `canSignApprovalStep` (lib/approvalLadder.ts) — the SAME two functions `ReviewCard`'s own
+      `mayApprove` computation for the Approve button already calls, so the two can never
+      disagree. `nextApprovalStep === undefined` (mock-mode, which never sets the ladder
+      fields) falls back to the base `canApprove` rule alone, the identical fallback
+      `mayApprove` already uses. `applyMutatedRequestToList` now takes the viewer (`getCurrentUser()`
+      at the one call site — actor from the session, never a prop, same convention every other
+      mutation in this file follows) and calls `pendingForViewer` instead of the bare status
+      check.
+- [x] **Regression test** — `approvalsQueue.test.ts`'s existing tests updated to pass a
+      `fixtureViewer()` (an approver who is never the fixture request's own requester); 4 new
+      tests cover the finding's exact scenario: the approver who just signed L2 loses the row
+      (already signed); a DIFFERENT approver also loses it once L3 is next (wrong seniority,
+      isolated from the self-signed case); a LEAD keeps the row (can sign L3); and
+      `nextApprovalStep === null` (fully signed, status not yet flipped) drops the row for
+      everyone. **Negative test confirmed**: reverted `pendingForViewer` to the bare
+      `status === 'AWAITING_CODE_REVIEW'` check — 3 of the 4 new tests failed exactly as
+      expected (one, the LEAD-keeps-the-row case, coincidentally still passed since the old
+      check also kept it); restored, re-ran clean.
+- [x] **Failure is loud** — each of the 4 new tests isolates ONE half of the predicate (self-
+      already-signed vs. wrong-seniority vs. fully-signed), so a regression names precisely
+      which clause broke.
+- [x] **Evidence in the status line** — `npx vitest run src/test/approvalsQueue.test.ts`
+      (25 passed); full suite `npx vitest run` (159 files, 2819 passed at the time); `npx tsc
+      --noEmit -p .` clean.
+
+## FE-13
+
+*RequestDetail sub-panels hold un-keyed local state across request-id navigation.*
+
+- [x] **Defect reproduced first** — confirmed `/requests/A` → `/requests/B` reuses the same
+      `RequestDetail` route element, so `WindowPanel`'s `rewindowAt` (`useState<string>(() =>
+      isoToLocalInput(defaultWindowAt(now)))`) and `LinkPrPanel`'s `prUrl`
+      (`useState(request.prUrl ?? '')`) — both seeded ONCE at first mount — survived the
+      navigation unchanged: a half-typed PR URL drafted on request A (or A's linked URL)
+      remained visible in the input when B rendered, and a Lead could plausibly paste A's
+      engineering PR onto B.
+- [x] **Cause, not symptom** — added `key={request.id}` to both `<WindowPanel>` and
+      `<LinkPrPanel>` at their `RequestDetail` call sites — the idiomatic React reset: a key
+      change forces React to unmount the old instance and mount a fresh one (fresh initial
+      state) rather than reconcile in place. Checked `CoolingPanel` (rendered adjacent, same
+      shape) for the same class of bug — it holds no local `useState` at all, so it was never
+      affected and needed no key.
+- [x] **Regression test** — new source-pinned tests in `requestDetail.test.ts` (mounting
+      RequestDetail through a real navigation needs jsdom, none in this repo) assert
+      `<WindowPanel key={request.id}` and `<LinkPrPanel key={request.id}` both appear in
+      `RequestDetail.tsx`'s source. **Negative test confirmed**: removed both `key` props —
+      both tests failed exactly as expected; restored, re-ran clean.
+- [x] **Failure is loud** — each test names which panel's key is missing (two separate
+      assertions, not one combined check).
+- [x] **Evidence in the status line** — `npx vitest run src/test/requestDetail.test.ts`
+      (37 passed); full suite `npx vitest run` (159 files, 2821 passed at the time); `npx tsc
+      --noEmit -p .` clean.
+
+## FE-14
+
+*DriftPage's post-trigger refetches bypass the staleness guard.*
+
+- [x] **Defect reproduced first** — confirmed `handleStartCheck`/`handleGenerate` both followed
+      success with `void refreshStatus()`, and `refreshStatus` called `api.getDriftStatus()`
+      with no `active` flag and no project check at all — unlike the main status effect, which
+      guards itself with a scoped `active` flag keyed on `[projectId, reloadToken]`. Since
+      `getDriftStatus()` reads the CURRENT project scope at call time, a project switch (or
+      unmount) happening while a trigger's response was still in flight could apply a stale or
+      foreign project's data over the new project's page — racing the main effect's own fetch
+      for last-writer-wins.
+- [x] **Cause, not symptom** — added a `projectIdRef` (kept in sync with `projectId` every
+      render via an unconditional `useEffect`) and a `mountedRef` (flipped false in a
+      cleanup-only `useEffect`). `refreshStatus` now captures `projectIdRef.current` right
+      before its `getDriftStatus()` call goes out and discards the response — never calling
+      `setStatus` — if `mountedRef.current` is false or `projectIdRef.current` no longer
+      matches what was captured, mirroring the main effect's own mount/scope discipline for a
+      handler that (unlike an effect) has no natural cleanup point of its own.
+- [x] **Regression test** — new `driftPageStaleness.test.ts` (source-pinned — DriftPage's data
+      loading runs in effects, which `renderToStaticMarkup` never fires, and driving a real
+      trigger→response→project-switch race needs jsdom, none in this repo): confirms
+      `refreshStatus` captures `forProjectId` before its request and checks both
+      `mountedRef`/`projectIdRef` (in that order, before the state write) after; confirms
+      `mountedRef` flips false in a `[]`-deps cleanup-only effect; confirms `projectIdRef`
+      tracks the current project with no dependency array (always fresh); confirms exactly 2
+      raw `api.getDriftStatus()` call sites exist (the main effect + `refreshStatus` itself) so
+      no future trigger handler can bypass the guard by calling the API directly. **Negative
+      test confirmed**: reverted `refreshStatus` to its pre-fix bare form — the guard-check test
+      failed exactly as expected (the other 3 structural tests target code untouched by that
+      specific revert); restored, re-ran clean.
+- [x] **Failure is loud** — the "no bypass" test would catch a future handler that calls
+      `api.getDriftStatus()` directly instead of going through the guarded `refreshStatus`, not
+      just a regression in the existing two call sites.
+- [x] **Evidence in the status line** — `npx vitest run src/test/driftPageStaleness.test.ts`
+      (4 passed); `npx vitest run src/test/driftProposalUi.test.tsx src/test/driftPanel.test.tsx
+      src/test/driftResolutionFlow.test.tsx` (95 passed, unaffected); full suite `npx vitest
+      run` (160 files, 2825 passed at the time); `npx tsc --noEmit -p .` clean.

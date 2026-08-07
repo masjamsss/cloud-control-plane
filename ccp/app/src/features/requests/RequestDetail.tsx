@@ -760,7 +760,17 @@ export function RequestDetail(): JSX.Element {
             error={cancelError}
           />
 
+          {/* FE-13 — WindowPanel/LinkPrPanel each hold local input state
+              (rewindowAt / prUrl) seeded ONCE from the request they first
+              mount with. Navigating /requests/A → /requests/B reuses the
+              same RequestDetail element, so without a key the SAME panel
+              instance survives the navigation and keeps A's half-typed
+              value in front of B — a Lead could plausibly paste A's
+              engineering PR onto B. `key={request.id}` forces a fresh
+              mount (and fresh initial state) on every request-id change,
+              the idiomatic React reset. */}
           <WindowPanel
+            key={request.id}
             request={request}
             currentUser={currentUser}
             onCancel={() => void handleWindowCancel()}
@@ -772,6 +782,7 @@ export function RequestDetail(): JSX.Element {
           />
 
           <LinkPrPanel
+            key={request.id}
             request={request}
             currentUser={currentUser}
             serverCanLink={authClient !== null}

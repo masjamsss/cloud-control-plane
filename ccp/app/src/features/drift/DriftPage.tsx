@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Schedule } from '@/types';
@@ -79,7 +79,11 @@ function classLabel(cls: string): string {
  * IS the gate, the same doctrine as FeasibilityBanner's undefined-means-
  * nothing-to-say).
  */
-export function DriftAttrList({ attrs }: { attrs: DriftChangedAttr[] | undefined }): JSX.Element | null {
+export function DriftAttrList({
+  attrs,
+}: {
+  attrs: DriftChangedAttr[] | undefined;
+}): JSX.Element | null {
   if (!attrs || attrs.length === 0) return null;
   return (
     <ul className="drift-row__attrs">
@@ -115,8 +119,14 @@ export interface DriftVerdictRowProps {
   onOpenRestore?: (digest: string) => void;
 }
 
-export function DriftVerdictRow({ verdict, proposals, onOpenProposal, onOpenRestore }: DriftVerdictRowProps): JSX.Element {
-  const isSecurity = verdict.class === 'security_posture' || (verdict.securityHits?.length ?? 0) > 0;
+export function DriftVerdictRow({
+  verdict,
+  proposals,
+  onOpenProposal,
+  onOpenRestore,
+}: DriftVerdictRowProps): JSX.Element {
+  const isSecurity =
+    verdict.class === 'security_posture' || (verdict.securityHits?.length ?? 0) > 0;
   const proposalState = driftProposalStateFor(verdict, proposals);
   return (
     <tr className={isSecurity ? 'drift-row drift-row--security' : 'drift-row'}>
@@ -209,7 +219,11 @@ function pluralizeAbsorbed(n: number): string {
   return `${n} drift ${n === 1 ? 'entry' : 'entries'} absorbed by an existing ignore rule`;
 }
 
-export function DriftAbsorbedList({ entries }: { entries: DriftAbsorbedEntry[] }): JSX.Element | null {
+export function DriftAbsorbedList({
+  entries,
+}: {
+  entries: DriftAbsorbedEntry[];
+}): JSX.Element | null {
   if (entries.length === 0) return null;
   return (
     <details className="drift-absorbed">
@@ -238,7 +252,12 @@ export interface DriftReportBodyProps {
  * so "the footer always renders" is directly testable without mounting the
  * stateful page (renderToStaticMarkup never commits a useEffect fetch).
  */
-export function DriftReportBody({ report, proposals, onOpenProposal, onOpenRestore }: DriftReportBodyProps): JSX.Element {
+export function DriftReportBody({
+  report,
+  proposals,
+  onOpenProposal,
+  onOpenRestore,
+}: DriftReportBodyProps): JSX.Element {
   return (
     <>
       <DriftVerdictTable
@@ -260,6 +279,28 @@ export function DriftPage(): JSX.Element {
   const projectId = useActiveProjectId();
   const navigate = useNavigate();
   const currentUser = useCurrentUser();
+
+  // FE-14 — refreshStatus (below) fires from event handlers (Start check /
+  // Fix the drift), not an effect, so unlike the main status effect above
+  // (which guards itself with a scoped `active` flag keyed on
+  // `[projectId, reloadToken]`) it had no way to tell a late response apart
+  // from a current one. A ref, not a render-scoped const: refreshStatus
+  // needs the CURRENT project at the moment its `getDriftStatus()` call
+  // actually resolves, which a plain closure over `projectId` (fixed at
+  // whichever render created the handler) can't give it — a switch mid-
+  // flight would apply the OLD project's response over the NEW project's
+  // page. Mirrors the main effect's mount/unmount + scope discipline.
+  const projectIdRef = useRef(projectId);
+  useEffect(() => {
+    projectIdRef.current = projectId;
+  });
+  const mountedRef = useRef(true);
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+    },
+    [],
+  );
 
   // The proposal drawer: which digest is open (null = closed) plus its own
   // justification/schedule/submit-in-flight state — reset on every project
@@ -396,7 +437,9 @@ export function DriftPage(): JSX.Element {
   }, [projectId]);
 
   const openProposal =
-    openDigest && status?.proposals ? status.proposals.find((p) => p.digest === openDigest) : undefined;
+    openDigest && status?.proposals
+      ? status.proposals.find((p) => p.digest === openDigest)
+      : undefined;
   const openVerdict =
     openProposal && status
       ? status.report.verdicts.find((v) => openProposal.addresses.includes(v.address))
@@ -416,7 +459,9 @@ export function DriftPage(): JSX.Element {
   // `arn` instead, the SAME identity findingProposalStateFor already keys
   // on (driftProposalState.ts).
   const openImportProposal =
-    openImportDigest && status?.proposals ? status.proposals.find((p) => p.digest === openImportDigest) : undefined;
+    openImportDigest && status?.proposals
+      ? status.proposals.find((p) => p.digest === openImportDigest)
+      : undefined;
   const openImportFinding =
     openImportProposal && status
       ? status.report.sweep?.findings.find((f) => f.arn === openImportProposal.arn)
@@ -448,16 +493,32 @@ export function DriftPage(): JSX.Element {
 
   const partition =
     status && status.proposals
-      ? partitionForResolution(status.report.verdicts, status.proposals, status.report.sweep?.findings)
+      ? partitionForResolution(
+          status.report.verdicts,
+          status.proposals,
+          status.report.sweep?.findings,
+        )
       : null;
   const adoptDigests = partition ? partition.adopt.map((c) => c.proposal.digest) : [];
-  const importDigests = partition ? (partition.importEligible ?? []).map((c) => c.proposal.digest) : [];
+  const importDigests = partition
+    ? (partition.importEligible ?? []).map((c) => c.proposal.digest)
+    : [];
   const restoreDigests = partition ? partition.restore.map((c) => c.proposal.digest) : [];
 
-  /** The post-trigger status refresh. Guarded so a failed refresh degrades to
-   * "the card keeps what it had" instead of an unhandled rejection. */
+  /**
+   * The post-trigger status refresh. Guarded so a failed refresh degrades to
+   * "the card keeps what it had" instead of an unhandled rejection — and
+   * (FE-14) so a response that resolves after the page unmounted or the
+   * project switched mid-flight is discarded instead of overwriting the
+   * NEW project's page with the OLD project's data. `forProjectId` is
+   * captured right before the request goes out, the closest this can get to
+   * "the scope `getDriftStatus()` actually read" without threading the
+   * project id through the api call itself.
+   */
   const refreshStatus = async (): Promise<void> => {
+    const forProjectId = projectIdRef.current;
     const outcome = await attempt(() => api.getDriftStatus());
+    if (!mountedRef.current || projectIdRef.current !== forProjectId) return;
     if (outcome.ok) setStatus(outcome.value);
   };
 
@@ -512,7 +573,9 @@ export function DriftPage(): JSX.Element {
   };
   const handleToggleSelectAllAdopt = (): void => {
     setSelectedAdopt((prev) =>
-      allSelected(prev, adoptDigests) ? deselectAll(prev, adoptDigests) : selectAll(prev, adoptDigests),
+      allSelected(prev, adoptDigests)
+        ? deselectAll(prev, adoptDigests)
+        : selectAll(prev, adoptDigests),
     );
   };
   const handleSubmitBatch = (): void => {
@@ -614,7 +677,9 @@ export function DriftPage(): JSX.Element {
   };
   const handleToggleSelectAllImportBatch = (): void => {
     setSelectedImportBatch((prev) =>
-      allSelected(prev, importDigests) ? deselectAll(prev, importDigests) : selectAll(prev, importDigests),
+      allSelected(prev, importDigests)
+        ? deselectAll(prev, importDigests)
+        : selectAll(prev, importDigests),
     );
   };
   const handleSubmitImportBatch = (): void => {
@@ -672,7 +737,9 @@ export function DriftPage(): JSX.Element {
   };
   const handleToggleSelectAllRestoreBatch = (): void => {
     setSelectedRestoreBatch((prev) =>
-      allSelected(prev, restoreDigests) ? deselectAll(prev, restoreDigests) : selectAll(prev, restoreDigests),
+      allSelected(prev, restoreDigests)
+        ? deselectAll(prev, restoreDigests)
+        : selectAll(prev, restoreDigests),
     );
   };
   const handleSubmitRestoreBatch = (): void => {
@@ -700,8 +767,8 @@ export function DriftPage(): JSX.Element {
         <p className="page-eyebrow">Estate health</p>
         <h1 className="drift-page__title">Drift</h1>
         <p className="drift-page__subtitle">
-          What the scheduled Terraform check last found live in the account, compared with the
-          code it should match.
+          What the scheduled Terraform check last found live in the account, compared with the code
+          it should match.
         </p>
       </header>
 
@@ -728,22 +795,28 @@ export function DriftPage(): JSX.Element {
                   {checkState.kind === 'requesting' ? 'Requesting…' : 'Start drift check'}
                 </Button>
                 <p className="drift-page__action-help">
-                  Runs the estate&apos;s drift check now instead of waiting for the next scheduled run. This
-                  only starts it — the report lands here once the check publishes.
+                  Runs the estate&apos;s drift check now instead of waiting for the next scheduled
+                  run. This only starts it — the report lands here once the check publishes.
                 </p>
                 {checkState.kind === 'requested' && (
                   <p className="drift-page__action-status" role="status">
-                    Check requested at {formatProjectTime(checkState.at)} — the report lands here once the
-                    workflow publishes.
+                    Check requested at {formatProjectTime(checkState.at)} — the report lands here
+                    once the workflow publishes.
                   </p>
                 )}
                 {checkState.kind === 'disarmed' && (
-                  <p className="drift-page__action-status drift-page__action-status--disarmed" role="note">
+                  <p
+                    className="drift-page__action-status drift-page__action-status--disarmed"
+                    role="note"
+                  >
                     {checkState.reason}
                   </p>
                 )}
                 {checkState.kind === 'error' && (
-                  <p className="drift-page__action-status drift-page__action-status--error" role="alert">
+                  <p
+                    className="drift-page__action-status drift-page__action-status--error"
+                    role="alert"
+                  >
                     {checkState.reason}
                   </p>
                 )}
@@ -769,10 +842,10 @@ export function DriftPage(): JSX.Element {
                       : 'Fix the drift'}
                 </Button>
                 <p className="drift-page__action-help">
-                  Refreshes generated fixes for the current report, then opens the resolution view below —
-                  batch-adopt the benign rows, or choose revert/legitimize for security-posture rows. Nothing
-                  here submits or applies anything by itself; every fix still goes through the normal request
-                  ladder.
+                  Refreshes generated fixes for the current report, then opens the resolution view
+                  below — batch-adopt the benign rows, or choose revert/legitimize for
+                  security-posture rows. Nothing here submits or applies anything by itself; every
+                  fix still goes through the normal request ladder.
                 </p>
                 {generateState.kind === 'generating' && (
                   <p className="drift-page__action-status" role="status">
@@ -780,12 +853,18 @@ export function DriftPage(): JSX.Element {
                   </p>
                 )}
                 {generateState.kind === 'disarmed' && (
-                  <p className="drift-page__action-status drift-page__action-status--disarmed" role="note">
+                  <p
+                    className="drift-page__action-status drift-page__action-status--disarmed"
+                    role="note"
+                  >
                     {generateState.reason}
                   </p>
                 )}
                 {generateState.kind === 'error' && (
-                  <p className="drift-page__action-status drift-page__action-status--error" role="alert">
+                  <p
+                    className="drift-page__action-status drift-page__action-status--error"
+                    role="alert"
+                  >
                     {generateState.reason}
                   </p>
                 )}
@@ -876,7 +955,9 @@ export function DriftPage(): JSX.Element {
           submitting={submitting}
           error={submitError}
           canSubmit={
-            openProposal.flavor === 'adopt' || currentUser.role === 'approver' || currentUser.role === 'lead'
+            openProposal.flavor === 'adopt' ||
+            currentUser.role === 'approver' ||
+            currentUser.role === 'lead'
           }
         />
       )}

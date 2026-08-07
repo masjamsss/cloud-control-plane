@@ -180,7 +180,9 @@
   font-size: 14px;
   line-height: 1.45;
   padding: 9px 11px;
-  transition: border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard);
 }
 
 .sf-input::placeholder {
@@ -233,7 +235,10 @@ input.sf-input[type='number'],
   font-family: var(--font-mono);
   font-size: 13px;
   cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
 }
 
 .sf-segment:hover {
@@ -293,7 +298,9 @@ input.sf-input[type='number'],
   border-radius: var(--radius-pill);
   background: var(--surface-3);
   border: 1px solid var(--field-border);
-  transition: background-color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
 }
 
 .sf-toggle__thumb {
@@ -304,7 +311,9 @@ input.sf-input[type='number'],
   height: 16px;
   border-radius: 50%;
   background: var(--text-secondary);
-  transition: transform var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
+  transition:
+    transform var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard);
 }
 
 .sf-toggle.is-on .sf-toggle__track {
@@ -398,6 +407,46 @@ input.sf-input[type='number'],
   padding: 12px 10px;
   font-size: 13px;
   color: var(--text-muted);
+}
+
+/* Room for the clear button so it never overlaps the committed value's text. */
+.sf-combo__input--clearable {
+  padding-right: 28px;
+}
+
+/* UI-14 — the single-select "clear" affordance, shown only over a committed,
+   closed, non-required selection. Absolutely positioned against .sf-combo
+   (position: relative above), same corner a native search input's clear
+   button occupies. */
+.sf-combo__clear {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sf-combo__clear:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.sf-combo__clear:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
 }
 
 /* ── Multi-select chips + option states ──────────────────────────────────── */
