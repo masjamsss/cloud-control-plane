@@ -3590,3 +3590,311 @@ caching is configured to a nonexistent root go.sum.*
       (123 citations resolve); `python3 scripts/docs-link-check.py` (308 links resolve, 0
       broken); `docs-links.yml` parses and passes `check-path-filters.sh`/
       `check-workflow-safety.sh`.
+
+## DOC-6
+
+*API-SPEC.md states the opposite of current code on `PUT /projects/:id/identity` gating.*
+
+- [x] **Defect reproduced first** — re-derived at HEAD rather than trusted the finding's own
+      claim (L-29): read `routes/projects.ts`'s current `PUT /:id/identity` handler and
+      confirmed it DOES gate — `if (!isOnboardable(project)) return apiError(c,
+      "STATE_CONFLICT")` — where `isOnboardable` (`domain/onboardToken.ts`) requires
+      `status ∈ {draft, pending-trust}` and `!archived`. API-SPEC.md's row said "Not gated on
+      project status or archived", the literal opposite.
+- [x] **Cause, not symptom** — corrected the row to state the real gate (draft/pending-trust
+      only, archived refused, 409 `STATE_CONFLICT` otherwise) and explain why: identity is part
+      of the two-admin trust binding, so it is only settable pre-trust — the deliberate
+      post-trust path is deregister + a fresh onboard. Re-stamped the trailing code citation
+      from the stale `projects.ts:975-1010` to the real current span, `projects.ts:1411-1456`
+      (verified against the actual `p.put("/:id/identity", ...)` declaration and its closing
+      brace).
+- [x] **Regression test** — none added; this is a prose-only doc correction against code that
+      already has its own direct test coverage (the route's `isOnboardable` gate is exercised by
+      the existing project-lifecycle test suites). `scripts/docs-link-check.py` and the other
+      B-S3 doc checks confirm the doc still parses and every citation elsewhere still resolves.
+- [x] **Failure is loud** — n/a (no new automated check for this specific row; a future drift
+      here is DOC-17's class, covered by the entity-catalog checker where the same code path's
+      line citation is re-verified).
+- [x] **Evidence in the status line** — read `routes/projects.ts:1411-1456` directly; confirmed
+      `isOnboardable`'s exact status set in `domain/onboardToken.ts`; `python3
+      scripts/docs-link-check.py` still passes.
+
+## DOC-8
+
+*catalogctl README makes two explicit completeness claims that are false.*
+
+(Shared fix with ARCH-12 — the SAME subcommand-table gap, same commit, one entry per finding
+per the ledger's own topic split.)
+
+- [x] **Defect reproduced first** — confirmed `internal/cli/cli.go` has 9 `case "...":` arms but
+      README.md's subcommand table listed only 6 — `drift-edit`, `scan-worker`, and
+      `window-check` were all missing. Separately, the "edit verbs (12)" list omitted
+      `create_resource`, dispatched through a FOURTH table (`create.go`'s `createHandlers`, the
+      pre-locate ACCEPT branch a create needs since it has no existing block to locate) that
+      `edit.go`'s own three tables don't cover — 13 verbs, not 12.
+- [x] **Cause, not symptom** — added the 3 missing subcommand rows and the missing edit verb
+      (12→13), and corrected the "reconfirm by grepping edit.go" instruction to name all FOUR
+      dispatch tables, not three.
+- [x] **Regression test** — new `tools/catalogctl/readme_test.go`:
+      `TestReadmeSubcommandsComplete` extracts every `case "...":` arm from `cli.go` directly
+      (not a hand-copied count) and fails if README.md's table is missing any of them, so a
+      TENTH subcommand added later without a README row is caught the same way this gap was;
+      `TestReadmeEditVerbsComplete` extracts every verb key from all four dispatch tables
+      (`edit.go` + `create.go`) and fails if README.md's edit-verbs list is missing any.
+      **Negative test confirmed**: deleted the `scan-worker` row from README.md and re-ran —
+      `TestReadmeSubcommandsComplete` failed naming exactly that subcommand; restored the row,
+      re-ran clean.
+- [x] **Failure is loud** — each test names the specific subcommand/verb the README is missing,
+      not a bare pass/fail.
+- [x] **Evidence in the status line** — `cd tools/catalogctl && go test . -run
+      'TestReadmeSubcommandsComplete|TestReadmeEditVerbsComplete' -v` (both PASS); full `go
+      build ./... && go vet ./... && go test ./... && gofmt -l internal/` clean.
+
+## DOC-9
+
+*Four operator-facing env vars are undocumented (two of them documented nowhere at all).*
+
+- [x] **Defect reproduced first** — confirmed `CCP_APPLY_FROZEN`/`CCP_APPLY_AUTO_REVERT`
+      (`domain/apply/loop.ts`) appeared in zero markdown/env-example/compose files — only in
+      code comments; `CCP_DRIFT_IMPORT` (`domain/driftProposals.ts`) and `CCP_DRIFT_CHECK_CMD`
+      (`domain/driftCheck.ts`) were each documented in only one place, absent from
+      `ccp/api/README.md`, which `ccp/README.md` itself designates as the exhaustive reference.
+      Auditing "every `CCP_*` var the api reads" for this fix also surfaced a fifth undocumented
+      var the finding's own text did not name: `CCP_GITHUB_APP_KEY`
+      (`domain/forgeCredentials.ts`), the inline alternative to `CCP_GITHUB_APP_KEY_FILE` for a
+      host with no secret-mount story.
+- [x] **Cause, not symptom** — added all five to `ccp/api/README.md`'s env table (the canonical
+      reference) with their real semantics (freeze/auto-revert only meaningful under
+      `CCP_SCHEDULER=1`; the two drift knobs' exact gating), and to `ccp/.env.example` /
+      `ccp/docker-compose.yml`'s armed-overlay sections (fixing, in passing, a pre-existing
+      unterminated table row for `CCP_DATA_LOCK_TAKEOVER` that a straight append would have
+      broken further).
+- [x] **Regression test** — new `scripts/docs-env-vars-check.py`, wired into `docs-links.yml`:
+      extracts every `CCP_*` token the api's source reads (`process.env.CCP_X`, the
+      injected-`env`-parameter convention, and quoted-string-literal indirect reads) and checks
+      each appears in at least one of the 5 named doc surfaces. **Negative test confirmed**:
+      appended a fake `process.env.CCP_TOTALLY_FAKE_TEST_VAR` read to `errors.ts` and re-ran —
+      failed naming exactly that var; reverted, re-ran clean (37/37).
+- [x] **Failure is loud** — the check lists every undocumented var by name and points at the
+      canonical README table to add it to.
+- [x] **Evidence in the status line** — `python3 scripts/docs-env-vars-check.py` (37/37 vars
+      documented); `ccp/api` typecheck clean (no code changed, only docs).
+
+## DOC-10
+
+*ERROR-STATES.md's "every error code the API can return" is missing 8 taxonomy codes and 6
+inline literals.*
+
+- [x] **Defect reproduced first** — confirmed the 8 named taxonomy codes (`SCANNER_KEY_INVALID`,
+      `DRIFT_PROPOSAL_STALE`, `INSTANCE_STALE`, `DRIFT_NOT_ADOPTABLE`,
+      `DRIFT_PROPOSAL_REQUIRED`, `SCANNER_DISABLED`, `FORGE_CREDENTIAL_REFUSED`,
+      `SCAN_TARGET_REFUSED`) and the 6 named inline literals were each absent from
+      ERROR-STATES.md's tables at HEAD.
+- [x] **Cause, not symptom** — added rows for all 8 taxonomy codes and all 6 inline literals,
+      each cited against the real current route/line. Building the generated check (below)
+      found TWO MORE undocumented inline literals the finding's own hand audit missed —
+      `BUNDLE_REPO_UNRESOLVED` and `DRIFT_REPO_UNRESOLVED` — added those too: exactly the case
+      for a generated check over a hand-maintained list, the list itself was the defect.
+- [x] **Regression test** — new `scripts/docs-error-codes-check.py`, wired into `docs-links.yml`:
+      two sources of truth both derived from code — every key in `errors.ts`'s `ERRORS` map, and
+      every inline `code: '<LITERAL>'` response literal in `routes/*.ts` — checked against
+      ERROR-STATES.md's tables. **Negative test confirmed**: deleted the `SCANNER_KEY_INVALID`
+      row and re-ran — failed naming exactly that taxonomy code; restored, re-ran clean (58
+      taxonomy + 13 inline literals, all documented).
+- [x] **Failure is loud** — the check separately labels which codes are missing from the
+      taxonomy source vs. the inline-literal source, so the fix location is unambiguous.
+- [x] **Evidence in the status line** — `python3 scripts/docs-error-codes-check.py` (58 taxonomy
+      + 13 inline literals, all documented); `cd ccp/api && npx vitest run test/openapi.test.ts`
+      unaffected (23/23, this fix touched no route behavior).
+
+## DOC-12
+
+*DOMAIN-MODEL.md's entity catalog is missing a third of the store's item types.*
+
+- [x] **Defect reproduced first** — confirmed the 8 named item shapes (`InstanceItem`,
+      `ProjectDataVersionItem`, `ProjectUploadTokenItem`, `ProjectScanJobItem`,
+      `DriftReportItem`, `DriftPointerItem`, `DriftProposalItem`,
+      `ProjectForgeCredentialItem`) had no DOMAIN-MODEL.md row at HEAD, of 24 total exported
+      `export const XxxItem = z.object(` shapes in `store/schema.ts`.
+- [x] **Cause, not symptom** — added all 8 named rows, each cited against schema.ts's real
+      current line span and store key. Building the generated check (below) found a 9th gap the
+      finding's own hand audit missed: `RequestSetItem` (embedded on `RequestItem.items[]`,
+      never independently catalogued) — added that row too.
+- [x] **Regression test** — new `scripts/docs-entity-catalog-check.py`, wired into
+      `docs-links.yml`: extracts every `export const XxxItem = z.object(` declaration from
+      schema.ts structurally (not a copied list) and checks each name appears backtick-quoted
+      somewhere in DOMAIN-MODEL.md. Extended (DOC-17, same script) to also verify each entity
+      row's own `schema.ts:NNN` citation matches the real declaration line — this pass alone
+      found 13 MORE stale citations across the table (see DOC-17). **Negative test confirmed**:
+      deleted the `RequestSetItem` mention and re-ran — failed naming it; restored, re-ran clean
+      (24/24, all with accurate citations).
+- [x] **Failure is loud** — the check separately reports missing rows vs. stale-citation rows,
+      each naming the exact item/line involved.
+- [x] **Evidence in the status line** — `python3 scripts/docs-entity-catalog-check.py` (24/24
+      item shapes catalogued with accurate citations); `python3 scripts/docs-link-check.py`
+      unaffected.
+
+## DOC-14
+
+*PERMISSIONS.md §9 cites a "§2 apply row" that does not exist.*
+
+- [x] **Defect reproduced first** — re-derived at HEAD (L-29) rather than trusting the finding's
+      own claim: read PERMISSIONS.md §2's role×capability matrix and found an apply row already
+      present (line 39: "Run the apply bundle... ✘ ✘ ✔ ✔... `APPLY_FORBIDDEN`") and §9's
+      cross-reference to it (line 136: "the apply-route precedent... PERMISSIONS.md §2's own
+      'senior-only' apply row") resolving cleanly against it. This finding was already closed —
+      by DOC-2's fix (a separate, earlier pass) — before this batch began.
+- [x] **Cause, not symptom** — no code or doc change needed; verified-and-closed, not
+      re-fixed. Recorded the verification in FINDINGS.md citing DOC-2's commit sha (`cdc5f2c`)
+      so a future reader can see this was checked, not skipped.
+- [x] **Regression test** — n/a (verify-and-close; no defect to pin).
+- [x] **Failure is loud** — n/a.
+- [x] **Evidence in the status line** — `grep -n "apply" ccp/docs/PERMISSIONS.md` shows both the
+      §2 matrix row and the §9 cross-reference resolving against it.
+
+## DOC-16
+
+*Assorted OpenAPI request/response gaps against route behavior.*
+
+- [x] **Defect reproduced first** — re-derived each of the 4 named gaps at HEAD (L-29) rather
+      than trusting the finding's own text: `GET /requests`'s cursor/limit pagination is now
+      ALREADY implemented in `routes/requests.ts` and ALREADY correctly declared in
+      `ccp-api.yaml` — this bullet was resolved by an earlier, unrelated fix and needed no
+      further action. The other 3 were confirmed still real: `/admin/audit`'s YAML said
+      "uncapped" and declared no `limit` param while `routes/admin.ts` defaults `limit` to 100
+      (cap 1000); `POST /admin/accounts`'s YAML body omitted the optional `projectId` binding
+      field `EnrollBody`/the handler actually reads and uses for cross-tenant dual-control
+      classification; `DriftChangedAttr`'s YAML schema omitted `pathSegments`, present on the
+      app-side type and passed through by the api.
+- [x] **Cause, not symptom** — fixed the 3 still-open gaps in `ccp-api.yaml`: `/admin/audit` now
+      declares an accurate `limit` param (inlined rather than reusing the shared `limit`
+      component, whose description — "omit = unpaged, cursor without limit = 422" — describes
+      `/requests`'s different real behavior, not this route's) and drops the false "uncapped"
+      claim; `POST /admin/accounts` gained the `projectId` property with its real
+      omit-defaults-to-enrolling-project semantics; `DriftChangedAttr` gained `pathSegments` as
+      an opaque, optional field.
+- [x] **Regression test** — none added; `ccp/api/test/openapi.test.ts` (the existing
+      spec-completeness gate) re-run and confirmed unaffected (23/23) — these are additive YAML
+      corrections, not behavior changes, so there is no new code path to pin.
+- [x] **Failure is loud** — n/a; YAML-only fix.
+- [x] **Evidence in the status line** — `python3 -c "import yaml;
+      yaml.safe_load(open('ccp/api/openapi/ccp-api.yaml'))"` (parses clean); `cd ccp/api && npx
+      vitest run test/openapi.test.ts` (23/23 passed, unaffected).
+
+## DOC-17
+
+*The code-derived docs' line citations have drifted from HEAD.*
+
+- [x] **Defect reproduced first** — verified the 4 named stale citations at HEAD: DOMAIN-MODEL.md's
+      `ProjectItem` row cited `schema.ts:536-555` (real: `842-928`) and
+      `routes/projects.ts:975` for the identity route (real, after DOC-6's own re-derivation:
+      `1411`); API-SPEC.md cited `requests.ts:786-828` for plan-summary (real: `997-1048`),
+      `admin.ts:687-690` for audit/export (real: `1229-1236`), and `index.ts:52-60` for
+      healthz/readyz (real: `68-76`).
+- [x] **Cause, not symptom** — corrected all 4 named citations, plus every other line citation
+      embedded in the SAME DOMAIN-MODEL.md `ProjectItem` row (the key-scheme comment, the
+      `accountId`/`identityConfirmed` field lines, `ProjectStatus`, `projectKey()`,
+      `isIdentityConfirmed`) since a row citing its own headline span correctly but its embedded
+      field lines wrong is only half-fixed. Building the entity-catalog checker's line-accuracy
+      pass (shared with DOC-12) then swept the REST of the entity table mechanically and found
+      13 MORE stale row citations the manual pass never touched (`SessionItem`,
+      `SettlementItem`, `ProjectOnboardTokenItem`, `TeamItem`, `PolicyItem`,
+      `RiskOverrideItem`, `SettingItem`, `RequestItem`, `ApprovalItem`, `RequestEventItem`,
+      `PendingConfigChangeItem`, `AuditItem`, `ChainHeadItem`) — fixed all 13 against their real
+      current declaration/type spans. Scope boundary, stated plainly: this closes the entity
+      catalog's own citations (the highest-density cluster of `file:line` references in the
+      repo, and the finding's own flagship example) and the 4 named ones elsewhere; the many
+      OTHER prose-embedded line citations scattered through DOMAIN-MODEL.md/API-SPEC.md/
+      ERROR-STATES.md are not exhaustively re-verified — "disciplined staleness," the finding's
+      own term, remains an accepted residual outside the entity table.
+- [x] **Regression test** — `scripts/docs-entity-catalog-check.py` extended (shared script with
+      DOC-12) to parse every `` `XxxItem`, schema.ts:A-B) `` citation and verify `A` matches the
+      real `export const XxxItem` declaration line. **Negative test confirmed**: edited
+      `SessionItem`'s row to cite the OLD stale `223-263` span and re-ran — failed naming
+      exactly that mismatch (cites 223, real is 238); restored, re-ran clean.
+- [x] **Failure is loud** — the check names both the cited line and the real line for every
+      stale citation found, not just "something is wrong".
+- [x] **Evidence in the status line** — `python3 scripts/docs-entity-catalog-check.py` (24/24
+      accurate); `python3 scripts/docs-link-check.py` unaffected.
+
+## ARCH-12
+
+*`catalogctl` README's "complete, no more, no fewer" subcommand table omits a third of the
+subcommands.*
+
+(Shared fix with DOC-8 — see that entry for the full defect/fix/test writeup; this entry
+records the same commit against ARCH-12's own topic per the ledger's per-finding-number
+convention.)
+
+- [x] **Defect reproduced first** — see DOC-8.
+- [x] **Cause, not symptom** — see DOC-8 (the subcommand-table half of that fix; ARCH-12 does
+      not touch the edit-verbs count, which is DOC-8's own second claim).
+- [x] **Regression test** — `tools/catalogctl/readme_test.go#TestReadmeSubcommandsComplete` (see
+      DOC-8).
+- [x] **Failure is loud** — see DOC-8.
+- [x] **Evidence in the status line** — see DOC-8.
+
+## ARCH-15
+
+*ADR ledger statuses lag the built system.*
+
+- [x] **Defect reproduced first** — confirmed ADR-0031's row said "Proposed (design lane; build
+      gated on owner sign-off)" while ADR-0033's own context section cites it as "the narrow
+      upload lane already exists (ADR-0031 Phase 1, built)"; confirmed `--estate-tz`/
+      `CCP_ESTATE_TZ` (ADR-0028's named mechanism) is fully wired in
+      `internal/windowcheck/command.go:37` and `internal/estatecfg/estatecfg.go` while ADR-0028's
+      row said flatly "Proposed (build gated)" with no disclosure. ADRs 0024-0026 were checked
+      too and found to ALREADY candidly disclose "build landed" in their own prose (not a real
+      gap — the finding itself calls these "candid," just structurally sharing one status field
+      with the formal decision state).
+- [x] **Cause, not symptom** — corrected ADR-0031's and ADR-0028's rows to disclose their built
+      pieces explicitly (Phase 1 shipped; the estate-tz CLI mechanism shipped) while leaving
+      their formal status as Proposed — that decision belongs to the owner, not to this pass —
+      so a reader no longer has to cross-reference ADR-0033 or grep the Go source to learn what
+      is actually running.
+- [x] **Regression test** — none added; this is a periodic status-reconciliation pass over
+      prose, the recommendation's own first option (a separate structural "built" column, its
+      second option, would be a larger doc-restructure out of this low-severity finding's
+      proportionate scope).
+- [x] **Failure is loud** — n/a; prose-only fix.
+- [x] **Evidence in the status line** — read `internal/windowcheck/command.go:37` and
+      `internal/estatecfg/estatecfg.go` directly; grepped ADR-0033 for the exact "Phase 1, built"
+      citation; `python3 scripts/docs-link-check.py` unaffected.
+
+## IMP-14
+
+*Stale numbers and dangling references in kit/schemadump docs and comments.*
+
+- [x] **Defect reproduced first** — confirmed `discover.sh:28`'s "44-type allowlist" comment
+      against `services.json`'s real `types` mapping (`python3 -c "... len(d['types'])"` → 43);
+      confirmed `statediff.py`'s `SWEEP_METHOD` still hardcoded "43 per-type listers" — correct
+      today but a second, driftable copy of the same count; confirmed
+      `kit-azure/normalize.py:101` still referenced a nonexistent "terraform.yml" pin file (the
+      `kit-azure/README.md:195` twin citation was ALREADY fixed by an earlier, unrelated pass);
+      confirmed `tools/schemadump/README.md` still describes the AWS dump as "the mature,
+      85-type case" / "84 are SDKv2, 1 is framework" while the CURRENTLY COMMITTED
+      `aws-v6.53.0-schema.json.gz` artifact's own metadata reports `summary.requested: 1677`
+      (`sdkv2_reflected: 1240`, `framework_unreflected: 437`) — the full provider surface, not
+      the `types.txt`-scoped 85.
+- [x] **Cause, not symptom** — fixed `discover.sh`'s count (44→43) and pointed the comment at
+      services.json's own `types` array as the thing to trust, not this prose. Converted
+      `statediff.py`'s `SWEEP_METHOD` constant into a `sweep_method(services)` function that
+      interpolates `len(services['types'])` from the SAME loaded services doc `main()` already
+      validates — this class of drift (a hardcoded copy of a count that lives authoritatively
+      elsewhere) cannot recur here again. Fixed the dangling "terraform.yml" reference to name
+      the real pin location. Added a prominent correction note to schemadump's README
+      disclosing the 85-vs-1677 mismatch and cross-referencing IMP-8 (which owns WHY the
+      committed artifact and the documented `gen.sh` pipeline can diverge) rather than silently
+      rewriting numbers that describe the tool's DOCUMENTED default invocation, which remains
+      accurate for that scope.
+- [x] **Regression test** — `sweep_method()`'s self-derivation was verified directly: `python3
+      -c "import statediff; print(statediff.sweep_method({'types':{'a':1,'b':2,'c':3}}))"` →
+      "3 per-type listers"; run again against the real `services.json` → "43 per-type listers",
+      matching. No standalone regression test file added — the existing `importer/kit` pytest
+      suite (106 tests) already exercises `statediff.py`'s output shape and passed unchanged
+      after the refactor, confirming no behavioral change, only where the number comes from.
+- [x] **Failure is loud** — n/a; the fixed count now derives from the same data the sweep itself
+      uses, so it cannot silently diverge from it again.
+- [x] **Evidence in the status line** — `cd importer/kit && python3 -m pytest -q` (106 passed);
+      `cd importer/kit-azure && python3 -m pytest -q` (48 passed); `bash -n
+      importer/kit/discover.sh` (syntax OK); `python3 scripts/docs-link-check.py` unaffected.

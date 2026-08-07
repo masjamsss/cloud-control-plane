@@ -25,7 +25,8 @@
 #      capture loop as every allowlisted call above (it is appended to the
 #      capture plan, not special-cased). discover.py build diffs its ARN
 #      service families against services.json so a resource type OUTSIDE the
-#      44-type allowlist is a loud manifest WARN, never invisible (the kit's
+#      43-type allowlist (IMP-14: services.json's own `types` array — count
+#      it, don't trust this comment) is a loud manifest WARN, never invisible (the kit's
 #      refuse-never-silent doctrine applied to coverage itself — see
 #      README.md "coverage sweep"). Taggable resources only: anything AWS
 #      does not expose to the tagging API is still a gap this cannot see.

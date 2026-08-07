@@ -131,21 +131,21 @@ OpenAPI vs reality, and docs citing things that do not exist.
 - [x] DOC-1 | high | contracts-docs | fixed:cdc5f2c | 14-contracts-docs.md | OpenAPI declares two `/catalog/*` endpoints that do not exist — and the parity test pins the phantoms
 - [x] DOC-2 | high | contracts-docs | fixed:cdc5f2c | 14-contracts-docs.md | Shipped routes absent from the OpenAPI spec; `POST /requests/:id/apply` is documented nowhere at all
 - [ ] ARCH-6 | medium | contracts-docs | open | 01-architecture.md | The backend depends on frontend-package internals; the shared-contract layer is a path alias plus a hand-synced copy
-- [ ] DOC-10 | medium | contracts-docs | open | 14-contracts-docs.md | ERROR-STATES.md's "every error code the API can return" is missing 8 taxonomy codes and 6 inline literals
+- [x] DOC-10 | medium | contracts-docs | fixed:added 8 taxonomy codes + 13 inline literals to ERROR-STATES.md's tables; scripts/docs-error-codes-check.py generated check found 2 more the hand audit missed | 14-contracts-docs.md | ERROR-STATES.md's "every error code the API can return" is missing 8 taxonomy codes and 6 inline literals
 - [x] DOC-11 | medium | contracts-docs | fixed:ChangeRequest.planSummary now $refs the PlanSummary component | 14-contracts-docs.md | OpenAPI types `ChangeRequest.planSummary` as a string; the API stores and serves a structured object
-- [ ] DOC-12 | medium | contracts-docs | open | 14-contracts-docs.md | DOMAIN-MODEL.md's entity catalog is missing a third of the store's item types
+- [x] DOC-12 | medium | contracts-docs | fixed:added 8 rows (+ RequestSetItem, a 9th the hand audit missed) to DOMAIN-MODEL.md's entity catalog; scripts/docs-entity-catalog-check.py, extended to also verify each row's schema.ts line citation (DOC-17) | 14-contracts-docs.md | DOMAIN-MODEL.md's entity catalog is missing a third of the store's item types
 - [x] DOC-4 | medium | contracts-docs | fixed:errors.ts cites the real contract; ERROR-STATES.md's grep-a-missing-file analysis re-measured and corrected | 14-contracts-docs.md | Multiple docs and a code header cite `ccp/docs/specs/ccp-api.md`, which does not exist in this repo
 - [x] DOC-5 | medium | contracts-docs | fixed:cdc5f2c | 14-contracts-docs.md | ~100 broken relative markdown links across the published tree
-- [ ] DOC-6 | medium | contracts-docs | open | 14-contracts-docs.md | API-SPEC.md states the opposite of current code on `PUT /projects/:id/identity` gating
+- [x] DOC-6 | medium | contracts-docs | fixed:verified current code (routes/projects.ts) DOES gate on isOnboardable + refuses archived; API-SPEC.md row corrected to match | 14-contracts-docs.md | API-SPEC.md states the opposite of current code on `PUT /projects/:id/identity` gating
 - [ ] DOC-7 | medium | contracts-docs | open | 14-contracts-docs.md | App `DriftProposal` type does not match the wire: `importPayload` has a different shape, and top-level `arn`/`tfType` are mock-only
-- [ ] DOC-8 | medium | contracts-docs | open | 14-contracts-docs.md | catalogctl README makes two explicit completeness claims that are false
-- [ ] DOC-9 | medium | contracts-docs | open | 14-contracts-docs.md | Four operator-facing env vars are undocumented (two of them documented nowhere at all)
+- [x] DOC-8 | medium | contracts-docs | fixed:added drift-edit/scan-worker/window-check to the subcommand table, create_resource + its 4th dispatch table to the edit-verbs count (12→13); tools/catalogctl/readme_test.go | 14-contracts-docs.md | catalogctl README makes two explicit completeness claims that are false
+- [x] DOC-9 | medium | contracts-docs | fixed:CCP_APPLY_FROZEN/CCP_APPLY_AUTO_REVERT/CCP_DRIFT_IMPORT/CCP_DRIFT_CHECK_CMD (+ CCP_GITHUB_APP_KEY, found in the same audit) added to api/README.md's env table + .env.example/docker-compose.yml; scripts/docs-env-vars-check.py | 14-contracts-docs.md | Four operator-facing env vars are undocumented (two of them documented nowhere at all)
 - [ ] TEST-7 | medium | contracts-docs | open | 12-testing-quality.md | The SPA has no DOM/interaction testing; ~25 test files pin UI by source-string inspection
 - [x] API-12 | low | contracts-docs | fixed:prNumberFromUrl now requires /pull/<n> or /merge_requests/<n>; test/linkPr.test.ts | 02-api-correctness.md | `prNumberFromUrl` extracts a "PR number" from any URL ending in digits
 - [x] ARCH-14 | low | contracts-docs | fixed:verified closed by DOC-1 and DOC-2 — openapi.test.ts diffs the live Hono route table against the contract both ways | 01-architecture.md | The OpenAPI "parity test" is string containment, not parity
 - [x] DOC-15 | low | contracts-docs | fixed:ec95bd2 | 14-contracts-docs.md | MAINTAINING-THE-CATALOG.md points at a generated-output directory that does not exist in the tree
-- [ ] DOC-16 | low | contracts-docs | open | 14-contracts-docs.md | Assorted OpenAPI request/response gaps against route behavior
-- [ ] DOC-17 | low | contracts-docs | open | 14-contracts-docs.md | The code-derived docs' line citations have drifted from HEAD
+- [x] DOC-16 | low | contracts-docs | fixed:GET /requests cursor was already resolved at HEAD (verified); fixed /admin/audit's uncapped claim + limit param, POST /admin/accounts' projectId, DriftChangedAttr's pathSegments in ccp-api.yaml | 14-contracts-docs.md | Assorted OpenAPI request/response gaps against route behavior
+- [x] DOC-17 | low | contracts-docs | fixed:re-stamped the 4 named citations + all 24 DOMAIN-MODEL.md entity-catalog line citations (13 more were stale); scripts/docs-entity-catalog-check.py now verifies each against schema.ts — other prose citations remain disciplined staleness, not exhaustively re-verified | 14-contracts-docs.md | The code-derived docs' line citations have drifted from HEAD
 - [x] TEST-11 | low | contracts-docs | fixed:verified closed by DOC-1 and DOC-2 — same defect as ARCH-14, fixed once | 12-testing-quality.md | OpenAPI contract test is substring matching, not conformance
 
 ## silent-failure
@@ -207,7 +207,7 @@ Roles, sessions, TOTP, dual control, quorum and idempotency.
 - [ ] FE-7 | medium | authz-identity | open | 05-frontend-flows.md | PendingChangesBanner count goes stale after any dual-control activity — and the mock branch reads an unsubscribed store
 - [ ] FE-9 | medium | authz-identity | open | 05-frontend-flows.md | apiSession role resolution falls back to another scope's role when the user has no binding on the active project
 - [ ] CTL-9 | low | authz-identity | open | 07-catalogctl.md | `pr-prepare`'s UNAPPROVED gate accepts any non-empty approvals list without checking `decision`
-- [ ] DOC-14 | low | authz-identity | open | 14-contracts-docs.md | PERMISSIONS.md §9 cites a "§2 apply row" that does not exist
+- [x] DOC-14 | low | authz-identity | fixed:verified already closed by DOC-2's fix (cdc5f2c) — §2 now has the apply row, §9's cross-reference resolves | 14-contracts-docs.md | PERMISSIONS.md §9 cites a "§2 apply row" that does not exist
 - [ ] FE-12 | low | authz-identity | open | 05-frontend-flows.md | After a partial approval, the queue keeps a card the server's pending scope would drop
 
 ## ci-not-wired
@@ -269,10 +269,10 @@ importer/kit, kit-azure and schemadump.
 - [ ] IMP-6 | medium | importer | open | 08-importer-schemadump.md | statediff's managed-set match assumes Terraform state `id` equals the discovery id; false-positive findings for id-divergent types (concrete: `aws_volume_attachment`)
 - [x] IMP-7 | medium | importer | fixed:661d247 moved both Azure pins to 4.81.0; recurrence guard still missing | 08-importer-schemadump.md | Azure template provider pin (4.14.0) contradicts the committed azurerm schemadump tag (v4.81.0) it claims to bind to
 - [ ] IMP-8 | medium | importer | open | 08-importer-schemadump.md | Committed schemadump artifacts are not reproducible via the documented `gen.sh` pipeline; generated-catalog staleness detection is entirely manual
-- [ ] ARCH-15 | low | importer | open | 01-architecture.md | ADR ledger statuses lag the built system
+- [x] ARCH-15 | low | importer | fixed:ADR-0031 and ADR-0028 rows corrected to disclose their built pieces (Phase 1 shipped; --estate-tz/CCP_ESTATE_TZ shipped) alongside their still-Proposed formal status | 01-architecture.md | ADR ledger statuses lag the built system
 - [ ] IMP-10 | low | importer | open | 08-importer-schemadump.md | `gen-imports.py --id-region-suffix` appends `@region` to global-service ids too
 - [ ] IMP-13 | low | importer | open | 08-importer-schemadump.md | Shell scripts: minor robustness gaps around the deliberate no-`set -e` style
-- [ ] IMP-14 | low | importer | open | 08-importer-schemadump.md | Stale numbers and dangling references in kit/schemadump docs and comments
+- [x] IMP-14 | low | importer | fixed:discover.sh's 44→43 count fixed; statediff.py's SWEEP_METHOD now derives its count from services.json instead of hardcoding it; kit-azure's dangling "terraform.yml" pin reference fixed; schemadump README's 85-vs-1677 mismatch documented | 08-importer-schemadump.md | Stale numbers and dangling references in kit/schemadump docs and comments
 - [ ] IMP-9 | low | importer | open | 08-importer-schemadump.md | Azure `discover.py list-subscriptions` crashes on a bare-list capture at the truncation-warning check
 
 ## test-quality
@@ -405,7 +405,7 @@ SchemaForm, repeated blocks and pickers.
 Routing, redirects and current-page indication.
 
 - [x] CI-6 | medium | frontend-nav | fixed:scripts/ci/check-workflow-safety.sh (preflight gate, conditional latest, concurrency) | 13-ci-cd.md | release-images publishes on any tag with no quality gate, mutable version stamping, and an unconditional `latest`
-- [ ] ARCH-12 | low | frontend-nav | open | 01-architecture.md | `catalogctl` README's "complete, no more, no fewer" subcommand table omits a third of the subcommands
+- [x] ARCH-12 | low | frontend-nav | fixed:drift-edit/scan-worker/window-check added to the subcommand table (shared fix with DOC-8); tools/catalogctl/readme_test.go#TestReadmeSubcommandsComplete | 01-architecture.md | `catalogctl` README's "complete, no more, no fewer" subcommand table omits a third of the subcommands
 - [ ] FE-13 | low | frontend-nav | open | 05-frontend-flows.md | RequestDetail sub-panels hold un-keyed local state across request-id navigation
 
 ## resource-leak

@@ -68,6 +68,10 @@ services:
       CCP_FORGE_SEAL_KEY: ${CCP_FORGE_SEAL_KEY:-}
       CCP_GITHUB_APP_ID: ${CCP_GITHUB_APP_ID:-}
       CCP_GITHUB_APP_KEY_FILE: ${CCP_GITHUB_APP_KEY_FILE:-}
+      # DOC-9: the inline alternative to CCP_GITHUB_APP_KEY_FILE above, for a host
+      # with no secret-mount story — read by forgeCredentials.ts#githubAppConfig,
+      # unused (the file wins) whenever CCP_GITHUB_APP_KEY_FILE is also set.
+      CCP_GITHUB_APP_KEY: ${CCP_GITHUB_APP_KEY:-}
     volumes:
       # The GitHub App's private key, when one is configured — a read-only bind
       # of a host file so it keeps its own permissions and never enters the

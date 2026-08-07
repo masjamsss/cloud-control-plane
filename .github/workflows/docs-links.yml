@@ -16,6 +16,13 @@ on:
       - '**/*.md'
       - 'scripts/docs-link-check.py'
       - 'scripts/docs-test-plan-citations-check.py'
+      - 'scripts/docs-env-vars-check.py'
+      - 'scripts/docs-error-codes-check.py'
+      - 'scripts/docs-entity-catalog-check.py'
+      - 'ccp/api/src/**/*.ts'
+      - 'ccp/api/.env.example'
+      - 'ccp/.env.example'
+      - 'ccp/docker-compose.yml'
       - '.github/workflows/docs-links.yml'
   push:
     branches: [main]
@@ -23,6 +30,13 @@ on:
       - '**/*.md'
       - 'scripts/docs-link-check.py'
       - 'scripts/docs-test-plan-citations-check.py'
+      - 'scripts/docs-env-vars-check.py'
+      - 'scripts/docs-error-codes-check.py'
+      - 'scripts/docs-entity-catalog-check.py'
+      - 'ccp/api/src/**/*.ts'
+      - 'ccp/api/.env.example'
+      - 'ccp/.env.example'
+      - 'ccp/docker-compose.yml'
       - '.github/workflows/docs-links.yml'
 permissions:
   contents: read
@@ -45,3 +59,17 @@ jobs:
       # plausible-looking path that names no file that has ever existed).
       - name: every FUNCTIONAL-TEST-PLAN.md citation resolves
         run: python3 scripts/docs-test-plan-citations-check.py
+      # DOC-9 — every CCP_* env var the api reads is documented somewhere an
+      # operator would look (catches the CCP_APPLY_FROZEN shape: a knob mentioned
+      # in zero markdown/env-example/compose files, only in code comments).
+      - name: every CCP_* env var is documented somewhere
+        run: python3 scripts/docs-env-vars-check.py
+      # DOC-10 — every error code errors.ts declares, and every inline
+      # `c.json({code…})` literal a route emits, appears in ERROR-STATES.md's
+      # "every error code the API can return" tables.
+      - name: every API error code is documented
+        run: python3 scripts/docs-error-codes-check.py
+      # DOC-12 — every exported `*Item` store shape in schema.ts has a
+      # DOMAIN-MODEL.md entity-catalog row.
+      - name: every store item shape is catalogued
+        run: python3 scripts/docs-entity-catalog-check.py

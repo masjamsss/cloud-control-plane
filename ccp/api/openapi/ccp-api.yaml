@@ -293,7 +293,11 @@ components:
       required: [path]
       properties: { path: {type: string}, live: {type: string}, code: {type: string}, sensitive: {type: boolean},
         liveJson: {description: 'exact plan value — present only when sensitive is false'},
-        codeJson: {description: 'exact plan value — present only when sensitive is false'} }
+        codeJson: {description: 'exact plan value — present only when sensitive is false'},
+        # DOC-16: was undeclared. Opaque/tolerant-wire — the generator always populates it
+        # (addendum A4), but an older generator's output (or a row from before this field
+        # existed) legitimately omits it; the api passes it through unvalidated.
+        pathSegments: {description: 'the classifier''s raw diff path segments (opaque, addendum A4) — absent on rows generated before this field existed'} }
     DriftVerdict:   # one resource verdict. `class` is a free STRING, never a wire enum (drift-portal spec §2.1) — the
       # eleven-id taxonomy (D1-D11) is a consumer-side fail-closed contract; role-projected (requester tier omits values)
       type: object
@@ -718,12 +722,17 @@ paths:
   /admin/accounts:
     get: { summary: List accounts (isAdmin), responses: { '200': { description: OK, content: { application/json: {
         schema: { type: array, items: { $ref: '#/components/schemas/Account' } } } } }, '403': { $ref: '#/components/responses/E403' } } }
-    post: { summary: Enroll (isAdmin; accounts.ts:170-199 validation; enrolling approver|lead or isAdmin=true → 202 dual-control),
+    post: { summary: Enroll (isAdmin; admin.ts EnrollBody validation; enrolling approver|lead or isAdmin=true → 202 dual-control;
+        binding into a projectId OTHER than the enrolling admin's own project is ALSO dual-control, cross-tenant grant),
       parameters: [{ $ref: '#/components/parameters/client' }],
       requestBody: { required: true, content: { application/json: { schema: { type: object,
         required: [username, displayName, role, teamId, password], properties: { username: {type: string, pattern: '^[a-z0-9._-]{2,32}$'},
           displayName: {type: string}, role: {$ref: '#/components/schemas/Role'}, teamId: {type: string},
-          password: {type: string, minLength: 8} } } } } },
+          password: {type: string, minLength: 8},
+          # DOC-16: was undeclared — omitted, binds into the enrolling admin's own project;
+          # set, binds into that project instead (and classifies as cross-tenant dual-control
+          # whenever it differs from the enrolling project). '*' is refused.
+          projectId: {type: string, description: 'First project binding target. Omit = the enrolling (acting) project.'} } } } } },
       responses: { '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Account' } } } },
         '202': { description: PendingConfigChange created (§6) }, '403': { $ref: '#/components/responses/E403' },
         '409': { $ref: '#/components/responses/E409' }, '422': { $ref: '#/components/responses/E422' } } }
@@ -888,8 +897,12 @@ paths:
     post: { summary: Any admin (incl. proposer) withdraws/rejects, parameters: [{ $ref: '#/components/parameters/id' }],
       responses: { '200': { description: Rejected } } }
   /admin/audit:
-    get: { summary: Hash-chained audit, newest first, cursor-paged, uncapped (replaces audit.ts CAP=500),
-      parameters: [{ $ref: '#/components/parameters/cursor' }],
+    # DOC-16: was described as "uncapped" declaring only `cursor` — the handler (admin.ts)
+    # actually pages: `?limit=` defaults to 100, capped at 1000; unset `cursor` starts from
+    # the newest entry.
+    get: { summary: Hash-chained audit, newest first, cursor-paged (limit default 100, max 1000),
+      parameters: [{ $ref: '#/components/parameters/cursor' },
+        { name: limit, in: query, description: 'Page size, default 100, max 1000 (unlike the /requests limit param, omitting this does NOT return the whole collection).', schema: { type: integer, minimum: 1, maximum: 1000 } }],
       responses: { '200': { description: OK, content: { application/json: { schema: { type: object,
         properties: { items: { type: array, items: { $ref: '#/components/schemas/AuditEntry' } }, cursor: {type: string} } } } } } } }
   # DOC-2: shipped (admin.ts) and declared in no contract until now.
