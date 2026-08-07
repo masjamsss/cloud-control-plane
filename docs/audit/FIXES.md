@@ -2594,3 +2594,44 @@ alone, since the reports quote the old names as their evidence.
 
 **Residue:** see `R-51` — the app's function coverage is the number that matters and the one
 this fix can only record, not move.
+
+## CI-13
+
+*The smoke proves boot + serve, not the system's function; PR runs of it are triggered by any
+`ccp/**` docs change.*
+
+- [x] **Defect reproduced first** — the smoke's own success line said what it proved:
+      "`/readyz` (200, bootstrapped) and the SPA is served in api-mode". Confirmed the gap is
+      real rather than rhetorical by checking what a break would do: with the session guard
+      removed, `GET /requests` answers 200 and the smoke still passes; nothing in the run
+      touched an authenticated surface at all.
+- [x] **Cause, not symptom** — boot+serve was the whole assertion set. Three properties now
+      stand between "a process is answering" and "this is a control plane", all reachable with
+      no estate, cloud credential, or fixture: authorization is **wired** (anonymous
+      `GET /requests` → 401), credentials are **verified** (wrong password → 401), and the
+      credential path **works** (the bootstrap admin authenticates and is held at the
+      first-run password gate).
+- [x] **Regression test** — the smoke itself, and both directions were checked rather than
+      assumed: pointing assertion 1 at an unprotected route (`/healthz`) **dies on 200**, and
+      a body that is not an authenticated login **dies** rather than matching. Exact status
+      codes, never ranges — a 500 from a broken route must not read as a pass merely because
+      it is not 200.
+- [x] **Failure is loud** — each refusal names the route, the code it got, and the code it
+      expected.
+- [x] **Evidence in the status line** — the CI `smoke` job is green on the assertions
+      (run 31160044838).
+
+**The finding's recommendation named a phantom.** It suggests asserting `GET /catalog`; there
+is no such route in `ccp/api/src` — it is one of the paths DOC-1 deleted from the contract for
+exactly that reason, and following the recommendation would have pinned a fourth phantom.
+`GET /requests` is the real project-scoped protected read (**L-29**).
+
+**The trigger fix could not be spelled the obvious way.** `paths-ignore: ccp/docs/**` alongside
+`paths:` is a workflow GitHub **rejects** — both filters on one event is invalid — so the
+exclusion is a negated pattern inside `paths:`, ordered after the positive it narrows. Also
+corrected the header's `APP_PORT (default 4173)` against a code default of 8800, which had been
+sending readers to the wrong port.
+
+**Residue:** none. The smoke still serves via `vite preview` rather than the shipped nginx
+config, so the SPA-fallback/caching behaviour remains untested — but that is CI-7's subject
+(the Docker build path is never exercised), already open and unchanged by this fix.

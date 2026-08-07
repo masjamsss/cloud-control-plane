@@ -225,7 +225,7 @@ Checks that exist but run nowhere, or run and prove nothing.
 - [ ] CI-10 | low | ci-not-wired | open | 13-ci-cd.md | Push-trigger path filters omit the workflow file itself on ccp-api and ccp-smoke
 - [ ] CI-11 | low | ci-not-wired | open | 13-ci-cd.md | Stale toolchain claims: gate.sh advertises checks CI does not run
 - [ ] CI-12 | low | ci-not-wired | open | 13-ci-cd.md | Inconsistent action pinning, with a comment that contradicts the file it sits in; setup-go caching is configured to a nonexistent root go.sum
-- [ ] CI-13 | low | ci-not-wired | open | 13-ci-cd.md | The smoke proves boot + serve, not the system's function; PR runs of it are triggered by any `ccp/**` docs change
+- [x] CI-13 | low | ci-not-wired | fixed:the smoke asserts authz, credential verification and the bootstrap login; ccp-smoke.yml no longer triggers on ccp/docs | 13-ci-cd.md | The smoke proves boot + serve, not the system's function; PR runs of it are triggered by any `ccp/**` docs change
 
 ## data-persistence
 
