@@ -105,12 +105,15 @@ services:
       - "127.0.0.1:${APP_PORT:-8800}:8080"
 
   # ── CI runner (opt-in, profile: runner) ──────────────────────────────────────
-  # Self-hosted GitHub Actions runner for this repo. Every workflow already says
+  # Self-hosted GitHub Actions runner for this repo. Every workflow EXCEPT the two
+  # that build Docker images (docker-build.yml, release-images.yml — pinned to
+  # ubuntu-latest on purpose, see either file's own header) already says
   # `runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}`, so bringing this online
   # with label `ccp` + setting the repo variable CI_RUNNER=ccp is the whole
-  # cutover (rollback: delete the variable) — see ccp/docs/go-live.md → "CI runner".
-  # No docker socket (verified: no workflow in .github/workflows/ uses docker), no
-  # published ports, unprivileged user (see runner/Dockerfile + entrypoint.sh).
+  # cutover for those (rollback: delete the variable) — see ccp/docs/go-live.md →
+  # "CI runner". No docker socket (verified: no workflow ROUTED TO THIS RUNNER
+  # uses docker — the two that do are never routed here), no published ports,
+  # unprivileged user (see runner/Dockerfile + entrypoint.sh).
   runner:
     build: { context: ./runner }
     image: ccp-runner:local

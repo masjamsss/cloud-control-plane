@@ -6,6 +6,7 @@ import { MemoryStore } from '../src/store/memoryStore';
 import type { RequestItem } from '../src/store/schema';
 import { __setNow } from '../src/clock';
 import { seedRequests } from './helpers/seed';
+import { pollUntil } from './helpers/pollUntil';
 import {
   applyFrozen,
   autoRevertEnabled,
@@ -80,8 +81,15 @@ describe('off by default — with CCP_SCHEDULER unset, no loop and nothing is pr
 
     const handle = maybeStartSchedulerLoop(store, { env: {} }); // flag OFF
     expect(handle).toBeNull();
-    // give any (erroneously-armed) timer a tick — there must be none
-    await new Promise((r) => setTimeout(r, 20));
+    // TEST-9 — give any (erroneously-armed) timer a chance to tick, polling the
+    // forbidden condition instead of a fixed sleep: a wider observation window than a
+    // fixed 20ms sleep gave, without slowing down the (expected) case where nothing ever
+    // changes and this genuinely waits out the whole budget.
+    const processed = await pollUntil(async () => {
+      const req = (await store.get('P#sample#REQ#seed-sari-0', 'META')) as RequestItem | null;
+      return req?.status !== 'AWAITING_DEPLOY_APPROVAL';
+    });
+    expect(processed).toBe(false);
 
     const req = (await store.get('P#sample#REQ#seed-sari-0', 'META')) as RequestItem | null;
     expect(req?.status).toBe('AWAITING_DEPLOY_APPROVAL'); // never auto-processed

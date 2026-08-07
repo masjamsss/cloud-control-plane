@@ -110,6 +110,37 @@ if unconditional:
 else:
     ok("`latest` moves only under an enable= condition (CI-6)")
 
+# ── OPS-9 · no job that uses docker may route to the self-hosted CI_RUNNER ──────────
+#
+# The self-hosted runner (docker-compose.yml's `runner` service) is built with NO
+# docker socket on purpose — the same posture the scanner/toolbox images use, and the
+# reason OPS-9's cutover deliberately stops short of 100%: a job that calls `docker
+# build`/`docker compose`/`docker buildx`, or uses a `docker/*` action, cannot run
+# there at all. Detected from the job's OWN steps (a `docker/*` action `uses:`, or a
+# `run:` step containing the literal word `docker`), not from a hardcoded list of job
+# names — a NINTH docker-using job added tomorrow is caught automatically instead of
+# needing its own new rule here.
+docker_on_runner = []
+for wf in workflows:
+    doc = yaml.safe_load(open(wf, encoding="utf-8")) or {}
+    for name, job in (doc.get("jobs") or {}).items():
+        job = job or {}
+        steps = job.get("steps") or []
+        uses_docker = any(
+            "docker/" in str((s or {}).get("uses", ""))
+            or "docker" in str((s or {}).get("run", ""))
+            for s in steps
+        )
+        if uses_docker and "CI_RUNNER" in str(job.get("runs-on", "")):
+            docker_on_runner.append(f"{wf}: job `{name}`")
+if docker_on_runner:
+    bad("no docker-using job routes to the self-hosted CI_RUNNER",
+        "the runner has no docker socket (docker-compose.yml's own comment on the "
+        "`runner` service) — these jobs would fail outright if CI_RUNNER were ever set:\n     "
+        + "\n     ".join(docker_on_runner))
+else:
+    ok("no docker-using job's runs-on references vars.CI_RUNNER (OPS-9)")
+
 print()
 if fails:
     print(f"check-workflow-safety: {len(fails)} problem(s)")

@@ -1,0 +1,150 @@
+name: docker-build
+
+# CI-7 — the documented production install path was never exercised by CI. The
+# first time ANY of these five Dockerfiles built was either release-images.yml
+# (api/scanner/app-demo — at RELEASE time) or an operator's own machine
+# (runner/toolbox, and the REAL app image — VITE_API_BASE baked — at INSTALL
+# time). ccp-smoke.yml deliberately runs the docker-free run-local.sh path (its
+# own header says so), so nothing in CI ever proved these Dockerfiles or
+# docker-compose.yml still build — Dockerfile/compose bit-rot was discovered at
+# release time or by the first operator to install, precisely the "installer
+# bit-rot" failure mode ccp-smoke.yml exists to prevent, but for the path real
+# deployments actually use.
+#
+# Builds all five images from docker-compose.yml's own build contexts (no push,
+# single arch, GitHub Actions layer cache) and validates `docker compose config`.
+# The api image is additionally booted and probed at /readyz — the one image
+# whose shipped container this lane can prove actually starts; the deeper
+# functional assertions (authz enforced, credentials verified) are ccp-smoke.yml's
+# job on the docker-free path, so this stays a boot check, not a duplicate smoke.
+#
+# ubuntu-latest, not the self-hosted CI_RUNNER, on every job here — deliberately
+# the ONE exception OPS-9's wiring leaves out. docker-compose.yml's own comment on
+# the `runner` service says so: "No docker socket (verified: no workflow in
+# .github/workflows/ uses docker)" — a self-hosted runner without a docker socket
+# cannot run `docker build` at all, so this lane must stay on a runner that has
+# Docker preinstalled.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ccp/api/**'
+      - 'ccp/app/**'
+      - 'ccp/runner/**'
+      - 'ccp/scanner/**'
+      - 'ccp/toolbox/**'
+      - 'ccp/docker-compose.yml'
+      - 'tools/catalogctl/**'
+      - '.github/workflows/docker-build.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ccp/api/**'
+      - 'ccp/app/**'
+      - 'ccp/runner/**'
+      - 'ccp/scanner/**'
+      - 'ccp/toolbox/**'
+      - 'ccp/docker-compose.yml'
+      - 'tools/catalogctl/**'
+      - '.github/workflows/docker-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  # ── docker compose config validates ──────────────────────────────────────────
+  # Every ":?"-required var gets a throwaway value — this proves the compose file
+  # itself is well-formed and every build/env/profile wiring resolves, not that
+  # any value is a real secret.
+  compose-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: docker compose config validates (every profile)
+        working-directory: ccp
+        env:
+          # PG-5: every value here is the SAME already-allowlisted placeholder marker
+          # (publish-gate.sh's PG5_PLACEHOLDER_MARKERS) — this step only proves the
+          # compose FILE resolves every required var, never a real credential.
+          CCP_UPLOAD_TOKEN: not-a-real-secret
+          CCP_TOTP_KEY: not-a-real-secret
+          VITE_API_BASE: http://localhost:8787
+          CCP_SCANNER_KEY: not-a-real-secret
+          RUNNER_TOKEN: not-a-real-secret
+        run: docker compose --profile scanner --profile runner --profile toolbox config >/dev/null
+
+  # ── build all five images (no push) ──────────────────────────────────────────
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Contexts/files mirror docker-compose.yml's own build: blocks exactly —
+          # see that file for the "why this context" rationale per image.
+          - image: api
+            context: ccp
+            file: ccp/api/Dockerfile
+          - image: app
+            context: ccp/app
+            file: ccp/app/Dockerfile
+          - image: runner
+            context: ccp/runner
+            file: ccp/runner/Dockerfile
+          - image: scanner
+            context: .
+            file: ccp/scanner/Dockerfile
+          - image: toolbox
+            context: .
+            file: ccp/toolbox/Dockerfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: docker/setup-buildx-action@f7ce87c1d6bead3e36075b2ce75da1f6cc28aaca # v3.9.0
+      - name: Build ${{ matrix.image }} (no push, single arch)
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: false
+          # Only the api image needs to be loaded into the local daemon — it is the
+          # one this job goes on to boot and probe below.
+          load: ${{ matrix.image == 'api' }}
+          tags: ccp-${{ matrix.image }}:ci
+          cache-from: type=gha,scope=docker-build-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=docker-build-${{ matrix.image }}
+
+      # ── api only: boot the SHIPPED image and probe /readyz ──────────────────
+      # Same env recipe run-local.sh's production posture already uses
+      # (scripts/run-local.sh) — a fresh, un-bootstrapped store answering /readyz
+      # PAST the point where server.ts's fail-closed preflight would have refused
+      # to even open the port, and CCP_BOOTSTRAP=1 carries it through first-boot.
+      - name: Boot ccp-api and wait for /readyz
+        if: matrix.image == 'api'
+        run: |
+          set -euo pipefail
+          docker run -d --name ccp-api-ci \
+            -e NODE_ENV=production \
+            -e CCP_SECURE_COOKIES=1 \
+            -e CCP_SAME_ORIGIN=1 \
+            -e CCP_TOTP_KEY="$(openssl rand -base64 48)" \
+            -e CCP_BOOTSTRAP=1 \
+            -p 18787:8787 \
+            ccp-api:ci
+          for i in $(seq 1 30); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18787/readyz || true)"
+            if [ "$code" = "200" ]; then
+              echo "ccp-api answered /readyz=200 after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::ccp-api never answered /readyz=200 within 30s — the shipped image did not come up"
+          docker logs ccp-api-ci || true
+          exit 1
+      - name: Container logs (always, for debugging)
+        if: matrix.image == 'api' && always()
+        run: docker logs ccp-api-ci || true
+      - name: Teardown
+        if: matrix.image == 'api' && always()
+        run: docker rm -f ccp-api-ci || true

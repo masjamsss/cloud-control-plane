@@ -91,8 +91,23 @@ export function githubDataWorkflow(): string {
 #                                       exits 0; the artifact step below is
 #                                       already tolerant of finding nothing
 #                                       (if-no-files-found: warn)
+#   variable CCP_DATA_REQUIRE_UPLOAD   optional; unset (default) is the
+#                                       air-gap-friendly ERR-16 behavior: an
+#                                       unreachable control plane warns
+#                                       (::warning:: + step summary) and exits
+#                                       0, keeping the bundle as an artifact.
+#                                       Set to "1" to opt OUT of that fallback
+#                                       for a non-air-gapped estate — an
+#                                       unreachable control plane then hard-
+#                                       fails the run instead of going green.
 #
-# Action pins follow the repo-wide convention (checkout@v4 / setup-node@v4).
+# CI-12 — every action across every workflow is SHA-pinned now, \`checkout\` at the
+# SAME sha (v4.2.2) as everywhere else. \`setup-python\`/\`setup-node\` pin NEWER majors
+# (v6.3.0 / v6.4.0) than the v5/v4 the rest of the repo uses — deliberately: this is
+# the one lane whose interpreter versions are governed by gen-project-data.sh's own
+# \`--print-pins\` (an estate repo checking out ONLY this file, per the runbook, needs
+# a working setup step without also vendoring the control-plane repo's toolchain
+# choices), not by a shared repo-wide default.
 
 name: ccp-data
 
@@ -178,6 +193,9 @@ jobs:
           CCP_UPLOAD_TOKEN: \${{ secrets.CCP_UPLOAD_TOKEN }}
           CCP_PROJECT_ID: \${{ inputs.project_id || vars.CCP_PROJECT_ID }}
           CCP_SCAN_ROOT: \${{ inputs.tf_root || vars.CCP_SCAN_ROOT || 'environments/prod' }}
+          # ERR-16 — opt-in hard-fail on an unreachable control plane; unset (the
+          # default) keeps the air-gapped-friendly exit-0 fallback described above.
+          CCP_DATA_REQUIRE_UPLOAD: \${{ vars.CCP_DATA_REQUIRE_UPLOAD }}
         run: bash "\${{ steps.pins.outputs.script }}" --install-deps --out "$RUNNER_TEMP/ccp-data-out"
 
       # Manual-upload fallback: if the control plane was unreachable (or no URL
@@ -211,6 +229,12 @@ export function gitlabDataPipeline(): string {
 #                              (unset = generate only, keep the artifact)
 #   CCP_PROJECT_ID          the control-plane project id
 #   CCP_SCAN_ROOT             optional; default environments/prod
+#   CCP_DATA_REQUIRE_UPLOAD   optional; unset (default) is the air-gap-
+#                              friendly ERR-16 behavior — an unreachable
+#                              control plane warns and exits 0, keeping the
+#                              bundle as an artifact. Set to "1" to opt OUT
+#                              of that fallback: an unreachable control plane
+#                              then hard-fails the job instead of going green.
 #
 # A protected variable only reaches pipelines on PROTECTED refs — protect the
 # default branch or the job dies with "CCP_UPLOAD_TOKEN is empty".
@@ -362,9 +386,12 @@ jobs:
           fi
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: \${{ steps.locate.outputs.dir }}/go.mod
+          # CI-12 — same dynamic base as go-version-file above: unset, the module
+          # cache looks for a repo-root go.sum that doesn't exist here either.
+          cache-dependency-path: \${{ steps.locate.outputs.dir }}/go.sum
 
       - name: Build catalogctl
         working-directory: \${{ steps.locate.outputs.dir }}

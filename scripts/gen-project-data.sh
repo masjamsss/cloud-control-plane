@@ -76,7 +76,16 @@ PIN_PYTHON_HCL2="5.1.1"
 SCHEMA="ccp.project-data.v1"
 
 note() { printf '[gen-project-data] %s\n' "$*"; }
-warn() { printf '[gen-project-data] WARN: %s\n' "$*" >&2; }
+# ERR-16 — every warn() also becomes a `::warning::` workflow annotation, so it
+# surfaces in the Actions run's UI (and its email/notification digest) instead of
+# needing someone to open the run and read the log or the artifact to notice.
+# GITHUB_ACTIONS is set to "true" by Actions itself; unset locally, so a plain
+# operator run prints only the ordinary WARN line, never the raw `::warning::` text.
+warn() {
+  printf '[gen-project-data] WARN: %s\n' "$*" >&2
+  [ "${GITHUB_ACTIONS:-}" = "true" ] && printf '::warning::gen-project-data: %s\n' "$*"
+  return 0
+}
 die()  { printf '[gen-project-data] ERROR: %s\n' "$*" >&2; exit 1; }
 
 usage() { sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'; }
@@ -393,6 +402,25 @@ case "$CURL_EXIT" in
     # dropped connection) — the air-gapped/manual-upload case, not a config error.
     write_status "unreachable" "$CURL_EXIT" "$ENDPOINT"
     warn "control plane unreachable (curl exit $CURL_EXIT). Keeping the bundle as a build artifact for a manual upload — see docs/runbooks/account-data-ci.md §Manual fallback."
+    # ERR-16 — a step-summary section too, not just the annotation warn() already
+    # emits: this is the ONE outcome this script can produce that keeps CI green
+    # while the portal's estate data goes silently stale run after run, so it gets
+    # the most prominent surface Actions has, not just a badge.
+    if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+      {
+        echo "### ⚠️ ccp-data: control plane unreachable (curl exit $CURL_EXIT)"
+        echo "Could not reach \`$ENDPOINT\`. The bundle was kept as this run's artifact"
+        echo "instead of uploaded — see docs/runbooks/account-data-ci.md §Manual fallback."
+        echo "If this repeats across runs, the portal is serving ever-staler estate data"
+        echo "behind an unbroken row of green \`ccp-data\` runs."
+      } >> "$GITHUB_STEP_SUMMARY"
+    fi
+    # Opt-in hard fail: an air-gapped estate WANTS this exit-0 fallback (that is the
+    # documented, intended behavior); an estate that is NOT air-gapped may prefer an
+    # unreachable control plane to redden CI instead of silently keeping an artifact.
+    if [ "${CCP_DATA_REQUIRE_UPLOAD:-}" = "1" ]; then
+      die "control plane unreachable and CCP_DATA_REQUIRE_UPLOAD=1 — this estate opted OUT of the air-gapped exit-0 fallback, so an unreachable control plane is a hard failure"
+    fi
     exit 0
     ;;
   22)

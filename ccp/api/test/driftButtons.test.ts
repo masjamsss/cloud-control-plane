@@ -10,7 +10,7 @@ import type { AuditItem, DriftProposalItem } from '../src/store/schema';
 import { __resetUploadRateLimitForTests } from '../src/middleware/rateLimit';
 import { __resetKnownProjectsForTests } from '../src/projects';
 import { __setNow } from '../src/clock';
-import { __resetDriftGenStateForTests } from '../src/domain/driftProposals';
+import { __resetDriftGenStateForTests, driftGenIdle } from '../src/domain/driftProposals';
 import { __resetDriftCheckStateForTests, runDriftCheck } from '../src/domain/driftCheck';
 import type { DriftCheckSteps } from '../src/domain/driftCheck';
 import { seed, seedAccount, sessionCookieFor, setSetting } from './helpers/seed';
@@ -404,10 +404,11 @@ describe('POST /projects/:id/drift/generate (B2)', () => {
     const entries = await auditEntries(s.store);
     expect(entries.some((e) => e.action === 'drift-generation-requested' && (e.after as { reportVersion: number }).reportVersion === 1)).toBe(true);
 
-    // The fire-and-forget runner actually ran (and, since the remote is
-    // bogus, failed at prepare()) — proves scheduleDriftGeneration was
-    // really invoked by this route, not just audited.
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // TEST-9 — await the fire-and-forget runner's ACTUAL completion (not a
+    // fixed sleep): it really ran (and, since the remote is bogus, failed at
+    // prepare()) — proves scheduleDriftGeneration was really invoked by this
+    // route, not just audited.
+    await driftGenIdle('acme');
     const after = await auditEntries(s.store);
     expect(after.some((e) => e.action === 'drift-proposals-failed')).toBe(true);
   });

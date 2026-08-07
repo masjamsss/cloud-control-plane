@@ -3230,3 +3230,363 @@ sibling report.** See API-16's entry for the fix, evidence, and negative test.
       value ACTUALLY stored rather than a value that was silently discarded.
 - [x] **Evidence in the status line** — `test/sessionFieldGuard.test.ts`; full api suite (99
       files / 1408 tests, 1 pre-existing skip) green; typecheck clean.
+
+## OPS-9
+
+*The documented CI-runner cutover only routes 2 of 8 workflows.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `docker-compose.yml`'s `runner` service
+      and `ccp/docs/go-live.md` both documented `runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest'
+      }}` as the repo-wide cutover convention, but only `ccp-onboard.yml` and `ccp-data.yml`
+      actually used it — `catalogctl.yml`, `ccp-api.yml`, `ccp-app.yml`, `ccp-apply.yml` (2
+      jobs), `ccp-smoke.yml`, `docs-links.yml`, `findings.yml`, `importer.yml` (2 jobs), and
+      `path-filters.yml` were all hardcoded to `ubuntu-latest`, so setting `CI_RUNNER` would not
+      move most of the fleet the documentation claimed it would.
+- [x] **Cause, not symptom** — wired `runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}` into
+      every job in every workflow file EXCEPT the two that build Docker images
+      (`release-images.yml`, and the new `docker-build.yml` — CI-7 below): the self-hosted
+      runner (`docker-compose.yml`'s `runner` service) is built with NO docker socket by
+      design, so a job that calls `docker build`/`docker compose`/`docker buildx` or uses a
+      `docker/*` action cannot run there at all — discovered by reading that service's own
+      comment before blindly wiring every workflow, which would have broken those two lanes the
+      moment an operator set `CI_RUNNER`. Corrected `go-live.md`'s and `docker-compose.yml`'s
+      own comments (both previously overclaimed "every workflow already reads..." / "no
+      workflow in .github/workflows/ uses docker") to name the two exceptions precisely instead
+      of asserting a now-false universal claim.
+- [x] **Regression test** — extended `scripts/ci/check-workflow-safety.sh` with a new rule: no
+      job whose steps use a `docker/*` action or a `run:` step containing the word `docker` may
+      have `runs-on` reference `vars.CI_RUNNER` — detected from each job's own steps, not a
+      hardcoded job-name list, so a ninth docker-using job added later is caught automatically.
+      **Negative test confirmed**: manually routing `docker-build.yml`'s `build` job through
+      `CI_RUNNER` and re-running the check fails with the new rule's exact message; reverting
+      passes again.
+- [x] **Failure is loud** — the safety check names every offending workflow+job pair rather
+      than a bare pass/fail.
+- [x] **Evidence in the status line** — `bash scripts/ci/check-workflow-safety.sh` passes; every
+      touched workflow YAML parses; `bash scripts/ci/check-path-filters.sh` passes.
+
+## CI-10
+
+*Push-trigger path filters omit the workflow file itself on ccp-api and ccp-smoke.*
+
+- [x] **Defect reproduced first** — confirmed `ccp-api.yml`'s and `ccp-smoke.yml`'s `push:`
+      `paths:` lists did not include their own workflow file, unlike every other workflow's
+      `pull_request`/`push` pair — an edit to either file's `push:` trigger logic itself (e.g. a
+      broken path filter) would not re-trigger the workflow on the push that broke it, only on
+      whatever unrelated push happened to also touch a listed source path.
+- [x] **Defect fixed narrowly** — added each file to its own `push: paths:` list, matching its
+      already-correct `pull_request: paths:` list.
+- [x] **Cause, not symptom, generalized** — this was one instance of a class:
+      `scripts/ci/check-path-filters.sh` (deliberately NOT a general import-graph walker — its
+      own header says so, edges 1-4 are specific named dependencies) got ONE new, deliberate
+      exception: a general self-inclusion check that every `.github/workflows/*.yml` with a
+      `paths:` filter includes its own path in BOTH `pull_request` and `push`, so this exact
+      class cannot recur silently in any workflow, present or future — documented in the
+      script's own header as the one departure from its "not a general walker" rule.
+- [x] **Regression test** — the new self-inclusion check IS the regression test, run against
+      every workflow on every CI run. **Negative test confirmed**: temporarily removed
+      `docker-build.yml`'s self-path entry mid-development and re-ran the check — it failed
+      naming that exact file/trigger pair; restoring it passed again. (Caught and fixed a
+      double-counting bug in the check's own failure tally while building this: a Python-side
+      counter and the bash `fail()` helper were both incrementing, reporting "4" instead of "2"
+      on a synthetic 2-failure case — removed the redundant counter.)
+- [x] **Failure is loud** — the check names the workflow file and which trigger (`pull_request`
+      or `push`) is missing the self-reference.
+- [x] **Evidence in the status line** — `bash scripts/ci/check-path-filters.sh` passes across
+      all 14 workflow files with a `paths:` filter.
+
+## CI-7
+
+*The Docker build path (the documented production install) is never exercised by CI; images
+are first built at release time.*
+
+- [x] **Defect reproduced first** — confirmed no workflow built any of the five Dockerfiles
+      before either `release-images.yml` (api/scanner/app-demo, at RELEASE time) or an
+      operator's own machine (runner/toolbox, and the REAL app image with `VITE_API_BASE`
+      baked, at INSTALL time) — `ccp-smoke.yml` deliberately runs the docker-FREE
+      `run-local.sh` path (its own header says so), so Dockerfile/`docker-compose.yml` bit-rot
+      was only ever discoverable at release time or by the first operator to install, exactly
+      the "installer bit-rot" failure mode `ccp-smoke.yml` exists to prevent, but for the
+      Docker path real deployments actually use.
+- [x] **Cause, not symptom** — added `.github/workflows/docker-build.yml`: a `compose-config`
+      job that validates `docker compose --profile scanner --profile runner --profile toolbox
+      config` against throwaway env values (proves the compose file itself is well-formed), and
+      a `build` job matrixed over all five images (api/app/runner/scanner/toolbox) using
+      `docker compose`'s own build contexts, `docker/build-push-action` with `push: false` and
+      GitHub Actions layer caching. The api image is additionally `load: true`d and booted with
+      the SAME production-posture env recipe `run-local.sh --smoke` uses
+      (`NODE_ENV=production`, `CCP_SECURE_COOKIES=1`, `CCP_SAME_ORIGIN=1`, a fresh
+      `CCP_TOTP_KEY`, `CCP_BOOTSTRAP=1`), then polled at `/readyz` for up to 30s — the one image
+      whose shipped container this lane can prove actually starts, deliberately not a duplicate
+      of `ccp-smoke.yml`'s deeper functional assertions on the docker-free path. Both jobs stay
+      on `ubuntu-latest` (never the self-hosted `CI_RUNNER`) — see OPS-9 above for why.
+- [x] **Regression test** — the workflow itself is the regression test (a Dockerfile or
+      `docker-compose.yml` edit that breaks a build, or a shipped api image that fails to boot,
+      now fails a PR before merge instead of at release/install time). PG-5 flagged the job's
+      throwaway env values (`CCP_UPLOAD_TOKEN`, `CCP_TOTP_KEY`, `CCP_SCANNER_KEY`,
+      `RUNNER_TOKEN`) as secret-shaped on first pass; replaced each with
+      `not-a-real-secret` (an already-allowlisted `publish-gate.sh` marker) rather than
+      widening the allowlist for a one-off value. **Negative test confirmed**:
+      `bash scripts/publish-gate.sh` failed PG-5 with the original throwaway strings, passed
+      after the substitution.
+- [x] **Failure is loud** — the boot-check step emits `::error::` and dumps `docker logs` if
+      `/readyz` never answers 200 within 30s.
+- [x] **Evidence in the status line** — `docker-build.yml` parses as valid YAML; `bash
+      scripts/ci/check-path-filters.sh` and `bash scripts/ci/check-workflow-safety.sh` both
+      pass with the new file in scope; `bash scripts/publish-gate.sh` clean.
+
+## CI-12
+
+*Inconsistent action pinning, with a comment that contradicts the file it sits in; setup-go
+caching is configured to a nonexistent root go.sum.*
+
+- [x] **Defect reproduced first** — confirmed every `uses:` line across all 12 workflow files
+      was pinned to a floating major tag (`@v4`, `@v5`, ...) rather than a commit SHA, and 5 of
+      the `setup-go` steps had no `cache-dependency-path`, meaning the module cache looked for
+      a `go.sum` at the repo root (which does not exist — `tools/catalogctl` and
+      `tools/schemadump` each keep their own).
+- [x] **Cause, not symptom** — SHA-pinned every `uses:` across all 12 files (`actions/checkout`,
+      `actions/setup-node`, `actions/setup-go`, `actions/setup-python`,
+      `hashicorp/setup-terraform`, `docker/setup-qemu-action`, `docker/setup-buildx-action`,
+      `docker/login-action`, `docker/metadata-action`, `docker/build-push-action`) to their
+      exact, verified commit SHAs (resolved via `git ls-remote --tags` against each action's
+      real upstream repo — not guessed), each with its version in a trailing comment for human
+      readability; added `cache-dependency-path` pointing at the actual per-module `go.sum` to
+      all 5 `setup-go` usages (`catalogctl.yml`, `ccp-api.yml`, `ccp-apply.yml`,
+      `ccp-onboard.yml`, `importer.yml`). `ccp-data.yml`'s stale "Action pins follow the
+      repo-wide convention" comment (no longer true — that lane's `setup-python`/`setup-node`
+      versions are governed by `gen-project-data.sh`'s own `--print-pins`, not the shared repo
+      default) was rewritten to state that distinction explicitly.
+- [x] **Regression test** — every workflow YAML re-parses cleanly after the mechanical
+      rewrite; `scripts/ci/check-workflow-safety.sh` and `check-path-filters.sh` both still
+      pass with the pinned SHAs in place, proving nothing was renamed or malformed in the
+      process.
+- [x] **Failure is loud** — a floating tag silently repointing to a compromised release is
+      exactly the supply-chain risk SHA-pinning closes; a future edit that reverts to a bare
+      tag would show as an obvious diff in review.
+- [x] **Evidence in the status line** — all 12 workflow files parse; `grep -c "uses:.*@[a-f0-9]\
+      {40\}" .github/workflows/*.yml` shows every `uses:` line SHA-pinned.
+
+## CI-11
+
+*Stale toolchain claims: gate.sh advertises checks CI does not run.*
+
+- [x] **Defect reproduced first** — confirmed `scripts/gate.sh`'s own header comment claimed to
+      mirror "catalogctl, ccp-api, ccp-app, importer, **and terraform**" workflows, but no
+      standalone `terraform.yml` lane exists — `terraform fmt`/`validate` run as steps INSIDE
+      `ccp-api.yml`/`ccp-apply.yml`. Separately, `gate.sh`'s `checkov` skip message said "SKIP
+      (runs in CI)" — false; `grep` across every `.github/workflows/*.yml` shows checkov runs
+      in NO workflow anywhere, so this local run (when installed) is the ONLY infra-scan
+      coverage that exists.
+- [x] **Cause, not symptom** — rewrote the header comment to name the four real workflow files
+      it mirrors and explain terraform's actual placement (steps inside two OTHER workflows,
+      mirrored BY NAME in `gate.sh`'s own `tf-fmt`/`tf` sections, not a lane of its own).
+      Rewrote the checkov skip message to "SKIPPED (no CI backstop; install checkov locally for
+      full mode)". Self-caught a near-miss while writing the terraform comment: an early draft
+      copied the ORIGINAL finding's claim that `catalogctl.yml` has no `gofmt -l` step this
+      gate duplicates — `grep -n "gofmt" .github/workflows/catalogctl.yml` showed a later,
+      unrelated commit had already added one, which would have made the new comment false the
+      moment it was written; reworded before finalizing rather than shipping a freshly-stale
+      claim.
+- [x] **Regression test** — none of `gate.sh`'s comment text is itself asserted by an automated
+      check (this is documentation accuracy inside a comment, not a checkable invariant); the
+      correction was verified by direct `grep` against every workflow file at HEAD, cited
+      above, at the time of the edit.
+- [x] **Failure is loud** — N/A (a stale comment fails silently by construction; the fix is
+      making the comment true, not making a false one detectable).
+- [x] **Evidence in the status line** — `grep -n "terraform" .github/workflows/*.yml` and
+      `grep -n "gofmt" .github/workflows/catalogctl.yml` both support the corrected comment
+      text at commit time.
+
+## ERR-16
+
+*The ccp-data CI lane goes green when the control plane is unreachable.*
+
+- [x] **Defect reproduced first** — confirmed `scripts/gen-project-data.sh`'s "unreachable"
+      curl-exit branch (5/6/7/28/35/52/55/56) wrote `upload-status.json` and exited 0 with only
+      a plain stderr `WARN:` line — invisible in the Actions UI unless someone opens the run and
+      reads the log or downloads the artifact. A week-long outage (or a firewall regression)
+      would produce an unbroken row of green `ccp-data` runs while the portal served ever-staler
+      estate data.
+- [x] **Cause, not symptom** — `warn()` now ALSO emits a `::warning::` GitHub Actions
+      annotation (surfaces in the run's UI and notification digest) whenever
+      `GITHUB_ACTIONS=true`, a no-op locally. The unreachable branch specifically also appends a
+      `$GITHUB_STEP_SUMMARY` section (the most prominent surface Actions has) naming the
+      endpoint and curl exit code. Added an opt-in hard-fail, `CCP_DATA_REQUIRE_UPLOAD=1`
+      (wired through `ccp-data.yml`'s env and documented in both its header comment and
+      `docs/runbooks/account-data-ci.md`, plus the GitLab twin
+      `.gitlab/ci/ccp-data.gitlab-ci.yml`'s own header — GitLab CI/CD variables reach the job
+      script automatically, so no pipeline-file wiring was needed there beyond documenting it):
+      unset (default) keeps the documented air-gapped exit-0 fallback exactly as before; a
+      non-air-gapped estate can opt OUT and have an unreachable control plane hard-fail the run
+      instead of going green.
+- [x] **Regression test** — new `scripts/ci/gen-project-data-selftest.sh` (wired into a new
+      dedicated workflow, `gen-project-data-selftest.yml`, since `ccp-data.yml` itself never
+      runs in this public template repo — it's gated on `CCP_PROJECT_ID`, CI-9's fix, unset
+      here). Drives the REAL script (not a reimplementation) against `http://127.0.0.1:1` — a
+      loopback port nothing binds, so curl fails with exit 7 deterministically and without any
+      outbound network dependency — across 4 scenarios: plain run emits the ordinary WARN only,
+      no `::warning::`; `GITHUB_ACTIONS=true` + `GITHUB_STEP_SUMMARY` set gets both the
+      annotation and the step-summary section; `CCP_DATA_REQUIRE_UPLOAD=1` turns the SAME
+      unreachable condition into a nonzero exit; the same flag does NOT affect the separate
+      no-URL-configured exit-0 path (proving its scope is exactly the unreachable branch, not
+      every exit-0 path in the script). **Negative test confirmed**: reverted `warn()`/the
+      unreachable branch to their pre-fix shape and re-ran the selftest — 3 of 4 scenarios
+      failed with the expected missing-annotation/missing-summary/still-exits-0 messages;
+      restoring the fix returned all 4 to green.
+- [x] **Failure is loud** — the opt-in hard-fail's `die()` message names the exact env var and
+      why (`"this estate opted OUT of the air-gapped exit-0 fallback"`).
+- [x] **Evidence in the status line** — `bash scripts/ci/gen-project-data-selftest.sh` passes (4
+      scenarios); `gen-project-data-selftest.yml` parses and passes `check-path-filters.sh`/
+      `check-workflow-safety.sh`.
+
+## TEST-8
+
+*Golden-tree comparison is one-directional: extra files created by an edit go unnoticed.*
+
+- [x] **Defect reproduced first** — confirmed `golden_test.go`'s `mustEqualTree` iterated only
+      `wantDir`'s entries and byte-compared each against `gotDir` — a verb that wrote an
+      ADDITIONAL file `gotDir` never mentioned (a stray scratch file, a duplicated
+      `service_2.tf`, a leaked lockfile) passed the golden gate silently; the same asymmetry
+      applied to the refusal path's untouched-tree check (`mustEqualTree(t, beforeSnapshot,
+      work)`), so a refusal that left new debris behind also passed "untouched".
+- [x] **Cause, not symptom** — extracted the comparison into a standalone `treeDiff(wantDir,
+      gotDir) string` (independent of `*testing.T`, so a unit test can assert on its return
+      value directly instead of catching a `t.Fatal`) and added a second pass reading `gotDir`
+      and failing on any entry absent from `wantDir` — catalogctl is the only component that
+      writes Terraform, so "produces exactly these files and no others" is part of the
+      contract the goldens exist to pin. `mustEqualTree` is now a thin wrapper calling
+      `treeDiff` and `t.Fatal`ing on a non-empty result, so both of its existing call sites (the
+      success path AND the untouched-tree refusal check) get the fix for free.
+- [x] **Regression test** — new `TestTreeDiff`: identical trees still match (over-fix guard);
+      an extra file in `gotDir` that `wantDir` never mentions is caught and named in the
+      returned diff string. **Negative test confirmed**: temporarily reverted `treeDiff`'s
+      second pass (kept only the `wantDir`-only walk) and re-ran `TestTreeDiff` — failed with
+      "expected treeDiff to catch the extra file stray.tf, got no diff"; restoring the second
+      pass returned it to green. Full `go test ./...` (including all `TestGolden` cases) stays
+      green with the fix in place.
+- [x] **Failure is loud** — the diff string names the exact extra filename.
+- [x] **Evidence in the status line** — `go test ./...` in `tools/catalogctl` (2425 subtests,
+      0 failures); `gofmt -l` clean.
+
+## TEST-12
+
+*One test file consumes ~60% of the api suite wall time by rebuilding catalogctl per run.*
+
+- [x] **Defect reproduced first** — confirmed both `createResourceParity.test.ts` and
+      `scheduleWindowCheckParity.test.ts` each `go build`ed their own catalogctl binary into a
+      fresh `mkdtempSync` dir on EVERY vitest invocation, with no reuse across files in the
+      same run or across separate runs. Measured directly (`go clean -cache`, then one parity
+      file alone): the module-scope build step alone cost ~18s with a cold Go build cache,
+      collapsing to ~0.1s once a cached binary already exists — the actual dominant cost of
+      `createResourceParity.test.ts`'s own ~60s wall time turned out to be its ~30
+      spawnSync-the-built-binary test-case calls, a SEPARATE cost this fix does not touch (the
+      finding's own recommendation is "build once", not "make every case fast", and the header
+      comment was corrected to state this precisely rather than repeat the finding's original,
+      looser causal claim).
+- [x] **Cause, not symptom** — added `ccp/api/test/helpers/catalogctlBuild.ts`:
+      `buildCatalogctlCached()` builds once to a path keyed on a SHA-256 content hash of
+      `tools/catalogctl`'s own source (`go.mod`, `go.sum`, every `*.go` file — hashed rather
+      than `git rev-parse`'d so a dirty working tree, mid-edit, still invalidates the cache
+      correctly), landing at a stable path under the OS tmp dir; built to a fresh per-attempt
+      tmp path first, then `renameSync`'d into place (atomic on the filesystems this runs on,
+      so a reader never observes a partial binary, and two files racing to build the SAME
+      unchanged source at worst both compile once with a harmless overwrite). Both parity files
+      now call this shared helper instead of each defining and calling their own
+      `buildCatalogctl()`.
+- [x] **Regression test** — new `test/catalogctlBuild.test.ts`: builds once, records the
+      binary's mtime, then forces a FRESH module instance via `vi.resetModules()` + a dynamic
+      re-import (simulating a separate process finding the cache a prior run left behind) and
+      asserts the second call returns the SAME path with an UNCHANGED mtime — proving reuse,
+      not a rebuild. **Negative test confirmed**: temporarily reverted the helper to a
+      no-cache, always-`mkdtempSync`-and-build implementation and re-ran the test — failed
+      with two different paths returned; restoring the cache returned it to green.
+- [x] **Failure is loud** — a broken cache would either build a stale binary silently (caught
+      by TEST-8/parity assertions failing downstream) or fail this test's own mtime/path
+      equality directly.
+- [x] **Evidence in the status line** — `npx vitest run test/catalogctlBuild.test.ts
+      test/createResourceParity.test.ts test/scheduleWindowCheckParity.test.ts` (46 tests)
+      green; full api suite (100 files / 1411 tests, 1 pre-existing toolchain-gated skip)
+      green; typecheck clean.
+
+## TEST-9
+
+*Sleep-based synchronization in async API tests (flake and false-pass risk).*
+
+- [x] **Defect reproduced first** — confirmed all four cited call sites at HEAD:
+      `driftButtons.test.ts:410` and two sites in `driftProposals.test.ts` waited on a FIXED
+      `setTimeout` before asserting a fire-and-forget background task DID run (flake risk under
+      load); `schedulerGating.test.ts:84` and one site in `driftProposals.test.ts` slept before
+      asserting nothing happened (false-pass risk if the erroneous work is merely slower than
+      the sleep).
+- [x] **Cause, not symptom** — for the POSITIVE cases (asserting real work happened), exposed a
+      genuine completion hook from the fire-and-forget runner rather than guessing at a delay:
+      `domain/driftProposals.ts`'s `GenState` now carries the queue-draining loop's own promise,
+      and a new `driftGenIdle(projectId)` resolves once that promise (and any run it left
+      queued) has settled — same style `FileStore#persist()` already returns its durability
+      promise. For the NEGATIVE cases (nothing was scheduled, so there is no promise to await),
+      added `test/helpers/pollUntil.ts`: polls the forbidden condition on a short interval up
+      to a deadline, returning the instant it becomes true rather than either wasting the whole
+      window or using too short a fixed sleep — a strict widening of the old sleep's
+      observation window, never a narrowing.
+- [x] **Regression test** — the four rewritten call sites ARE the regression test for the
+      synchronization mechanism itself; additionally two NEW dedicated tests prove
+      `driftGenIdle` is not a no-op: one schedules a run with an artificially slow (50ms)
+      `generate` step and asserts a flag the step sets is still `false` immediately after
+      scheduling but `true` immediately after `await driftGenIdle(...)` (proves the await is
+      real, not a pass-through); one asserts `driftGenIdle` on a never-scheduled project
+      resolves immediately. **Negative test confirmed**: reverted `driftGenIdle` to a no-op
+      `return;` and re-ran — failed with `expected false to be true` (the slow-run proof);
+      restoring the real implementation returned it to green. One flake was found and fixed
+      during this work: `driftProposals.test.ts`'s "armed... 201 is not blocked" test awaits a
+      REAL `git clone` against a bogus remote — under full-suite CPU contention in this sandbox
+      it occasionally exceeded vitest's 5s default timeout even though the clone itself failed
+      fast; since that test asserts nothing about the background run's outcome, it now races
+      `driftGenIdle` against a 2s deadline instead of awaiting it unconditionally — confirmed
+      stable across repeated full-suite runs afterward.
+- [x] **Failure is loud** — `pollUntil`'s return value is asserted explicitly (`toBe(false)`
+      for the negative cases), not merely relied upon as an implicit pass.
+- [x] **Evidence in the status line** — full api suite (100 files / 1411 tests, 1 pre-existing
+      toolchain-gated skip) green across two consecutive full runs; typecheck clean.
+
+## TEST-10
+
+*Functional test plan drift: stale counts, loose citations, and "new" rows with no tracking.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: §15 claimed "65 files, 977 tests" (api,
+      actual 100/1411) and "141 files, 2631+" (app, actual 155/2768) — both already far
+      beyond even the finding's own already-stale "actual" snapshot, from the many suites added
+      across this session's prior batches. ADMIN-01's citation `` `ccp/api/test/teams` ``
+      coverage and ADMIN-04's `` `ccp/api/test/settings` `` coverage both name a path with no
+      file extension that has never existed — `grep -rl` for the behaviors they claim to cover
+      (`DUPLICATE_TEAM`/`TEAM_NOT_EMPTY`; the freeze-toggle audit) found them in
+      `adminSurface.test.ts` and `deploymentSettings.test.ts` respectively. REQ-16's `` `ccp/
+      api/test/requests` `` coverage citation was the same dead shape — the actual cancel-arm
+      coverage is in `cooling.test.ts`. Eleven XLAYER rows (≈"about a dozen") carried a bare
+      "new"/"new RTL case"/"manual release drill" marker with nothing tying it to tracked work.
+- [x] **Cause, not symptom** — regenerated §15's three counts from each CI suite's own summary
+      output and quoted the exact command each is derived from IN the doc, so the next drift is
+      a one-line refresh instead of a re-investigation. Fixed all three dead citations (ADMIN-01,
+      ADMIN-04, REQ-16) to name the real file that actually covers the behavior. Added a new
+      "Deferred XLAYER cases" table listing all eleven not-yet-automated rows with what's
+      missing and where it would land — a table, not GitHub issues, since every row already
+      carries its own spec (the Steps/Expected columns above it) and a separate issue would only
+      duplicate that.
+- [x] **Regression test** — new `scripts/docs-test-plan-citations-check.py`, wired into
+      `docs-links.yml` (the existing docs-freshness lane) as a second step alongside
+      `docs-link-check.py`: parses every backtick span in a table row and, for anything shaped
+      like a test-file citation (a full path under a known test root ending in a real test
+      extension, a bare filename, or — the dead-citation shape itself — a test-root path with
+      no further subdirectory and no extension) verifies it resolves; deliberately narrow
+      (mirrors `check-path-filters.sh`'s own "not a general walker" philosophy) so it does not
+      flag legitimate non-file citations (directory references, `project.json`, route paths).
+      **Negative test confirmed**: reverted ADMIN-01's citation back to the original dead
+      `` `ccp/api/test/teams` `` shape and re-ran — failed naming exactly that line and reason
+      ("is a test-root path with no file extension — not a real file (this is the ADMIN-01/04
+      shape)"); restoring the fix returned it to 123/123 citations resolving.
+- [x] **Failure is loud** — the check names the exact broken citation string and line number,
+      not a bare pass/fail.
+- [x] **Evidence in the status line** — `python3 scripts/docs-test-plan-citations-check.py`
+      (123 citations resolve); `python3 scripts/docs-link-check.py` (308 links resolve, 0
+      broken); `docs-links.yml` parses and passes `check-path-filters.sh`/
+      `check-workflow-safety.sh`.

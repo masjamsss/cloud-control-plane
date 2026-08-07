@@ -79,6 +79,11 @@ and `upload-status.json` (what the upload attempt concluded).
    - **Variable `CCP_PROJECT_ID`** — the project id from Admin → Projects.
    - **Variable `CCP_SCAN_ROOT`** — only if the Terraform root is not
      `environments/prod`.
+   - **Variable `CCP_DATA_REQUIRE_UPLOAD`** — **optional.** Unset (the default) is the
+     air-gap-friendly ERR-16 behavior: an unreachable control plane warns
+     (`::warning::` + a step-summary section) and the job still exits 0, keeping the
+     bundle as an artifact. Set it to `1` for a non-air-gapped estate that would rather
+     an unreachable control plane hard-fail the job than go green silently.
    - **Variable `CI_RUNNER`** — **optional.** Set it only to pin a self-hosted runner
      label; unset means the standard hosted runner. It no longer gates the job.
 3. Merge something (or run the workflow manually) and watch the job.
@@ -97,7 +102,9 @@ and `upload-status.json` (what the upload attempt concluded).
 1. Copy `.gitlab/ci/ccp-data.gitlab-ci.yml` into the estate repo (or
    `include:` it if the control-plane repo is mirrored on the same GitLab) and
    wire it into `.gitlab-ci.yml`.
-2. Settings → CI/CD → Variables — same four names as GitHub. Mark
+2. Settings → CI/CD → Variables — same five names as GitHub (`CI_RUNNER` has no
+   GitLab equivalent here; a self-hosted GitLab runner is selected via `tags:`,
+   not a CI/CD variable). Mark
    `CCP_UPLOAD_TOKEN` **masked and protected**. Protected variables only
    reach protected refs, so make sure the default branch is protected — on the
    Free tier that protection is the only gate in front of this token, so treat

@@ -91,9 +91,12 @@ jobs:
           fi
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: ${{ steps.locate.outputs.dir }}/go.mod
+          # CI-12 — same dynamic base as go-version-file above: unset, the module
+          # cache looks for a repo-root go.sum that doesn't exist here either.
+          cache-dependency-path: ${{ steps.locate.outputs.dir }}/go.sum
 
       - name: Build catalogctl
         working-directory: ${{ steps.locate.outputs.dir }}

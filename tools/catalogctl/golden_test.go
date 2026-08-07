@@ -3,6 +3,7 @@ package main_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,18 +55,48 @@ func copyTree(t *testing.T, src, dst string) {
 	}
 }
 
-func mustEqualTree(t *testing.T, wantDir, gotDir string) {
-	t.Helper()
-	entries, err := os.ReadDir(wantDir)
+// treeDiff compares wantDir against gotDir and returns a description of the first
+// divergence found, or "" when they match exactly — same file names AND byte-identical
+// contents. Kept independent of *testing.T (rather than folded into mustEqualTree below)
+// so TestTreeDiff can exercise it directly and assert on the returned string, instead of
+// having to catch a t.Fatal from inside the thing under test.
+//
+// TEST-8 — this used to only walk wantDir: a verb that wrote an EXTRA file into gotDir
+// that wantDir never mentions (a stray scratch file, a duplicated service_2.tf, a leaked
+// lockfile) passed silently, and the same asymmetry applied to mustEqualTree's other call
+// site, the refusal path's untouched-tree check. catalogctl is the only component that
+// writes Terraform, so "produces exactly these files and no others" is part of the
+// contract the goldens exist to pin — hence the second pass below, over gotDir.
+func treeDiff(wantDir, gotDir string) string {
+	wantEntries, err := os.ReadDir(wantDir)
 	if err != nil {
-		t.Fatal(err)
+		return err.Error()
 	}
-	for _, e := range entries {
+	wantNames := make(map[string]bool, len(wantEntries))
+	for _, e := range wantEntries {
+		wantNames[e.Name()] = true
 		want, _ := os.ReadFile(filepath.Join(wantDir, e.Name()))
 		got, _ := os.ReadFile(filepath.Join(gotDir, e.Name()))
 		if !bytes.Equal(want, got) {
-			t.Fatalf("%s differs from expected (got %d bytes, want %d)\n--- want ---\n%s\n--- got ---\n%s", e.Name(), len(got), len(want), want, got)
+			return fmt.Sprintf("%s differs from expected (got %d bytes, want %d)\n--- want ---\n%s\n--- got ---\n%s", e.Name(), len(got), len(want), want, got)
 		}
+	}
+	gotEntries, err := os.ReadDir(gotDir)
+	if err != nil {
+		return err.Error()
+	}
+	for _, e := range gotEntries {
+		if !wantNames[e.Name()] {
+			return fmt.Sprintf("%s was written but is not present in %s — golden trees must match exactly, extra files included", e.Name(), wantDir)
+		}
+	}
+	return ""
+}
+
+func mustEqualTree(t *testing.T, wantDir, gotDir string) {
+	t.Helper()
+	if diff := treeDiff(wantDir, gotDir); diff != "" {
+		t.Fatal(diff)
 	}
 }
 
@@ -128,5 +159,37 @@ func TestGolden(t *testing.T) {
 				t.Fatalf("idempotent rerun diff not empty:\n%s", out.String())
 			}
 		})
+	}
+}
+
+// TestTreeDiff — TEST-8: an extra file in gotDir that wantDir never mentions must be
+// caught, not just a mismatch on a name wantDir already has. Before the fix, treeDiff's
+// logic (inlined in mustEqualTree) only ever walked wantDir, so this file's own second
+// case is the one that reproduces the finding — the first case is the pre-existing
+// coverage kept alongside it as an over-fix guard (identical trees must still pass).
+func TestTreeDiff(t *testing.T) {
+	want := t.TempDir()
+	got := t.TempDir()
+	if err := os.WriteFile(filepath.Join(want, "a.tf"), []byte("resource \"a\" {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(got, "a.tf"), []byte("resource \"a\" {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if diff := treeDiff(want, got); diff != "" {
+		t.Fatalf("identical trees must match; got diff: %s", diff)
+	}
+
+	// The regression case: gotDir has everything wantDir has (so a wantDir-only walk
+	// sees no divergence) PLUS one file wantDir was never told to expect.
+	if err := os.WriteFile(filepath.Join(got, "stray.tf"), []byte("leaked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	diff := treeDiff(want, got)
+	if diff == "" {
+		t.Fatal("expected treeDiff to catch the extra file stray.tf, got no diff")
+	}
+	if !strings.Contains(diff, "stray.tf") {
+		t.Fatalf("diff did not name the extra file: %s", diff)
 	}
 }

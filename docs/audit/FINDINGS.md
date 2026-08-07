@@ -161,10 +161,10 @@ Failures that produce no signal — swallowed rejections, best-effort compensati
 - [ ] ERR-6 | medium | silent-failure | open | 09-error-handling.md | `executor.replan()` failures are an unmodeled halt: unbounded silent retry, and they abort the rest of the project's due list
 - [ ] FE-8 | medium | silent-failure | open | 05-frontend-flows.md | AuditHistory silently truncates to the first page (100 entries) — the cursor is fetched and thrown away
 - [ ] OPS-6 | medium | silent-failure | open | 10-reliability-operations.md | Plain `compose up` (including every self-update cycle) silently strips the armed overlay
-- [ ] TEST-8 | medium | silent-failure | open | 12-testing-quality.md | Golden-tree comparison is one-directional: extra files created by an edit go unnoticed
+- [x] TEST-8 | medium | silent-failure | fixed:treeDiff() now walks gotDir too, catching extra files golden.go never accounted for; golden_test.go TestTreeDiff | 12-testing-quality.md | Golden-tree comparison is one-directional: extra files created by an edit go unnoticed
 - [ ] CTL-8 | low | silent-failure | open | 07-catalogctl.md | `atomicWrite` silently changes edited-file permissions to 0600 and skips fsync
 - [ ] ERR-14 | low | silent-failure | open | 09-error-handling.md | Drift-upload compensation is non-transactional best-effort
-- [ ] ERR-16 | low | silent-failure | open | 09-error-handling.md | The ccp-data CI lane goes green when the control plane is unreachable
+- [x] ERR-16 | low | silent-failure | fixed:GH Actions warning annotation + step-summary on unreachable-control-plane; opt-in CCP_DATA_REQUIRE_UPLOAD hard-fail; scripts/ci/gen-project-data-selftest.sh | 09-error-handling.md | The ccp-data CI lane goes green when the control plane is unreachable
 - [x] FE-15 | low | silent-failure | fixed:b5b703b | 05-frontend-flows.md | Notifications bell and CommandPalette swallow rejections silently
 - [ ] IMP-12 | low | silent-failure | open | 08-importer-schemadump.md | `normalize.py split` silently drops non-`resource` top-level blocks
 - [ ] IMP-15 | low | silent-failure | open | 08-importer-schemadump.md | Coverage-sweep family granularity marks undiscoverable resources as "covered" (documented, but with a concrete silent case)
@@ -221,10 +221,10 @@ Checks that exist but run nowhere, or run and prove nothing.
 - [x] IMP-3 | high | ci-not-wired | fixed:21fd092 | 08-importer-schemadump.md | No CI executes any importer test suite; two shipped regressions prove the gap
 - [x] TEST-2 | high | ci-not-wired | fixed:21fd092 | 12-testing-quality.md | No CI lane executes any Python test suite; `gate.sh` omits them too
 - [x] CI-8 | medium | ci-not-wired | fixed:scripts/ci/publish-gate-selftest.sh | 13-ci-cd.md | PG-5's secret heuristic misses the most common real-world shapes, and its designated backstop is dead in CI
-- [ ] OPS-9 | medium | ci-not-wired | open | 10-reliability-operations.md | The documented CI-runner cutover only routes 2 of 8 workflows
-- [ ] CI-10 | low | ci-not-wired | open | 13-ci-cd.md | Push-trigger path filters omit the workflow file itself on ccp-api and ccp-smoke
-- [ ] CI-11 | low | ci-not-wired | open | 13-ci-cd.md | Stale toolchain claims: gate.sh advertises checks CI does not run
-- [ ] CI-12 | low | ci-not-wired | open | 13-ci-cd.md | Inconsistent action pinning, with a comment that contradicts the file it sits in; setup-go caching is configured to a nonexistent root go.sum
+- [x] OPS-9 | medium | ci-not-wired | fixed:CI_RUNNER wired into 10 of 12 workflows (docker-building release-images.yml/docker-build.yml excepted, no docker socket); check-workflow-safety.sh rule | 10-reliability-operations.md | The documented CI-runner cutover only routes 2 of 8 workflows
+- [x] CI-10 | low | ci-not-wired | fixed:self-path added to ccp-api.yml/ccp-smoke.yml push:paths; check-path-filters.sh's new general self-inclusion check | 13-ci-cd.md | Push-trigger path filters omit the workflow file itself on ccp-api and ccp-smoke
+- [x] CI-11 | low | ci-not-wired | fixed:gate.sh header comment corrected (real 4-workflow mirror list, terraform's actual placement) and checkov skip message stopped claiming a nonexistent CI backstop | 13-ci-cd.md | Stale toolchain claims: gate.sh advertises checks CI does not run
+- [x] CI-12 | low | ci-not-wired | fixed:every uses: SHA-pinned across all 12 workflow files; cache-dependency-path added to all 5 setup-go usages | 13-ci-cd.md | Inconsistent action pinning, with a comment that contradicts the file it sits in; setup-go caching is configured to a nonexistent root go.sum
 - [x] CI-13 | low | ci-not-wired | fixed:the smoke asserts authz, credential verification and the bootstrap login; ccp-smoke.yml no longer triggers on ccp/docs | 13-ci-cd.md | The smoke proves boot + serve, not the system's function; PR runs of it are triggered by any `ccp/**` docs change
 
 ## data-persistence
@@ -286,10 +286,10 @@ Red suites, silent skips, fixtures that pin the wrong premise.
 - [x] TEST-5 | medium | test-quality | fixed:@vitest/coverage-v8 floors in ccp/api/vitest.config.ts and ccp/app/vite.config.ts, enforced by both CI lanes | 12-testing-quality.md | No code-coverage measurement anywhere; `coverage.test.ts` is not code coverage
 - [ ] CTL-7 | low | test-quality | open | 07-catalogctl.md | plancheck's `inventoryAddr` does not skip `role:"reference"` inventory params, diverging from the executor's `targetAddress`
 - [ ] FE-10 | low | test-quality | open | 05-frontend-flows.md | Mock `rejectRequest` skips the status guard the real API enforces
-- [ ] TEST-10 | low | test-quality | open | 12-testing-quality.md | Functional test plan drift: stale counts, loose citations, and "new" rows with no tracking
-- [ ] TEST-12 | low | test-quality | open | 12-testing-quality.md | One test file consumes ~60% of the api suite wall time by rebuilding catalogctl per run
+- [x] TEST-10 | low | test-quality | fixed:§15 counts regenerated + command-quoted; ADMIN-01/ADMIN-04/REQ-16 dead citations repointed; deferred-XLAYER table added; scripts/docs-test-plan-citations-check.py | 12-testing-quality.md | Functional test plan drift: stale counts, loose citations, and "new" rows with no tracking
+- [x] TEST-12 | low | test-quality | fixed:test/helpers/catalogctlBuild.ts — content-hash-keyed, renameSync'd build cache shared by both parity files; test/catalogctlBuild.test.ts | 12-testing-quality.md | One test file consumes ~60% of the api suite wall time by rebuilding catalogctl per run
 - [x] TEST-13 | high | test-quality | fixed:the suite passes with the system clock shifted 4 months; 12 failures without the fix | 12-testing-quality.md | The test suites are coupled to the wall-clock calendar: they go red on a month boundary with no code change
-- [ ] TEST-9 | low | test-quality | open | 12-testing-quality.md | Sleep-based synchronization in async API tests (flake and false-pass risk)
+- [x] TEST-9 | low | test-quality | fixed:driftGenIdle() completion hook (domain/driftProposals.ts) for positive waits; test/helpers/pollUntil.ts poll-with-deadline for negative waits | 12-testing-quality.md | Sleep-based synchronization in async API tests (flake and false-pass risk)
 
 ## blocking-io
 
@@ -337,7 +337,7 @@ Bootstrap, install, migration, compose and overlays.
 - [x] OPS-1 | critical | install-ops | fixed:install.sh + intranet-setup.sh decide bootstrap before the first up; ccp/scripts/test/install-bootstrap-decision.test.sh | 10-reliability-operations.md | Fresh-install bootstrap deadlock: boot-time settlement creates the store file, then `CCP_BOOTSTRAP=1` is refused
 - [x] OPS-5 | high | install-ops | fixed:f33aa29 | 10-reliability-operations.md | `migrate-data.sh`'s post-cutover byte-identical check is tripped by the new code's own boot writes: legacy migrations auto-roll back
 - [x] CI-5 | medium | install-ops | fixed:verified closed by TEST-4 — requireToolchain.ts plus pinned toolchains in ccp-api.yml | 13-ci-cd.md | Whether the api's live parity/integration suites run in CI depends on unpinned runner-preinstalled toolchains; nothing asserts they ran
-- [ ] CI-7 | medium | install-ops | open | 13-ci-cd.md | The Docker build path (the documented production install) is never exercised by CI; images are first built at release time
+- [x] CI-7 | medium | install-ops | fixed:new .github/workflows/docker-build.yml — compose-config validation + matrix build of all 5 images, api image booted and /readyz-probed | 13-ci-cd.md | The Docker build path (the documented production install) is never exercised by CI; images are first built at release time
 - [x] DOC-3 | medium | install-ops | fixed:cdc5f2c | 14-contracts-docs.md | OpenAPI `servers: [{url: /v2}]` does not match any deployed base path
 - [ ] OPS-13 | low | install-ops | open | 10-reliability-operations.md | `doctor.sh` reports an unhealthy container as OK
 - [ ] OPS-15 | low | install-ops | open | 10-reliability-operations.md | GitHub App key directory is not prepared or checked by any tooling

@@ -1070,6 +1070,14 @@ interface GenState {
    * intermediate versions COLLAPSE (each new arrival overwrites this),
    * so only the latest matters once the in-flight run finishes. */
   queuedVersion: number | null;
+  /** The queue-draining loop's own promise while `running` is true — the SAME
+   * promise for the whole run, including any versions the loop drains after
+   * QUEUEing (see runQueueDrainingLoop's internal while loop); a version
+   * queued AFTER this promise has already settled starts a NEW run with its
+   * own promise. TEST-9: exposed via {@link driftGenIdle} so a caller (a
+   * test, primarily) can await the runner's actual completion instead of a
+   * fixed sleep. */
+  loopPromise?: Promise<void>;
 }
 
 const genState = new Map<string, GenState>();
@@ -1098,7 +1106,30 @@ export function scheduleDriftGeneration(deps: DriftGenDeps, projectId: string, r
     return;
   }
   state.running = true;
-  void runQueueDrainingLoop(deps, projectId, reportVersion, state);
+  state.loopPromise = runQueueDrainingLoop(deps, projectId, reportVersion, state);
+}
+
+/**
+ * TEST-9 — resolves once `projectId`'s fire-and-forget generation runner
+ * (started by {@link scheduleDriftGeneration}) is idle: no run in flight, and
+ * nothing left queued. Resolves immediately if nothing was ever scheduled for
+ * this project. Lets a caller — a test, primarily — await the runner's ACTUAL
+ * completion (same style as `FileStore#persist()` returning its durability
+ * promise) instead of racing a fixed sleep against however long the real run
+ * takes, which is exactly the flake/false-pass risk the fixed sleeps this
+ * replaces were exposed to.
+ */
+export async function driftGenIdle(projectId: string): Promise<void> {
+  for (;;) {
+    const state = genState.get(projectId);
+    if (!state?.loopPromise) return;
+    await state.loopPromise;
+    // The awaited run may have left a NEW run started (a version queued after
+    // its own while-loop had already committed to exiting, then re-scheduled
+    // via a fresh scheduleDriftGeneration call) — re-check rather than assume
+    // one await is always enough.
+    if (!state.running) return;
+  }
 }
 
 async function runQueueDrainingLoop(deps: DriftGenDeps, projectId: string, firstVersion: number, state: GenState): Promise<void> {

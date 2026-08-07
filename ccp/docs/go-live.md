@@ -465,10 +465,13 @@ df -h /data
 ## CI runner
 
 A self-hosted GitHub Actions runner for this repo, opt-in via the `runner` compose
-profile. Every workflow already reads
+profile. Every workflow **except the two that build Docker images**
+(`docker-build.yml`, `release-images.yml`) already reads
 `runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}`, so bringing one online is the
-**entire** cutover — zero workflow-file edits — and rollback is deleting one repo
-variable.
+cutover for all of them — zero workflow-file edits — and rollback is deleting one
+repo variable. The two Docker-building workflows stay pinned to `ubuntu-latest` on
+purpose: this runner is built with no docker socket (see the `runner` service's own
+comment in `docker-compose.yml`), so it cannot run `docker build` at all.
 
 ### Register
 
