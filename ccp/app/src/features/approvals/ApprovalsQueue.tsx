@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import type { JSX } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { ChangeRequest, Inventory, RequestStatus, ServiceManifest } from '@/types';
+import { REQUEST_STATUSES } from '@/types';
 import { api } from '@/lib/api';
 import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
@@ -30,6 +31,7 @@ import { useFullBlockDiff } from '@/components/useFullBlockDiff';
 import { ChangeSetView } from '@/components/ChangeSetView';
 import { hasPlanContent, PlanSummaryBlock } from '@/features/requests/PlanSummaryPanel';
 import { RiskBadge } from '@/components/ui/RiskBadge';
+import { requestStatusLabel } from '@/lib/statusCopy';
 import { MacdTag } from '@/components/ui/MacdTag';
 import { AccessBadge } from '@/components/ui/AccessBadge';
 import { Button } from '@/components/ui/Button';
@@ -78,42 +80,22 @@ function rejectTriggerId(requestId: string): string {
   return `apv-reject-trigger-${requestId}`;
 }
 
-/** Same fixed option set as MyRequests (Task 3) — kept local per this file's
- * scope rather than shared, matching the plan's per-screen file list.
- * Includes APPROVED_COOLING/CANCELLED for vocabulary parity with MyRequests
- * even though `scope=pending` (this screen's data source) structurally never
- * returns either — routes/requests.ts filters to OPEN_STATUSES
- * (AWAITING_CODE_REVIEW/NEEDS_ENGINEER) only, same as every other status
- * already listed here that this queue can never actually show (APPLIED,
- * REJECTED, WITHDRAWN, …). */
-const ALL_STATUSES: RequestStatus[] = [
-  'DRAFT',
-  'SUBMITTED',
-  'GENERATING',
-  'CHECKS_RUNNING',
-  'PLAN_READY',
-  'AWAITING_CODE_REVIEW',
-  'CHANGES_REQUESTED',
-  'CODE_APPROVED',
-  'MERGED',
-  'AWAITING_DEPLOY_APPROVAL',
-  'APPLYING',
-  'APPLIED',
-  'NOOP',
-  'APPLY_FAILED',
-  'DIGEST_MISMATCH',
-  'REJECTED',
-  'NEEDS_ENGINEER',
-  'WITHDRAWN',
-  'APPROVED_COOLING',
-  'CANCELLED',
-];
+/**
+ * FE-11 — same fixed option set as MyRequests (Task 3), same fix: DERIVED from the closed
+ * vocabulary rather than hand-typed, which is what let it silently drift out of sync with
+ * MyRequests's own copy in the first place (this one was also missing `WINDOW_EXPIRED`,
+ * `HALTED_DRIFT` and `HALTED_APPLY_FAILED`). Kept local per this file's scope rather than
+ * shared, matching the plan's per-screen file list — but the SOURCE is shared
+ * (`REQUEST_STATUSES`), so the two lists cannot disagree with each other again even
+ * though the constant itself is still declared twice.
+ *
+ * Includes every status for vocabulary parity with MyRequests even though `scope=pending`
+ * (this screen's data source) structurally never returns most of them —
+ * routes/requests.ts filters to OPEN_STATUSES (AWAITING_CODE_REVIEW/NEEDS_ENGINEER) only,
+ * same as every other status already listed here that this queue can never actually show
+ * (APPLIED, REJECTED, WITHDRAWN, …). */
+const ALL_STATUSES: readonly RequestStatus[] = REQUEST_STATUSES;
 const STATUS_SET = new Set<string>(ALL_STATUSES);
-
-function humanizeStatus(status: string): string {
-  const lower = status.toLowerCase().replace(/_/g, ' ');
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
-}
 
 export interface RequestFilters {
   status: string;
@@ -766,7 +748,7 @@ export function ApprovalsQueue(): JSX.Element {
             <option value="all">All statuses</option>
             {ALL_STATUSES.map((s) => (
               <option key={s} value={s}>
-                {humanizeStatus(s)}
+                {requestStatusLabel(s)}
               </option>
             ))}
           </select>

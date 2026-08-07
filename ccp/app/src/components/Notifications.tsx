@@ -8,6 +8,7 @@ import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
 import { useCurrentUser } from '@/lib/session';
 import { getServiceMeta } from '@/lib/serviceMeta';
+import { requestStatusLabel } from '@/lib/statusCopy';
 import './Notifications.css';
 
 interface Note {
@@ -28,7 +29,7 @@ function pr(req: ChangeRequest): string {
 }
 
 /** Turn a request the user owns into a status line for their bell. */
-function ownNote(req: ChangeRequest): Note {
+export function ownNote(req: ChangeRequest): Note {
   const svc = label(req);
   const base = { id: `own-${req.id}`, requestId: req.id, at: req.updatedAt };
   switch (req.status) {
@@ -60,7 +61,9 @@ function ownNote(req: ChangeRequest): Note {
       };
     }
     default:
-      return { ...base, tone: 'info', title: `Update: ${svc}`, detail: `${pr(req)} · ${req.status}` };
+      // UI-10: was `${req.status}` — the raw enum (e.g. "· CHECKS_RUNNING") leaking into
+      // the bell for every in-flight status this switch doesn't name explicitly.
+      return { ...base, tone: 'info', title: `Update: ${svc}`, detail: `${pr(req)} · ${requestStatusLabel(req.status)}` };
   }
 }
 

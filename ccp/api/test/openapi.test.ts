@@ -1,7 +1,9 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store/memoryStore';
+import { isKnownRequestStatus } from '@app-lib/requestStatus';
 
 const SPEC_URL = new URL('../openapi/ccp-api.yaml', import.meta.url);
 
@@ -296,5 +298,75 @@ describe('OpenAPI contract (spec §3, extracted verbatim)', () => {
     expect(claimBlock).toContain('THE WORKER NEVER CHOOSES ITS TARGET');
     expect(claimBlock).toContain('compare-and-swap');
     expect(claimBlock).toContain("'204': { description: Nothing queued }");
+  });
+});
+
+/**
+ * DOC-13 — the wire prose has its own vocabulary check, now that there is a closed one to
+ * check it against.
+ *
+ * `ChangeRequest.status`'s description is a hand-written "known values" flow, and it had
+ * silently fallen behind the statuses the api actually writes: the scheduler's `APPLYING`,
+ * `HALTED_DRIFT` and `HALTED_APPLY_FAILED` were absent from it. ARCH-7 gave the api a
+ * SINGLE closed vocabulary (`@app-lib/requestStatus`) and a source scan
+ * (`statusVocabulary.test.ts`) that already proves every status literal the api writes
+ * belongs to it — this reuses that same scan, intersected with `REQUEST_STATUSES`
+ * specifically (the source scan also catches `PENDING_CHANGE_STATUSES`, a different
+ * entity's vocabulary that has no business in this prose), and asserts every one of them
+ * is a substring of the prose. A status literal is exactly its own name, so "is it
+ * mentioned" is a plain substring check — no markup to parse.
+ *
+ * DELIBERATELY NOT asserting `CHANGES_REQUESTED` or `WITHDRAWN` belong here, though the
+ * finding's own recommendation named both: neither is EVER assigned as a status anywhere
+ * in `ccp/api/src` (confirmed by a repo-wide grep, not by reading the recommendation) —
+ * `WITHDRAWN` even has `requestStatus.ts`'s own comment calling it "client-only
+ * vocabulary the api has never written". Adding either to "known values … a client can
+ * actually receive" would recreate the finding in the other direction: prose that
+ * over-describes the wire instead of under-describing it.
+ */
+describe('DOC-13 — the status prose agrees with the statuses the api actually writes', () => {
+  const API_SRC = new URL('../src', import.meta.url).pathname;
+
+  function walk(dir: string): string[] {
+    return readdirSync(dir).flatMap((name) => {
+      const p = join(dir, name);
+      return statSync(p).isDirectory() ? walk(p) : /\.ts$/.test(name) ? [p] : [];
+    });
+  }
+
+  /** Same scan as statusVocabulary.test.ts's `statusLiteralsInApiSource` — kept local
+   * rather than shared, matching this repo's existing per-file scan convention
+   * (statusVocabulary.test.ts and totpDeviceShim.test.ts each keep their own `walk`). */
+  function requestStatusLiteralsInApiSource(): Set<string> {
+    const found = new Set<string>();
+    for (const file of walk(API_SRC)) {
+      const text = readFileSync(file, 'utf8');
+      for (const m of text.matchAll(/\bstatus:\s*'([A-Z][A-Z_]{3,})'/g)) {
+        if (isKnownRequestStatus(m[1]!)) found.add(m[1]!);
+      }
+      for (const m of text.matchAll(/^(?:export )?const ([A-Z][A-Z_]{3,}) = '([A-Z][A-Z_]{3,})';$/gm)) {
+        if (m[1] === m[2] && isKnownRequestStatus(m[2]!)) found.add(m[2]!);
+      }
+    }
+    return found;
+  }
+
+  it('scans a real source tree and finds request statuses (sanity)', () => {
+    // Without this the assertion below passes by finding nothing (L-1).
+    const found = requestStatusLiteralsInApiSource();
+    expect(found.size).toBeGreaterThan(5);
+    expect(found.has('AWAITING_DEPLOY_APPROVAL')).toBe(true);
+  });
+
+  it('every request-status the api writes is named in the ChangeRequest.status prose', () => {
+    const statusDescMatch = /ChangeRequest:[\s\S]*?status: \{type: string, description: "([^"]+)"\}/.exec(yaml);
+    expect(statusDescMatch, 'could not find ChangeRequest.status\'s description in the contract').toBeTruthy();
+    const prose = statusDescMatch![1]!;
+    const missing = [...requestStatusLiteralsInApiSource()].filter((s) => !prose.includes(s));
+    expect(
+      missing,
+      'the api writes a status this prose never mentions — a generated client has no way ' +
+        'to know it exists. Add it to the ChangeRequest.status description in ccp-api.yaml.',
+    ).toEqual([]);
   });
 });

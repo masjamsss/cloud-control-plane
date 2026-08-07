@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { ChangeRequest } from '@/types';
+import { REQUEST_STATUSES } from '@/types';
 import {
   applyMutatedRequestToList,
   isRejectReasonValid,
@@ -34,6 +35,16 @@ describe('ApprovalsQueue parseFilters — URL → filter state (valid, invalid, 
   it('the literal "all" status is accepted as-is', () => {
     const sp = new URLSearchParams('status=all');
     expect(parseFilters(sp)).toEqual({ status: 'all', q: '' });
+  });
+
+  it('FE-11: every REQUEST_STATUSES value round-trips through the URL — none coerces to "all"', () => {
+    // Same fix, same test as MyRequests — this file's own option list was independently
+    // missing WINDOW_EXPIRED and (after ARCH-7) HALTED_DRIFT/HALTED_APPLY_FAILED, having
+    // been hand-typed rather than derived.
+    for (const status of REQUEST_STATUSES) {
+      const sp = new URLSearchParams(`status=${status}`);
+      expect(parseFilters(sp), status).toEqual({ status, q: '' });
+    }
   });
 });
 

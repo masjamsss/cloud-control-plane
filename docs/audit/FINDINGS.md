@@ -251,14 +251,14 @@ The same rule implemented in two places, free to drift.
 - [ ] ARCH-5 | medium | duplication | open | 01-architecture.md | Two sources of truth for the catalog: the server validates against the image-baked catalog, the SPA renders the per-project uploaded one
 - [x] ARCH-7 | medium | duplication | fixed:3cf798c | 01-architecture.md | The request-status vocabulary is an unowned, drifted contract
 - [ ] ARCH-8 | medium | duplication | open | 01-architecture.md | The governance domain is implemented twice (server + browser mock) with acknowledged behavioral divergence
-- [ ] DOC-13 | medium | duplication | open | 14-contracts-docs.md | Request-status vocabulary is three-way inconsistent (SPA union vs server writes vs YAML prose)
+- [x] DOC-13 | medium | duplication | fixed:the YAML prose now names APPLYING/HALTED_DRIFT/HALTED_APPLY_FAILED; test/openapi.test.ts checks agreement automatically | 14-contracts-docs.md | Request-status vocabulary is three-way inconsistent (SPA union vs server writes vs YAML prose)
 - [ ] ARCH-11 | low | duplication | open | 01-architecture.md | Arming-flag sprawl with no whole-config validation
 - [ ] ARCH-13 | low | duplication | open | 01-architecture.md | Project-id grammar duplicated inline despite a declared single home
 - [ ] ARCH-16 | low | duplication | open | 01-architecture.md | Vestigial code and stale references
 - [ ] CTL-10 | low | duplication | open | 07-catalogctl.md | Duplicated literal-object token-walkers (edit vs driftpropose) have already diverged in behavior
-- [ ] FE-11 | low | duplication | open | 05-frontend-flows.md | `WINDOW_EXPIRED` is missing from both status-filter vocabularies
+- [x] FE-11 | low | duplication | fixed:ALL_STATUSES derived from REQUEST_STATUSES in both filter files, not hand-typed | 05-frontend-flows.md | `WINDOW_EXPIRED` is missing from both status-filter vocabularies
 - [x] OPS-14 | low | duplication | fixed:dd1c241 | 10-reliability-operations.md | Stale references to a nonexistent `.github/workflows/terraform.yml` anchor the Terraform pin
-- [ ] UI-10 | low | duplication | open | 06-frontend-ui-robustness.md | Request-status copy has four competing sources; raw enum text can reach the UI
+- [x] UI-10 | low | duplication | fixed:lib/statusCopy.ts is the one source; three humanizeStatus clones deleted, Notifications' default branch routed through it | 06-frontend-ui-robustness.md | Request-status copy has four competing sources; raw enum text can reach the UI
 
 ## importer
 
@@ -314,7 +314,7 @@ Guards that pass when they should refuse.
 - [ ] CTL-4 | medium | fail-open | open | 07-catalogctl.md | plan-check R1 structurally vetoes every legitimate plan for a `local.`-targeted foreach op
 - [ ] CTL-6 | medium | fail-open | open | 07-catalogctl.md | `danglingRef` substring scan falsely refuses removal when another resource's name extends the target's name
 - [ ] API-11 | low | fail-open | open | 02-api-correctness.md | Audit-chain read path bypasses the injected clock and truncates at 120 months
-- [ ] API-13 | low | fail-open | open | 02-api-correctness.md | `maxOpen` rate-limit counts a nonexistent status and misses real open states
+- [x] API-13 | low | fail-open | fixed:verified closed by ARCH-7 — rateLimit.ts's occupiesQuotaSlot is derived from the closed vocabulary; test/statusVocabulary.test.ts covers all four missing statuses | 02-api-correctness.md | `maxOpen` rate-limit counts a nonexistent status and misses real open states
 - [ ] API-18 | low | fail-open | open | 02-api-correctness.md | Legitimize endpoint mints unlimited duplicate engineer requests for the same digest
 - [ ] FE-14 | low | fail-open | open | 05-frontend-flows.md | DriftPage's post-trigger refetches bypass the staleness guard
 

@@ -2686,3 +2686,127 @@ component's description was updated to say what actually references it now.
 **Existing precedent, not a new pattern.** `linkPr.test.ts` already asserted the *no-numeric-tail*
 negative case (`.../pulls` derives nothing); this fix and its test extend that same shape rather
 than inventing a new convention.
+
+## API-13
+
+*`maxOpen` rate-limit counts a nonexistent status and misses real open states.*
+
+**Verified closed by ARCH-7. No code changed here.** Discovered incidentally while verifying
+B-S2 (the finding shares its root cause — an unowned status vocabulary — with DOC-13), and closed
+immediately rather than deferred to B-S1's run: the runbook's own instruction is "check the code
+at HEAD first, and if it is closed, close it with evidence rather than a patch."
+
+- [x] **Confirmed against the exact both-halves claim, not by reading the fix** (**L-29**).
+      `rateLimit.ts` no longer holds a hand-maintained `OPEN_STATUSES` list at all — it imports
+      `occupiesQuotaSlot` from `@app-lib/requestStatus` (ARCH-7's closed vocabulary) and inverted
+      the direction: a status occupies a slot unless it is in the small `TERMINAL_STATUSES` set,
+      so an unrecognised future status fails closed rather than silently escaping the quota.
+      `CHANGES_REQUESTED` is gone from the counted set (the "nonexistent status" half); `APPLYING`,
+      `WINDOW_EXPIRED`, `HALTED_DRIFT`, `HALTED_APPLY_FAILED` are all covered (the "misses real
+      open states" half).
+- [x] **Already has the negative test the finding would have asked for** —
+      `test/statusVocabulary.test.ts:98-102`, literally titled "THE FAIL-OPEN: the four statuses
+      the hand-maintained list had missed all occupy a slot", asserting all four by name. A
+      sibling test confirms the five statuses the old list *did* hold are unchanged, and another
+      confirms an unknown future status occupies a slot by default (the inversion's whole point).
+- [x] **Evidence in the status line** — `test/statusVocabulary.test.ts`.
+
+## DOC-13
+
+*Request-status vocabulary is three-way inconsistent (SPA union vs server writes vs YAML
+prose).*
+
+- [x] **Defect reproduced first** — confirmed the finding's premise still held at HEAD
+      before touching anything: ARCH-7 (an earlier session) had already closed the
+      SPA-union-vs-server-writes half by giving both sides one closed vocabulary
+      (`@app-lib/requestStatus`). What remained was exactly the third leg — the YAML's
+      `ChangeRequest.status` "known values" prose still never mentioned `APPLYING`,
+      `HALTED_DRIFT`, or `HALTED_APPLY_FAILED`.
+- [x] **Cause, not symptom** — the prose was a hand-written flow diagram nobody re-derives
+      when the vocabulary grows, the same shape ARCH-7 already fixed once for the SPA
+      union. Extended the flow at the accurate transition points (verified against
+      `scheduler.ts`'s own doc comments: the guarded `AWAITING_DEPLOY_APPROVAL → APPLYING`
+      claim, and that both halt statuses exit ONLY via cancel, never rewindow).
+- [x] **Regression test** — `test/openapi.test.ts`, a new `describe` block: scans the api
+      source for every request-status literal actually written (reusing
+      `statusVocabulary.test.ts`'s scan shape, intersected with `REQUEST_STATUSES` so
+      `PENDING_CHANGE_STATUSES` — a different entity's vocabulary — cannot leak in) and
+      asserts each is a substring of the prose. **Negative test confirmed**: reverting just
+      the prose fails with exactly `["APPLYING", "HALTED_DRIFT", "HALTED_APPLY_FAILED"]` —
+      no more, no less.
+- [x] **Failure is loud** — the assertion names precisely which statuses the prose is
+      missing.
+- [x] **Evidence in the status line** — `test/openapi.test.ts`.
+
+**The finding's own recommendation was half wrong, and rejected on measurement, not
+opinion.** It says to also add `CHANGES_REQUESTED` and `WITHDRAWN` to the "known values."
+A repo-wide grep shows neither is EVER assigned as a status anywhere in `ccp/api/src` —
+`CHANGES_REQUESTED` appears nowhere outside comments and vestigial filter lists (its
+presence in the rate limiter's old hand-maintained list was itself API-13's "nonexistent
+status" bug), and `requestStatus.ts`'s own comment already calls `WITHDRAWN` "client-only
+vocabulary the api has never written." Adding either to prose describing "values a client
+can actually receive" would have recreated DOC-13 in the opposite direction — the wire
+prose over-describing instead of under-describing. Only the three statuses the api
+genuinely writes were added.
+
+## FE-11
+
+*`WINDOW_EXPIRED` is missing from both status-filter vocabularies.*
+
+- [x] **Defect reproduced first** — confirmed both `MyRequests.tsx` and
+      `ApprovalsQueue.tsx` hand-typed an identical 20-entry `ALL_STATUSES` array missing
+      `WINDOW_EXPIRED` — and, discovered independently while verifying, also missing
+      `HALTED_DRIFT`/`HALTED_APPLY_FAILED`: ARCH-7 added both to the vocabulary after this
+      array was written, and the array drifted a second time in exactly the shape the
+      finding diagnoses.
+- [x] **Cause, not symptom** — "these lists have no compile-time completeness check,
+      which is how the drift happened" is the finding's own diagnosis, confirmed twice
+      over by the second drift. Both `ALL_STATUSES` now read `REQUEST_STATUSES` directly
+      (the closed, exhaustive `as const` array `RequestStatus` is derived FROM) rather
+      than restating it, so the list cannot omit a value without the type itself changing
+      under it.
+- [x] **Regression test** — one assertion per file, over the WHOLE vocabulary rather than
+      naming `WINDOW_EXPIRED` alone (so a status added next quarter cannot regress the
+      same way a third time): every `REQUEST_STATUSES` value round-trips through
+      `parseFilters` without coercing to `'all'`. **Negative test confirmed** against both
+      unfixed files: fails on `WINDOW_EXPIRED` first, exactly as named.
+- [x] **Failure is loud** — the failing status name is the test's own label.
+- [x] **Evidence in the status line** — `test/myRequests.test.ts`, `test/approvalsQueue.test.ts`.
+
+`parseFilters`'s `STATUS_SET` is built from `ALL_STATUSES`, so the URL-coercion fix (the
+finding's stated Impact — `?status=WINDOW_EXPIRED` no longer collapses to `'all'`) followed
+from the array fix with no separate code path to touch.
+
+## UI-10
+
+*Request-status copy has four competing sources; raw enum text can reach the UI.*
+
+- [x] **Defect reproduced first** — all four sources confirmed independently: `StatusBadge`'s
+      curated `STATUS_SPEC` labels ("Awaiting review" for `AWAITING_CODE_REVIEW`), three
+      separately-declared `humanizeStatus` clones (`MyRequests.tsx`, `ApprovalsQueue.tsx`,
+      `lib/palette.ts`) producing "Awaiting code review" for the same status a few pixels
+      away, and `Notifications.ownNote`'s default branch interpolating the raw enum
+      (`· CHECKS_RUNNING`) for any status its switch does not name explicitly.
+- [x] **Cause, not symptom** — four independent places owned the same fact. Extracted
+      `STATUS_SPEC` and a `requestStatusLabel()` helper into a new `lib/statusCopy.ts`
+      (the finding's own suggested alternative name) rather than exporting from
+      `StatusBadge.tsx` as literally recommended: `lib/palette.ts` needs the mapping too,
+      and `lib/` importing FROM a component file (with its CSS side-effect import) would
+      have been the wrong dependency direction. `StatusBadge.tsx` now reads FROM
+      `lib/statusCopy.ts` instead of owning the table.
+- [x] **Regression test** — `test/notifications.test.ts` (new): every `REQUEST_STATUSES`
+      value NOT named explicitly in `ownNote`'s switch is asserted to produce a detail
+      string containing no SCREAMING_SNAKE token, and `CHECKS_RUNNING` specifically is
+      asserted to render "Checks running" — the exact word `StatusBadge` uses, which is
+      the whole point of one source. **Negative test confirmed** against the unfixed
+      default branch: fails with `'Request · CHECKS_RUNNING'` (the raw token, verbatim).
+- [x] **Failure is loud** — a regex assertion (`/[A-Z]{2,}_[A-Z_]+/`) rather than an
+      enumerated blocklist, so a fifth clone introduced later fails the same way (L-25).
+- [x] **Evidence in the status line** — `test/notifications.test.ts`.
+
+**One deliberate, visible copy change.** `palette.ts`'s clone produced lowercase text
+("quiet secondary text," per its own comment) while the other two capitalized. Routing it
+through the shared `requestStatusLabel()` makes the palette hint match the badge exactly —
+which is the finding's whole point — at the cost of that hint's casing changing from
+"awaiting code review" to "Awaiting review" in the command palette. No test asserted the
+old casing; checked before making the change, not after.
