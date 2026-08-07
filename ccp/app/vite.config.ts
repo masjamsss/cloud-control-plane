@@ -43,5 +43,19 @@ export default defineConfig({
     // treats localStorage as fallible, but a few tests (project-scope legacy
     // migration) need REAL get/set/remove/clear round-trips to mean anything.
     setupFiles: ['./src/test/setup.ts'],
+    // TEST-5 — code coverage, measured and enforced. See ccp/api/vitest.config.ts for the
+    // rationale; the floors here are much lower and that is the honest reading, not a
+    // lenient one: the SPA has no DOM/interaction testing (TEST-7), so ~25 files pin UI by
+    // inspecting source strings rather than by rendering. Functions at 54.6% is what that
+    // costs, and writing it down is the first step to moving it.
+    //
+    // Measured at the time of writing: statements 73.90, branches 83.11,
+    // functions 54.62, lines 73.90.
+    coverage: {
+      provider: 'v8',
+      include: ['src/**'],
+      reporter: ['text-summary'],
+      thresholds: { statements: 71, branches: 80, functions: 52, lines: 71 },
+    },
   },
 });

@@ -2548,3 +2548,49 @@ the suite rather than of the date. The redundant per-test freezes are kept: wher
 
 **Residue:** see `R-50` — the lane that would have caught this is path-filtered, so a
 time-triggered breakage still waits for an unrelated PR to surface it.
+
+## TEST-5
+
+*No code-coverage measurement anywhere; `coverage.test.ts` is not code coverage.*
+
+- [x] **Defect reproduced first** — measured before changing anything, which is the whole
+      point of the finding: no component reported a number, so "how much of this runs?" had
+      no answer. First measurement: **api 96.00% statements / 87.85% branches / 95.04%
+      functions**; **app 73.90% / 83.11% / 54.62%**.
+- [x] **Cause, not symptom** — the provider was simply never installed and no config asked
+      for a report. `@vitest/coverage-v8` in both packages, `coverage` blocks in
+      `ccp/api/vitest.config.ts` and `ccp/app/vite.config.ts`, a `test:coverage` script in
+      each, and both CI lanes switched to run it so the floor is enforced rather than
+      available.
+- [x] **Regression test** — the floor is its own regression test, and it was verified in both
+      directions: a subset run (`test:coverage -- test/audit.test.ts`, 12.9% statements)
+      **exits 1 naming all four thresholds**, and the full run exits 0. A gate that has only
+      ever been seen passing is not known to be a gate.
+- [x] **Failure is loud** — vitest names each metric, its actual value, and the threshold.
+- [x] **Evidence in the status line** — the config files and the two CI lanes.
+
+**The Go half was already done.** `catalogctl.yml` has run `-coverprofile` with a
+`COVERAGE_FLOOR` of 93.0 (actual 98.6) since CI-1; the finding's third recommendation was
+satisfied before this batch reached it — L-29 for the fourth time in B-O8.
+
+**The floors are the measured numbers rounded down, not aspirations.** api 94/85/92/94, app
+71/80/52/71 — a couple of points of headroom so ordinary churn does not trip them, in the same
+ratchet spirit as the existing Go floor. The app's numbers are much lower and that is the
+honest reading rather than a lenient one: **functions at 54.62%** is what TEST-7's finding
+costs in practice — ~25 SPA files pin UI by inspecting source strings instead of rendering, so
+half the component functions are never called by the suite that "covers" them.
+
+**The three misleading files are renamed**, which was the other half of the finding:
+
+| was | is | what it actually asserts |
+| --- | --- | --- |
+| `coverage.test.ts` | `catalogManifestCompleteness.test.ts` | every manifest well-formed; every service has a team and metadata |
+| `fullCoverage.test.ts` | `provisionTileCompleteness.test.ts` | no op-less service is a dead Provision tile |
+| `adminCoverage.test.ts` | `adminSurfaceCompleteness.test.ts` | every managed domain has an admin route |
+
+All six inbound references were updated (`awsServiceMap.ts`, `ccp/app/README.md`,
+`MAINTAINING-THE-CATALOG.md`, `FUNCTIONAL-TEST-PLAN.md`); `docs/audit/` was deliberately left
+alone, since the reports quote the old names as their evidence.
+
+**Residue:** see `R-51` — the app's function coverage is the number that matters and the one
+this fix can only record, not move.

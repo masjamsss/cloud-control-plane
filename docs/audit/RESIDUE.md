@@ -299,6 +299,19 @@ rather than guessed at. Note CI-13's sibling case: the smoke lane's filter was *
 wrongly, and this one is *narrow* wrongly, for the same underlying reason — a path filter
 answers "did the inputs change", and neither the calendar nor a runner image is an input.
 
+### R-51 · The app's function coverage is recorded, not fixed
+*Residue on **TEST-5**. **Tracked by: TEST-7.***
+
+Measuring put a number on the SPA's testing gap — **54.62% of functions** — and a floor stops
+it eroding, but neither moves it. The cause is TEST-7's: ~25 app test files assert on component
+source strings rather than rendering, so the functions they "cover" are never executed. Raising
+this floor means writing DOM/interaction tests, which is TEST-7's body of work and is still
+open.
+
+Recorded here so the low floor reads as a measurement of a known gap rather than as an
+acceptable target — a floor nobody remembers the reason for is a floor that quietly becomes the
+ceiling.
+
 ## accepted — deliberately permanent
 
 ### R-7 · A fix landed inside another finding's commit

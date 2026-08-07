@@ -121,7 +121,22 @@ concurrency:
 jobs:
   generate-and-upload:
     name: generate + upload project data
-    if: \${{ vars.CI_RUNNER != '' }} # estate-side job: runs only where a deployment configures vars.CI_RUNNER — this public repo ships it as a TEMPLATE and the job stays skipped here (see the header comment)
+    # CI-9 — gate on the variable the runbook ALREADY makes the operator set
+    # (CCP_PROJECT_ID, account-data-ci.md step 3), never on an undocumented one.
+    #
+    # This gated on \`vars.CI_RUNNER != ''\` while ccp-onboard.yml — the sibling lane, same
+    # operator, same runbook — had already called that exact construct a trap and moved off
+    # it. The failure mode is worse on this lane than on that one: onboarding is dispatch-only
+    # and an operator watches it, whereas this fires on every merge. A missing CI_RUNNER
+    # produces a grey skipped job on every push forever, no data is ever uploaded, and the
+    # portal's estate data goes quietly stale behind green CI. The runbook's own mitigation
+    # calls it "this lane's single most common setup failure" — documentation standing in for
+    # a design that fails in practice.
+    #
+    # The public repo sets no CCP_PROJECT_ID, so the template stays just as inert as before.
+    if: \${{ vars.CCP_PROJECT_ID != '' }}
+    # CI_RUNNER keeps the one job it was always doing on this line: an optional runner
+    # override for a self-hosted deployment. Unset simply means the standard hosted runner.
     runs-on: \${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

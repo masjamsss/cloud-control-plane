@@ -150,7 +150,7 @@ service. Onboarding a service is declarative, not a new screen:
    no entry renders via a title-case fallback; several future services are pre-seeded.
 
 Its card, console, resources, filter, forms, diff, and approvals then all appear automatically. The
-[`coverage.test.ts`](src/test/coverage.test.ts) guardrail fails CI if these drift — an orphaned
+[`catalogManifestCompleteness.test.ts`](src/test/catalogManifestCompleteness.test.ts) guardrail fails CI if these drift — an orphaned
 manifest (no team → requesters locked out), a dangling team slug (no manifest → empty console), or a
 service missing polished metadata. That's how the catalog stays coherent from 30 services to 90.
 

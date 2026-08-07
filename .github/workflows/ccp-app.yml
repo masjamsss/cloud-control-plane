@@ -47,8 +47,8 @@ jobs:
         working-directory: ccp/api
       - name: Typecheck
         run: npm run typecheck
-      - name: Tests
-        run: npm test
+      - name: Tests (with the TEST-5 coverage floor)
+        run: npm run test:coverage
         env:
           # Turns "the bridge proof would skip" into a hard failure naming what is missing,
           # so this can never silently revert to not running (TEST-4).

@@ -221,22 +221,16 @@ at HEAD first, and if it is closed, close it with evidence rather than a patch.
 
 **Model:** opus · **Findings:** 8 · **Touches:** `scripts/, .github/workflows/`
 
-> **PARTIALLY COMPLETE — 6 of 8 closed. `TEST-5` and `CI-13` are still open and unclaimed.**
-> Closed: CI-9, CI-8, CI-6 (fixed), CI-5, ARCH-14, TEST-11 (verified already closed by the
-> TEST-4 and DOC-1/DOC-2 work — three of the eight needed no code, which is **L-29** again).
+> **COMPLETE — all 8 closed.** Fixed: CI-8, CI-9, CI-6, CI-13, TEST-5. Verified already
+> closed by earlier work and closed with evidence rather than a patch: CI-5, ARCH-14, TEST-11
+> (**L-29** four times in one batch — half this batch needed no product change).
 > New rules live in `scripts/ci/check-workflow-safety.sh` and
-> `scripts/ci/publish-gate-selftest.sh`; residue in `R-47`–`R-49`.
+> `scripts/ci/publish-gate-selftest.sh`; residue in `R-47`–`R-51`.
 >
-> **Read this before taking TEST-5.** The api suite is RED on `main` as of 2026-08-04, from
-> two date bombs rather than anything in the code: `test/windowExpiry.test.ts:46` queries the
-> audit partition for the REAL current month while the suite runs at a fixed
-> `NOW = 2026-07-12`, so every audit assertion reads an empty partition once the wall clock
-> crosses a month boundary; and `test/cooling.test.ts:28` pins a window at `2026-08-01`, now
-> in the past, so windowed requests settle `WINDOW_EXPIRED`. 12 failures, 6 files. It is not
-> environmental — it reproduces with and without coverage instrumentation, and the suite was
-> green on 2026-07-30. TEST-5 wants a coverage floor measured and gated; measuring one against
-> a red suite would bake in an understated number, so **fix the clock coupling first**. That
-> is not in this batch and has no finding yet.
+> **Raised during the batch: TEST-13** (high) — the suites were coupled to the wall-clock
+> calendar and went red on a month boundary with no code change. Found while measuring for
+> TEST-5, fixed in the same branch, and it is why TEST-5's floor could be measured against a
+> green suite at all.
 
 
 | finding | sev | expected result |

@@ -341,13 +341,14 @@ examples, all verified by reading the code:
   `tools/catalogctl` or the go.sum hash) shared by both parity files, or split the parity harness
   into an explicitly toolchain-gated CI job.
 
-### TEST-13 — The api suite is coupled to the wall-clock calendar: it goes red on a month boundary with no code change
+### TEST-13 — The test suites are coupled to the wall-clock calendar: they go red on a month boundary with no code change
 
 - **Severity:** high
 - **Location:** `ccp/api/test/windowExpiry.test.ts:46`, `cooling.test.ts:28,73`, and the same
   partition derivation in `approvalLadder`, `changeSet`, `exposure`, `feasibility`, `linkPr`,
   `planSummary`, `projectAuthz`, `readyz`, `replaceConfirmation`, `rewindow`, `scheduleQuorum`;
-  the mirror-image hardcoding in `audit.test.ts:79` and `fileStore.test.ts:126`
+  the mirror-image hardcoding in `audit.test.ts:79` and `fileStore.test.ts:126`; and in the
+  app suite, `ccp/app/src/test/schedulePicker.test.ts:124`
 - **Description:** Audit entries are partitioned by the month of the write, stamped from
   `src/clock.ts`. Two families of test disagree with that clock:
   1. **The helper reads wall time while the app is frozen.** `auditActions()` derived the
@@ -361,6 +362,10 @@ examples, all verified by reading the code:
   that needed it to be in the future froze the clock one at a time (the repeated comment
   "(else wall-clock elapses it)" is the dependency being worked around rather than removed),
   and the tests that did not freeze settled `WINDOW_EXPIRED` once that date passed.
+  The app suite carries the same class independently: `schedulePicker.test.ts` pinned a
+  window at the literal `2026-08-01T15:00:00.000Z` and renders the REAL component, which
+  judges validity against `Date.now()` — once that date passed the preview stopped
+  rendering and the assertion failed on the calendar rather than on the component.
 - **Impact:** **The suite was green on 2026-07-30 and red on 2026-08-04 with no commit in
   between** — 12 failures across 6 files. It recurs on every month boundary. Because
   `ccp-api.yml` is path-filtered, a PR touching nothing under `ccp/api/**` never runs it, so

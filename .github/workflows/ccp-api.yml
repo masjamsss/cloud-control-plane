@@ -86,6 +86,6 @@ jobs:
         # names what is missing (test/helpers/requireToolchain.ts). Unset locally, so a
         # developer without terraform still gets a clean skip — the guarantee is about CI,
         # where a skipped proof is indistinguishable from a passing one.
-        run: npm test
+        run: npm run test:coverage
         env:
           CCP_REQUIRE_INTEGRATION: '1'
