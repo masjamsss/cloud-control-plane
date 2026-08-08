@@ -4883,3 +4883,134 @@ convention.)
       1000 as the specific fix, not a generic "key unreadable".
 - [x] **Evidence in the status line** — `bash ccp/scripts/test/setup-forge-layout.test.sh`
       (4/4 passed); `bash ccp/scripts/test/doctor-forge-key-readable.test.sh` (5/5 passed).
+
+## ERR-7
+
+*Unexpected errors become `{code:'INTERNAL'}` 500 with zero server-side logging.*
+
+**Verified closed by OPS-2. No code changed here.** B-S1's own instruction: "Confirm every
+500 path logs, then close — or fix only the paths that do not."
+
+- [x] **Confirmed against the exact claim, not by reading the fix** (**L-29**) —
+      `registerErrorHandler` (`errors.ts`) calls `logServerError(err, { method, path })` for
+      every non-`ApiError` exception, immediately before returning the `{code:"INTERNAL"}` 500 —
+      `log.ts`'s `formatServerError` captures the message, the full stack (or name+message for a
+      non-Error throw), and method+path, all passed through `redactSecrets` (never the body,
+      query string, headers, or cookies — those carry credentials by construction).
+- [x] **"Every 500 path logs" verified structurally, not just spot-checked** —
+      `grep -rn ", 500)" src/` (excluding tests and `errors.ts` itself) returns nothing, and a
+      broader `grep -rn "500"` sweep of the same tree turns up only unrelated `.max(500)` zod
+      field-length limits and byte constants — `registerErrorHandler`'s `app.onError` is
+      structurally the ONLY place an HTTP 500 is ever produced anywhere in `ccp/api/src`, so
+      "every 500 path logs" is trivially and completely satisfied by this one call site.
+- [x] **Regression test** — n/a here; the governing coverage is OPS-2's own
+      `test/serverErrorLogging.test.ts` (11 tests), already in place and re-run clean.
+- [x] **Failure is loud** — n/a (verify-and-close).
+- [x] **Evidence in the status line** — `grep -rn ", 500)" src/ | grep -v test` (empty);
+      `cd ccp/api && npx vitest run test/serverErrorLogging.test.ts` (11 passed).
+
+## OPS-11
+
+*`/readyz` re-verifies every audit chain on every probe; cost grows unboundedly with history.*
+
+**Verified closed by PERF-4. No code changed here.** B-S1's own instruction: "Confirm, then
+close. NOTE R-34: the memo is deliberately NOT a tamper-detector, and that stays true."
+
+- [x] **Confirmed against the exact claim, not by reading the fix** (**L-29**) —
+      `readiness.ts` calls `verifyProjectChain` (`auditQuery.ts`), not `exportAuditChain` — its
+      own doc comment explains the swap ("the probe needs a verdict, not the evidence document").
+      `verifyProjectChain` memoizes a verified `(count, hash)` prefix per project per store; a
+      probe at an unchanged or grown count only reads the tail added since the last verified
+      count (re-anchoring the last verified entry by RE-HASHING it from content, not trusting its
+      stored `hash` field — an edit that rewrites content while leaving the hash field alone
+      would otherwise walk straight past the memo) instead of the whole chain.
+- [x] **R-34's caveat re-confirmed, not just asserted** — the memo path is deliberately not a
+      tamper-detector for already-verified history: `test/auditPaging.test.ts`'s
+      "documents its limit: a rewritten PREFIX is caught by the export, not by the memo" test
+      tampers with an entry BEFORE the memoized anchor (stored hash untouched) and shows the fast
+      probe still reports `verified: true`, while `exportAuditChain` (the full evidence surface)
+      and a fresh-process probe (no memo yet) both correctly report `verified: false`. This is
+      exactly R-34's documented trade-off, still true today.
+- [x] **Regression test** — n/a here; the governing coverage is PERF-4's own
+      `test/auditPaging.test.ts` "verifyProjectChain — incremental verification" suite (8 tests),
+      already in place and re-run clean.
+- [x] **Failure is loud** — n/a (verify-and-close).
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/auditPaging.test.ts
+      test/readyz.test.ts` (11 passed).
+
+## DATA-6
+
+*`rename` durability is not guaranteed: no directory fsync after the atomic swap.*
+
+**Verified partially closed by ERR-10; extended to close the remainder.** B-S1's instruction:
+"Confirm it covers every atomic-write site (`store/snapshot.ts` too), then close or extend."
+
+- [x] **Defect reproduced first** — confirmed at HEAD (L-29) that `fileStore.ts`'s
+      `writeAtomic` already calls `syncDir(dir)` after `rename` (ERR-10), but `snapshot.ts`'s
+      `writeFileAtomic` did NOT — grep-verified `rename`/`fsync` in `snapshot.ts` showed the
+      rename with no directory sync at all. The finding's own recommendation additionally names 3
+      more disk writers ("the same cheap hardening applies"): `domain/projectData.ts`'s
+      `writeProjectDataVersion`, `domain/drift.ts`'s `writeDriftReport`, and
+      `domain/driftProposals.ts`'s `writeDriftProposalBody` — all 3 confirmed to `writeFile` +
+      `rename` with zero fsync of any kind, file or directory.
+- [x] **Cause, not symptom** — added the identical `syncDir` pattern (best-effort — some
+      filesystems refuse a directory open-for-sync, and failing an already-landed write over that
+      would be worse than the narrow window it closes) to all 4 remaining sites, called after
+      each's `rename` succeeds. `snapshot.ts`'s copy is deliberately duplicated, not imported
+      from `fileStore.ts` — its own doc comment already establishes it stays standalone so the
+      backup/restore scripts never touch the durable store's code path; the same reasoning
+      applies to the 3 domain writers, none of which import from each other today.
+- [x] **Regression test** — directly testing "did fsync fire" is not observable without
+      fs-mocking infrastructure this suite doesn't have (the ORIGINAL `fileStore.ts` ERR-10 fix
+      has no such test either, for the same reason) — `syncDir` is a self-contained,
+      error-swallowing addition appended strictly after each function's pre-existing success
+      path, so it cannot regress observable behavior by construction, and the FULL existing
+      `ccp/api` suite (which already exercises every one of these 4 write paths end-to-end
+      through their public callers) re-ran clean with zero new failures. `snapshot.ts`'s own new
+      `test/snapshotWriteAtomic.test.ts` covers its happy path directly (byte-identical read-back,
+      no leftover tmp file).
+- [x] **Failure is loud** — n/a for a best-effort durability nicety with no caller-visible
+      contract change.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1421 passed, up from 1415 before DATA-6+DATA-13 combined).
+
+## DATA-13
+
+*Failed atomic writes leak temp files in the store path.*
+
+**Verified partially closed by ERR-10; extended to close the remainder.** B-S1's instruction:
+"VERIFY, THEN EXTEND. Check the OTHER atomic-write sites for the same shape and fix any that
+leak."
+
+- [x] **Defect reproduced first** — confirmed at HEAD (L-29) that `fileStore.ts`'s
+      `writeAtomic` already wraps its write+rename in a try/catch that removes the temp file on
+      any failure (ERR-10), but `snapshot.ts`'s `writeFileAtomic` had NO such cleanup — a failing
+      `writeFile`/`sync`/`rename` left the temp file behind, exactly as the finding describes.
+      The finding's own text confirms `drift.ts`/`driftProposals.ts`/`projectData.ts` already
+      clean up on failure — verified true, unaffected. The finding's SECOND recommendation ("sweep
+      stale `<file>.tmp-*` on `FileStore.open`") was not implemented anywhere: no startup sweep
+      existed, so a temp file orphaned by a `kill -9` mid-write (a case no catch/finally can ever
+      run for, since the process dies before it) would persist forever, and under sustained
+      ENOSPC each failed attempt strands another partial multi-MB snapshot.
+- [x] **Cause, not symptom** — `snapshot.ts`'s `writeFileAtomic` gains the identical
+      try/catch cleanup `fileStore.ts` already has. `FileStore.open` gains `sweepStaleTmp(file)`,
+      called before `load()`: best-effort, removes every `<file>.tmp-*` in the data directory,
+      never throws (an unreadable/absent directory is not this function's job to fail boot over —
+      `load()` validates the store's own file separately).
+- [x] **Regression test** — new `test/snapshotWriteAtomic.test.ts`: forces the rename step
+      specifically to fail (a file cannot be renamed onto an existing NON-EMPTY directory —
+      ENOTEMPTY/EISDIR, platform-independent — with `tmp` already fully written, exactly the
+      failure shape the finding describes) and asserts no `.tmp-*` file survives. New tests in
+      `test/fileStore.test.ts`: a stale tmp file written before `FileStore.open()` (simulating a
+      killed prior process) is gone afterward; multiple stale tmp files don't block a normal
+      open+write+restart cycle; a missing data directory (fresh install) sweeps as a clean no-op,
+      not a boot failure. **Negative test confirmed** for both: reverting `snapshot.ts`'s cleanup
+      failed the new rename-failure test exactly as expected; reverting the `sweepStaleTmp` call
+      in `FileStore.open` failed the "removes a leftover tmp file" test exactly as expected (the
+      other 2 fileStore.ts tests, not sensitive to that specific removal, correctly still passed);
+      both restored, re-verified all green.
+- [x] **Failure is loud** — each test's failure message names exactly which stale file(s)
+      leaked, not just "test failed".
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/fileStore.test.ts
+      test/snapshotWriteAtomic.test.ts` (14 passed); full suite `npx vitest run` (102 files, 1421
+      passed); `npx tsc --noEmit` clean.

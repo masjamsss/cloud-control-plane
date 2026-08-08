@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync, rmSync, existsSync } from 'node:fs';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, readFile, rename, writeFile, open as fsOpen } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import { z } from 'zod';
 import { redactHcl, redactTfJson } from '@app-lib/redact';
 import { canonicalJson } from './audit';
@@ -338,6 +338,25 @@ export async function writeProjectDataVersion(
   } catch (e) {
     rmSync(tmp, { recursive: true, force: true });
     throw e;
+  }
+  // DATA-6 — the rename above is atomic against a process kill regardless, but the
+  // directory ENTRY it creates is not durable against power loss until the
+  // containing directory's own metadata is flushed — the same "cheap hardening"
+  // FileStore.writeAtomic/ERR-10 applies. Best-effort: some filesystems refuse a
+  // directory open-for-sync, and failing an already-landed write over that would
+  // be worse than the narrow window this closes.
+  await syncDir(dirname(finalDir));
+}
+
+async function syncDir(dir: string): Promise<void> {
+  let dh;
+  try {
+    dh = await fsOpen(dir, 'r');
+    await dh.sync();
+  } catch {
+    // see above — deliberately swallowed
+  } finally {
+    await dh?.close().catch(() => undefined);
   }
 }
 

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { open as fsOpen, rename, mkdir, rm } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { open as fsOpen, rename, mkdir, rm, readdir } from 'node:fs/promises';
+import { dirname, basename } from 'node:path';
 import { DurabilityError, type Item, type TransactWrite } from './configStore';
 import { DataLock } from './dataLock';
 import { MemoryStore } from './memoryStore';
@@ -107,6 +107,7 @@ export class FileStore extends MemoryStore {
     const store = new FileStore(file);
     if (opts?.lock !== false) store.lock = DataLock.acquire(file);
     try {
+      await sweepStaleTmp(file);
       await store.load();
     } catch (e) {
       // A store that failed to load never becomes the writer, and must not leave a lock
@@ -264,6 +265,32 @@ async function syncDir(dir: string): Promise<void> {
     // see above — deliberately swallowed
   } finally {
     await dh?.close().catch(() => undefined);
+  }
+}
+
+/**
+ * DATA-13 — the catch block above only cleans up a temp file for a write THIS
+ * process's own try/catch got to run for; a `kill -9` (or a host power loss)
+ * mid-`writeFile`/`sync`/`close` leaves one behind that no catch ever sees, and
+ * under sustained ENOSPC every failed attempt strands another partial multi-MB
+ * snapshot — worsening the very condition that caused the failure. Swept once,
+ * best-effort, at `open()` (before `load()`, so a fresh boot never has to look at
+ * them again): remove every `<file>.tmp-*` in the data directory. Never a
+ * FAIL — an unreadable directory or a permission miss must not block boot over a
+ * cleanup nicety; the store's OWN file is read/validated separately by `load()`.
+ */
+async function sweepStaleTmp(file: string): Promise<void> {
+  const dir = dirname(file);
+  const prefix = `${basename(file)}.tmp-`;
+  try {
+    const entries = await readdir(dir);
+    for (const name of entries) {
+      if (name.startsWith(prefix)) {
+        await rm(`${dir}/${name}`, { force: true }).catch(() => undefined);
+      }
+    }
+  } catch {
+    // directory unreadable/absent — nothing to sweep, and not this function's job to fail boot over
   }
 }
 

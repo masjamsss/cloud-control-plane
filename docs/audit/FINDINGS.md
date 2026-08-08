@@ -235,7 +235,7 @@ Durability, rollback, schema validation on load, and store-seam fidelity against
 - [x] DATA-4 | high | data-persistence | fixed:813a6d9 | 03-data-integrity.md | Full-file rewrite + fsync on every mutation, including a session write on every authenticated request, against a store that only ever grows
 - [ ] CTL-5 | medium | data-persistence | open | 07-catalogctl.md | `drift-edit` writes are neither atomic nor transactional: a mid-batch refusal leaves earlier edits in the checkout
 - [ ] DATA-10 | medium | data-persistence | open | 03-data-integrity.md | Backup/restore covers only the store JSON; the on-disk project-data/drift root it references is out of scope, with no consistency check
-- [ ] DATA-6 | medium | data-persistence | open | 03-data-integrity.md | `rename` durability is not guaranteed: no directory fsync after the atomic swap
+- [x] DATA-6 | medium | data-persistence | fixed:fileStore.ts's directory fsync (ERR-10) was already in place; extended the identical syncDir pattern to snapshot.ts's writeFileAtomic (deliberately duplicated, not imported — it stays standalone for the backup/restore scripts) and to the 3 disk writers the recommendation names: projectData.ts, drift.ts, driftProposals.ts | 03-data-integrity.md | `rename` durability is not guaranteed: no directory fsync after the atomic swap
 - [x] ERR-10 | medium | data-persistence | fixed:0d4c3a4 | 09-error-handling.md | FileStore persist failure leaves memory ahead of disk: the client gets a 500 for a write that took effect
 - [x] UI-8 | medium | data-persistence | fixed:toRows splits a change line on body.lastIndexOf(' -> ') instead of split(' -> '); the trim()-discards-indentation sub-claim did not reproduce against current code (indent is always captured before trim runs) and was left unfixed, noted honestly | 06-frontend-ui-robustness.md | DiffView corrupts `~` change lines whose old value contains " -> "
 - [ ] API-17 | low | data-persistence | open | 02-api-correctness.md | Store-seam divergences from the DynamoDB semantics it mirrors
@@ -360,7 +360,7 @@ The evidence chain: month walk, export, verification.
 
 - [x] DATA-2 | high | audit-chain | fixed:813a6d9 | 03-data-integrity.md | Audit month-walk duplicates the current month at month ends: audit export corrupts and `/readyz` goes red on ~7 days a year
 - [x] PERF-4 | high | audit-chain | fixed:813a6d9 | 11-performance-scalability.md | `/readyz` re-verifies every audit chain hash on every probe: O(total audit entries) CPU per health check
-- [ ] OPS-11 | medium | audit-chain | open | 10-reliability-operations.md | `/readyz` re-verifies every audit chain on every probe; cost grows unboundedly with history
+- [x] OPS-11 | medium | audit-chain | fixed:verified closed by PERF-4 — verifyProjectChain (auditQuery.ts) memoizes a verified prefix and only re-walks the suffix added since the last probe; readiness.ts already calls it instead of exportAuditChain; test/auditPaging.test.ts's 8-test "incremental verification" suite pins the fast path AND R-34's caveat (a mid-prefix tamper is caught by export/a fresh process, not by the fast memo path — confirmed still true) | 10-reliability-operations.md | `/readyz` re-verifies every audit chain on every probe; cost grows unboundedly with history
 - [ ] PERF-11 | medium | audit-chain | open | 11-performance-scalability.md | Per-project audit chain head serializes all writes and surfaces contention as user-facing 409s after one retry
 - [ ] PERF-7 | medium | audit-chain | open | 11-performance-scalability.md | Nothing in the store is ever purged: sessions, idempotency markers, and the audit chain grow forever (and every byte is re-serialized per request)
 - [x] DATA-17 | low | audit-chain | fixed:verified already closed by TEST-13's fix — the actual calendar-dependent test now derives its partition via nowIso().slice(0,7) (inline comment credits TEST-13); the one remaining literal '202607' (fileStore.test.ts:98) is self-consistent (same key object for write and read-back), not calendar-dependent | 03-data-integrity.md | Calendar-dependent test: the FileStore audit-durability test hardcodes month `202607`
@@ -388,7 +388,7 @@ Focus management, dialog semantics, duplicate DOM ids.
 No request logging, no request ids, missing healthchecks.
 
 - [x] OPS-2 | high | observability | fixed:c89f727 | 10-reliability-operations.md | Unhandled errors become 500 `INTERNAL` with zero server-side logging
-- [ ] ERR-7 | medium | observability | open | 09-error-handling.md | Unexpected errors become `{code:'INTERNAL'}` 500 with zero server-side logging
+- [x] ERR-7 | medium | observability | fixed:verified closed by OPS-2 — registerErrorHandler (errors.ts) calls logServerError (message+stack+method+path, redacted) before every 500; confirmed via grep that errors.ts's app.onError is the ONLY HTTP-500-producing code path anywhere in ccp/api/src, so "every 500 path logs" is trivially satisfied; test/serverErrorLogging.test.ts (11 tests) pins it | 09-error-handling.md | Unexpected errors become `{code:'INTERNAL'}` 500 with zero server-side logging
 - [x] OPS-10 | medium | observability | fixed:shared x-logging anchor (json-file, max-size 10m, max-file 5) applied to all 5 services; api gets mem_limit ${CCP_API_MEM_LIMIT:-1g}, runner gets ${CCP_RUNNER_MEM_LIMIT:-4g} — both compose-syntax (mem_limit/cpus, not deploy:, which plain `docker compose up` ignores outside swarm mode) | 10-reliability-operations.md | No log rotation and no resource limits on any service
 - [ ] OPS-7 | medium | observability | open | 10-reliability-operations.md | No HTTP request logging and no request IDs anywhere in the api
 
@@ -413,7 +413,7 @@ Routing, redirects and current-page indication.
 Workspaces, temp files and unbounded resources.
 
 - [x] API-16 | low | resource-leak | fixed:prepare() rmSyncs on a rev-parse failure; commit() checks add's status and validates the post-commit sha; test/bundle.test.ts | 02-api-correctness.md | Bundle workspace leaks and unchecked git steps
-- [ ] DATA-13 | low | resource-leak | open | 03-data-integrity.md | Failed atomic writes leak temp files in the store path
+- [x] DATA-13 | low | resource-leak | fixed:fileStore.ts's cleanup-on-failure (ERR-10) was already in place; extended: snapshot.ts's writeFileAtomic gains the same try/catch temp-file cleanup (was leaking); FileStore.open now sweeps stale `<file>.tmp-*` on boot (a kill -9 mid-write leaves one behind that no catch block ever runs for) — drift.ts/driftProposals.ts/projectData.ts already cleaned up on failure, confirmed unaffected | 03-data-integrity.md | Failed atomic writes leak temp files in the store path
 - [x] ERR-13 | low | resource-leak | fixed:same fix as API-16's prepare() half; test/bundle.test.ts | 09-error-handling.md | `prepare()` leaks the cloned workspace when `rev-parse` fails
 
 ## scheduler

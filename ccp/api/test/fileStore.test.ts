@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FileStore } from '../src/store/fileStore';
 import { ConditionError, type Item } from '../src/store/configStore';
@@ -133,6 +133,37 @@ describe('FileStore durability (simulated restart = new instance reading disk)',
 
     const verdict = verifyChain(entries as unknown as ChainEntry[], { head: headAfter.hash });
     expect(verdict.code).toBe(0); // chain intact + head matches after reload
+  });
+});
+
+describe('DATA-13 — FileStore.open sweeps stale <file>.tmp-* left by a killed prior process', () => {
+  it('removes a leftover tmp file from a simulated kill -9 mid-write', async () => {
+    mkdirSync(dirname(file), { recursive: true });
+    const stale = `${file}.tmp-99999-deadbeef`;
+    writeFileSync(stale, '{"partial"'); // exactly the shape a kill -9 mid-writeFile leaves
+    expect(existsSync(stale)).toBe(true);
+
+    const store = await FileStore.open(file);
+    expect(existsSync(stale)).toBe(false); // swept before load(), never seen by a reader
+    store.close();
+  });
+
+  it('a stale tmp file under sustained ENOSPC does not block a normal open+write', async () => {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(`${file}.tmp-1-aaaa`, 'garbage');
+    writeFileSync(`${file}.tmp-2-bbbb`, 'garbage');
+
+    const store = await FileStore.open(file);
+    await store.put({ ...S.accountKey('sari'), id: 'sari', GSI1PK: S.accountsGsi(), GSI1SK: 'sari' });
+    const reopened = await restart(store);
+    expect(await reopened.get('ACCOUNT#sari', 'META')).not.toBeNull();
+  });
+
+  it('a missing data directory (fresh install) is a no-op sweep, not a boot failure', async () => {
+    // No mkdirSync here — `dir/nested` does not exist yet at all.
+    const store = await FileStore.open(file);
+    expect(await store.get('ACCOUNT#sari', 'META')).toBeNull();
+    store.close();
   });
 });
 
