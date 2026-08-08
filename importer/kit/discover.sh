@@ -66,6 +66,13 @@ case "$ACCOUNT" in
   [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
   *) echo "REFUSE BAD_ARG: --account must be a 12-digit account id" >&2; exit 2 ;;
 esac
+# IMP-13(b) — $REGION is interpolated unvalidated into capture-meta.json's JSON
+# below; a stray '"' (or anything else JSON needs escaped) would corrupt that
+# file, discovered only downstream as a confusing BAD_CAPTURE from `build`.
+# Every real AWS region name is lowercase letters/digits/hyphens only.
+case "$REGION" in
+  *[!a-z0-9-]*) echo "REFUSE BAD_ARG: --region must contain only lowercase letters, digits, and hyphens (got '$REGION')" >&2; exit 2 ;;
+esac
 
 command -v "$PYTHON" >/dev/null 2>&1 || { echo "REFUSE MISSING_DEP: $PYTHON not found" >&2; exit 2; }
 
@@ -107,9 +114,12 @@ if [ "$CALLER_ACCOUNT" != "$ACCOUNT" ]; then
   exit 2
 fi
 
-mkdir -p "$OUT"
+mkdir -p "$OUT" || { echo "REFUSE IO_ERROR: mkdir -p $OUT failed" >&2; exit 2; }
 FAILED=""
-printf '%s\n' "$PLAN" > "$OUT/.capture-plan.tsv"
+# IMP-13(a) — a failed write here used to surface later as a confusing
+# BAD_CAPTURE/ACCOUNT_MISMATCH out of `discover.py build`, not as itself.
+printf '%s\n' "$PLAN" > "$OUT/.capture-plan.tsv" \
+  || { echo "REFUSE IO_ERROR: failed writing $OUT/.capture-plan.tsv" >&2; exit 2; }
 while IFS="$(printf '\t')" read -r capture cmd; do
   [ -n "$capture" ] || continue
   # Every allowlisted line MUST be an `aws ...` read-only call; anything else
@@ -134,7 +144,9 @@ done < "$OUT/.capture-plan.tsv"
 rm -f "$OUT/.capture-plan.tsv"
 
 CAPTURED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-cat > "$OUT/capture-meta.json" <<EOF
+# IMP-13(a) — same as the plan-write above: never silently proceed with no
+# (or a truncated) capture-meta.json.
+cat > "$OUT/capture-meta.json" <<EOF || { echo "REFUSE IO_ERROR: failed writing $OUT/capture-meta.json" >&2; exit 2; }
 {
   "account": "$ACCOUNT",
   "region": "$REGION",

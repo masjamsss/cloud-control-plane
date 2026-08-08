@@ -4396,3 +4396,490 @@ convention.)
       (4 passed); `npx vitest run src/test/driftProposalUi.test.tsx src/test/driftPanel.test.tsx
       src/test/driftResolutionFlow.test.tsx` (95 passed, unaffected); full suite `npx vitest
       run` (160 files, 2825 passed at the time); `npx tsc --noEmit -p .` clean.
+
+## CTL-6
+
+*`danglingRef` substring scan falsely refuses removal when another resource's name extends the target's name.*
+
+- [x] **Defect reproduced first** — confirmed `danglingRef` (`removeblock.go`) used a raw
+      `bytes.Contains` scan (same-file-excluding-block, and cross-file) to decide whether an
+      address like `aws_ebs_volume.data` still has a live reference elsewhere — a byte-prefix
+      sibling `aws_ebs_volume.data_archive` matches that scan even though it is a wholly
+      different resource, so removing `.data` was falsely refused as "still referenced" (a
+      fail-open... no, fail-CLOSED safety gate over-triggering — the removal that should have
+      been allowed was blocked).
+- [x] **Cause, not symptom** — new `isIdentByte`/`containsAddress` in `removeblock.go` add an
+      identifier-boundary check on BOTH sides of every occurrence (not just the first — a
+      boundary-rejected first hit must not short-circuit a later genuine one; `containsAddress`
+      re-scans from just past each rejected occurrence's start). `danglingRef` now calls
+      `containsAddress` at both call sites instead of `bytes.Contains`. Reasoning proven safe: a
+      genuine reference in valid HCL syntax is by construction never adjacent to another
+      identifier char on either side, so adding boundary checks can only remove false
+      positives, never introduce false negatives — safe for a fail-closed gate.
+- [x] **Regression test** — 3 new subtests in `covrender_cov_test.go`'s
+      `TestCovrenderDanglingRef`: a prefix-named sibling's reference does NOT count (the false
+      positive this closes); a genuine reference to the exact (shorter) address still refuses
+      (proves the fix isn't merely "always false" — both a sibling AND a genuine reference are
+      in the same fixture); a suffix-extended identifier on the LEFT does not count either
+      (both boundaries checked). **Negative test confirmed**: reverted `containsAddress` calls
+      back to `bytes.Contains` — 2 of the 3 new subtests failed exactly as expected (the
+      true-positive one correctly still passed, proving the fix isn't trivially broken);
+      restored, re-verified green (9/9 subtests in the function).
+- [x] **Failure is loud** — each subtest names which boundary (left/right, sibling/exact)
+      it covers, so a regression pinpoints which side broke.
+- [x] **Evidence in the status line** — `go test ./internal/edit/...` and the full
+      `go build ./... && go test ./...` both clean after CTL-6/7/8 combined.
+
+## CTL-7
+
+*plancheck's `inventoryAddr` does not skip `role:"reference"` inventory params, diverging from the executor's `targetAddress`.*
+
+- [x] **Defect reproduced first** — confirmed `inventoryAddr` (`plancheck.go`) returned the
+      FIRST inventory-sourced param it found regardless of `Role`, while its sibling
+      `edit.targetAddress`/`prprep.inventoryAddr` both already skip `role:"reference"` params —
+      an op whose reference param (e.g. `key_pair`) is listed before the real target
+      (`iam_instance_profile`) would have plancheck resolve the wrong address.
+- [x] **Cause, not symptom** — added `&& p.Role != "reference"` to the loop condition,
+      matching the sibling functions' existing logic exactly, with an expanded doc comment
+      citing both.
+- [x] **Regression test** — 3 new tests: `TestInventoryAddrSkipsReferenceRole` (a reference
+      param listed BEFORE the real target — the exact ordering that exposes the bug),
+      `TestInventoryAddrOrdinaryCase` (single non-reference param, unaffected),
+      `TestInventoryAddrNoInventoryParam` (no inventory param at all → empty string, no panic).
+      **Negative test confirmed**: reverted the `&& p.Role != "reference"` clause —
+      `TestInventoryAddrSkipsReferenceRole` failed exactly as expected (the reference address
+      returned instead of the target); restored, re-verified green.
+- [x] **Failure is loud** — the failing test names the exact wrong address returned.
+- [x] **Evidence in the status line** — `go test ./internal/plancheck/...` and the full
+      `go build ./... && go test ./...` both clean after CTL-6/7/8 combined.
+
+## CTL-8
+
+*`atomicWrite` silently changes edited-file permissions to 0600 and skips fsync.*
+
+- [x] **Defect reproduced first** — confirmed `atomicWrite` (`edit.go`) created its temp file
+      via `os.CreateTemp` (always 0600) and never `chmod`'d it before `rename`, so every edit
+      silently narrowed an existing file's mode (e.g. 0644 → 0600); it also never called
+      `Sync()` before `Close()`, so a crash mid-rename could lose the write despite the rename
+      itself having appeared to succeed.
+- [x] **Cause, not symptom** — `atomicWrite` now `os.Stat`s the target's EXISTING mode first
+      (falling back to 0644 for a brand-new file), `Chmod`s the temp file to that mode before
+      rename, and calls `tmp.Sync()` before `Close()` — mirroring `ccp-api`'s
+      `FileStore.writeAtomic`/ERR-10 fix pattern in this same repo.
+- [x] **Regression test** — 3 new subtests in `coveditcore_cov_test.go`'s
+      `TestCoveditcoreAtomicWrite`: preserves an existing 0600→0644 mode change correctly,
+      preserves a non-default existing mode (0640), and a brand-new file gets 0644 (not the
+      temp file's raw 0600). **Negative test confirmed**: removed the `mode`
+      computation/`os.Stat`/`tmp.Chmod` call — all 3 new subtests failed with mode 600 exactly
+      as expected; restored, re-verified green (6/6 subtests).
+- [x] **Failure is loud** — each subtest asserts the exact expected mode, not just "changed".
+- [x] **Evidence in the status line** — `go test ./internal/edit/...` and the full
+      `go build ./... && go test ./...` both clean after CTL-6/7/8 combined.
+
+## API-11
+
+*Audit-chain read path bypasses the injected clock and truncates at 120 months.*
+
+- [x] **Defect reproduced first** — re-derived both halves at HEAD (L-29) rather than trusting
+      the finding's own text: the clock-usage half was ALREADY fixed — `nowDate()` (not `new
+      Date()`) is used consistently at all 3 `monthsBackward` call sites in
+      `domain/auditQuery.ts`, with an existing doc comment explaining why. The 120-month-cap
+      half was still real: every walk site already self-terminates on `collected >= total` (the
+      chain head's own declared count), so `MAX_MONTHS_WALKED` was never the intended stopping
+      condition — only a corrupted-store safety valve — but at 120 (ten years) it was low
+      enough to BE the real, silently-truncating ceiling for a genuinely long-lived deployment:
+      `verifyChain` would see a short chain and report a perfectly intact one as BROKEN
+      (`/readyz` 503, `export.verified: false`).
+- [x] **Cause, not symptom** — raised `MAX_MONTHS_WALKED` from 120 to 1200 (a century) —
+      generous enough that no real deployment's lifetime reaches it while still being a
+      genuinely finite bound against a corrupted `head.count` runaway loop.
+- [x] **Regression test** — new test in `auditMonthWalk.test.ts`: "reads a chain spanning more
+      than ten years intact (the old 120-month cap would have truncated it)" — appends 2
+      entries at `2015-03-01`, 3 entries at `2026-07-10`, reads at `2026-07-31`, asserts
+      `readAuditChronological` returns all 5 entries and `exportAuditChain` reports
+      `verified: true`. **Negative test confirmed**: reverted `MAX_MONTHS_WALKED` to 120 — the
+      new test failed (`expected [...] to have a length of 5 but got 3`); restored, all 4 tests
+      in the file pass.
+- [x] **Failure is loud** — the test asserts the exact entry count AND the chain's verified
+      status, so a regression can't silently pass with a short-but-still-"verified" chain.
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run
+      test/auditMonthWalk.test.ts` (4 passed); full suite `npx vitest run` (101 files, 1415
+      passed at the time); `npx tsc --noEmit` clean.
+
+## DATA-17
+
+*Calendar-dependent test: the FileStore audit-durability test hardcodes month `202607`.*
+
+- [x] **Defect reproduced first** — re-derived at HEAD (L-29) rather than trusting the finding's
+      own text: `grep -n "202607" ccp/api/test/fileStore.test.ts` shows only ONE literal
+      `'202607'` remaining (inside "a committed transact batch survives a restart"), and it is
+      NOT calendar-dependent — the SAME `audit` key object (built once via
+      `S.auditKey('sample', '202607', ...)`) is used for both the write and the read-back, so
+      it is self-consistent regardless of wall-clock date. The ACTUAL previously
+      calendar-dependent test ("a hash-chained audit log survives restart and still verifies")
+      was already fixed by earlier TEST-13 work — an inline comment credits it explicitly:
+      `// TEST-13 — record stamped these five from the app clock, so the partition is the month
+      of the write, not the literal 202607 this used to assert against.`, followed by
+      `nowIso().slice(0, 7).replace('-', '')`.
+- [x] **Cause, not symptom** — no code change needed; verified-and-closed, not re-fixed
+      (matching the DOC-14 precedent for a finding an earlier, unrelated fix already resolved).
+- [x] **Regression test** — n/a (verify-and-close; the governing regression coverage is
+      TEST-13's own fix, already in place).
+- [x] **Failure is loud** — n/a.
+- [x] **Evidence in the status line** — `grep -n "202607" ccp/api/test/fileStore.test.ts`
+      shows the one remaining literal is self-consistent (same key object write/read-back);
+      `cd ccp/api && npx vitest run test/fileStore.test.ts` (8 passed).
+
+## ARCH-13
+
+*Project-id grammar duplicated inline despite a declared single home.*
+
+- [x] **Defect reproduced first** — confirmed 5 verbatim copies of `/^[a-z][a-z0-9-]{1,31}$/`
+      had drifted into existence: the api's `projects.ts`, `routes/drift.ts`,
+      `routes/projectData.ts`, `domain/drift.ts`, and the app's `projectOnboarding.ts` — any
+      future grammar change would need all 5 edited in lockstep or path-validation and
+      registration would silently disagree.
+- [x] **Cause, not symptom** — new `ccp/app/src/lib/projectId.ts` is the ONE home. It lives in
+      `@/lib` (not `ccp/api/src/`) because that is the one direction shared code can flow: the
+      api reaches into `ccp/app/src/lib/` via the `@app-lib/*` tsconfig path alias (the same
+      mechanism `@app-lib/redact` already uses) — a plain api-local constant could never be the
+      actual single source of truth, since the app can never import the other way. The api's
+      `projects.ts` re-exports `PROJECT_ID_RE` from it so its own existing internal importers
+      keep working unchanged; `routes/drift.ts`, `routes/projectData.ts`, `domain/drift.ts`, and
+      the app's `projectOnboarding.ts` all now import it instead of redeclaring.
+- [x] **Regression test** — new `ccp/api/test/projectIdGrammar.test.ts`: a reference-equality
+      assertion (`toBe`, not a string/`.source` comparison — a string comparison would pass even
+      for two independently-declared-but-textually-identical regexes, exactly the shape the
+      original defect had) that the api's re-export IS the app-lib constant, a sanity check of
+      valid/invalid ids, and a structural source-scan test asserting the literal pattern string
+      appears ZERO times anywhere else in `ccp/api/src/**/*.ts` (mirrors `openapi.test.ts`'s
+      DOC-13 dedup-scan convention). **Negative test confirmed**: reverted `routes/drift.ts`'s
+      dedup (re-added its local declaration) — the structural scan test failed, correctly
+      naming `routes/drift.ts` as the offender; restored, re-verified green.
+- [x] **Failure is loud** — the structural scan names the exact offending file path if the
+      pattern is ever re-duplicated.
+- [x] **Evidence in the status line** — full `ccp/api` suite (101 files, 1415 tests) and full
+      `ccp/app` suite (160 files, 2823 tests) both clean, with `tsc --noEmit` clean on both
+      packages, after ARCH-13 + ARCH-16 combined.
+
+## ARCH-16
+
+*Vestigial code and stale references.*
+
+- [x] **Defect reproduced first** — re-derived each named sub-item at HEAD (L-29): (1)
+      `requestableServices` (`permissions.ts`) had zero production consumers (only its own
+      test) — explicitly named in the finding as "deferred by ADR-0022 action item 4 to a
+      simplify pass that has not happened"; (2) `terraformExecutor.ts`'s
+      "SANCTIONED-SPAWN EXCEPTION" doc and its `REAL_ESTATE_ROOT_SEGMENTS` constant's doc
+      falsely claimed to "identify this repo's REAL/live estate roots" — none of
+      `environments/prod`, `importer/prod`, `importer/bootstrap` exist anywhere in this repo
+      (verified via `find`); the deny itself is harmless (a nonexistent path can never
+      accidentally match) but the claim about what the paths ARE was false; (3) `errors.ts`'s
+      header, also cited by the finding, was ALREADY fixed by an earlier DOC-4 pass — it now
+      correctly cites `ccp-api.yaml` and documents its own prior wrongness, so no action needed.
+- [x] **Cause, not symptom** — removed `requestableServices` outright (function + its dedicated
+      test block) since the finding's own language sanctions removal, not just documentation;
+      corrected `terraformExecutor.ts`'s two false claims to honestly say these are the estate
+      roots of the pre-split private monorepo this codebase was carved out of, not this repo's
+      own roots. Deliberately left `autoEligible` (a retired manifest field with its own
+      dedicated `autoEligible.test.ts` proving "no-runtime-read") and the two `CommitInput.audit`
+      istanbul-ignore declarations untouched — both already adequately documented/tested, not
+      actionable defects.
+- [x] **Regression test** — `permissions.test.ts`'s `requestableServices` describe block (2
+      tests) removed along with the function; no new test needed for the doc-only
+      `terraformExecutor.ts` correction (it changes no runtime behavior).
+- [x] **Failure is loud** — n/a for the doc correction; the removed dead code's absence is
+      itself verified by the full app suite passing with zero references to it (`grep` confirms
+      zero production consumers before removal).
+- [x] **Evidence in the status line** — full `ccp/app` suite (160 files, 2823 tests — down 2
+      from 2825 due to the removed dead-code test) clean, `tsc --noEmit` clean, after ARCH-13 +
+      ARCH-16 combined.
+
+## IMP-5
+
+*kit-azure `discover.sh` never clears stale page files: a re-run can resurrect deleted resources into the manifest.*
+
+- [x] **Defect reproduced first** — confirmed `discover.sh`'s paging loop never removed a prior
+      run's `<capture>.page*.json`/`<capture>.json` before capturing (cleanup only happened on
+      capture FAILURE); a re-run producing FEWER pages than a prior run (the documented
+      PARTIAL_CAPTURE recovery path "fix RBAC/scope and re-run", or the estate shrinking across
+      a 1000-row page boundary) left the stale higher-numbered pages in place, and
+      `merge_pages` (`discover.py`) merged them as if current — a deleted resource reappearing
+      as live in the manifest. `merge_pages` also merged a single-file `<capture>.json` AND
+      `<capture>.page*.json` together unconditionally whenever both existed, double-counting a
+      mixed fixture/live directory.
+- [x] **Cause, not symptom** — `discover.sh` now does
+      `rm -f "$OUT/$capture".page*.json "$OUT/$capture.json"` at the TOP of each capture's
+      paging loop, before writing anything — the AWS kit needed no equivalent fix (single file
+      per capture, overwritten each run, per the finding's own note). `merge_pages` now refuses
+      `BAD_CAPTURE` if BOTH a single-file and paged form exist for the same capture, rather than
+      silently merging both.
+- [x] **Regression test** — new `test_rerun_clears_stale_pages_from_a_prior_larger_capture`
+      (`test_scripts.py`): pre-places a stale `resources.page5.json` (a phantom
+      `phantom-deleted-vnet` resource) AND a stale `resources.json` in `--out` before running
+      `discover.sh` live; asserts both are gone afterward and the phantom resource is absent
+      from the manifest. New `test_mixed_single_file_and_paged_forms_refuses`
+      (`test_discover.py`): a copy of the `PAGED` fixture plus a hand-added `resources.json`
+      refuses `BAD_CAPTURE` naming "ambiguous". **Negative test confirmed**: reverted both the
+      `rm -f` line and the `merge_pages` ambiguity check — both new tests failed exactly as
+      expected (the stale page survived; the mixed-forms case returned 0 instead of refusing);
+      restored, re-verified green.
+- [x] **Failure is loud** — the shell test asserts the phantom resource's NAME is absent from
+      the manifest (not just "resources changed"), and the python test asserts the exact refusal
+      code and the word "ambiguous".
+- [x] **Evidence in the status line** — full `importer/kit-azure` suite (57 tests, up from 55)
+      clean.
+
+## IMP-9
+
+*Azure `discover.py list-subscriptions` crashes on a bare-list capture at the truncation-warning check.*
+
+- [x] **Defect reproduced first** — confirmed `cmd_list_subscriptions` accepts either an ARG
+      envelope dict or a bare list (`data = doc if isinstance(doc, list) else (doc.get("data")
+      or [])`), but the page-truncation warning then called `doc.get("skip_token")`
+      unconditionally — an unhandled `AttributeError` (exit 1, not the documented
+      REFUSE/exit-2 contract) when `doc` is a bare list of ≥1000 rows, exactly the large-tenant
+      case the warning exists to catch. The sibling `cmd_next_token` already guards this
+      correctly.
+- [x] **Cause, not symptom** — added `isinstance(doc, dict) and` to the truncation-warning
+      condition, mirroring `cmd_next_token`'s existing correct guard.
+- [x] **Regression test** — new
+      `test_bare_list_capture_at_the_1000_row_page_does_not_crash` (`test_discover.py`): a bare
+      JSON list of 1000 dict rows (no envelope wrapper) via `list-subscriptions --capture`;
+      asserts exit 0, no "AttributeError" in stderr, and the count line shows 1000.
+      **Negative test confirmed**: reverted the `isinstance(doc, dict) and` clause — the new
+      test failed with the exact expected traceback ending
+      `AttributeError: 'list' object has no attribute 'get'`; restored, re-verified green
+      (3/3 in the `ListSubscriptions` class).
+- [x] **Failure is loud** — the test explicitly asserts "AttributeError" is ABSENT from stderr,
+      not just a nonzero-exit check, so a regression to the raw traceback is caught precisely.
+- [x] **Evidence in the status line** — full `importer/kit-azure` suite (57 tests) clean.
+
+## IMP-10
+
+*`gen-imports.py --id-region-suffix` appends `@region` to global-service ids too.*
+
+- [x] **Defect reproduced first** — confirmed the `@<region>` suffix was applied to EVERY
+      non-ARN id, including region-less types the same manifest carries: IAM user/group/
+      role/instance-profile names, S3 bucket names, KMS aliases (IAM `policy`'s id is already an
+      ARN so was already unaffected). Verified directly against the `HAPPY` fixture:
+      `aws_iam_role.app_runtime` got `app-runtime@ap-southeast-1`, `aws_s3_bucket` and
+      `aws_kms_alias` likewise — `terraform plan` rejects an id shaped like that for these
+      types.
+- [x] **Cause, not symptom** — `services.json` gains an optional `regional` flag (default true;
+      `false` for `aws_iam_user`/`aws_iam_group`/`aws_iam_role`/`aws_iam_policy`/
+      `aws_iam_instance_profile`/`aws_s3_bucket`/`aws_kms_alias` — `aws_kms_key`'s raw
+      `TargetKeyId` is left regional, since only the alias id shape is named as unsuffixable by
+      the finding). `gen-imports.py` gains `--services` (default `kit/services.json`) and skips
+      the suffix for `regional: false` types; it also now refuses `REGION_SUFFIX_UNUSED` if
+      `--id-region-suffix` would apply to zero selected rows (very likely operator error).
+- [x] **Regression test** — `test_region_suffix_skips_region_less_types` asserts the IAM role/
+      S3 bucket/KMS alias ids are UNSUFFIXED while the KMS key still gets the suffix;
+      `test_region_suffix_unused_refuses` trims the manifest to only region-less types and
+      asserts `REFUSE REGION_SUFFIX_UNUSED`. **Negative test confirmed**: reverted the
+      `and row["type"] not in global_types` clause — both new tests failed exactly as expected;
+      restored, re-verified green (11/11 in `test_gen_imports.py`).
+- [x] **Failure is loud** — the refusal names exactly how many rows were selected and that all
+      are ARNs/region-less, not a silent no-op.
+- [x] **Evidence in the status line** — full `importer/kit` suite (115 tests) clean.
+
+## IMP-11
+
+*`payloads.py` block scanner: a column-0 `}` inside a heredoc body truncates the skeleton and ships it.*
+
+- [x] **Defect reproduced first** — reproduced directly: a resource block containing a
+      `<<-EOT` heredoc whose BODY has a line that is exactly `}` at column 0 (e.g. embedded
+      JSON a captured `user_data` script emits) ended the block right there under the unfixed
+      scanner — confirmed via a direct `split_generated()` call that the returned skeleton was
+      truncated mid-heredoc, missing the terminator and the real closing brace, while a clean
+      neighboring resource was NOT poisoned (matching the finding's own "not corruption, but
+      the scanner's promise is violated" framing).
+- [x] **Cause, not symptom** — `split_generated` now tracks heredoc open/close markers
+      (`HEREDOC_OPEN_RE`) and suspends `"}"`/new-header detection until the matching terminator
+      line closes it — a plain `<<EOT` requires the label at column 0; `<<-EOT`/`<<~EOT` allow
+      it indented (terraform fmt's own convention, stripped before compare). A heredoc still
+      open at EOF/next-header falls through to the pre-existing "unterminated" ambiguity —
+      withheld, never guessed.
+- [x] **Regression test** — new
+      `test_heredoc_body_column_zero_closing_brace_does_not_truncate_the_block`
+      (`test_payloads.py`): an inline generated.tf with a heredoc body containing an embedded
+      JSON object (whose closing `}` sits at column 0) followed by a clean neighbor; asserts
+      the full body (including the embedded `}` and the heredoc's own terminator) survives
+      verbatim, the block isn't merged with its neighbor, and the neighbor is unaffected.
+      **Negative test confirmed**: reverted the heredoc-tracking logic — the test failed,
+      showing the skeleton truncated right after the embedded JSON's `}`; restored,
+      re-verified green (20/20 in `test_payloads.py`).
+- [x] **Failure is loud** — the test asserts the block's REAL closing brace sequence
+      (`JSON\n  EOT\n}\n`) is present, not just "some closing brace" — a regression that
+      truncates at the decoy would fail this specific assertion.
+- [x] **Evidence in the status line** — full `importer/kit` suite (115 tests) clean.
+
+## IMP-12
+
+*`normalize.py split` silently drops non-`resource` top-level blocks.*
+
+- [x] **Defect reproduced first** — confirmed `cmd_split` (both `importer/kit/normalize.py` and
+      the identical `importer/kit-azure/normalize.py`) only ever copied `resource` block
+      extents anywhere; `data`, `moved`, `import`, `locals`, `terraform` blocks (and free-
+      standing comments) in the input were dropped with no warning.
+- [x] **Cause, not symptom** — new `parse_non_resource_blocks()` (shared `_load_hcl()` helper
+      factored out of `parse_resources()`) extracts `data`/`moved`/`import`/`locals`/`terraform`
+      block extents — deliberately just this set (the ones the finding names, and the only ones
+      `-generate-config-out`/aztfexport `--hcl-only` output plausibly carries), not a general
+      HCL linter. `cmd_split` now collects them into `unclassified.tf`'s own clearly-marked
+      section (verbatim, with their leading comments) and WARNS loudly with the kinds/count
+      found — never silently dropped. Free-standing top-of-file boilerplate comments remain a
+      known, accepted, low-risk gap (comments have no plan semantics) — deliberately scoped
+      down from the recommendation's literal line-diffing suggestion to avoid noisy false
+      positives on the ubiquitous 2-line `-generate-config-out` header every real run carries.
+- [x] **Regression test** — new
+      `test_non_resource_top_level_blocks_are_preserved_not_dropped` (both kits' `test_normalize.py`):
+      appends `terraform`/`locals`/`moved`/`data` blocks to the fixture, asserts each kind is
+      named in the WARN, each block's content survives verbatim in `unclassified.tf`, and the
+      real `resource` blocks in service files are unaffected. New
+      `test_rerun_with_foreign_blocks_is_still_byte_identical` confirms idempotency AND that the
+      content is genuinely present (not just absent-both-times). **Negative test confirmed**:
+      reverted the collection logic in both kits — all 4 new tests (2 per kit) failed exactly as
+      expected; restored, re-verified green (17/17 in kit's `test_normalize.py`, 8/8 in
+      kit-azure's).
+- [x] **Failure is loud** — the WARN names every kind found and the total count; the test
+      asserts each kind's literal content, not just "something was added".
+- [x] **Evidence in the status line** — full `importer/kit` suite (115 tests) and full
+      `importer/kit-azure` suite (55 tests, before IMP-5's own additions) both clean.
+
+## IMP-13
+
+*Shell scripts: minor robustness gaps around the deliberate no-`set -e` style.*
+
+- [x] **Defect reproduced first** — reproduced each of the 4 named sub-gaps directly: (a) a
+      failed `mkdir -p "$OUT"`/plan-write/`capture-meta.json` write in both kits' `discover.sh`
+      proceeded silently, surfacing later as a confusing `BAD_CAPTURE`/`ACCOUNT_MISMATCH` out of
+      `discover.py build` — reproduced via a pre-existing-directory-as-a-file trick (mkdir
+      fails) and a pre-existing-directory-in-place-of-the-meta-file trick (the `cat >` write
+      fails); (b) an unvalidated `--region`/`--location` containing a `"` corrupted
+      `capture-meta.json`'s JSON — reproduced with `--region 'ap-southeast-5"'`, which produced
+      the EXACT downstream symptom the finding describes: `REFUSE BAD_CAPTURE: unreadable
+      capture-meta.json: Expecting ',' delimiter`; (c) `verify.sh`'s steady-phase message called
+      BOTH a plan error (`-detailed-exitcode` exit 1) and real drift (exit 2) "not a no-op",
+      conflating a plan FAILURE with actual drift; (d) kit-azure's `next-token` call swallowed
+      its own REFUSE via `2>/dev/null` with the exit code never checked — reproduced with a
+      corrupt page-0 capture: paging silently "succeeded" as if the corrupt page were the last
+      one, only for `discover.py build` to catch the corruption independently and later, exactly
+      matching the finding's "relies on build to refuse later, but the stderr evidence is
+      discarded" description.
+- [x] **Cause, not symptom** — (a) `mkdir -p`/the plan-write/the `capture-meta.json` heredoc
+      write in both kits' `discover.sh` now `REFUSE IO_ERROR` on failure instead of proceeding;
+      (b) both `discover.sh`s validate `--region`/`--location` against
+      `*[!a-z0-9-]*` (real AWS regions/ARM locations are lowercase letters/digits/hyphens only)
+      before any capture begins; (c) `verify.sh` (both kits) distinguishes exit 1 ("plan
+      ERRORED... this is a plan failure, not drift") from exit 2/other ("not a no-op... triage
+      per drift-detection.md"); (d) kit-azure's `next-token` call now captures stderr into the
+      same `$capture.stderr` file the `az graph query` failure path already uses and checks its
+      exit code, treating a REFUSE there as this capture's own FAILED entry.
+- [x] **Regression test** — 5 new tests (AWS kit): `test_region_with_a_quote_refuses_before_any_capture`,
+      `test_mkdir_failure_refuses_loudly`, `test_meta_write_failure_refuses_loudly_not_a_confusing_downstream_error`,
+      `test_steady_phase_distinguishes_plan_error_from_real_drift`. 5 mirrored tests (Azure
+      kit) plus `test_location_with_a_quote_refuses_before_any_capture` and
+      `test_corrupt_page_makes_next_token_fail_loudly_not_silently_stop_paging` (asserts
+      `REFUSE PARTIAL_CAPTURE` + "next-token could not read" instead of the old silent
+      early-stop). **Negative test confirmed** for every one of the 10 new tests individually:
+      each reverted fix produced the exact expected failure (including, for the region-quote
+      case, literally reproducing the finding's own cited downstream symptom); all restored,
+      re-verified green.
+- [x] **Failure is loud** — every new REFUSE/FAIL message names the specific file or flag at
+      fault, not a generic "something went wrong".
+- [x] **Evidence in the status line** — full `importer/kit` suite (115 tests, up from 108) and
+      full `importer/kit-azure` suite (55 tests, up from 50 before IMP-5's own additions) both
+      clean.
+
+## OPS-10
+
+*No log rotation and no resource limits on any service.*
+
+- [x] **Defect reproduced first** — grep-verified `docker-compose.yml` had no `logging:`,
+      `mem_limit`, `cpus`, or `deploy:` anywhere: every service relied on Docker's default
+      `json-file` driver with no `max-size`/`max-file` (the runner in particular relays entire
+      CI job logs), and no service had a memory ceiling.
+- [x] **Cause, not symptom** — new shared `x-logging` anchor (`json-file`, `max-size: "10m"`,
+      `max-file: "5"`) applied via `logging: *default-logging` to all 5 services. `api` and
+      `runner` (the two named in the finding's own recommendation) gain
+      `mem_limit: ${CCP_API_MEM_LIMIT:-1g}` / `${CCP_RUNNER_MEM_LIMIT:-4g}` — deliberately
+      `mem_limit`/`cpus` (compose's plain, non-swarm keys), NOT a `deploy.resources.limits`
+      block, since `deploy:` is silently ignored by plain `docker compose up` outside swarm
+      mode. Both new env vars documented in `.env.example`.
+- [x] **Regression test** — new `compose-logging-and-limits.test.sh`: source-text checks that
+      the `x-logging` anchor defines both options and every service references it, that `api`/
+      `runner` carry `mem_limit`; best-effort real-interpolation check via
+      `docker compose config` (mirroring `docker-build.yml`'s own CI check) confirming both
+      survive real env-var resolution. **Negative test confirmed**: reverted `docker-compose.yml`
+      to its committed (pre-fix) state via `git checkout` — 9 of the 10 assertions failed
+      exactly as expected; restored, re-verified all 10 pass.
+- [x] **Failure is loud** — each assertion names the specific service/field missing, not a
+      generic "compose file wrong".
+- [x] **Evidence in the status line** — `docker compose --profile scanner --profile runner
+      --profile toolbox config` (mirroring CI's own placeholder env vars) resolves clean;
+      `bash ccp/scripts/test/compose-logging-and-limits.test.sh` (10/10 passed).
+
+## OPS-13
+
+*`doctor.sh` reports an unhealthy container as OK.*
+
+- [x] **Defect reproduced first** — confirmed the container-status classifier used
+      `case "$line" in *Up*)` — Docker reports an unhealthy container as `Up X minutes
+      (unhealthy)`, which still matches `*Up*` and printed a green checkmark; the aggregate
+      FAIL flag (`grep -qv Up`, "any line NOT containing Up") did not trip either, since an
+      unhealthy line DOES contain "Up" — both the per-line display AND the overall exit code
+      missed it.
+- [x] **Cause, not symptom** — the case statement now checks `*'(unhealthy)'*|*Restarting*`
+      BEFORE the bare `*Up*)` pattern; the aggregate FAIL check gains a second
+      `grep -Eq '\(unhealthy\)|Restarting'`, since the per-line loop runs in a pipe subshell and
+      any `FAIL=1` set inside it would not survive back to the parent shell (the same reason the
+      original code never called the `bad()` helper inside that loop either).
+- [x] **Regression test** — new `doctor-unhealthy-detection.test.sh`: runs the real `doctor.sh`
+      against a stubbed `docker`/`curl` reporting one healthy + one `(unhealthy)` container;
+      asserts the unhealthy line gets the FAIL marker, the healthy line still gets OK, and
+      `doctor.sh` exits 1; a baseline all-healthy run asserts zero FAIL container lines (proving
+      the fix isn't just "always fail"). **Negative test confirmed**: reverted the case-
+      statement reordering and the second aggregate grep — the fail-marker and exit-code
+      assertions failed exactly as expected (the other two, testing the healthy line and the
+      baseline, correctly still passed); restored, re-verified all 4 pass.
+- [x] **Failure is loud** — the test isolates `curl`/api-reachability noise via stubs
+      specifically so the exit-code assertion is attributable to ONLY the container check, not
+      confounded by an unrelated real-curl failure.
+- [x] **Evidence in the status line** — `bash ccp/scripts/test/doctor-unhealthy-detection.test.sh`
+      (4/4 passed).
+
+## OPS-15
+
+*GitHub App key directory is not prepared or checked by any tooling.*
+
+- [x] **Defect reproduced first** — confirmed `setup.sh data`'s layout list omitted
+      `/data/ccp/forge` (the api's `${CCP_GITHUB_APP_KEY_HOST_DIR:-/data/ccp/forge}` read-only
+      bind mount target) entirely — dockerd auto-creates it root:root on first `up` instead —
+      and neither `setup.sh` nor `doctor.sh` verified the configured key file exists or is
+      readable by uid 1000 (the api container's user); a root-owned 0600 PEM dropped in by an
+      operator would fail only at claim time, per scan job, with no diagnostic surfacing why.
+- [x] **Cause, not symptom** — `setup.sh data`'s layout gains
+      `ensure_owned /data/ccp/forge 1000 1000 700 "GitHub App key dir"`, matching the existing
+      `store`/`scratch` uid-1000 pattern. `doctor.sh` gains a check: `CCP_GITHUB_APP_KEY_FILE`
+      is a CONTAINER path (`readFileSync`'d inside the api per `forgeCredentials.ts`), so it is
+      resolved to its HOST path via `CCP_GITHUB_APP_KEY_HOST_DIR` (same basename, since both
+      always resolve under the compose bind's `/run/secrets/forge` mountpoint) and checked:
+      missing → FAIL naming the resolved host path; present but owned by neither uid 1000 nor
+      world-readable → FAIL naming uid 1000 as the fix; otherwise OK. Opt-in: no
+      `CCP_GITHUB_APP_KEY_FILE` set → no line at all.
+- [x] **Regression test** — new `setup-forge-layout.test.sh`: runs the real `setup.sh data`
+      against a real (disposable, root-required, cleaned up via `trap`) `/data`, asserts
+      `/data/ccp/forge` is created `1000:1000 700` and a re-run is a no-op. New
+      `doctor-forge-key-readable.test.sh`: a root-owned 0600 key FAILs naming uid 1000; a
+      uid-1000-owned key is OK; a missing host file FAILs naming the resolved path; no
+      `CCP_GITHUB_APP_KEY_FILE` set produces no line at all. **Negative test confirmed** for
+      both: reverting the `setup.sh` layout addition failed both of that test's assertions;
+      reverting the `doctor.sh` check block failed 3 of 5 assertions in that test (the other 2
+      — exit-code and opt-in — passed incidentally for unrelated reasons in that sandboxed run,
+      but the direct content assertions proved the feature's absence conclusively); both
+      restored, re-verified all pass (4/4 and 5/5 respectively).
+- [x] **Failure is loud** — the doctor.sh check names the exact resolved host path and uid
+      1000 as the specific fix, not a generic "key unreadable".
+- [x] **Evidence in the status line** — `bash ccp/scripts/test/setup-forge-layout.test.sh`
+      (4/4 passed); `bash ccp/scripts/test/doctor-forge-key-readable.test.sh` (5/5 passed).

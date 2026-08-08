@@ -104,6 +104,50 @@ class DiscoverSh(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("12-digit", r.stderr)
 
+    def test_region_with_a_quote_refuses_before_any_capture(self):
+        # IMP-13(b) — $REGION is interpolated unvalidated into capture-meta.json's
+        # JSON; a stray '"' would corrupt that file rather than refuse cleanly.
+        r = run_sh(DISCOVER_SH, ["--region", 'ap-southeast-5"', "--account", "111111111111",
+                                 "--out", self.out], extra_env={"STUB_ACCOUNT": "111111111111"})
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("REFUSE BAD_ARG", r.stderr)
+        self.assertIn("--region", r.stderr)
+        self.assertFalse(os.path.exists(self.out), "nothing may be captured for a bad --region")
+
+    def test_mkdir_failure_refuses_loudly(self):
+        # IMP-13(a) — `mkdir -p "$OUT"` used to be unchecked. Pre-create $OUT
+        # as a plain FILE so mkdir -p (which requires a directory or nothing
+        # at that path) fails outright.
+        with open(self.out, "w") as fh:
+            fh.write("not a directory\n")
+        r = run_sh(DISCOVER_SH, ["--region", "ap-southeast-5", "--account", "111111111111",
+                                 "--out", self.out],
+                   extra_env={"STUB_ACCOUNT": "111111111111"})
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("REFUSE IO_ERROR", r.stderr)
+
+    def test_meta_write_failure_refuses_loudly_not_a_confusing_downstream_error(self):
+        # IMP-13(a) — capture-meta.json's write used to be unchecked; a
+        # failure there used to surface only as a confusing error out of
+        # `discover.py build` afterwards, never attributed to itself.
+        r = run_sh(DISCOVER_SH, ["--region", "ap-southeast-5", "--account", "111111111111",
+                                 "--out", self.out],
+                   extra_env={"STUB_ACCOUNT": "111111111111"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        # Replace the just-written capture-meta.json with a DIRECTORY of the
+        # same name — $OUT itself is still a real, writable directory (mkdir
+        # -p succeeds, a no-op), but `cat > .../capture-meta.json` cannot
+        # possibly redirect into a path that is itself a directory.
+        meta = os.path.join(self.out, "capture-meta.json")
+        os.remove(meta)
+        os.makedirs(meta)
+        r = run_sh(DISCOVER_SH, ["--region", "ap-southeast-5", "--account", "111111111111",
+                                 "--out", self.out],
+                   extra_env={"STUB_ACCOUNT": "111111111111"})
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("REFUSE IO_ERROR", r.stderr)
+        self.assertIn("capture-meta.json", r.stderr)
+
 
 class VerifySh(unittest.TestCase):
     def setUp(self):
@@ -151,6 +195,17 @@ class VerifySh(unittest.TestCase):
         r = self.verify("steady", {"STUB_PLAN_FILE": self.plan, "STUB_PLAN_EXIT": "2"})
         self.assertEqual(r.returncode, 2)
         self.assertIn("not a no-op", r.stderr)
+
+    def test_steady_phase_distinguishes_plan_error_from_real_drift(self):
+        # IMP-13(c) — -detailed-exitcode's contract is 0 no-op / 1 plan ERROR
+        # / 2 real drift; exit 1 used to get the SAME "not a no-op" message
+        # as exit 2, reading like drift when the plan didn't even complete.
+        self.write_plan("Error: some provider error\n")
+        r = self.verify("steady", {"STUB_PLAN_FILE": self.plan, "STUB_PLAN_EXIT": "1"})
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("ERRORED", r.stderr)
+        self.assertIn("not drift", r.stderr)
+        self.assertNotIn("not a no-op", r.stderr)
 
     def test_fmt_gate_fails_first(self):
         r = self.verify("import", {"STUB_FMT_EXIT": "3"})

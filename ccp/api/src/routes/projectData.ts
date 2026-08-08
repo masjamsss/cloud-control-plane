@@ -9,7 +9,7 @@ import { PROJECT_DATA_SK_PREFIX, isIdentityConfirmed, projectDataVersionKey, pro
 import { ApiError, apiError } from '../errors';
 import { requireAdmin, requireRole } from '../middleware/authz';
 import { checkUploadRateLimit } from '../middleware/rateLimit';
-import { isBoundToProject, refreshKnownProjects } from '../projects';
+import { PROJECT_ID_RE, isBoundToProject, refreshKnownProjects } from '../projects';
 import { hashPassword, verifyPassword } from '../auth/credentials';
 import { commitOrPropose, publicPendingChange } from '../domain/dualControl';
 import { transactWithAudit } from '../domain/audit';
@@ -53,7 +53,7 @@ import { nowIso, nowMs } from '../clock';
  * acting scope's chain: that is the operator control plane's own record.)
  */
 
-const PROJECT_ID = /^[a-z][a-z0-9-]{1,31}$/;
+// ARCH-13: PROJECT_ID_RE (imported above) is the single home for this grammar.
 const TOKEN_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/; // ulid
 const TOKEN_SECRET = /^[A-Za-z0-9_-]{20,100}$/; // 32 random bytes, base64url
 
@@ -71,7 +71,7 @@ const DEFAULT_TTL_MINUTES = 24 * 60;
 const UPLOADABLE = new Set<ProjectItem['status']>(['trusted', 'ready']);
 
 async function loadProject(store: AppEnv['Variables']['store'], id: string): Promise<ProjectItem | null> {
-  if (!PROJECT_ID.test(id)) return null;
+  if (!PROJECT_ID_RE.test(id)) return null;
   const k = projectKey(id);
   return (await store.get(k.PK, k.SK)) as ProjectItem | null;
 }
@@ -174,7 +174,7 @@ export function projectDataRoutes(dataRoot: string): Hono<AppEnv> {
     const actor = c.get('account')!.id;
     const id = c.req.param('id');
     const tokenId = c.req.param('tokenId');
-    if (!PROJECT_ID.test(id) || !TOKEN_ID.test(tokenId)) {
+    if (!PROJECT_ID_RE.test(id) || !TOKEN_ID.test(tokenId)) {
       return c.json({ code: 'NOT_FOUND', reason: 'No such upload token.' }, 404);
     }
     const k = uploadTokenKey(id, tokenId);
@@ -202,7 +202,7 @@ export function projectDataRoutes(dataRoot: string): Hono<AppEnv> {
     const m = /^Bearer\s+([0-9A-HJKMNP-TV-Z]{26})\.([A-Za-z0-9_-]{20,100})$/.exec(auth);
     if (!m || !TOKEN_ID.test(m[1]!) || !TOKEN_SECRET.test(m[2]!)) return apiError(c, 'UPLOAD_TOKEN_INVALID');
     const [, tokenId, secret] = m;
-    if (!PROJECT_ID.test(id)) return apiError(c, 'UPLOAD_TOKEN_INVALID');
+    if (!PROJECT_ID_RE.test(id)) return apiError(c, 'UPLOAD_TOKEN_INVALID');
     // 1b. RATE LIMIT before any store read or argon2id work (DoS hardening):
     //     tokenId is semi-public, and every well-formed attempt below this line
     //     costs a full 19 MiB / timeCost-2 verify — so the lane is throttled
@@ -523,7 +523,7 @@ export function projectDataRoutes(dataRoot: string): Hono<AppEnv> {
     const store = c.get('store');
     const account = c.get('account')!;
     // A bare Context (no path generic) types param() as possibly-undefined;
-    // '' fails the PROJECT_ID shape check in loadProject → 404, fail closed.
+    // '' fails the PROJECT_ID_RE shape check in loadProject → 404, fail closed.
     const id = c.req.param('id') ?? '';
     const project = await loadProject(store, id);
     if (!project) return c.json({ code: 'NOT_FOUND', reason: 'No such project.' }, 404);

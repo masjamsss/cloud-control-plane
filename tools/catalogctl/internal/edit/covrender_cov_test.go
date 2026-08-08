@@ -1479,4 +1479,55 @@ func TestCovrenderDanglingRef(t *testing.T) {
 			t.Fatal("danglingRef = true, want false for an unglobbable dir")
 		}
 	})
+
+	// CTL-6 — a SAFETY GATE: prefix-named siblings (aws_ebs_volume.data vs
+	// aws_ebs_volume.data_archive) are the norm in real estates, and the old
+	// bytes.Contains scan treated a reference to the SIBLING as a reference
+	// to the target being removed, refusing a completely unreferenced
+	// removal. These prove the false positive is gone AND (critically for a
+	// safety gate) that the true positive still refuses.
+	t.Run("a prefix-named sibling's reference does NOT count (CTL-6 false positive)", func(t *testing.T) {
+		const target = "aws_ebs_volume.data"
+		src := "resource \"aws_ebs_volume\" \"data\" {\n  size = 100\n}\n"
+		dir := t.TempDir()
+		p := covrenderWrite(t, dir, "main.tf", src)
+		// The ONLY mention anywhere of "aws_ebs_volume.data" as a substring is
+		// this reference to the UNRELATED sibling aws_ebs_volume.data_archive.
+		covrenderWrite(t, dir, "attach.tf", "resource \"aws_volume_attachment\" \"a\" {\n  volume_id = aws_ebs_volume.data_archive.id\n}\n")
+		loc := &hclops.Located{File: p, Bytes: []byte(src), Start: 0, End: len(src)}
+		if danglingRef(dir, target, loc) {
+			t.Fatal("danglingRef = true, want false — aws_ebs_volume.data_archive is a DIFFERENT resource, not a reference to aws_ebs_volume.data")
+		}
+	})
+
+	t.Run("a genuine reference to the exact (shorter) address still refuses (CTL-6 true positive)", func(t *testing.T) {
+		const target = "aws_ebs_volume.data"
+		src := "resource \"aws_ebs_volume\" \"data\" {\n  size = 100\n}\n"
+		dir := t.TempDir()
+		p := covrenderWrite(t, dir, "main.tf", src)
+		// A sibling with the SAME prefix relationship is ALSO present, so this
+		// proves the fix isn't merely "always false" — the genuine reference
+		// (to the exact address, "data" not "data_archive") is still caught.
+		covrenderWrite(t, dir, "sibling.tf", "resource \"aws_ebs_volume\" \"data_archive\" {\n  size = 200\n}\n")
+		covrenderWrite(t, dir, "attach.tf", "resource \"aws_volume_attachment\" \"a\" {\n  volume_id = aws_ebs_volume.data.id\n}\n")
+		loc := &hclops.Located{File: p, Bytes: []byte(src), Start: 0, End: len(src)}
+		if !danglingRef(dir, target, loc) {
+			t.Fatal("danglingRef = false, want true — aws_ebs_volume.data IS genuinely referenced here")
+		}
+	})
+
+	t.Run("a suffix-extended identifier on the LEFT does not count either (both boundaries checked)", func(t *testing.T) {
+		const target = "aws_ebs_volume.data"
+		src := "resource \"aws_ebs_volume\" \"data\" {\n  size = 100\n}\n"
+		dir := t.TempDir()
+		p := covrenderWrite(t, dir, "main.tf", src)
+		// "xaws_ebs_volume.data" is not valid HCL, but containsAddress must not
+		// be fooled by it either — the byte immediately BEFORE the match is an
+		// identifier char, so this is a fragment of a longer token, not our address.
+		covrenderWrite(t, dir, "weird.tf", "# xaws_ebs_volume.data (not a real reference)\n")
+		loc := &hclops.Located{File: p, Bytes: []byte(src), Start: 0, End: len(src)}
+		if danglingRef(dir, target, loc) {
+			t.Fatal("danglingRef = true, want false — xaws_ebs_volume.data is a longer token, not a reference to aws_ebs_volume.data")
+		}
+	})
 }

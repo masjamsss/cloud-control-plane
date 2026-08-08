@@ -10,7 +10,9 @@ exactly:
   - a banner header carrying account/region/provenance, like the archive's
   - non-default-region resources use the provider's `<id>@<region>` import id
     (the archive's ap-southeast-1 DR resources, e.g. "vpc-...@ap-southeast-1"),
-    via --id-region-suffix
+    via --id-region-suffix — except ARN ids and services.json's region-less
+    types (IMP-10: IAM names, an S3 bucket name, a KMS alias — the provider's
+    cross-region import convention doesn't parse those, see --services)
 
 The output is NOT runnable from importer/ — like the archive, import blocks
 must sit in the SAME root as the resource definitions they target. The runbook
@@ -22,6 +24,8 @@ Refusals (never a silent skip):
   - a resource row missing type/id/label          -> REFUSE MALFORMED_ROW
   - a label that is not a valid HCL identifier    -> REFUSE BAD_LABEL
   - two rows landing on the same address          -> REFUSE DUPLICATE_ADDRESS
+  - --id-region-suffix given but it applied to 0  -> REFUSE REGION_SUFFIX_UNUSED
+    rows (all selected ids are ARNs / region-less)
 Rows whose disposition is not "import" are excluded and COUNTED on stdout
 (replace/deprecate/ignore are the discovery-guide §4 dispositions — they are
 decisions, not omissions).
@@ -32,15 +36,37 @@ Exit codes: 0 ok · 2 refusal.
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 
 LABEL_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 
+KIT_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_SERVICES = os.path.join(KIT_DIR, "services.json")
+
 
 def refuse(code, msg):
     print(f"REFUSE {code}: {msg}", file=sys.stderr)
     sys.exit(2)
+
+
+def non_regional_types(path):
+    """IMP-10: the set of types whose `id` is a region-less identifier (IAM
+    names, an S3 bucket name, a KMS alias) — services.json `regional: false`
+    (default true when absent). --id-region-suffix must skip these: the AWS
+    provider's `<id>@<region>` cross-region import convention doesn't apply
+    to them, and appending it produces an id `terraform plan` rejects (e.g.
+    `my-role@ap-southeast-1`)."""
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError) as e:
+        refuse("BAD_SERVICES", f"cannot read allowlist {path}: {e}")
+    types = data.get("types")
+    if not isinstance(types, dict):
+        refuse("BAD_SERVICES", f"{path} has no 'types' mapping")
+    return {rtype for rtype, spec in types.items() if spec.get("regional", True) is False}
 
 
 def main(argv=None):
@@ -53,6 +79,9 @@ def main(argv=None):
     p.add_argument("--id-region-suffix", default="",
                    help="append @<region> to non-ARN ids (resources captured in a region "
                         "other than the root's default provider region)")
+    p.add_argument("--services", default=DEFAULT_SERVICES,
+                   help="services.json allowlist, consulted only to know which types are "
+                        "region-less for --id-region-suffix (default: kit/services.json)")
     args = p.parse_args(argv)
 
     try:
@@ -90,6 +119,8 @@ def main(argv=None):
             refuse("DUPLICATE_ADDRESS", f"two resources map to {addr} — fix labels in the manifest")
         seen.add(addr)
 
+    global_types = non_regional_types(args.services) if args.id_region_suffix else set()
+
     manifest_sha = hashlib.sha256(open(args.manifest, "rb").read()).hexdigest()
     account = manifest.get("account", "unknown")
     region = manifest.get("region", "unknown")
@@ -111,15 +142,28 @@ def main(argv=None):
         "# " + "─" * 77,
         "",
     ]
+    suffixed = 0
     for row in selected:
         rid = row["id"]
-        if args.id_region_suffix and not rid.startswith("arn:"):
+        if args.id_region_suffix and not rid.startswith("arn:") and row["type"] not in global_types:
             rid = f"{rid}@{args.id_region_suffix}"
+            suffixed += 1
         lines.append("import {")
         lines.append(f"  to = {row['type']}.{row['label']}")
         lines.append(f'  id = "{rid}"')
         lines.append("}")
         lines.append("")
+
+    if args.id_region_suffix and selected and suffixed == 0:
+        # IMP-10: every selected row is either an ARN id or a region-less type
+        # (services.json regional: false) — the flag would do nothing. That's
+        # very likely operator error (wrong root, wrong batch), so refuse
+        # loudly rather than silently writing an imports.tf indistinguishable
+        # from one generated without --id-region-suffix at all.
+        refuse("REGION_SUFFIX_UNUSED",
+               f"--id-region-suffix {args.id_region_suffix!r} matched no row (all {len(selected)} "
+               "selected id(s) are ARNs or region-less types) — omit the flag if this batch "
+               "genuinely needs no cross-region suffix")
 
     with open(args.out, "w") as fh:
         fh.write("\n".join(lines))

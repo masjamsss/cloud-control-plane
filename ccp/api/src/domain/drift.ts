@@ -4,6 +4,7 @@ import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { redactHcl, redactTfJson } from '@app-lib/redact';
+import { PROJECT_ID_RE } from '@app-lib/projectId';
 import { canonicalJson } from './audit';
 
 /**
@@ -55,7 +56,7 @@ export function driftKeep(env: Env = process.env): number {
 
 export const DRIFT_ENVELOPE_SCHEMA = 'ccp.drift/v1';
 
-const PROJECT_ID = /^[a-z][a-z0-9-]{1,31}$/;
+// ARCH-13: PROJECT_ID_RE (imported above) is the single home for this grammar.
 
 /**
  * One changed-attribute row (classify.py `changedAttrs[]`, additively
@@ -270,7 +271,7 @@ export type DriftSweep = z.infer<typeof DriftSweep>;
 export const DriftEnvelope = z.object({
   schema: z.literal(DRIFT_ENVELOPE_SCHEMA),
   /** Bound to the PUT path's `:id`, checked by the caller (like a digest binding). */
-  projectId: z.string().regex(PROJECT_ID),
+  projectId: z.string().regex(PROJECT_ID_RE),
   environment: z.string().min(1).max(100),
   capturedAt: z.string().min(1).max(64),
   runId: z.string().min(1).max(200),

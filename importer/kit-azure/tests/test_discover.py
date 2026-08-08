@@ -105,6 +105,24 @@ class Build(unittest.TestCase):
         names = sorted(row["name"] for row in m["resources"])
         self.assertEqual(names, ["stpage1data", "vnet-page0"])  # one row from each page merged
 
+    def test_mixed_single_file_and_paged_forms_refuses(self):
+        # IMP-5 — merge_pages used to merge a single-file <capture>.json AND
+        # <capture>.page*.json together unconditionally whenever both existed,
+        # double-counting a mixed fixture/live (or interrupted-cleanup) dir.
+        # discover.sh now clears one form before writing the other, so this
+        # should never happen live; a hand-assembled directory must refuse
+        # rather than silently double-count.
+        import shutil
+        with tempfile.TemporaryDirectory() as d:
+            shutil.copytree(PAGED, d, dirs_exist_ok=True)
+            with open(os.path.join(d, "resources.json"), "w") as fh:
+                json.dump({"data": [], "count": 0, "total_records": 0}, fh)
+            r = build(d, self.out)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("REFUSE BAD_CAPTURE", r.stderr)
+        self.assertIn("resources", r.stderr)
+        self.assertIn("ambiguous", r.stderr)
+
 
 class ListSubscriptions(unittest.TestCase):
     def test_formats_subs_with_mgmt_group_and_iteration_note(self):
@@ -126,6 +144,25 @@ class ListSubscriptions(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn(": 0", r.stdout)          # count line shows zero subscriptions
             self.assertIn("Reader", r.stderr)        # loud "you likely lack Reader" gap warning
+
+    def test_bare_list_capture_at_the_1000_row_page_does_not_crash(self):
+        # IMP-9 — cmd_list_subscriptions accepts either an ARG envelope dict OR a
+        # bare list (`data = doc if isinstance(doc, list) else ...`), but the
+        # page-truncation warning below it used to call doc.get("skip_token")
+        # UNCONDITIONALLY — an AttributeError on a bare list, in exactly the
+        # large-tenant (>=1000 rows) case the warning exists to catch. discover.sh
+        # always produces envelopes, so a bare-list capture only happens when an
+        # operator hand-edits or hand-produces one — small blast radius, but this
+        # is the one path that previously turned into an undocumented exit-1
+        # traceback instead of the tool's own REFUSE/exit-2 contract.
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "subs-bare-list.json")
+            rows = [{"subscriptionId": f"sub-id-{i:04d}", "name": f"sub-{i}"} for i in range(1000)]
+            json.dump(rows, open(p, "w"))  # a BARE LIST, not an {"data": [...]} envelope
+            r = run_py(DISCOVER_PY, ["list-subscriptions", "--capture", p])
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertNotIn("AttributeError", r.stderr)
+            self.assertIn(": 1000", r.stdout)
 
 
 class NextToken(unittest.TestCase):

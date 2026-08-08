@@ -4,8 +4,22 @@ import { auditKey, chainHead } from '../store/schema';
 import { auditEntryHash, verifyChain, type ChainEntry, type VerifyResult } from './audit';
 import { nowDate } from '../clock';
 
-/** How far back the month walk is willing to look — ten years of partitions. */
-const MAX_MONTHS_WALKED = 120;
+/**
+ * How far back the month walk is willing to look, in months.
+ *
+ * API-11 — this used to be 120 (ten years). Every walk site below ALREADY
+ * stops itself the moment it has collected `total` (or `n`) entries — the
+ * count the chain head itself declares — so this ceiling is never the
+ * intended stopping condition, only a corrupted-store safety valve against
+ * a runaway loop (e.g. a `head.count` that overstates what's actually
+ * there). At 120 it was BOTH: a real, self-hosted deployment's audit trail
+ * plausibly outlives ten years, and hitting the real ceiling silently
+ * truncates the read — `verifyChain` then sees a short chain and reports a
+ * perfectly intact one as BROKEN (`/readyz` 503, `export.verified: false`).
+ * 1200 (a century) is generous enough that no real deployment's lifetime
+ * will ever reach it while still being a genuinely finite bound.
+ */
+const MAX_MONTHS_WALKED = 1200;
 
 /**
  * The month partitions of `projectId`, newest first, starting from the month

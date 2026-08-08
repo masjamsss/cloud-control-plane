@@ -31,10 +31,10 @@ import { digestOf, type ApplyExecutor, type ApplyResult, type PlanResult } from 
  *      terraform` (see loop.ts#selectExecutor); default is the DryRunExecutor.
  *   2. EXPLICIT ROOT — it operates only on the absolute root it is handed
  *      (`CCP_TF_ROOT`); there is no default root, and never a hardcoded one.
- *   3. REAL-ESTATE DENY — a root that IS one of this repo's live estate roots
- *      (environments/prod, importer/prod, importer/bootstrap) is refused at
- *      construction unless `planOnly` is set — and a planOnly executor refuses
- *      `apply()` unconditionally. There is NO configuration of this class that can
+ *   3. REAL-ESTATE DENY — a root whose path contains one of
+ *      {@link REAL_ESTATE_ROOT_SEGMENTS} is refused at construction unless
+ *      `planOnly` is set — and a planOnly executor refuses `apply()`
+ *      unconditionally. There is NO configuration of this class that can
  *      apply to the real estate.
  *   4. APPLY = SAVED PLAN ONLY — `apply()` runs `terraform apply <planfile>` on the
  *      artifact pinned at plan time, never a fresh plan. Before touching terraform it
@@ -47,8 +47,17 @@ import { digestOf, type ApplyExecutor, type ApplyResult, type PlanResult } from 
  *      approval and the window halts the request instead of applying it.
  */
 
-/** Path-segment pairs that identify this repo's REAL estate roots. A rootDir whose
- * resolved path contains any of these is refused for an apply-capable executor. */
+/**
+ * Path-segment pairs the real-estate deny refuses a rootDir against.
+ *
+ * ARCH-16: none of these three paths exist in THIS repository — they name
+ * the estate roots of the pre-split private monorepo this codebase was
+ * carved out of, so "this repo's live estate roots" (the claim this doc
+ * comment used to make) is false today. The deny itself is harmless either
+ * way — a rootDir that doesn't exist here can never accidentally match —
+ * so it stays as a defensive belt-and-suspenders check rather than being
+ * deleted; only the stale claim about what these paths ARE is corrected.
+ */
 const REAL_ESTATE_ROOT_SEGMENTS: ReadonlyArray<readonly [string, string]> = [
   ['environments', 'prod'],
   ['importer', 'prod'],

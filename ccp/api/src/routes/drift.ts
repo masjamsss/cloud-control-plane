@@ -40,7 +40,7 @@ const DRIFT_IMPORT_DISARMED_REASON = 'Drift import is not armed on this deployme
  * distinct reason naming `CCP_DRIFT_RESTORE` specifically. */
 const DRIFT_RESTORE_DISARMED_REASON = 'Drift restore is not armed on this deployment (CCP_DRIFT_RESTORE unset).';
 import { checkSubmitRateLimit, checkUploadRateLimit } from '../middleware/rateLimit';
-import { isBoundToProject, roleFor } from '../projects';
+import { PROJECT_ID_RE, isBoundToProject, roleFor } from '../projects';
 import { verifyPassword } from '../auth/credentials';
 import { toUser } from '../auth/account';
 import type { TransactWrite } from '../store/configStore';
@@ -120,7 +120,7 @@ function isLeadOrAdmin(account: { isAdmin: boolean }, role: ReturnType<typeof ro
  * values and security evidence (spec §4.2).
  */
 
-const PROJECT_ID = /^[a-z][a-z0-9-]{1,31}$/;
+// ARCH-13: PROJECT_ID_RE (imported above) is the single home for this grammar.
 const TOKEN_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/; // ulid
 const TOKEN_SECRET = /^[A-Za-z0-9_-]{20,100}$/; // 32 random bytes, base64url
 
@@ -160,7 +160,7 @@ const LegitimizeBody = z.object({
 const UPLOADABLE = new Set<ProjectItem['status']>(['trusted', 'ready']);
 
 async function loadProject(store: AppEnv['Variables']['store'], id: string): Promise<ProjectItem | null> {
-  if (!PROJECT_ID.test(id)) return null;
+  if (!PROJECT_ID_RE.test(id)) return null;
   const k = projectKey(id);
   return (await store.get(k.PK, k.SK)) as ProjectItem | null;
 }
@@ -271,7 +271,7 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
     const m = /^Bearer\s+([0-9A-HJKMNP-TV-Z]{26})\.([A-Za-z0-9_-]{20,100})$/.exec(auth);
     if (!m || !TOKEN_ID.test(m[1]!) || !TOKEN_SECRET.test(m[2]!)) return apiError(c, 'UPLOAD_TOKEN_INVALID');
     const [, tokenId, secret] = m;
-    if (!PROJECT_ID.test(id)) return apiError(c, 'UPLOAD_TOKEN_INVALID');
+    if (!PROJECT_ID_RE.test(id)) return apiError(c, 'UPLOAD_TOKEN_INVALID');
     const rate = checkUploadRateLimit(tokenId!);
     if (!rate.ok) return apiError(c, 'RATE_LIMITED', { retryAfter: rate.retryAfterSeconds });
     const tKey = uploadTokenKey(id, tokenId!);
@@ -453,7 +453,7 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
     const store = c.get('store');
     const account = c.get('account')!;
     // A bare Context (no path generic) types param() as possibly-undefined;
-    // '' fails the PROJECT_ID shape check in loadProject → 404, fail closed.
+    // '' fails the PROJECT_ID_RE shape check in loadProject → 404, fail closed.
     const id = c.req.param('id') ?? '';
     const project = await loadProject(store, id);
     if (!project) return c.json({ code: 'NOT_FOUND', reason: 'No such project.' }, 404);

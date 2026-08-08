@@ -399,8 +399,24 @@ func targetAddress(op manifests.Op, params map[string]any) (string, error) {
 	return "", fmt.Errorf("op %q has no inventory param", op.ID)
 }
 
-// atomicWrite writes data via a temp file + rename in the target's directory (spec: never a partial edit).
+// atomicWrite writes data via a temp file + rename in the target's directory
+// (spec: never a partial edit).
+//
+// CTL-8: `os.CreateTemp` always creates 0600, and the rename then replaces a
+// (typically 0644) `.tf` file with it — an observable property this tool
+// promises to touch only inside the located block's byte range, silently
+// changed. The temp file is chmod'd to the EDITED file's existing mode
+// before rename (0644 for a file that doesn't exist yet, matching every
+// other tool in this toolchain that creates a fresh .tf). Also fsyncs the
+// temp file before close — the rename is atomic against a process kill
+// regardless, but without this the bytes it swaps in are not guaranteed
+// durable against power loss (mirrors ccp-api's FileStore.writeAtomic,
+// ERR-10/DATA-3's fix for the identical class of gap).
 func atomicWrite(path string, data []byte) error {
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".catalogctl-*.tmp")
 	if err != nil {
@@ -408,6 +424,16 @@ func atomicWrite(path string, data []byte) error {
 	}
 	name := tmp.Name()
 	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
 		tmp.Close()
 		os.Remove(name)
 		return err

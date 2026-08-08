@@ -314,11 +314,16 @@ func allowSet(op manifests.Op, req *request.Request) (func(string) bool, string)
 	}
 }
 
-// inventoryAddr returns the value of the single source:"inventory" param — the
-// resource address the op targets (spec).
+// inventoryAddr returns the value of the op's inventory TARGET param — the
+// resource address the op targets (spec). CTL-7: the first source:"inventory"
+// param whose Role is not "reference" — a reference param is also
+// source:"inventory" but names a DIFFERENT resource to read a value from, not
+// the one the op targets. Mirrors edit.targetAddress / prprep.inventoryAddr
+// exactly (kept local per-package, not shared, so a lint can assert all three
+// resolve identically per op rather than trust one shared implementation).
 func inventoryAddr(op manifests.Op, params map[string]any) string {
 	for _, p := range op.Params {
-		if p.Source == "inventory" {
+		if p.Source == "inventory" && p.Role != "reference" {
 			if s, ok := params[p.Name].(string); ok {
 				return s
 			}

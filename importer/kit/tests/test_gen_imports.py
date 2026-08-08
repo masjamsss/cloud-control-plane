@@ -76,6 +76,37 @@ class GenImportsTest(unittest.TestCase):
         # the archive's DR convention: "vpc-...@ap-southeast-1"
         self.assertIn('id = "vol-0c0c0c0c0c0c0c001@ap-southeast-1"', text)
 
+    def test_region_suffix_skips_region_less_types(self):
+        # IMP-10 — IAM names, an S3 bucket name, a KMS alias: the provider's
+        # <id>@<region> cross-region import convention does not accept these,
+        # so a suffixed id here would make `terraform plan` reject the block.
+        r = self.gen(["--id-region-suffix", "ap-southeast-1"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        text = self.read()
+        self.assertIn('id = "app-runtime"', text)          # aws_iam_role, unsuffixed
+        self.assertIn('id = "example-app-logs"', text)      # aws_s3_bucket, unsuffixed
+        self.assertIn('id = "alias/app-data"', text)        # aws_kms_alias, unsuffixed
+        self.assertNotIn("app-runtime@", text)
+        self.assertNotIn("example-app-logs@", text)
+        self.assertNotIn("alias/app-data@", text)
+        # a KMS *key* (raw TargetKeyId, not the alias) is still region-bearing —
+        # IMP-10 only names the alias id shape as unsuffixable, so this one still gets it.
+        self.assertIn('id = "22222222-aaaa-bbbb-cccc-dddddddddddd@ap-southeast-1"', text)
+
+    def test_region_suffix_unused_refuses(self):
+        # Trim the manifest down to only region-less types — the flag would
+        # apply to none of the surviving rows, which is very likely operator
+        # error, so this must refuse rather than silently write a no-op.
+        def only_region_less(m):
+            keep = {"aws_iam_role", "aws_s3_bucket", "aws_kms_alias"}
+            for row in m["resources"]:
+                if row.get("type") not in keep:
+                    row["disposition"] = "ignore"
+        self.edit_manifest(only_region_less)
+        r = self.gen(["--id-region-suffix", "ap-southeast-1"])
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("REFUSE REGION_SUFFIX_UNUSED", r.stderr)
+
     def test_non_import_dispositions_are_excluded_and_counted(self):
         self.edit_manifest(lambda m: m["resources"][0].__setitem__("disposition", "deprecate"))
         r = self.gen()

@@ -162,11 +162,11 @@ Failures that produce no signal — swallowed rejections, best-effort compensati
 - [x] FE-8 | medium | silent-failure | fixed:loadAuditRows returns {rows, cursor}; AuditHistory adds a "Load older events" control + honest "N events loaded ... more available" caption | 05-frontend-flows.md | AuditHistory silently truncates to the first page (100 entries) — the cursor is fetched and thrown away
 - [ ] OPS-6 | medium | silent-failure | open | 10-reliability-operations.md | Plain `compose up` (including every self-update cycle) silently strips the armed overlay
 - [x] TEST-8 | medium | silent-failure | fixed:treeDiff() now walks gotDir too, catching extra files golden.go never accounted for; golden_test.go TestTreeDiff | 12-testing-quality.md | Golden-tree comparison is one-directional: extra files created by an edit go unnoticed
-- [ ] CTL-8 | low | silent-failure | open | 07-catalogctl.md | `atomicWrite` silently changes edited-file permissions to 0600 and skips fsync
+- [x] CTL-8 | low | silent-failure | fixed:atomicWrite os.Stats the target's existing mode (default 0644 for a new file) and Chmods the temp file before rename; adds tmp.Sync() before Close() for crash-durability, mirroring ccp-api's FileStore.writeAtomic/ERR-10 pattern | 07-catalogctl.md | `atomicWrite` silently changes edited-file permissions to 0600 and skips fsync
 - [ ] ERR-14 | low | silent-failure | open | 09-error-handling.md | Drift-upload compensation is non-transactional best-effort
 - [x] ERR-16 | low | silent-failure | fixed:GH Actions warning annotation + step-summary on unreachable-control-plane; opt-in CCP_DATA_REQUIRE_UPLOAD hard-fail; scripts/ci/gen-project-data-selftest.sh | 09-error-handling.md | The ccp-data CI lane goes green when the control plane is unreachable
 - [x] FE-15 | low | silent-failure | fixed:b5b703b | 05-frontend-flows.md | Notifications bell and CommandPalette swallow rejections silently
-- [ ] IMP-12 | low | silent-failure | open | 08-importer-schemadump.md | `normalize.py split` silently drops non-`resource` top-level blocks
+- [x] IMP-12 | low | silent-failure | fixed:cmd_split (both kit and kit-azure normalize.py) now also collects data/moved/import/locals/terraform top-level blocks into unclassified.tf's own section, WITH a warning, via a new parse_non_resource_blocks() | 08-importer-schemadump.md | `normalize.py split` silently drops non-`resource` top-level blocks
 - [ ] IMP-15 | low | silent-failure | open | 08-importer-schemadump.md | Coverage-sweep family granularity marks undiscoverable resources as "covered" (documented, but with a concrete silent case)
 - [x] UI-12 | low | silent-failure | fixed:RequestForm moves focus to the Review/Configure heading on each step transition (rAF, mirroring the existing invalid-path errorRef focus); RouteSkeleton is role="status" aria-busy with a visually-hidden "Loading…" text | 06-frontend-ui-robustness.md | Configure ⇄ Review step transitions never move focus, and the Suspense skeleton is silent for assistive tech
 
@@ -253,8 +253,8 @@ The same rule implemented in two places, free to drift.
 - [ ] ARCH-8 | medium | duplication | open | 01-architecture.md | The governance domain is implemented twice (server + browser mock) with acknowledged behavioral divergence
 - [x] DOC-13 | medium | duplication | fixed:the YAML prose now names APPLYING/HALTED_DRIFT/HALTED_APPLY_FAILED; test/openapi.test.ts checks agreement automatically | 14-contracts-docs.md | Request-status vocabulary is three-way inconsistent (SPA union vs server writes vs YAML prose)
 - [ ] ARCH-11 | low | duplication | open | 01-architecture.md | Arming-flag sprawl with no whole-config validation
-- [ ] ARCH-13 | low | duplication | open | 01-architecture.md | Project-id grammar duplicated inline despite a declared single home
-- [ ] ARCH-16 | low | duplication | open | 01-architecture.md | Vestigial code and stale references
+- [x] ARCH-13 | low | duplication | fixed:new ccp/app/src/lib/projectId.ts is the single home; ccp/api/src/projects.ts re-exports PROJECT_ID_RE from it (via @app-lib/*), and drift.ts/projectData.ts/domain/drift.ts/projectOnboarding.ts all import it instead of redeclaring | 01-architecture.md | Project-id grammar duplicated inline despite a declared single home
+- [x] ARCH-16 | low | duplication | fixed:removed unused requestableServices (permissions.ts) + its test, per the finding's own ADR-0022 deferred-removal note; corrected terraformExecutor.ts's stale "this repo's live estate roots" claim in 2 places; errors.ts was already fixed by DOC-4; autoEligible/CommitInput.audit left as already-adequately-documented | 01-architecture.md | Vestigial code and stale references
 - [ ] CTL-10 | low | duplication | open | 07-catalogctl.md | Duplicated literal-object token-walkers (edit vs driftpropose) have already diverged in behavior
 - [x] FE-11 | low | duplication | fixed:ALL_STATUSES derived from REQUEST_STATUSES in both filter files, not hand-typed | 05-frontend-flows.md | `WINDOW_EXPIRED` is missing from both status-filter vocabularies
 - [x] OPS-14 | low | duplication | fixed:dd1c241 | 10-reliability-operations.md | Stale references to a nonexistent `.github/workflows/terraform.yml` anchor the Terraform pin
@@ -270,10 +270,10 @@ importer/kit, kit-azure and schemadump.
 - [x] IMP-7 | medium | importer | fixed:661d247 moved both Azure pins to 4.81.0; recurrence guard still missing | 08-importer-schemadump.md | Azure template provider pin (4.14.0) contradicts the committed azurerm schemadump tag (v4.81.0) it claims to bind to
 - [ ] IMP-8 | medium | importer | open | 08-importer-schemadump.md | Committed schemadump artifacts are not reproducible via the documented `gen.sh` pipeline; generated-catalog staleness detection is entirely manual
 - [x] ARCH-15 | low | importer | fixed:ADR-0031 and ADR-0028 rows corrected to disclose their built pieces (Phase 1 shipped; --estate-tz/CCP_ESTATE_TZ shipped) alongside their still-Proposed formal status | 01-architecture.md | ADR ledger statuses lag the built system
-- [ ] IMP-10 | low | importer | open | 08-importer-schemadump.md | `gen-imports.py --id-region-suffix` appends `@region` to global-service ids too
-- [ ] IMP-13 | low | importer | open | 08-importer-schemadump.md | Shell scripts: minor robustness gaps around the deliberate no-`set -e` style
+- [x] IMP-10 | low | importer | fixed:services.json grows a `regional` flag (false for IAM/S3-bucket/KMS-alias types); gen-imports.py skips the @region suffix for them and refuses if the flag applies to zero rows | 08-importer-schemadump.md | `gen-imports.py --id-region-suffix` appends `@region` to global-service ids too
+- [x] IMP-13 | low | importer | fixed:(a) mkdir/plan-write/meta-write in both discover.sh's now REFUSE IO_ERROR on failure instead of proceeding silently; (b) --region/--location are shape-validated before interpolation into capture-meta.json; (c) verify.sh's steady phase distinguishes plan-error (exit 1) from real drift (exit 2); (d) kit-azure's next-token call no longer swallows its own REFUSE via 2>/dev/null | 08-importer-schemadump.md | Shell scripts: minor robustness gaps around the deliberate no-`set -e` style
 - [x] IMP-14 | low | importer | fixed:discover.sh's 44→43 count fixed; statediff.py's SWEEP_METHOD now derives its count from services.json instead of hardcoding it; kit-azure's dangling "terraform.yml" pin reference fixed; schemadump README's 85-vs-1677 mismatch documented | 08-importer-schemadump.md | Stale numbers and dangling references in kit/schemadump docs and comments
-- [ ] IMP-9 | low | importer | open | 08-importer-schemadump.md | Azure `discover.py list-subscriptions` crashes on a bare-list capture at the truncation-warning check
+- [x] IMP-9 | low | importer | fixed:cmd_list_subscriptions's truncation-warning condition gains `isinstance(doc, dict) and`, mirroring cmd_next_token's already-correct guard | 08-importer-schemadump.md | Azure `discover.py list-subscriptions` crashes on a bare-list capture at the truncation-warning check
 
 ## test-quality
 
@@ -284,7 +284,7 @@ Red suites, silent skips, fixtures that pin the wrong premise.
 - [ ] CTL-3 | medium | test-quality | open | 07-catalogctl.md | Shipped catalog op `waf-add-ip-set-entry` can never execute (exit 1 internal error); the corrected manifest exists only in test fixtures
 - [x] TEST-3 | medium | test-quality | fixed:synthetic unmanaged type in the fixture + suite wired into .github/workflows/importer.yml | 12-testing-quality.md | `ccp/app/scripts/test_build_inventory.py` fails at HEAD (stale fixture premise)
 - [x] TEST-5 | medium | test-quality | fixed:@vitest/coverage-v8 floors in ccp/api/vitest.config.ts and ccp/app/vite.config.ts, enforced by both CI lanes | 12-testing-quality.md | No code-coverage measurement anywhere; `coverage.test.ts` is not code coverage
-- [ ] CTL-7 | low | test-quality | open | 07-catalogctl.md | plancheck's `inventoryAddr` does not skip `role:"reference"` inventory params, diverging from the executor's `targetAddress`
+- [x] CTL-7 | low | test-quality | fixed:inventoryAddr adds `&& p.Role != "reference"`, matching edit.targetAddress/prprep.inventoryAddr's existing sibling logic | 07-catalogctl.md | plancheck's `inventoryAddr` does not skip `role:"reference"` inventory params, diverging from the executor's `targetAddress`
 - [x] FE-10 | low | test-quality | fixed:mock rejectRequest refuses a terminal request (status != AWAITING_CODE_REVIEW/NEEDS_ENGINEER), mirroring approveRequest's own status guard and ccp-api's OPEN_STATUSES/STATE_CONFLICT | 05-frontend-flows.md | Mock `rejectRequest` skips the status guard the real API enforces
 - [x] TEST-10 | low | test-quality | fixed:§15 counts regenerated + command-quoted; ADMIN-01/ADMIN-04/REQ-16 dead citations repointed; deferred-XLAYER table added; scripts/docs-test-plan-citations-check.py | 12-testing-quality.md | Functional test plan drift: stale counts, loose citations, and "new" rows with no tracking
 - [x] TEST-12 | low | test-quality | fixed:test/helpers/catalogctlBuild.ts — content-hash-keyed, renameSync'd build cache shared by both parity files; test/catalogctlBuild.test.ts | 12-testing-quality.md | One test file consumes ~60% of the api suite wall time by rebuilding catalogctl per run
@@ -312,8 +312,8 @@ Guards that pass when they should refuse.
 - [x] ARCH-3 | high | fail-open | fixed:a64839a | 01-architecture.md | The "reviewed-plan ≡ applied-plan" guardrail is delegated to unverifiable operator shell strings
 - [x] CTL-1 | high | fail-open | fixed:bd7275b | 07-catalogctl.md | Full-line comment above a map entry corrupts every literal-map edit (duplicate keys, defeated KEY_CONFLICT guard, silent no-op removes) — exit 0
 - [ ] CTL-4 | medium | fail-open | open | 07-catalogctl.md | plan-check R1 structurally vetoes every legitimate plan for a `local.`-targeted foreach op
-- [ ] CTL-6 | medium | fail-open | open | 07-catalogctl.md | `danglingRef` substring scan falsely refuses removal when another resource's name extends the target's name
-- [ ] API-11 | low | fail-open | open | 02-api-correctness.md | Audit-chain read path bypasses the injected clock and truncates at 120 months
+- [x] CTL-6 | medium | fail-open | fixed:new containsAddress()/isIdentByte() boundary check replaces the raw bytes.Contains scan at both call sites in danglingRef, so a byte-prefix sibling (aws_ebs_volume.data inside .data_archive) no longer over-matches — boundary checks only remove false positives, provably never introduce false negatives | 07-catalogctl.md | `danglingRef` substring scan falsely refuses removal when another resource's name extends the target's name
+- [x] API-11 | low | fail-open | fixed:the clock-usage half was already correctly using nowDate() (verified, not re-fixed); MAX_MONTHS_WALKED raised from 120 to 1200 — every walk site already self-terminates on collected>=total, so the cap is a corrupted-store safety valve, not the real limit, and 120 was low enough to silently truncate a genuinely decade-plus deployment | 02-api-correctness.md | Audit-chain read path bypasses the injected clock and truncates at 120 months
 - [x] API-13 | low | fail-open | fixed:verified closed by ARCH-7 — rateLimit.ts's occupiesQuotaSlot is derived from the closed vocabulary; test/statusVocabulary.test.ts covers all four missing statuses | 02-api-correctness.md | `maxOpen` rate-limit counts a nonexistent status and misses real open states
 - [ ] API-18 | low | fail-open | open | 02-api-correctness.md | Legitimize endpoint mints unlimited duplicate engineer requests for the same digest
 - [x] FE-14 | low | fail-open | fixed:refreshStatus now captures the project id via a ref before its request and discards the response if the project switched or the page unmounted before it resolved, mirroring the main effect's own active-flag guard | 05-frontend-flows.md | DriftPage's post-trigger refetches bypass the staleness guard
@@ -327,7 +327,7 @@ Missing error and retry paths; permanent loading states.
 - [x] UI-1 | high | frontend-ux | fixed:b5b703b | 06-frontend-ui-robustness.md | Non-admin data pages have no fetch-error path: any API failure leaves a permanent "Loading…" with no message or retry
 - [ ] ERR-9 | medium | frontend-ux | open | 09-error-handling.md | GitHub App credential fetches have no timeout, and any failure terminally fails the scan job with no retry
 - [x] UI-9 | medium | frontend-ux | fixed:the whole route tree wraps in a pathless root layout route carrying one errorElement (routeConfig.tsx, split out of router.tsx so it's importable as plain data for the structural regression test) | 06-frontend-ui-robustness.md | `/login`, `/onboarding`, and the LegacyRedirect route have no errorElement: a render error there shows React Router's raw default error screen
-- [ ] IMP-11 | low | frontend-ux | open | 08-importer-schemadump.md | `payloads.py` block scanner: a column-0 `}` inside a heredoc body truncates the skeleton and ships it
+- [x] IMP-11 | low | frontend-ux | fixed:split_generated tracks heredoc open/close markers (HEREDOC_OPEN_RE) and suspends "}"/new-header detection until the terminator closes it, so a column-0 "}" inside the body no longer ends the block early; a heredoc still open at EOF/next-header falls through to the existing "unterminated" ambiguity | 08-importer-schemadump.md | `payloads.py` block scanner: a column-0 `}` inside a heredoc body truncates the skeleton and ships it
 - [x] UI-15 | low | frontend-ux | fixed:"My requests" split into its own effect keyed additionally on `open`, mirroring Notifications.tsx's UIUX-13 fix, while manifests/inventory stay mount-only (legitimately static) | 06-frontend-ui-robustness.md | CommandPalette data is fetched once per shell mount, so "My requests" rows go stale within a session
 
 ## install-ops
@@ -339,8 +339,8 @@ Bootstrap, install, migration, compose and overlays.
 - [x] CI-5 | medium | install-ops | fixed:verified closed by TEST-4 — requireToolchain.ts plus pinned toolchains in ccp-api.yml | 13-ci-cd.md | Whether the api's live parity/integration suites run in CI depends on unpinned runner-preinstalled toolchains; nothing asserts they ran
 - [x] CI-7 | medium | install-ops | fixed:new .github/workflows/docker-build.yml — compose-config validation + matrix build of all 5 images, api image booted and /readyz-probed | 13-ci-cd.md | The Docker build path (the documented production install) is never exercised by CI; images are first built at release time
 - [x] DOC-3 | medium | install-ops | fixed:cdc5f2c | 14-contracts-docs.md | OpenAPI `servers: [{url: /v2}]` does not match any deployed base path
-- [ ] OPS-13 | low | install-ops | open | 10-reliability-operations.md | `doctor.sh` reports an unhealthy container as OK
-- [ ] OPS-15 | low | install-ops | open | 10-reliability-operations.md | GitHub App key directory is not prepared or checked by any tooling
+- [x] OPS-13 | low | install-ops | fixed:the container-status case statement checks "(unhealthy)"/Restarting BEFORE the bare `*Up*)` pattern, and the aggregate FAIL check gains a second grep for both, since the per-line loop runs in a pipe subshell and can't set FAIL itself | 10-reliability-operations.md | `doctor.sh` reports an unhealthy container as OK
+- [x] OPS-15 | low | install-ops | fixed:setup.sh data's layout gains /data/ccp/forge (1000:1000 700); doctor.sh resolves CCP_GITHUB_APP_KEY_FILE's container path to its host path via CCP_GITHUB_APP_KEY_HOST_DIR and checks it exists + is readable by uid 1000 | 10-reliability-operations.md | GitHub App key directory is not prepared or checked by any tooling
 
 ## scale-and-paging
 
@@ -363,7 +363,7 @@ The evidence chain: month walk, export, verification.
 - [ ] OPS-11 | medium | audit-chain | open | 10-reliability-operations.md | `/readyz` re-verifies every audit chain on every probe; cost grows unboundedly with history
 - [ ] PERF-11 | medium | audit-chain | open | 11-performance-scalability.md | Per-project audit chain head serializes all writes and surfaces contention as user-facing 409s after one retry
 - [ ] PERF-7 | medium | audit-chain | open | 11-performance-scalability.md | Nothing in the store is ever purged: sessions, idempotency markers, and the audit chain grow forever (and every byte is re-serialized per request)
-- [ ] DATA-17 | low | audit-chain | open | 03-data-integrity.md | Calendar-dependent test: the FileStore audit-durability test hardcodes month `202607`
+- [x] DATA-17 | low | audit-chain | fixed:verified already closed by TEST-13's fix — the actual calendar-dependent test now derives its partition via nowIso().slice(0,7) (inline comment credits TEST-13); the one remaining literal '202607' (fileStore.test.ts:98) is self-consistent (same key object for write and read-back), not calendar-dependent | 03-data-integrity.md | Calendar-dependent test: the FileStore audit-durability test hardcodes month `202607`
 
 ## catalogctl
 
@@ -371,7 +371,7 @@ The codemod, plan-check and drift-edit.
 
 - [x] IMP-1 | high | catalogctl | fixed:with_meta=True back-ported from the azure kit; importer/kit suite 106 pass | 08-importer-schemadump.md | `importer/kit/normalize.py` `split`/`guard` crash under the repo-pinned python-hcl2 (KeyError, not a refusal)
 - [ ] CTL-2 | medium | catalogctl | open | 07-catalogctl.md | `moved_block` writes invalid or duplicate-resource HCL at exit 0: no identifier validation, no destination-collision check, no dangling-reference handling
-- [ ] IMP-5 | medium | catalogctl | open | 08-importer-schemadump.md | kit-azure `discover.sh` never clears stale page files: a re-run can resurrect deleted resources into the manifest
+- [x] IMP-5 | medium | catalogctl | fixed:discover.sh clears `$OUT/$capture.page*.json` and `$OUT/$capture.json` at the top of each capture's paging loop, before writing anything; merge_pages (discover.py) refuses BAD_CAPTURE if both forms exist for one capture (a hand-assembled or interrupted-cleanup directory) instead of silently double-counting | 08-importer-schemadump.md | kit-azure `discover.sh` never clears stale page files: a re-run can resurrect deleted resources into the manifest
 - [x] PERF-6 | medium | catalogctl | fixed:client caches inventory/manifests per project + revalidates via If-None-Match; server sends ETag off the stored digest and reads async; test/httpApiProjectData.test.ts, test/projectData.test.ts | 11-performance-scalability.md | API mode re-downloads and re-parses the full inventory + manifest set on every route mount; the serve endpoints send no caching headers
 
 ## frontend-a11y
@@ -389,7 +389,7 @@ No request logging, no request ids, missing healthchecks.
 
 - [x] OPS-2 | high | observability | fixed:c89f727 | 10-reliability-operations.md | Unhandled errors become 500 `INTERNAL` with zero server-side logging
 - [ ] ERR-7 | medium | observability | open | 09-error-handling.md | Unexpected errors become `{code:'INTERNAL'}` 500 with zero server-side logging
-- [ ] OPS-10 | medium | observability | open | 10-reliability-operations.md | No log rotation and no resource limits on any service
+- [x] OPS-10 | medium | observability | fixed:shared x-logging anchor (json-file, max-size 10m, max-file 5) applied to all 5 services; api gets mem_limit ${CCP_API_MEM_LIMIT:-1g}, runner gets ${CCP_RUNNER_MEM_LIMIT:-4g} — both compose-syntax (mem_limit/cpus, not deploy:, which plain `docker compose up` ignores outside swarm mode) | 10-reliability-operations.md | No log rotation and no resource limits on any service
 - [ ] OPS-7 | medium | observability | open | 10-reliability-operations.md | No HTTP request logging and no request IDs anywhere in the api
 
 ## frontend-form

@@ -24,6 +24,16 @@
 
 name: ccp
 
+# OPS-10 — every service used the default json-file driver with no max-size/
+# max-file, so container logs (the runner in particular relays whole CI job
+# logs) could grow unbounded on the host's /docker partition. One shared cap,
+# applied to every service below (`logging: *default-logging`).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   # api + app carry NO `profiles:` key — they are the implicit "core" profile, so
   # the bare `docker compose up -d --build` used by install.sh and self-update.sh
@@ -35,6 +45,11 @@ services:
       dockerfile: api/Dockerfile  # it resolves at runtime (see api/Dockerfile header)
     image: ccp-api:local
     restart: unless-stopped
+    logging: *default-logging
+    # OPS-10 — no service had a memory ceiling; a spike in any one container
+    # could OOM the host that also holds the governance store. Override via
+    # CCP_API_MEM_LIMIT in .env if 1g is wrong for your estate's size.
+    mem_limit: ${CCP_API_MEM_LIMIT:-1g}
     environment:
       NODE_ENV: production
       PORT: ${PORT:-8801}
@@ -103,6 +118,7 @@ services:
         VITE_INSTANCE_TAGLINE: ${CCP_INSTANCE_TAGLINE:-}
     image: ccp-app:local
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - api                       # start ordering only; the SPA is static and needs no live api to serve
     ports:
@@ -123,6 +139,10 @@ services:
     image: ccp-runner:local
     profiles: ["runner"]
     restart: unless-stopped
+    logging: *default-logging
+    # OPS-10 — the runner relays entire CI job logs and can run arbitrarily
+    # memory-hungry builds; override via CCP_RUNNER_MEM_LIMIT if 4g is wrong.
+    mem_limit: ${CCP_RUNNER_MEM_LIMIT:-4g}
     stop_grace_period: 2m          # let an in-flight CI job wind down
     environment:
       RUNNER_REPO_URL: ${RUNNER_REPO_URL:-}   # e.g. https://github.com/<owner>/<repo>
@@ -163,6 +183,7 @@ services:
     image: ccp-scanner:local
     profiles: ["scanner"]
     restart: unless-stopped
+    logging: *default-logging
     stop_grace_period: 30s              # let an in-flight scan report a terminal status
     command:
       - --server
@@ -207,4 +228,5 @@ services:
     image: ccp-toolbox:local
     profiles: ["toolbox"]
     restart: "no"
+    logging: *default-logging
     command: ["toolbox-selfcheck"]      # one-shot: prints terraform/catalogctl/git versions

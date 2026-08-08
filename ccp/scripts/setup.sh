@@ -218,6 +218,9 @@ do_install() {
 #   /data/ccp/store       1000:1000      700   api durable store (node user in the image)
 #   /data/ccp/config      <deploy user>  750   holds ccp.env (the real .env)
 #   /data/ccp/update      root:root      750   self-update state + pre-update tars
+#   /data/ccp/forge        1000:1000      700   OPS-15: GitHub App private key (opt-in,
+#                                                CCP_GITHUB_APP_KEY_HOST_DIR default) — the
+#                                                api mounts it :ro and reads as uid 1000
 #   /data/scratch            1000:1000      700   armed-lane TMPDIR pass-through
 #   /data/runner             1001:1001      750   CI runner dist + registration state
 # Check-first: each path is left alone when already correct, so re-running this
@@ -264,6 +267,10 @@ do_data() { # $1 = "all" when invoked from the full run (laptop hosts skip silen
   ensure_owned /data/ccp/store  1000         1000         700 "api durable store";  rc=$?; [ "$rc" = 2 ] && need_root=1; [ "$rc" = 1 ] && data_fail=1
   ensure_owned /data/ccp/config "$deploy_uid" "$deploy_gid" 750 "env config";        rc=$?; [ "$rc" = 2 ] && need_root=1; [ "$rc" = 1 ] && data_fail=1
   ensure_owned /data/ccp/update 0            0            750 "self-update state";  rc=$?; [ "$rc" = 2 ] && need_root=1; [ "$rc" = 1 ] && data_fail=1
+  # OPS-15 — previously left for dockerd to auto-create (root:root) on first `up`,
+  # never prepared here, so a key dropped in later inherited whatever mode the
+  # operator happened to use, undetected until the first scan job's claim failed.
+  ensure_owned /data/ccp/forge  1000         1000         700 "GitHub App key dir"; rc=$?; [ "$rc" = 2 ] && need_root=1; [ "$rc" = 1 ] && data_fail=1
   ensure_owned /data/scratch       1000         1000         700 "armed-lane scratch"; rc=$?; [ "$rc" = 2 ] && need_root=1; [ "$rc" = 1 ] && data_fail=1
   ensure_owned /data/runner        1001         1001         750 "CI runner state";    rc=$?; [ "$rc" = 2 ] && need_root=1; [ "$rc" = 1 ] && data_fail=1
 

@@ -38,6 +38,11 @@
     "  phase     importer/docs/strategy.md phase (2 low-risk · 3 networking · 4 compute · 5 stateful)",
     "  stateful  true ⇒ normalize.py `guard` inserts lifecycle { prevent_destroy = true }",
     "            (strategy.md rule 2: guards go in BEFORE import)",
+    "  regional  IMP-10: optional, default true. false ⇒ this type's `id` is a plain,",
+    "            region-less identifier (IAM names, an S3 bucket name, a KMS alias) that the",
+    "            AWS provider's `<id>@<region>` cross-region import convention does not accept —",
+    "            gen-imports.py's --id-region-suffix skips these types rather than emitting an",
+    "            id `terraform plan` will reject (e.g. `my-role@ap-southeast-1`).",
     "",
     "Entry schema (manual[] groups) additionally carries:",
     "  arnHints  list of ARN service-namespace tokens this group's types are confidently known to",
@@ -289,7 +294,8 @@
       "id": "Name",
       "name": "Name",
       "phase": 5,
-      "stateful": true
+      "stateful": true,
+      "regional": false
     },
     "aws_iam_user": {
       "service": "iam",
@@ -300,7 +306,8 @@
       "id": "UserName",
       "name": "UserName",
       "phase": 2,
-      "stateful": false
+      "stateful": false,
+      "regional": false
     },
     "aws_iam_group": {
       "service": "iam",
@@ -311,7 +318,8 @@
       "id": "GroupName",
       "name": "GroupName",
       "phase": 2,
-      "stateful": false
+      "stateful": false,
+      "regional": false
     },
     "aws_iam_role": {
       "service": "iam",
@@ -325,7 +333,8 @@
         { "field": "Path", "prefix": "/aws-service-role/", "reason": "service-linked role (AWS-managed) — disposition Ignore per importer/docs/discovery-guide.md §4" }
       ],
       "phase": 2,
-      "stateful": false
+      "stateful": false,
+      "regional": false
     },
     "aws_iam_policy": {
       "service": "iam",
@@ -336,7 +345,8 @@
       "id": "Arn",
       "name": "PolicyName",
       "phase": 2,
-      "stateful": false
+      "stateful": false,
+      "regional": false
     },
     "aws_iam_instance_profile": {
       "service": "iam",
@@ -347,7 +357,8 @@
       "id": "InstanceProfileName",
       "name": "InstanceProfileName",
       "phase": 2,
-      "stateful": false
+      "stateful": false,
+      "regional": false
     },
     "aws_lambda_function": {
       "service": "lambda",
@@ -438,7 +449,8 @@
         { "field": "AliasName", "prefix": "alias/aws/", "reason": "AWS-managed key alias — disposition Ignore" }
       ],
       "phase": 2,
-      "stateful": false
+      "stateful": false,
+      "regional": false
     },
     "aws_kms_key": {
       "service": "kms",

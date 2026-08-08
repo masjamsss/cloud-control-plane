@@ -18,6 +18,9 @@ parts. Subcommands, in the order the runbook uses them:
       — the environments/prod layout. Block extents come from a REAL HCL parser (python-hcl2,
       heredoc-safe), source bytes are copied verbatim. A resource type azure-services.json does
       not map goes to unclassified.tf WITH a warning — never dropped (the silent-loss lesson).
+      Non-`resource` top-level blocks (data/moved/import/locals/terraform) land in
+      unclassified.tf too, in their own section, WITH a warning (IMP-12 — these used to be
+      silently dropped entirely).
 
   guard     --env-dir D [--services azure-services.json]
       Insert `lifecycle { prevent_destroy = true }` into every STATEFUL-type resource
@@ -90,9 +93,9 @@ def load_services(path):
         refuse("BAD_SERVICES", f"cannot read {path}: {e}")
 
 
-def parse_resources(path):
-    """(type, label, start_line, end_line) per resource, 1-based inclusive, via python-hcl2 —
-    a real HCL parser, so heredocs/comments/one-liners are style-proof. Refuses .tf.json."""
+def _load_hcl(path):
+    """Shared parse step for parse_resources/parse_non_resource_blocks: real HCL via
+    python-hcl2 (heredocs/comments/one-liners are style-proof). Refuses .tf.json."""
     if path.endswith(".tf.json"):
         refuse("TF_JSON_UNSUPPORTED", f"{path}: the kit reads/writes native HCL syntax only")
     try:
@@ -101,9 +104,14 @@ def parse_resources(path):
             # repo-pinned python-hcl2 5.1.1 (IMP-14: the pin lives in scripts/gen-project-data.sh
             # / .gitlab/ci/ccp-data.gitlab-ci.yml, not a "terraform.yml" — no such file exists),
             # where a plain load() omits them.
-            doc = hcl2.load(fh, with_meta=True)
+            return hcl2.load(fh, with_meta=True)
     except Exception as e:  # lark raises its own exception types
         refuse("UNPARSEABLE", f"{path} does not parse as HCL: {e}")
+
+
+def parse_resources(path):
+    """(type, label, start_line, end_line) per resource, 1-based inclusive."""
+    doc = _load_hcl(path)
     out = []
     for block in doc.get("resource", []):
         for rtype, bodies in block.items():
@@ -115,6 +123,33 @@ def parse_resources(path):
                     "end": body["__end_line__"],
                     "body": body,
                 })
+    return out
+
+
+# IMP-12 — top-level HCL block kinds a generated/hand-edited .tf can legally carry besides
+# `resource`. `data` is labeled the same way `resource` is (type -> label -> body); the rest
+# are unlabeled (a plain block list, each entry carrying its own __start_line__/__end_line__
+# straight from hcl2). Deliberately just this set — the ones the finding names as silently
+# dropped, and the only ones `-generate-config-out` or aztfexport `--hcl-only` output
+# plausibly carries. Every OTHER top-level kind (provider/variable/output/module/…) is out of
+# scope on purpose: this stays a mechanical, obvious check, not a general HCL linter.
+LABELED_NON_RESOURCE_KEYS = ("data",)
+UNLABELED_NON_RESOURCE_KEYS = ("moved", "import", "locals", "terraform")
+
+
+def parse_non_resource_blocks(path):
+    """(kind, label_or_None, start_line, end_line) per LABELED_/UNLABELED_NON_RESOURCE_KEYS
+    block, 1-based inclusive — see cmd_split's use."""
+    doc = _load_hcl(path)
+    out = []
+    for key in LABELED_NON_RESOURCE_KEYS:
+        for block in doc.get(key, []):
+            for rtype, bodies in block.items():
+                for label, body in bodies.items():
+                    out.append((key, f"{rtype}.{label}", body["__start_line__"], body["__end_line__"]))
+    for key in UNLABELED_NON_RESOURCE_KEYS:
+        for body in doc.get(key, []):
+            out.append((key, None, body["__start_line__"], body["__end_line__"]))
     return out
 
 
@@ -192,6 +227,17 @@ def cmd_split(args):
         chunk = "\n".join(lines[start0:res["end"]])
         groups.setdefault(svc, []).append((res["type"], res["label"], chunk))
 
+    # IMP-12 — data/moved/import/locals/terraform blocks used to be silently dropped (only
+    # `resource` extents were ever copied anywhere). Collect them too, verbatim, into
+    # unclassified.tf's own section — never lost, never guessed at which service they belong to.
+    foreign = parse_non_resource_blocks(args.generated)
+    foreign_chunks = []
+    for _kind, _label, start, end in foreign:
+        start0 = leading_comments(lines, start - 1)
+        foreign_chunks.append("\n".join(lines[start0:end]))
+    if foreign_chunks:
+        groups.setdefault("unclassified", [])
+
     os.makedirs(args.env_dir, exist_ok=True)
     written = []
     for svc in sorted(groups):
@@ -206,7 +252,16 @@ def cmd_split(args):
                 "# NOT an error but NEVER to be merged as-is: move each block into the right",
                 "# <service>.tf (and extend azure-services.json so the next environment classifies it).",
             ]
-        content = "\n".join(header) + "\n\n" + "\n\n".join(c for _, _, c in blocks) + "\n"
+        parts = [c for _, _, c in blocks]
+        if svc == "unclassified" and foreign_chunks:
+            parts.append("\n".join([
+                "# ── non-resource top-level block(s) below (IMP-12) ──────────────────────",
+                "# NOT `resource` blocks — data/moved/import/locals/terraform blocks that",
+                "# split() used to silently drop entirely. Still NEVER to be merged as-is:",
+                "# move each to where it actually belongs (a service file, main.tf, ...).",
+            ]))
+            parts.extend(foreign_chunks)
+        content = "\n".join(header) + "\n\n" + "\n\n".join(parts) + "\n"
         dst = os.path.join(args.env_dir, f"{svc}.tf")
         if os.path.exists(dst) and not args.force:
             with open(dst) as fh:
@@ -223,6 +278,10 @@ def cmd_split(args):
     print(f"split {total} resource block(s) into {len(written)} service file(s):")
     for svc, n, state in written:
         print(f"  {svc}.tf: {n} block(s) [{state}]")
+    if foreign_chunks:
+        kinds = sorted({kind for kind, _, _, _ in foreign})
+        warn(f"{len(foreign_chunks)} non-resource top-level block(s) ({', '.join(kinds)}) in "
+             f"{args.generated} went to unclassified.tf (NOT dropped — IMP-12)")
     if unknown_types:
         warn(f"{len(unknown_types)} resource type(s) not mapped by azure-services.json went to "
              f"unclassified.tf (NOT dropped): {sorted(unknown_types)}")

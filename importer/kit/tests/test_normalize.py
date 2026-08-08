@@ -97,6 +97,59 @@ class SplitTest(unittest.TestCase):
         self.assertIn("REFUSE EXISTS", r.stderr)
         self.assertEqual(self.split(["--force"]).returncode, 0)
 
+    def test_non_resource_top_level_blocks_are_preserved_not_dropped(self):
+        # IMP-12 — data/moved/import/locals/terraform blocks used to vanish
+        # entirely (only `resource` extents were ever copied anywhere).
+        with open(self.generated, "a") as fh:
+            fh.write(
+                '\n'
+                'terraform {\n'
+                '  required_version = ">= 1.10"\n'
+                '}\n'
+                '\n'
+                'locals {\n'
+                '  env = "prod"\n'
+                '}\n'
+                '\n'
+                'moved {\n'
+                '  from = aws_instance.old_name\n'
+                '  to   = aws_instance.app_server_1\n'
+                '}\n'
+                '\n'
+                'data "aws_caller_identity" "current" {\n'
+                '}\n'
+            )
+        r = self.split()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("IMP-12", r.stderr)
+        self.assertIn("non-resource top-level block", r.stderr)
+        # every kind actually named, none silently absorbed into "3 blocks"
+        for kind in ("terraform", "locals", "moved", "data"):
+            self.assertIn(kind, r.stderr)
+
+        uncls = open(os.path.join(self.env, "unclassified.tf")).read()
+        self.assertIn('required_version = ">= 1.10"', uncls)
+        self.assertIn('env = "prod"', uncls)
+        self.assertIn("from = aws_instance.old_name", uncls)
+        self.assertIn('data "aws_caller_identity" "current"', uncls)
+        self.assertIn("NEVER to be merged as-is", uncls)
+        # not dropped from the SERVICE files either — a real resource block
+        # (app_server_1, mapped to ec2.tf) must be entirely unaffected.
+        ec2 = open(os.path.join(self.env, "ec2.tf")).read()
+        self.assertIn('resource "aws_instance" "app_server_1"', ec2)
+        self.assertNotIn("moved", ec2)
+
+    def test_rerun_with_foreign_blocks_is_still_byte_identical(self):
+        with open(self.generated, "a") as fh:
+            fh.write('\nlocals {\n  env = "prod"\n}\n')
+        self.assertEqual(self.split().returncode, 0)
+        first = open(os.path.join(self.env, "unclassified.tf")).read()
+        self.assertIn('env = "prod"', first, "the locals block must actually be there, not just idempotent-absent")
+        r = self.split()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("unchanged", r.stdout)
+        self.assertEqual(first, open(os.path.join(self.env, "unclassified.tf")).read())
+
     def test_tf_json_input_refuses(self):
         j = os.path.join(self.tmp.name, "generated.tf.json")
         with open(j, "w") as fh:
