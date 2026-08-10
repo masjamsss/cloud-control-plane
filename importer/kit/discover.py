@@ -26,6 +26,9 @@ layer):
   - a resource type OUTSIDE services.json entirely  -> manifest.coverage.unrecognizedArnFamilies[]
     (WARN on stderr; from discover.sh's account-wide resourcegroupstaggingapi
     sweep — a report, never a build-failing gate; README.md "coverage sweep")
+  - a resource INSIDE a covered family that this kit's lister structurally
+    cannot enumerate (an unaliased KMS key) -> manifest.coverage.shadowedTypes[]
+    by id, WARN on stderr (IMP-15; services.json `shadow`)
   - a record whose id cannot be extracted   -> REFUSE MALFORMED_RECORD, exit 2
   - an unreadable/invalid JSON capture      -> REFUSE BAD_CAPTURE, exit 2
   - a wrong-account capture (--require-account) -> REFUSE ACCOUNT_MISMATCH, exit 2
@@ -81,6 +84,17 @@ def load_services(path):
             refuse("BAD_SERVICES", f"types.{rtype} must have exactly one of 'id' / 'id_format'")
         if not spec["cli"].startswith("aws "):
             refuse("BAD_SERVICES", f"types.{rtype} cli must be an `aws ...` read-only call, got: {spec['cli']!r}")
+        # IMP-15: a `shadow` says this type's lister cannot enumerate all of it.
+        # Both fields are load-bearing — the token is what makes the gap
+        # countable, the reason is what makes it reviewable — so an incomplete
+        # declaration refuses rather than degrading to a silent no-op.
+        if "shadow" in spec:
+            shadow = spec["shadow"]
+            if not isinstance(shadow, dict):
+                refuse("BAD_SERVICES", f"types.{rtype} 'shadow' must be an object")
+            for key in ("arnResourceType", "reason"):
+                if not (isinstance(shadow.get(key), str) and shadow[key].strip()):
+                    refuse("BAD_SERVICES", f"types.{rtype} shadow needs a non-empty '{key}'")
         cap = spec["capture"]
         if cap in capture_cli and capture_cli[cap] != spec["cli"]:
             refuse(
@@ -207,6 +221,38 @@ def _redact_arn_account(arn):
     return f"arn:{partition}:{service}:{region}:REDACTED:{resource}"
 
 
+def _arn_resource_parts(arn):
+    """(resource_type_token, resource_id) for an ARN's trailing resource
+    segment, or (None, None). AWS uses BOTH delimiters — `key/<id>` and
+    `db:<id>` — and some ARNs have no token at all (a bare S3 bucket name),
+    which is exactly why the coverage sweep does not parse this by default.
+    It is called ONLY for a type that opted in via `shadow.arnResourceType`
+    (IMP-15), so the sweep's default remains the coarse, always-correct
+    family rule and no type gets a precision it never claimed."""
+    m = ARN_RE.match(arn)
+    if not m:
+        return None, None
+    resource = m.group(5)
+    for sep in ("/", ":"):
+        if sep in resource:
+            token, _, rest = resource.partition(sep)
+            return token, rest
+    return None, None
+
+
+def _declared_shadows(services):
+    """family -> [(tfType, shadow)] for every type declaring a `shadow`
+    (IMP-15): a lister that structurally cannot enumerate the whole type."""
+    shadows = {}
+    for rtype, spec in services["types"].items():
+        shadow = spec.get("shadow")
+        if isinstance(shadow, dict):
+            shadows.setdefault(spec["arnHint"], []).append((rtype, shadow))
+    for rows in shadows.values():
+        rows.sort()
+    return shadows
+
+
 def _known_arn_families(services):
     """(covered, manual) — the sets of ARN families services.json already
     accounts for: `types[*].arnHint` (auto-discoverable) and
@@ -219,7 +265,10 @@ def _known_arn_families(services):
     return covered, manual
 
 
-def _compute_coverage(services, coverage_doc):
+SHADOW_ID_SAMPLE_CAP = 20
+
+
+def _compute_coverage(services, coverage_doc, resources, ignored):
     """coverage-resources.json (a captured `aws resourcegroupstaggingapi
     get-resources` response, or None when that capture is absent — an old
     capture dir, or the live sweep itself failed) -> manifest["coverage"].
@@ -232,8 +281,26 @@ def _compute_coverage(services, coverage_doc):
     cannot even parse as an ARN DOES refuse (BAD_CAPTURE): that is the capture
     itself being untrustworthy, the same standard applied to unreadable JSON
     everywhere else in this file, not a coverage gap to report around.
-    """
+
+    IMP-15 — "covered" is a claim about the FAMILY, and a family can contain a
+    type its own lister cannot enumerate. `aws_kms_key` is discovered only
+    through `kms list-aliases`, so an unaliased customer key is invisible to
+    discovery while its swept ARN lands in family `kms`, which is covered:
+    the one mechanism built to catch discovery gaps reported this gap as
+    covered. For a type that DECLARES that shadow (services.json
+    `shadow.arnResourceType`) the swept ids under that ARN token are diffed
+    against the ids discovery actually produced, and the remainder is named —
+    by id — in `shadowedTypes`. The covered row carries the same number as
+    `undiscovered`, so no row claims a coverage it does not have.
+
+    `mappingMatched` is the anti-vacuity check (IMP-4's lesson): if NONE of
+    the discovered ids appear among the swept ids while both sets are
+    non-empty, the declared `arnResourceType` does not describe this
+    provider's ARNs and `undiscoveredCount` is meaningless rather than good
+    or bad news. It is reported rather than raised, because the coverage
+    sweep is by design a report — the kit's tests are where it must fail."""
     covered_families, manual_families = _known_arn_families(services)
+    shadows_by_family = _declared_shadows(services)
     captured = coverage_doc is not None
     items = []
     if captured:
@@ -242,6 +309,7 @@ def _compute_coverage(services, coverage_doc):
             refuse("BAD_CAPTURE", f"{COVERAGE_CAPTURE}.json ResourceTagMappingList is not a list")
 
     by_family = {}
+    swept_ids = {}  # (family, arnResourceType) -> set of resource ids
     for idx, item in enumerate(items):
         arn = item.get("ResourceARN") if isinstance(item, dict) else None
         if not isinstance(arn, str) or not arn:
@@ -255,12 +323,53 @@ def _compute_coverage(services, coverage_doc):
             refuse("BAD_CAPTURE", f"{COVERAGE_CAPTURE}.json[{idx}] ResourceARN is not a well-formed ARN: {arn!r}")
         bucket = by_family.setdefault(family, {"count": 0, "sample": arn})
         bucket["count"] += 1
+        if family in shadows_by_family:
+            token, rid = _arn_resource_parts(arn)
+            if token is not None and rid:
+                swept_ids.setdefault((family, token), set()).add(rid)
+
+    # "Accounted for" is discovered OR explicitly ignored-with-a-reason, not
+    # discovered alone: a record the kit skipped on purpose (an AWS-managed KMS
+    # key) is in manifest["ignored"] with its reason, which is the opposite of
+    # a shadow. Counting those as undiscovered would be a false positive
+    # manufactured by this very check.
+    accounted_by_type = {}
+    for row in resources:
+        accounted_by_type.setdefault(row["type"], set()).add(row["id"])
+    for row in ignored:
+        accounted_by_type.setdefault(row["type"], set()).add(row["id"])
+
+    shadowed_out = []
+    undiscovered_by_family = {}
+    for family in sorted(shadows_by_family):
+        for rtype, shadow in shadows_by_family[family]:
+            token = shadow["arnResourceType"]
+            swept = swept_ids.get((family, token), set())
+            discovered = accounted_by_type.get(rtype, set())
+            undiscovered = sorted(swept - discovered)
+            undiscovered_by_family[family] = undiscovered_by_family.get(family, 0) + len(undiscovered)
+            shadowed_out.append({
+                "family": family,
+                "type": rtype,
+                "arnResourceType": token,
+                "reason": shadow["reason"],
+                "sweptCount": len(swept),
+                "accountedForCount": len(discovered),
+                "undiscoveredCount": len(undiscovered),
+                "undiscoveredIds": undiscovered[:SHADOW_ID_SAMPLE_CAP],
+                "mappingMatched": bool(swept & discovered) if (swept and discovered) else None,
+            })
 
     covered_out, manual_out, unrecognized_out = [], [], []
     for family in sorted(by_family):
         info = by_family[family]
         if family in covered_families:
-            covered_out.append({"family": family, "count": info["count"]})
+            row = {"family": family, "count": info["count"]}
+            if undiscovered_by_family.get(family):
+                # This family is NOT wholly covered, and the row has to say so
+                # where the row is read — a separate section is too easy to skip.
+                row["undiscovered"] = undiscovered_by_family[family]
+            covered_out.append(row)
         elif family in manual_families:
             manual_out.append({"family": family, "count": info["count"]})
         else:
@@ -275,6 +384,7 @@ def _compute_coverage(services, coverage_doc):
         "coveredTypes": covered_out,
         "manualTypes": manual_out,
         "unrecognizedArnFamilies": unrecognized_out,
+        "shadowedTypes": shadowed_out,
     }
 
 
@@ -412,7 +522,7 @@ def cmd_build(args):
         for name in sorted(set(captures) - referenced - {COVERAGE_CAPTURE})
     ]
 
-    coverage = _compute_coverage(services, captures.get(COVERAGE_CAPTURE))
+    coverage = _compute_coverage(services, captures.get(COVERAGE_CAPTURE), resources, ignored)
 
     manifest = {
         "schema": 1,
@@ -468,6 +578,30 @@ def cmd_build(args):
         )
         for fam in coverage["unrecognizedArnFamilies"]:
             print(f"    {fam['family']}: {fam['count']} resource(s), e.g. {fam['sampleArn']}", file=sys.stderr)
+    # IMP-15: a shadowed type's gap sits INSIDE a family the sweep calls
+    # covered, so it gets its own WARN — the covered count alone reads as good
+    # news, which is the whole reason this was invisible.
+    for sh in coverage.get("shadowedTypes", []):
+        if sh["undiscoveredCount"]:
+            print(
+                f"WARN: {sh['undiscoveredCount']} {sh['type']} resource(s) were swept but NOT "
+                f"discovered — family '{sh['family']}' is reported covered, this type is not: "
+                f"{sh['reason']}",
+                file=sys.stderr,
+            )
+            for rid in sh["undiscoveredIds"]:
+                print(f"    {sh['type']} {rid}", file=sys.stderr)
+            if sh["undiscoveredCount"] > len(sh["undiscoveredIds"]):
+                print(f"    … and {sh['undiscoveredCount'] - len(sh['undiscoveredIds'])} more (see the manifest)",
+                      file=sys.stderr)
+        elif sh["mappingMatched"] is False:
+            print(
+                f"WARN: {sh['type']}'s declared shadow arnResourceType "
+                f"{sh['arnResourceType']!r} matched NONE of the {sh['accountedForCount']} "
+                f"accounted-for id(s) against {sh['sweptCount']} swept — the declaration does not "
+                "describe these ARNs, so its undiscovered count means nothing (services.json)",
+                file=sys.stderr,
+            )
     print("next: review labels/dispositions in the manifest, then gen-imports.py "
           "(docs/runbooks/new-env-import.md, phase 2)")
     return 0

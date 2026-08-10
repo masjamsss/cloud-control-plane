@@ -5080,3 +5080,72 @@ false-positive findings for id-divergent types (concrete: `aws_volume_attachment
       path is additive.
 - [x] **Evidence in the status line** — `cd importer/kit/tests && python3 -m unittest discover
       -s .` (122 tests, OK).
+
+## IMP-15
+
+*Coverage-sweep family granularity marks undiscoverable resources as "covered".*
+
+- [x] **Defect reproduced first** — a capture dir with one aliased KMS key and two swept KMS
+      key ARNs. `build` reported `coveredTypes: [{"family": "kms", "count": 2}]`,
+      `unrecognizedArnFamilies: []`, and discovered exactly one key. The unaliased key was
+      counted as covered and then vanished — the one mechanism built to catch discovery gaps
+      reporting the gap as covered, exactly as the finding describes.
+- [x] **Cause, not symptom** — "covered" was a claim about the ARN **family**, asserted on
+      behalf of every type inside it. `aws_kms_key`'s only lister is `kms list-aliases`, so a
+      key with no alias is structurally unreachable, yet family `kms` is covered by
+      construction because some type in it is discoverable. The bucket could not express
+      "reached this family, did not reach this type".
+- [x] **Where the recommendation was NOT followed, and why** — the finding recommends adding
+      `aws kms list-keys` as a real key lister. Rejected, in writing: `list-keys` returns
+      `{KeyId, KeyArn}` only, with no way to separate AWS-managed keys from customer keys
+      without a per-key `describe-key` — a per-resource call, which is precisely what
+      `services.json` `manual[]` exists for and what the single-list-call rule excludes. It
+      also carries no name, so the alias would still have to be joined back in, which the
+      one-capture-per-type data model cannot express. Shipping it would have replaced a
+      silent gap with a manifest full of unimportable AWS-managed keys — a different silent
+      failure. The finding's *second* suggestion (name the shadow) is the one that shipped,
+      made mechanical rather than documentary.
+- [x] **The rule, not the list (L-25)** — `services.json` grows an optional
+      `shadow: {arnResourceType, reason}` on any type whose lister cannot enumerate it.
+      `build` diffs the ids swept under that ARN resource-type token against the ids it
+      actually accounted for and reports the remainder **by id** in `coverage.shadowedTypes`,
+      repeats the shortfall on the covered row as `undiscovered`, and WARNs. Nothing is
+      special-cased to KMS; a second shadowed type is a data change.
+- [x] **No false precision** — the README's standing argument against parsing the ARN
+      resource token (inconsistent delimiters, sometimes absent) is correct and is preserved:
+      the token is parsed ONLY for a type that opted in by declaring one, so the default
+      bucketing rule stays coarse and always-correct.
+- [x] **"Accounted for" is discovered OR ignored-with-a-reason** — a record the kit skips on
+      purpose (the AWS-managed key behind `alias/aws/s3`) is in `manifest["ignored"]` with its
+      reason, which is the opposite of a shadow. Counting those as undiscovered would have
+      been a false positive this check manufactured for itself; the fixture pins that it does
+      not.
+- [x] **Anti-vacuity: `mappingMatched` (IMP-4's lesson)** — the dangerous outcome here is not
+      a wrong number, it is a **zero**: a mistyped `arnResourceType` produces
+      `undiscoveredCount: 0`, which reads as good news. `mappingMatched` records whether ANY
+      accounted-for id appeared among the swept ids, so a declaration that describes nothing
+      is visible in the artifact instead of being inferred from a comfortable zero. It is
+      reported, not raised, because the coverage sweep is a report by design (it must never
+      fail a build over an estate the kit does not recognise) — the test suite is where it
+      fails.
+- [x] **Regression test** — `ShadowedTypeCoverageTests` in `importer/kit/tests/test_discover.py`,
+      driven by four new ARNs in `testdata/capture-happy/coverage-resources.json`: the aliased
+      key (discovered), an unaliased key (the shadow), the AWS-managed key (ignored, must not
+      be a shadow) and an `alias/` ARN in the same family (proves the resource-type token is
+      load-bearing — without it the alias inflates the count and invents a phantom key).
+      **Negative test confirmed:** with `discover.py` and `services.json` reverted to HEAD and
+      the tests and fixture kept, 8 tests fail. The shadow row is resolved per-test rather
+      than in `setUpClass` precisely so its absence fails each assertion with its own message
+      — the first draft raised in `setUpClass` and collapsed the class into a single
+      uninformative error.
+- [x] **Assert the setup fired (L-1)** — `test_the_fixture_really_contains_an_undiscoverable_key`
+      recomputes the precondition from the fixtures: 3 swept key ARNs, and exactly one of them
+      absent from `kms-aliases.json`. If the fixture ever loses its unaliased key, that test
+      fails rather than the others passing vacuously.
+- [x] **Evidence in the status line** — `cd importer/kit/tests && python3 -m unittest discover
+      -s .` (130 tests, OK).
+
+**Residue:** the parity gap the finding names in passing — the Azure kit classifies coverage
+at full-type granularity while the AWS kit is family-coarse — is unchanged. This fix removes
+the *silent* consequence for a declared type; it does not make AWS coverage type-granular.
+See `R-52`.

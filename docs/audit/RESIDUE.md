@@ -317,6 +317,29 @@ Recorded here so the low floor reads as a measurement of a known gap rather than
 acceptable target — a floor nobody remembers the reason for is a floor that quietly becomes the
 ceiling.
 
+### R-52 · AWS coverage is still family-coarse; only declared shadows are type-granular
+*Residue on **IMP-15**.*
+
+IMP-15 removed the *silent* half of the family-granularity limit: a type whose lister cannot
+enumerate it now declares a `shadow` in `services.json`, and `discover.py` names the resources
+the sweep saw but discovery never accounted for. What it did **not** do is make AWS coverage
+type-granular the way `kit-azure/discover.py` already is — the AWS sweep still buckets by ARN
+service family, and a type that has no `shadow` declared still contributes its resources to a
+family that reads as covered.
+
+That is the deliberate half of the trade the kit README has always stated, and it is still the
+right default: parsing every ARN's resource-type token means many fragile, service-specific
+rules where AWS's delimiters are inconsistent and sometimes absent. The residue is that the
+*declaration* is now the only thing standing between a new undiscoverable type and the old
+silent behaviour, and nothing enumerates which types ought to carry one — the finding names
+`aws_kms_key` and gestures at "any ec2-family type not among the 16 ec2-backed entries" without
+resolving it.
+
+Closing it properly is a sweep of all 43 types asking "can this lister reach every instance?",
+which is estate-informed judgement per type rather than a code change, so it is recorded rather
+than guessed at. The parity gap with the Azure kit's full-type classification is the same item
+seen from the other side.
+
 ## accepted — deliberately permanent
 
 ### R-7 · A fix landed inside another finding's commit

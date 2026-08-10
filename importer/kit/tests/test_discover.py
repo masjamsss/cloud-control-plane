@@ -9,7 +9,17 @@ import shutil
 import tempfile
 import unittest
 
-from kitpaths import COVERAGE_MALFORMED, COVERAGE_WARN, DISCOVER_PY, HAPPY, MALFORMED, REPO_ROOT, UNKNOWN, run_py
+from kitpaths import (
+    COVERAGE_MALFORMED,
+    COVERAGE_WARN,
+    DEFAULT_SERVICES,
+    DISCOVER_PY,
+    HAPPY,
+    MALFORMED,
+    REPO_ROOT,
+    UNKNOWN,
+    run_py,
+)
 
 
 def build(capture_dir, out, extra=None):
@@ -115,21 +125,139 @@ class BuildHappyPath(unittest.TestCase):
             self.assertNotIn(region, blob)
 
     def test_coverage_sweep_all_recognized(self):
-        # capture-happy/coverage-resources.json: 7 swept ARNs, all in families
+        # capture-happy/coverage-resources.json: 11 swept ARNs, all in families
         # services.json already accounts for (5 types-covered, 1 manual) — the
         # "happy: all recognized" coverage-sweep case, exercised end-to-end
         # alongside a full discovery rather than in isolation.
         coverage = self.manifest["coverage"]
         self.assertEqual(coverage["method"], "resourcegroupstaggingapi (taggable resources only)")
         self.assertTrue(coverage["captured"])
-        self.assertEqual(coverage["totalSwept"], 7)
+        self.assertEqual(coverage["totalSwept"], 11)
         self.assertEqual(coverage["unrecognizedArnFamilies"], [])
         covered = {f["family"]: f["count"] for f in coverage["coveredTypes"]}
         self.assertEqual(covered.get("ec2"), 2)
         self.assertEqual(covered.get("s3"), 1)
         self.assertEqual(covered.get("iam"), 1)
+        self.assertEqual(covered.get("kms"), 4)
         manual = {f["family"]: f["count"] for f in coverage["manualTypes"]}
         self.assertEqual(manual.get("sagemaker"), 1)
+
+
+# ── IMP-15: a covered family can still hide an undiscoverable type ──────────
+
+class ShadowedTypeCoverageTests(unittest.TestCase):
+    """`aws_kms_key` is discovered ONLY through `kms list-aliases`, so a
+    customer key with no alias is invisible — while its swept ARN lands in
+    family `kms`, which the sweep calls covered. The one mechanism built to
+    catch discovery gaps reported this gap as covered."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        out = os.path.join(cls.tmp.name, "manifest.json")
+        r = build(HAPPY, out)
+        assert r.returncode == 0, r.stderr
+        cls.stderr = r.stderr
+        with open(out) as fh:
+            cls.manifest = json.load(fh)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    @property
+    def shadow(self):
+        """The aws_kms_key shadow row. Resolved per-test rather than in
+        setUpClass so that its ABSENCE fails each assertion with its own
+        message — a setUpClass that raises collapses the whole class into one
+        error and tells you nothing about which property broke."""
+        rows = self.manifest["coverage"].get("shadowedTypes", [])
+        row = next((s for s in rows if s.get("type") == "aws_kms_key"), None)
+        self.assertIsNotNone(
+            row,
+            "coverage must report aws_kms_key as a shadowed type: its only lister is "
+            "kms list-aliases, so family 'kms' being 'covered' is not the same as this type "
+            "being discoverable (IMP-15)",
+        )
+        return row
+
+    def test_the_fixture_really_contains_an_undiscoverable_key(self):
+        # L-1: every assertion below is vacuous if the fixture stopped
+        # containing an unaliased key, or if discovery started finding it.
+        # Both halves are pinned here, read from the fixture and the manifest.
+        with open(os.path.join(HAPPY, "coverage-resources.json")) as fh:
+            swept = [i["ResourceARN"] for i in json.load(fh)["ResourceTagMappingList"]]
+        key_arns = [a for a in swept if ":key/" in a]
+        self.assertEqual(len(key_arns), 3, "the sweep must see 3 KMS key ARNs")
+        with open(os.path.join(HAPPY, "kms-aliases.json")) as fh:
+            aliased = {a["TargetKeyId"] for a in json.load(fh)["Aliases"]}
+        unaliased = [a for a in key_arns if a.rsplit("/", 1)[1] not in aliased]
+        self.assertEqual(len(unaliased), 1,
+                          "exactly one swept key must have NO alias — that is the shadow")
+        self.assertEqual(self.shadow["sweptCount"], 3)
+        self.assertTrue(self.shadow["mappingMatched"],
+                        "the declared arnResourceType must actually match this provider's ARNs — "
+                        "a mapping that matches nothing makes every count below meaningless")
+
+    def test_the_unaliased_key_is_named_not_swallowed_by_a_covered_family(self):
+        self.assertEqual(self.shadow["undiscoveredCount"], 1)
+        self.assertEqual(self.shadow["undiscoveredIds"], ["99999999-eeee-ffff-0000-111111111111"])
+        self.assertEqual(self.shadow["family"], "kms")
+        self.assertTrue(self.shadow["reason"].strip(), "a shadow must say why it exists")
+
+    def test_the_covered_row_no_longer_claims_a_coverage_it_does_not_have(self):
+        kms = next(f for f in self.manifest["coverage"]["coveredTypes"] if f["family"] == "kms")
+        self.assertEqual(kms["undiscovered"], 1,
+                          "the covered row itself must carry the shortfall — a separate section "
+                          "is too easy to read past, which is how this stayed invisible")
+
+    def test_the_gap_is_loud_on_stderr(self):
+        self.assertIn("were swept but NOT discovered", self.stderr)
+        self.assertIn("99999999-eeee-ffff-0000-111111111111", self.stderr)
+
+    def test_a_deliberately_ignored_record_is_not_a_shadow(self):
+        # alias/aws/s3's target key is skipped WITH a reason (AWS-managed).
+        # It is accounted for in manifest["ignored"], which is the opposite of
+        # invisible — counting it undiscovered would be a false positive this
+        # check manufactured for itself.
+        aws_managed = "11111111-aaaa-bbbb-cccc-dddddddddddd"
+        ignored_ids = {r["id"] for r in self.manifest["ignored"] if r["type"] == "aws_kms_key"}
+        self.assertIn(aws_managed, ignored_ids, "precondition: the fixture skips the AWS-managed key")
+        self.assertNotIn(aws_managed, self.shadow["undiscoveredIds"])
+
+    def test_the_alias_arn_does_not_count_as_a_key(self):
+        # Family `kms` covers both `key/…` and `alias/…` ARNs. If the token
+        # were ignored the alias would inflate sweptCount to 4 and the diff
+        # would report a phantom undiscovered key.
+        self.assertEqual(self.shadow["arnResourceType"], "key")
+        self.assertEqual(self.shadow["sweptCount"], 3)
+
+    def test_every_declared_shadow_is_shaped_and_reachable(self):
+        # The rule, not the list (L-25): whatever set of types declares a
+        # shadow, each must be reportable — named field, non-empty reason, and
+        # present in the computed coverage block.
+        with open(DEFAULT_SERVICES) as fh:
+            types = json.load(fh)["types"]
+        declared = {t: s["shadow"] for t, s in types.items() if "shadow" in s}
+        self.assertTrue(declared, "precondition: at least one type declares a shadow")
+        reported = {s["type"] for s in self.manifest["coverage"]["shadowedTypes"]}
+        for rtype, shadow in declared.items():
+            self.assertTrue(shadow.get("arnResourceType"), f"{rtype} shadow needs arnResourceType")
+            self.assertTrue(shadow.get("reason", "").strip(), f"{rtype} shadow needs a reason")
+            self.assertIn(rtype, reported, f"{rtype} declares a shadow but coverage never reports it")
+
+    def test_an_incomplete_shadow_declaration_refuses(self):
+        with open(DEFAULT_SERVICES) as fh:
+            services = json.load(fh)
+        services["types"]["aws_kms_key"]["shadow"] = {"arnResourceType": "key"}
+        bad = os.path.join(self.tmp.name, "services-no-reason.json")
+        with open(bad, "w") as fh:
+            json.dump(services, fh)
+        out = os.path.join(self.tmp.name, "refused.json")
+        r = run_py(DISCOVER_PY, ["build", "--capture-dir", HAPPY, "--out", out, "--services", bad])
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIn("REFUSE BAD_SERVICES", r.stderr)
+        self.assertIn("reason", r.stderr)
 
 
 class RefusalAndWarnPaths(unittest.TestCase):

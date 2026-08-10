@@ -112,8 +112,15 @@ writes the result into every manifest:
   "totalSwept": 128,
   "coveredTypes": [{"family": "ec2", "count": 94}],
   "manualTypes": [{"family": "sagemaker", "count": 3}],
+  "coveredTypes": [{"family": "kms", "count": 4, "undiscovered": 1}],
   "unrecognizedArnFamilies": [
     {"family": "kinesis", "count": 2, "sampleArn": "arn:aws:kinesis:ap-southeast-5:REDACTED:stream/..."}
+  ],
+  "shadowedTypes": [
+    {"family": "kms", "type": "aws_kms_key", "arnResourceType": "key",
+     "reason": "the only KMS lister is list-aliases …",
+     "sweptCount": 3, "accountedForCount": 2, "undiscoveredCount": 1,
+     "undiscoveredIds": ["99999999-…"], "mappingMatched": true}
   ]
 }
 ```
@@ -147,6 +154,23 @@ importing the ones it does.
   coarser net that never claims false precision beat a finer one that could
   be quietly wrong; extending precision later is a data change (add a
   narrower `arnHint`), not a redesign.
+- **A covered family can still hide an undiscoverable type — and now says so**
+  (IMP-15). Family granularity had a sharper consequence than "a new type
+  inside a covered service is not caught": `aws_kms_key` is discovered *only*
+  through `kms list-aliases`, so a customer key with **no alias** is invisible
+  to discovery while its swept ARN lands in family `kms`, which is covered.
+  The one mechanism built to catch discovery gaps reported that gap as
+  covered. A type whose lister structurally cannot enumerate it now declares
+  a `shadow` in `services.json` (`{arnResourceType, reason}`); `build`
+  subtracts the ids it actually accounted for — discovered **or** explicitly
+  `ignored` with a reason — from the ids the sweep saw under that ARN token,
+  and reports the remainder **by id** in `coverage.shadowedTypes`, with the
+  shortfall repeated on the covered row (`undiscovered`) and a WARN on
+  stderr. `mappingMatched: false` says the declared token does not describe
+  these ARNs at all, so the count means nothing — a zero that is *unverified*
+  never reads as a zero that is *good*. The ARN resource-type token is parsed
+  ONLY for types that opted in, so the default rule stays coarse and
+  always-correct exactly as described above.
 - **A few long-tail `manual` types have no verified `arnHint` yet** (e.g.
   License Manager, EC2 Instance Connect Endpoint, AWS Config's recorder/
   delivery channel) — left unmapped ON PURPOSE rather than guessed, so they
