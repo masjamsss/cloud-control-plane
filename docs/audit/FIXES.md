@@ -5014,3 +5014,69 @@ leak."
 - [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/fileStore.test.ts
       test/snapshotWriteAtomic.test.ts` (14 passed); full suite `npx vitest run` (102 files, 1421
       passed); `npx tsc --noEmit` clean.
+
+## IMP-6
+
+*statediff's managed-set match assumes Terraform state `id` equals the discovery id;
+false-positive findings for id-divergent types (concrete: `aws_volume_attachment`).*
+
+- [x] **Defect reproduced first** — built the fixture capture the finding describes (a volume
+      attachment that IS managed by Terraform, whose prior_state row carries the provider's
+      synthesized `vai-1855526686` while discovery derives
+      `/dev/sdh:vol-…001:i-…002` from `id_format`) and ran the sweep unmodified: **7 findings,
+      one of them the managed attachment**, exactly the permanent false positive described.
+- [x] **Cause, not symptom** — the sweep's entire managed/unmanaged decision was one equality,
+      `discovery id == prior_state values.id`. That is not a property of Terraform; it is a
+      property of 42 of the 43 types. Where the provider synthesizes its own state id the
+      compare is *structurally incapable* of matching, and nothing in the output distinguishes
+      "checked and genuinely unmanaged" from "the check could not have succeeded" — L-1's shape
+      applied to a data comparison rather than a gate.
+- [x] **The rule, not the list (L-25)** — the fix is not a special case for
+      `aws_volume_attachment`. services.json now declares, per type, how Terraform identifies
+      it in prior_state: `state_id_format` (a `str.format` template over the prior_state
+      resource's `values`, rebuilding the discovery id) or `state_id_matches_discovery` +
+      `state_id_reason` (the verified opposite claim). The class that can contain the defect is
+      *types whose discovery id is synthesized* — i.e. those carrying `id_format` — and
+      statediff **refuses to sweep** if any such type declares neither. A future composite-id
+      type therefore cannot silently join the false-positive class; it has to make the decision.
+- [x] **Where the recommendation was followed and where it was not** — the finding offered
+      "match on a declared state attribute … *or* exclude such types from the sweep explicitly".
+      The second branch was rejected in writing: excluding the type would also stop reporting
+      genuinely unmanaged attachments, converting a false-positive problem into a false-negative
+      one in a tool whose entire premise is that gaps are loud. The first branch is what
+      shipped, generalised from "a declared attribute" to "a declared *identity mapping*" so it
+      composes with the composite ids that cause the problem in the first place.
+- [x] **The state id is still added, not replaced** — a declared mapping can only ever *add*
+      matches. No manifest row can collide with a `vai-<hash>`, so keeping both keys means the
+      new path cannot remove a match that already worked.
+- [x] **An unresolvable mapping refuses (IMP-4's discipline)** — if the declared template and
+      the provider's attributes part company (a renamed attribute, a provider major bump), the
+      failure mode of continuing is *precisely the defect being fixed*: every managed resource
+      of that type silently becomes a finding again. `REFUSE STATE_ID_UNRESOLVED` names the
+      missing attribute. An empty render refuses too — an empty key matches nothing, which is
+      the same silent restoration wearing different clothes.
+- [x] **Regression test** — `IdDivergentStateMatchTests` in
+      `importer/kit/tests/test_statediff.py`, driven by a new
+      `tests/fixtures/sweep-happy/ec2-volumes.json` and three new prior_state rows in
+      `plan-sweep-happy.json` (the fixture the finding itself asked for).
+      **Negative test confirmed:** with `statediff.py` and `services.json` reverted to HEAD and
+      the tests/fixtures kept, 6 tests fail —
+      `test_the_fixture_really_is_id_divergent`,
+      `test_managed_id_divergent_resource_is_not_a_finding`,
+      `test_unresolvable_state_id_format_refuses_rather_than_sweeping`,
+      `test_a_new_composite_id_type_must_declare_its_state_identity`,
+      `test_the_opposite_claim_needs_a_reason` and `test_deterministic_ordering` (which sees the
+      managed attachment reappear as a 7th finding). Fix restored, all 122 kit tests green.
+- [x] **Assert the setup fired (L-1)** — `test_the_fixture_really_is_id_divergent` pins every
+      precondition by *reading the files*, never assuming: services.json declares the mapping,
+      prior_state's own `id` set is exactly `{"vai-1855526686"}` and demonstrably does **not**
+      contain the discovery id, and the manifest really discovered both attachments. Without it
+      a fixture that quietly lost its volumes would make "is not a finding" pass vacuously.
+- [x] **Failure is loud, and the fix cannot be a suppression** — the fixture deliberately
+      carries a *second*, unmanaged attachment of the same type from the same capture file.
+      `test_unmanaged_id_divergent_resource_is_still_a_finding` fails if the fix ever degrades
+      into "ignore `aws_volume_attachment`", which is the cheap way to make this finding's
+      symptom disappear. `aws_ebs_volume` — same capture, plain-id match — pins that the new
+      path is additive.
+- [x] **Evidence in the status line** — `cd importer/kit/tests && python3 -m unittest discover
+      -s .` (122 tests, OK).
