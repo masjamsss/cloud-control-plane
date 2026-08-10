@@ -18,12 +18,14 @@ import {
   addressEligibleFor,
   classifyByFields,
   classifyFinding,
+  driftGenIdle,
   foldVerdictsByAddress,
   generateDriftProposalsOnce,
   readDriftProposalBody,
   scheduleDriftGeneration,
   writeDriftProposalBody,
 } from '../src/domain/driftProposals';
+import { pollUntil } from './helpers/pollUntil';
 import type { ClassifiableFinding, ClassifiableVerdict, DriftGenSteps, DriftProposalDoc } from '../src/domain/driftProposals';
 
 /**
@@ -833,9 +835,39 @@ describe('generation seam — reconcile: ingest ⇒ store ⇒ reconcile (digest 
     scheduleDriftGeneration(deps, 'acme', 1);
     scheduleDriftGeneration(deps, 'acme', 2);
     scheduleDriftGeneration(deps, 'acme', 3);
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await driftGenIdle('acme'); // TEST-9 — await actual completion, not a fixed sleep
     expect(seenRunIds).toEqual(['r1', 'r3']);
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('TEST-9: driftGenIdle actually waits for a slow run — not a no-op that resolves early', async () => {
+    const s = await setup();
+    await driveToTrusted(s);
+    const { token } = await mintToken(s);
+    expect((await putDrift(s, token)).status).toBe(201);
+
+    const dir = mkdtempSync(join(tmpdir(), 'driftgen-idle-proof-'));
+    let generated = false;
+    const steps: DriftGenSteps = {
+      prepare: () => ({ dir }),
+      generate: async () => {
+        // Deliberately slower than a JS microtask/immediate tick — if driftGenIdle
+        // resolved without truly awaiting the runner, `generated` would still read
+        // false right after the awaited call below.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        generated = true;
+        return { ok: true, detail: 'fake green', out: JSON.stringify(proposalsDoc([])) };
+      },
+      cleanup: () => rmSync(dir, { recursive: true, force: true }),
+    };
+    scheduleDriftGeneration({ store: s.store, dataRoot: s.dataRoot, steps }, 'acme', 1);
+    expect(generated).toBe(false); // scheduling is synchronous; the async work hasn't run yet
+    await driftGenIdle('acme');
+    expect(generated).toBe(true); // must be true NOW — proves the await was real
+  });
+
+  it('TEST-9: driftGenIdle resolves immediately when nothing was ever scheduled', async () => {
+    await expect(driftGenIdle('never-scheduled-project')).resolves.toBeUndefined();
   });
 });
 
@@ -846,7 +878,11 @@ describe('PUT /:id/drift — the generation TRIGGER (§6.3), off by default', ()
     const { token } = await mintToken(s);
     const res = await putDrift(s, token);
     expect(res.status).toBe(201);
-    await new Promise((resolve) => setTimeout(resolve, 30)); // let any erroneous background task tick
+    // TEST-9 — nothing was scheduled (CCP_DRIFT_PROPOSALS is unset), so there is no
+    // completion hook to await; poll the forbidden condition instead of a fixed sleep,
+    // so an erroneous background task that is merely slow still gets caught.
+    const rowsAppeared = await pollUntil(async () => (await s.store.query('PROJECT#acme', 'DRIFTPROP#')).length > 0);
+    expect(rowsAppeared).toBe(false);
     expect(await s.store.query('PROJECT#acme', 'DRIFTPROP#')).toEqual([]);
   });
 
@@ -864,9 +900,15 @@ describe('PUT /:id/drift — the generation TRIGGER (§6.3), off by default', ()
     // itself is never blocked/broken by an armed-but-failing generation.
     const res = await putDrift(s, token);
     expect(res.status).toBe(201);
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    // Fire-and-forget: the response already returned above regardless of
-    // whether the (failing, fake-remote) background generation ever finishes.
+    // TEST-9 — no assertion below depends on the background run's outcome (the test's
+    // whole point is that 201 already returned regardless), so this only needs to give
+    // the real `git clone` a bounded chance to settle before the test ends, not block on
+    // it: race driftGenIdle's real completion against a deadline rather than an
+    // unconditional await, so a real subprocess running slow under a loaded CI box (the
+    // same class of variance driftButtons.test.ts's OWN fake-steps run doesn't have)
+    // can never turn this into a hung test — it only ever widens, never removes, the
+    // margin the old fixed sleep(200) gave.
+    await Promise.race([driftGenIdle('acme'), new Promise((resolve) => setTimeout(resolve, 2000))]);
   });
 });
 

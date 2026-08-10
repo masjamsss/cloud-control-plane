@@ -21,6 +21,7 @@ Server side, the taxonomy in `ccp/api/src/errors.ts:10-71` is declared "the ONLY
 | `TOTP_REQUIRED` | 401 | A verification code is required. | errors.ts:16; ccp/api/src/routes/auth.ts:159,162,179,182 (TOTP verify/enroll), plus `failCode('totp')` ccp/api/src/middleware/session.ts:23-24. Reused verbatim (2026-07-22, account & security) on three more doors: `POST /auth/totp/recovery` (a wrong/used/unknown recovery code — never a distinct code, so a guesser learns nothing, auth.ts:275,291), `POST /auth/recovery-codes/regenerate` (no device enrolled — codes exist only while 2FA is active, routes/account.ts:221), and a failed `POST /auth/reauth` by code (auth.ts:428 — a failed reauth by password instead returns `BAD_CREDENTIALS`; both feed the same lockout counter as a login guess) |
 | `UPLOAD_TOKEN_INVALID` | 401 | The upload token is missing, wrong, expired, or revoked. | errors.ts (2026-07-17, data plane); ccp/api/src/routes/projectData.ts `PUT /projects/:id/data` — one generic refusal for unknown/expired/revoked/wrong-project/wrong-secret (no enumeration) |
 | `ONBOARD_TOKEN_INVALID` | 401 | The onboarding token is missing, wrong, expired, or revoked. | errors.ts (2026-07-24, easy-first-import Phase 1); ccp/api/src/routes/projects.ts — the Bearer lane on `PUT /projects/:id/trust-request`. A SEPARATE code from `UPLOAD_TOKEN_INVALID` (a separate credential/key-namespace, I10) — same one-generic-refusal-no-enumeration posture, folding unknown/expired/revoked/wrong-project/wrong-secret into one code |
+| `SCANNER_KEY_INVALID` | 401 | The scanner worker key is missing or wrong. | (DOC-10) errors.ts:54 (ADR-0033); ccp/api/src/routes/scanJobs.ts:265,399 — the scanner-worker lane's own credential, never a session; one generic code whether the header was missing, malformed, or simply wrong (no enumeration) |
 
 ### 403
 
@@ -53,6 +54,9 @@ Server side, the taxonomy in `ccp/api/src/errors.ts:10-71` is declared "the ONLY
 | `TEAM_NOT_EMPTY` | 409 | Move this team's members and services before deleting it. | errors.ts:38; ccp/api/src/routes/admin.ts:789 |
 | `BACKEND_NOT_EMPTY` | 409 | The backend already holds data. | errors.ts:39; ccp/api/src/routes/migrate.ts:60 |
 | `DUPLICATE_PROJECT` | 409 | That project id is already registered. | errors.ts:40; ccp/api/src/routes/projects.ts:227 |
+| `DRIFT_PROPOSAL_STALE` | 409 | This drift proposal is stale — superseded by a newer report, already submitted, or not from the latest snapshot. | (DOC-10) errors.ts:152 (drift-portal spec §4.3); ccp/api/src/routes/drift.ts:639,642,892,975 — a proposal not from the latest report, already submitted, or otherwise no longer 'open' is never submittable |
+| `INSTANCE_STALE` | 409 | The instance identity changed since you loaded it — reload and try again. | (DOC-10) errors.ts:159 (ADR-0023); ccp/api/src/routes/instance.ts:131 — the instance-identity row changed between the admin's read and this write (another admin renamed it concurrently) |
+| `SCANNER_DISABLED` | 409 | The built-in repository scanner is not enabled on this deployment. Run the scan from the repository's CI or locally instead. | (DOC-10) errors.ts:271 (ADR-0033); ccp/api/src/routes/projects.ts:909, routes/scanJobs.ts:264,398 — 409 rather than 404 so an operator who expected the feature learns it is disabled rather than mistyped |
 
 ### 422
 
@@ -74,6 +78,10 @@ Server side, the taxonomy in `ccp/api/src/errors.ts:10-71` is declared "the ONLY
 | `IDENTITY_UNCONFIRMED` | 422 | This project's cloud identity has not been confirmed yet — an admin must confirm it (PUT /projects/:id/identity) before CI uploads can begin. | errors.ts:240 (2026-07-25, ADR-0033 Decision 5); ccp/api/src/routes/projectData.ts:136 — `POST /projects/:id/upload-tokens` (the CI upload-token MINT) refuses when `isIdentityConfirmed(project)` (schema.ts:901) is false; the fail-closed backstop so a project can never reach the data lane on an unconfirmed, machine-proposed identity |
 | `LAST_FACTOR` | 422 | That is your last authenticator device and 2FA is required for your account — add another before removing it. | errors.ts:82 (2026-07-22, account & security); ccp/api/src/routes/account.ts:179 — `DELETE /auth/totp-devices/:id` refuses when removing would leave zero devices while `needsTotp(account)` is true |
 | `DEVICE_LIMIT` | 422 | You already have 5 authenticator devices — remove one before adding another. | errors.ts:84 (2026-07-22, account & security); ccp/api/src/routes/account.ts:93,121 — both the begin-add and confirm-add steps refuse past `MAX_TOTP_DEVICES` (5), so a device can never be added between the two checks |
+| `DRIFT_NOT_ADOPTABLE` | 422 | This drift can no longer be adopted or reverted from the portal — eligibility re-derived from the current report refused it. | (DOC-10) errors.ts:173 (drift-portal spec §4.3/§8); ccp/api/src/routes/drift.ts:653,661,674,679,697,982,987,995 — eligibility RE-DERIVED from the stored report (never the proposal's own claim) refused; every security-posture-drift refusal rides this code |
+| `DRIFT_PROPOSAL_REQUIRED` | 422 | Drift system operations can only be submitted via POST /projects/:id/drift/proposals/:digest/submit. | (DOC-10) errors.ts:181 (drift-portal spec §4.3/§8); ccp/api/src/routes/requests.ts:368 — the direct `POST /requests` lane is closed for `system-drift-*` ops |
+| `FORGE_CREDENTIAL_REFUSED` | 422 | This deployment cannot use that forge credential — see the reason in the details. | (DOC-10) errors.ts:280 (ADR-0033 Decision 1); ccp/api/src/routes/projects.ts:1038 — the deployment cannot hold a forge credential (`CCP_FORGE_SEAL_KEY` unset/too short), or the configured GitHub App is not installed on the repository; 422 rather than 500 since this is a deployment configuration the operator fixes |
+| `SCAN_TARGET_REFUSED` | 422 | This project's repository host is not one this deployment is allowed to clone from. | (DOC-10) errors.ts:289 (ADR-0033); ccp/api/src/routes/projects.ts:918,926 — a self-hosted forge host outside the deployment allowlist, or a base URL that is not plain https; deliberately does NOT echo the offending URL back |
 
 ### 413
 
@@ -101,6 +109,14 @@ These are returned as inline `c.json({code, reason}, status)` literals — the s
 | `CANCEL_FORBIDDEN` | 403 | Only the requester or a Lead/admin may cancel this request. | ccp/api/src/routes/requests.ts:856 |
 | `REWINDOW_FORBIDDEN` | 403 | Only the requester or a Lead/admin may re-window this request. | ccp/api/src/routes/requests.ts:943 |
 | `INTERNAL` | 500 | Internal error. | ccp/api/src/errors.ts:119 (unhandled-exception fallback; "outside the taxonomy by design") |
+| `DRIFT_DISARMED` | 409 | (per-route, e.g. "This deployment has not armed the drift-portal lane" / "On-demand drift checks are not armed on this deployment (CCP_DRIFT_CHECK_CMD unset)") | (DOC-10) ccp/api/src/routes/drift.ts — 7 sites: 261,565,585,594,944,1080,1104,1149,1169 (the drift/import/restore/check/generate lanes, each unarmed by its own env var, share this one code) |
+| `DRIFT_CHECK_FORBIDDEN` | 403 | Only a Lead or admin may start a drift check. | (DOC-10) ccp/api/src/routes/drift.ts:1093 — the apply-route precedent (PERMISSIONS.md §2's senior-only apply row), stricter than every other drift route |
+| `DRIFT_GENERATE_FORBIDDEN` | 403 | Only a Lead or admin may refresh drift fix proposals. | (DOC-10) ccp/api/src/routes/drift.ts:1159 |
+| `BUNDLE_DISARMED` | 409 | The approval-to-apply bundle is not armed on this deployment (CCP_BUNDLE + git/gate/trigger config). | (DOC-10) ccp/api/src/routes/requests.ts:1084 |
+| `BUNDLE_RUNNING` | 409 | A bundle for this request is already in flight. | (DOC-10) ccp/api/src/routes/requests.ts:1128 — the non-reentrancy guard |
+| `APPLY_FORBIDDEN` | 403 | Only a Lead or admin may run the apply bundle. | (DOC-10) ccp/api/src/routes/requests.ts:1094 — hand-rolled senior check, not `requireRole` (PERMISSIONS.md §2) |
+| `BUNDLE_REPO_UNRESOLVED` | 409 | The apply bundle cannot resolve a repository for this estate: `<detail>`. | (DOC-10, found while building this table's own generated check) ccp/api/src/routes/requests.ts:1190 — armed (checked first) but the remote still can't be resolved for THIS estate (ARCH-2); a separate code from `BUNDLE_DISARMED` so this doesn't read as a flag the operator set wrong |
+| `DRIFT_REPO_UNRESOLVED` | 409 | Drift fix generation cannot resolve a repository for this estate: `<detail>`. | (DOC-10, found while building this table's own generated check) ccp/api/src/routes/drift.ts:1188 — the drift-generation twin of `BUNDLE_REPO_UNRESOLVED` above |
 
 ### Header transcription claim vs the spec
 

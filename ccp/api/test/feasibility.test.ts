@@ -6,6 +6,7 @@ import { accountKey, type AccountItem, type AuditItem } from '../src/store/schem
 import { computeFeasibility } from '../src/domain/feasibility';
 import { runSettlement } from '../src/domain/settlement';
 import { seed, sessionCookieFor, setPolicy } from './helpers/seed';
+import { nowIso } from '../src/clock';
 
 /**
  * 0021 F5/G5 — quorum-infeasibility surfacing, re-expressed for the 0037 ladder. Submit
@@ -168,7 +169,7 @@ describe('POST /requests — submit response + persisted snapshot carry ladder f
     const app = createApp(store);
     const created = await (await submit(app, await sessionCookieFor(store, 'sari'), GUARDRAILS_DRAFT)).json();
 
-    const yyyymm = new Date().toISOString().slice(0, 7).replace('-', '');
+    const yyyymm = nowIso().slice(0, 7).replace('-', '');
     const entries = (await store.query(`P#sample#AUDIT#${yyyymm}`)) as AuditItem[];
     const submitted = entries.find((e) => e.action === 'request-submit' && e.requestId === created.id);
     expect(submitted!.after).toMatchObject({ eligibleApprovers: 1, feasible: false, interimProfileWillApply: false });

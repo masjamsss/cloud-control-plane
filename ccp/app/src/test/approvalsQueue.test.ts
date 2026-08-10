@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type { ChangeRequest } from '@/types';
+import type { ChangeRequest, User } from '@/types';
+import { REQUEST_STATUSES } from '@/types';
 import {
   applyMutatedRequestToList,
   isRejectReasonValid,
@@ -34,6 +35,16 @@ describe('ApprovalsQueue parseFilters — URL → filter state (valid, invalid, 
   it('the literal "all" status is accepted as-is', () => {
     const sp = new URLSearchParams('status=all');
     expect(parseFilters(sp)).toEqual({ status: 'all', q: '' });
+  });
+
+  it('FE-11: every REQUEST_STATUSES value round-trips through the URL — none coerces to "all"', () => {
+    // Same fix, same test as MyRequests — this file's own option list was independently
+    // missing WINDOW_EXPIRED and (after ARCH-7) HALTED_DRIFT/HALTED_APPLY_FAILED, having
+    // been hand-typed rather than derived.
+    for (const status of REQUEST_STATUSES) {
+      const sp = new URLSearchParams(`status=${status}`);
+      expect(parseFilters(sp), status).toEqual({ status, q: '' });
+    }
   });
 });
 
@@ -73,15 +84,23 @@ function fixtureRequest(overrides: Partial<ChangeRequest> = {}): ChangeRequest {
   };
 }
 
-describe('applyMutatedRequestToList — patches or drops a request from a mutation result (0025 RX-3)', () => {
-  it('patches the request in place when it is still AWAITING_CODE_REVIEW (a partial/1-of-2 approval)', () => {
+/** An approver viewer (never the fixture request's own requester, 'dewi') —
+ * the actor `applyMutatedRequestToList` now needs to re-derive the exact
+ * `scope=pending` predicate (FE-12). */
+function fixtureViewer(overrides: Partial<User> = {}): User {
+  return { id: 'rizky', name: 'Rizky', role: 'approver', teamId: 'erp-basis', ...overrides };
+}
+
+describe('applyMutatedRequestToList — patches or drops a request from a mutation result (0025 RX-3, FE-12)', () => {
+  it('patches the request in place when it is still AWAITING_CODE_REVIEW (a partial/1-of-2 approval) and the viewer can still sign', () => {
     const other = fixtureRequest({ id: 'req-other' });
     const before = fixtureRequest({ id: 'req-1', approvals: [] });
+    // mock-mode: no nextApprovalStep field at all — canApprove alone stands.
     const updated = fixtureRequest({
       id: 'req-1',
-      approvals: [{ user: 'rizky', at: '2026-01-01T01:00:00.000Z' }],
+      approvals: [{ user: 'someone-else', at: '2026-01-01T01:00:00.000Z' }],
     });
-    const next = applyMutatedRequestToList([other, before], updated);
+    const next = applyMutatedRequestToList([other, before], updated, fixtureViewer());
     expect(next).toHaveLength(2);
     expect(next.find((r) => r.id === 'req-1')).toEqual(updated);
     expect(next.find((r) => r.id === 'req-other')).toEqual(other);
@@ -90,19 +109,19 @@ describe('applyMutatedRequestToList — patches or drops a request from a mutati
   it('removes the request once it is fully approved and APPLIED (quorum met, "now" schedule)', () => {
     const before = fixtureRequest({ id: 'req-1' });
     const updated = fixtureRequest({ id: 'req-1', status: 'APPLIED' });
-    expect(applyMutatedRequestToList([before], updated)).toEqual([]);
+    expect(applyMutatedRequestToList([before], updated, fixtureViewer())).toEqual([]);
   });
 
   it('removes the request once fully approved but scheduled (AWAITING_DEPLOY_APPROVAL, "window" schedule)', () => {
     const before = fixtureRequest({ id: 'req-1' });
     const updated = fixtureRequest({ id: 'req-1', status: 'AWAITING_DEPLOY_APPROVAL' });
-    expect(applyMutatedRequestToList([before], updated)).toEqual([]);
+    expect(applyMutatedRequestToList([before], updated, fixtureViewer())).toEqual([]);
   });
 
   it('removes the request on reject (always REJECTED, never AWAITING_CODE_REVIEW)', () => {
     const before = fixtureRequest({ id: 'req-1' });
     const updated = fixtureRequest({ id: 'req-1', status: 'REJECTED' });
-    expect(applyMutatedRequestToList([before], updated)).toEqual([]);
+    expect(applyMutatedRequestToList([before], updated, fixtureViewer())).toEqual([]);
   });
 
   it('leaves every OTHER request untouched, in order', () => {
@@ -110,17 +129,78 @@ describe('applyMutatedRequestToList — patches or drops a request from a mutati
     const b = fixtureRequest({ id: 'b' });
     const c = fixtureRequest({ id: 'c' });
     const updatedB = fixtureRequest({ id: 'b', status: 'REJECTED' });
-    expect(applyMutatedRequestToList([a, b, c], updatedB)).toEqual([a, c]);
+    expect(applyMutatedRequestToList([a, b, c], updatedB, fixtureViewer())).toEqual([a, c]);
   });
 
   it('is a no-op when the updated request is not in the list (defensive; nothing to patch or drop)', () => {
     const a = fixtureRequest({ id: 'a' });
     const stray = fixtureRequest({ id: 'not-in-list', status: 'REJECTED' });
-    expect(applyMutatedRequestToList([a], stray)).toEqual([a]);
+    expect(applyMutatedRequestToList([a], stray, fixtureViewer())).toEqual([a]);
+  });
+
+  // FE-12
+  describe("the two-step ladder ([L2, L3]): the finding's exact scenario", () => {
+    it('the approver who just signed L2 no longer sees the row — status is still AWAITING_CODE_REVIEW, but they already signed and L3 is next', () => {
+      const viewer = fixtureViewer({ id: 'rizky', role: 'approver' });
+      const before = fixtureRequest({ id: 'req-1', approvals: [] });
+      const updated = fixtureRequest({
+        id: 'req-1',
+        status: 'AWAITING_CODE_REVIEW', // unchanged — 1 of 2 signed
+        approvals: [{ user: 'rizky', at: '2026-01-01T01:00:00.000Z' }],
+        nextApprovalStep: 'L3', // an approver's own L2 signature was recorded
+      });
+      // The OLD bare status check would have kept this row (still
+      // AWAITING_CODE_REVIEW) — the fix drops it, matching what a fresh
+      // listPendingApprovals() (server scope=pending) would return: rizky
+      // already signed, so canApprove(rizky, updated) is now false.
+      expect(applyMutatedRequestToList([before], updated, viewer)).toEqual([]);
+    });
+
+    it('a DIFFERENT approver (not lead) also loses the row once L3 is next — their role cannot sign L3', () => {
+      const viewer = fixtureViewer({ id: 'putra', role: 'approver' });
+      const before = fixtureRequest({ id: 'req-1', approvals: [] });
+      const updated = fixtureRequest({
+        id: 'req-1',
+        status: 'AWAITING_CODE_REVIEW',
+        approvals: [{ user: 'rizky', at: '2026-01-01T01:00:00.000Z' }],
+        nextApprovalStep: 'L3',
+      });
+      // putra never signed (canApprove would say yes), but L3 needs a lead —
+      // this is the "server's scope=pending excludes it" half of the finding,
+      // distinct from the self-already-signed half above.
+      expect(applyMutatedRequestToList([before], updated, viewer)).toEqual([]);
+    });
+
+    it('a LEAD keeps the row once L3 is next — their role can sign it', () => {
+      const viewer = fixtureViewer({ id: 'bos', role: 'lead' });
+      const before = fixtureRequest({ id: 'req-1', approvals: [] });
+      const updated = fixtureRequest({
+        id: 'req-1',
+        status: 'AWAITING_CODE_REVIEW',
+        approvals: [{ user: 'rizky', at: '2026-01-01T01:00:00.000Z' }],
+        nextApprovalStep: 'L3',
+      });
+      expect(applyMutatedRequestToList([before], updated, viewer)).toEqual([updated]);
+    });
+
+    it('nextApprovalStep === null (fully signed but status not yet flipped) drops the row for everyone', () => {
+      const viewer = fixtureViewer({ id: 'bos', role: 'lead' });
+      const before = fixtureRequest({ id: 'req-1', approvals: [] });
+      const updated = fixtureRequest({
+        id: 'req-1',
+        status: 'AWAITING_CODE_REVIEW',
+        approvals: [
+          { user: 'rizky', at: '2026-01-01T01:00:00.000Z' },
+          { user: 'bos', at: '2026-01-01T02:00:00.000Z' },
+        ],
+        nextApprovalStep: null,
+      });
+      expect(applyMutatedRequestToList([before], updated, viewer)).toEqual([]);
+    });
   });
 });
 
-describe('isRejectReasonValid — the >=10-char rule (0025 RX-3; was window.prompt\'s inline check)', () => {
+describe("isRejectReasonValid — the >=10-char rule (0025 RX-3; was window.prompt's inline check)", () => {
   it('false under 10 trimmed characters', () => {
     expect(isRejectReasonValid('too short')).toBe(false); // 9 chars
     expect(isRejectReasonValid('')).toBe(false);
@@ -138,7 +218,13 @@ describe('isRejectReasonValid — the >=10-char rule (0025 RX-3; was window.prom
 });
 
 describe('ApprovalsQueue source invariants (0025 RX-3 accept criteria, proven by scanning the component)', () => {
-  const SRC = join(dirname(fileURLToPath(import.meta.url)), '..', 'features', 'approvals', 'ApprovalsQueue.tsx');
+  const SRC = join(
+    dirname(fileURLToPath(import.meta.url)),
+    '..',
+    'features',
+    'approvals',
+    'ApprovalsQueue.tsx',
+  );
   const rawSource = readFileSync(SRC, 'utf8');
   // Strip comments before matching — this file's own doc comments legitimately
   // *talk about* load()/window.prompt (documenting what RX-3 replaced), which
@@ -167,10 +253,14 @@ describe('queueAgeLabel — the approvals-queue age chip (0034 §4.3 / papercut 
     expect(queueAgeLabel('2026-07-15T08:00:00Z', new Date('2026-07-15T12:00:00Z'))).toBe('today');
   });
   it('renders a singular day at exactly one calendar day', () => {
-    expect(queueAgeLabel('2026-07-14T12:00:00Z', new Date('2026-07-15T12:00:00Z'))).toBe('1 day old');
+    expect(queueAgeLabel('2026-07-14T12:00:00Z', new Date('2026-07-15T12:00:00Z'))).toBe(
+      '1 day old',
+    );
   });
   it('renders plural days for an older request', () => {
-    expect(queueAgeLabel('2026-07-10T12:00:00Z', new Date('2026-07-15T12:00:00Z'))).toBe('5 days old');
+    expect(queueAgeLabel('2026-07-10T12:00:00Z', new Date('2026-07-15T12:00:00Z'))).toBe(
+      '5 days old',
+    );
   });
   it('returns null (no chip) for a missing/invalid timestamp', () => {
     expect(queueAgeLabel(undefined)).toBeNull();

@@ -31,6 +31,10 @@ on:
       - 'ccp/app/src/lib/**'
       - 'ccp/app/src/data/manifests/**'
       - 'tools/catalogctl/**'
+      # CI-10 — this list omitted the workflow's OWN file, unlike ccp-app.yml /
+      # catalogctl.yml (and the pull_request list two lines up): a merge touching
+      # only this file ran the PR-side validation but no post-merge run on main.
+      - '.github/workflows/ccp-api.yml'
 
 permissions:
   contents: read
@@ -41,10 +45,10 @@ defaults:
 
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
@@ -73,10 +77,13 @@ jobs:
       # a self-hosted runner turns the highest-value proofs in the repo off, and every one
       # of them degrades to a SILENT SKIP, so the build stays green while proving less.
       # Naming them here is half the fix; CCP_REQUIRE_INTEGRATION below is the other half.
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: tools/catalogctl/go.mod
-      - uses: hashicorp/setup-terraform@v3
+          # CI-12 — see catalogctl.yml's identical comment: unset, the module cache
+          # looks for a repo-root go.sum that doesn't exist, and silently caches nothing.
+          cache-dependency-path: tools/catalogctl/go.sum
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_wrapper: false # the executor spawns `terraform` directly, not a wrapper script
       - name: Typecheck
@@ -86,6 +93,6 @@ jobs:
         # names what is missing (test/helpers/requireToolchain.ts). Unset locally, so a
         # developer without terraform still gets a clean skip — the guarantee is about CI,
         # where a skipped proof is indistinguishable from a passing one.
-        run: npm test
+        run: npm run test:coverage
         env:
           CCP_REQUIRE_INTEGRATION: '1'

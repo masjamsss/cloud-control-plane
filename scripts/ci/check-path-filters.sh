@@ -22,6 +22,16 @@
 # edges the finding names, each with the evidence that it is real. A vague check nobody
 # trusts gets deleted; a specific one that names the file and the alias gets fixed.
 #
+# CI-10 ADDS ONE GENERAL CHECK, on purpose, as the one exception to that rule: every
+# path-filtered workflow must include its OWN file in both its pull_request and push
+# lists, or a push-only edit to the workflow stops re-triggering it post-merge
+# (ccp-api.yml and ccp-smoke.yml both had exactly this — present on the pull_request
+# side, missing on push). This one earns the general form the edges above deliberately
+# avoid: it is a syntactic property of the trigger block itself, not a claim about what
+# imports what, so it needs no "is this edge still real" judgment call per workflow —
+# unlike edges 1-4, a NINTH filtered workflow is covered automatically, no new section
+# required here.
+#
 # Exit codes: 0 every dependency is covered · 1 a filter is missing one.
 # =============================================================================
 set -uo pipefail
@@ -101,6 +111,38 @@ if grep -q 'SYNC OBLIGATION' tools/catalogctl/internal/hclops/redact.go; then
          "redact.go embeds a copy of catalog/redaction-rules.json under a byte-identical sync obligation, and only its own drift test checks it"
   fi
 fi
+
+# --- self-inclusion: every path-filtered workflow must trigger on its own edits ---
+self_check_out="$(python3 - <<'PYEOF'
+import glob, yaml
+
+for path in sorted(glob.glob(".github/workflows/*.yml")):
+    doc = yaml.safe_load(open(path)) or {}
+    on = doc.get(True, doc.get("on")) or {}
+    pr = on.get("pull_request")
+    push = on.get("push")
+    pr_paths = pr.get("paths") if isinstance(pr, dict) else None
+    push_paths = push.get("paths") if isinstance(push, dict) else None
+    # Only a workflow that filters BOTH events by path is in scope — one with no
+    # filter (or only one side filtered) already triggers on everything, self
+    # included, so there is nothing to check.
+    if pr_paths is None or push_paths is None:
+        continue
+    missing = [ev for ev, paths in (("pull_request", pr_paths), ("push", push_paths)) if path not in paths]
+    if missing:
+        print(f"FAIL\t{path}\tmissing from {' and '.join(missing)} paths — an edit to this file alone would not re-trigger it there")
+    else:
+        print(f"OK\t{path}")
+PYEOF
+)"
+# fails is bumped by fail() itself (same shape as edges 1-4 above) — the python side
+# only reports, it does not count, so there is exactly one place that increments it.
+while IFS=$'\t' read -r kind a b; do
+  case "$kind" in
+    OK) pass "$a triggers on its own edits (both pull_request and push)" ;;
+    FAIL) fail "$a does not include itself in both path filters" "$b" ;;
+  esac
+done <<< "$self_check_out"
 
 echo
 if [ "$fails" -eq 0 ]; then echo "check-path-filters: every cross-component dependency is covered"; exit 0; fi

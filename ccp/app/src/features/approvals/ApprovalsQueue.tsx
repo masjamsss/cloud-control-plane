@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { JSX } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import type { ChangeRequest, Inventory, RequestStatus, ServiceManifest } from '@/types';
+import type { ChangeRequest, Inventory, RequestStatus, ServiceManifest, User } from '@/types';
+import { REQUEST_STATUSES } from '@/types';
 import { api } from '@/lib/api';
 import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
@@ -30,12 +31,14 @@ import { useFullBlockDiff } from '@/components/useFullBlockDiff';
 import { ChangeSetView } from '@/components/ChangeSetView';
 import { hasPlanContent, PlanSummaryBlock } from '@/features/requests/PlanSummaryPanel';
 import { RiskBadge } from '@/components/ui/RiskBadge';
+import { requestStatusLabel } from '@/lib/statusCopy';
 import { MacdTag } from '@/components/ui/MacdTag';
 import { AccessBadge } from '@/components/ui/AccessBadge';
 import { Button } from '@/components/ui/Button';
 import { ApprovalLadder } from '@/components/ui/ApprovalLadder';
 import { SearchBar } from '@/components/SearchBar';
 import { LoadError } from '@/components/LoadError';
+import { DEFAULT_WINDOW_SIZE, windowSlice } from '@/lib/windowing';
 import { describeApproveError } from './approveError';
 import { approveRequestVia, rejectRequestVia } from './approvalsFlow';
 import './approvals.css';
@@ -78,42 +81,22 @@ function rejectTriggerId(requestId: string): string {
   return `apv-reject-trigger-${requestId}`;
 }
 
-/** Same fixed option set as MyRequests (Task 3) — kept local per this file's
- * scope rather than shared, matching the plan's per-screen file list.
- * Includes APPROVED_COOLING/CANCELLED for vocabulary parity with MyRequests
- * even though `scope=pending` (this screen's data source) structurally never
- * returns either — routes/requests.ts filters to OPEN_STATUSES
- * (AWAITING_CODE_REVIEW/NEEDS_ENGINEER) only, same as every other status
- * already listed here that this queue can never actually show (APPLIED,
- * REJECTED, WITHDRAWN, …). */
-const ALL_STATUSES: RequestStatus[] = [
-  'DRAFT',
-  'SUBMITTED',
-  'GENERATING',
-  'CHECKS_RUNNING',
-  'PLAN_READY',
-  'AWAITING_CODE_REVIEW',
-  'CHANGES_REQUESTED',
-  'CODE_APPROVED',
-  'MERGED',
-  'AWAITING_DEPLOY_APPROVAL',
-  'APPLYING',
-  'APPLIED',
-  'NOOP',
-  'APPLY_FAILED',
-  'DIGEST_MISMATCH',
-  'REJECTED',
-  'NEEDS_ENGINEER',
-  'WITHDRAWN',
-  'APPROVED_COOLING',
-  'CANCELLED',
-];
+/**
+ * FE-11 — same fixed option set as MyRequests (Task 3), same fix: DERIVED from the closed
+ * vocabulary rather than hand-typed, which is what let it silently drift out of sync with
+ * MyRequests's own copy in the first place (this one was also missing `WINDOW_EXPIRED`,
+ * `HALTED_DRIFT` and `HALTED_APPLY_FAILED`). Kept local per this file's scope rather than
+ * shared, matching the plan's per-screen file list — but the SOURCE is shared
+ * (`REQUEST_STATUSES`), so the two lists cannot disagree with each other again even
+ * though the constant itself is still declared twice.
+ *
+ * Includes every status for vocabulary parity with MyRequests even though `scope=pending`
+ * (this screen's data source) structurally never returns most of them —
+ * routes/requests.ts filters to OPEN_STATUSES (AWAITING_CODE_REVIEW/NEEDS_ENGINEER) only,
+ * same as every other status already listed here that this queue can never actually show
+ * (APPLIED, REJECTED, WITHDRAWN, …). */
+const ALL_STATUSES: readonly RequestStatus[] = REQUEST_STATUSES;
 const STATUS_SET = new Set<string>(ALL_STATUSES);
-
-function humanizeStatus(status: string): string {
-  const lower = status.toLowerCase().replace(/_/g, ' ');
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
-}
 
 export interface RequestFilters {
   status: string;
@@ -139,6 +122,25 @@ function withFilters(current: URLSearchParams, patch: Partial<RequestFilters>): 
 }
 
 /**
+ * The same `scope=pending` predicate `routes/requests.ts` applies server-side
+ * (open status ∧ `canApprove` ∧ the viewer's role can sign the request's
+ * NEXT ladder step) — re-expressed client-side over the fields the read
+ * projection already carries, so `applyMutatedRequestToList` below can decide
+ * "would a fresh `listPendingApprovals()` still return this row" without a
+ * follow-up read. `nextApprovalStep === undefined` (mock-mode, which never
+ * sets the ladder fields) falls back to the base `canApprove` rule alone —
+ * the exact same fallback `ReviewCard`'s own `mayApprove` already uses for
+ * the Approve button.
+ */
+function pendingForViewer(x: ChangeRequest, viewer: User): boolean {
+  if (x.status !== 'AWAITING_CODE_REVIEW' && x.status !== 'NEEDS_ENGINEER') return false;
+  if (!canApprove(viewer, x)) return false;
+  const next = x.nextApprovalStep;
+  if (next === undefined) return true;
+  return next !== null && canSignApprovalStep(next, viewer.role);
+}
+
+/**
  * Patch (or drop) one request from a mutation's returned result — pure, so
  * this is unit-testable without mounting the queue. Replaces
  * `load()`'s post-mutation triple refetch: the mock's
@@ -146,16 +148,21 @@ function withFilters(current: URLSearchParams, patch: Partial<RequestFilters>): 
  * `ChangeRequest` (approvals, the tighten-only re-gated `approvalsRequired`
  * and the post-mutation `status`), so no follow-up read is
  * needed to know whether the request should stay in this "pending review"
- * queue or drop out of it. A request stays only while still
- * AWAITING_CODE_REVIEW — approve pushing it past quorum (APPLIED /
- * AWAITING_DEPLOY_APPROVAL) or a reject (always REJECTED) both remove it,
- * matching what a fresh `listPendingApprovals()` would have returned anyway.
+ * queue or drop out of it.
+ *
+ * FE-12 — a bare `status === 'AWAITING_CODE_REVIEW'` check kept a row past a
+ * PARTIAL approval on a two-step ladder ([L2, L3]): the viewer's own
+ * signature leaves the status unchanged, but the server's `scope=pending`
+ * excludes it for THIS viewer (already signed, or the next step — L3 —
+ * isn't theirs to sign). {@link pendingForViewer} is that exact predicate,
+ * so a patch-in-place and a fresh refetch can never disagree again.
  */
 export function applyMutatedRequestToList(
   requests: ChangeRequest[],
   updated: ChangeRequest,
+  viewer: User,
 ): ChangeRequest[] {
-  return updated.status === 'AWAITING_CODE_REVIEW'
+  return pendingForViewer(updated, viewer)
     ? requests.map((r) => (r.id === updated.id ? updated : r))
     : requests.filter((r) => r.id !== updated.id);
 }
@@ -619,7 +626,9 @@ export function ApprovalsQueue(): JSX.Element {
   // the estate, so the ONE targeted refetch the plan allowed for isn't
   // needed either).
   const applyMutatedRequest = useCallback((updated: ChangeRequest): void => {
-    setRequests((prev) => applyMutatedRequestToList(prev, updated));
+    // Actor comes from the session, same as every mutation call in this
+    // file — never a prop, so it can't drift from who actually mutated it.
+    setRequests((prev) => applyMutatedRequestToList(prev, updated, getCurrentUser()));
   }, []);
 
   const approve = useCallback(
@@ -715,6 +724,15 @@ export function ApprovalsQueue(): JSX.Element {
 
   const isFiltered = filters.status !== 'all' || filters.q.trim() !== '';
 
+  // PERF-15: render at most DEFAULT_WINDOW_SIZE review cards at a time —
+  // ReviewCard is the heaviest per-item DOM cost in the app (a full diff/plan
+  // panel per card), so this is the highest-value screen of the three windowed
+  // here. Resets to the default whenever the filters change, same rule as
+  // MyRequests' per-lane counters.
+  const [visibleCount, setVisibleCount] = useState(DEFAULT_WINDOW_SIZE);
+  useEffect(() => setVisibleCount(DEFAULT_WINDOW_SIZE), [filters]);
+  const { visible, hiddenCount } = windowSlice(filtered, visibleCount);
+
   return (
     <div className="apv">
       {/* S-09: visually-hidden polite live region — announces a successful
@@ -766,7 +784,7 @@ export function ApprovalsQueue(): JSX.Element {
             <option value="all">All statuses</option>
             {ALL_STATUSES.map((s) => (
               <option key={s} value={s}>
-                {humanizeStatus(s)}
+                {requestStatusLabel(s)}
               </option>
             ))}
           </select>
@@ -803,25 +821,36 @@ export function ApprovalsQueue(): JSX.Element {
         // isPending: dimmed for the brief low-priority commit after a
         // mutation patches the list — same affordance/values as
         // CommandPalette's cmdp__list--stale.
-        <div
-          className={isPending ? 'apv__list apv__list--pending' : 'apv__list'}
-          aria-busy={isPending}
-        >
-          {filtered.map((r) => (
-            <ReviewCard
-              key={r.id}
-              request={r}
-              manifests={manifests}
-              inventory={inventory}
-              onApprove={approve}
-              rejecting={rejectingId === r.id}
-              onStartReject={startReject}
-              onCancelReject={cancelReject}
-              onConfirmReject={confirmReject}
-              busy={busyId === r.id}
-            />
-          ))}
-        </div>
+        <>
+          <div
+            className={isPending ? 'apv__list apv__list--pending' : 'apv__list'}
+            aria-busy={isPending}
+          >
+            {visible.map((r) => (
+              <ReviewCard
+                key={r.id}
+                request={r}
+                manifests={manifests}
+                inventory={inventory}
+                onApprove={approve}
+                rejecting={rejectingId === r.id}
+                onStartReject={startReject}
+                onCancelReject={cancelReject}
+                onConfirmReject={confirmReject}
+                busy={busyId === r.id}
+              />
+            ))}
+          </div>
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              className="apv__show-more"
+              onClick={() => setVisibleCount((n) => n + DEFAULT_WINDOW_SIZE)}
+            >
+              Show {Math.min(hiddenCount, DEFAULT_WINDOW_SIZE)} more ({hiddenCount} remaining)
+            </button>
+          )}
+        </>
       )}
     </div>
   );

@@ -105,6 +105,15 @@ fi
 [ -n "$OUT" ]          || { echo "REFUSE BAD_ARG: --out is required" >&2; exit 2; }
 is_guid "$SUBSCRIPTION" || { echo "REFUSE BAD_ARG: --subscription must be an 8-4-4-4-12 GUID" >&2; exit 2; }
 is_guid "$TENANT"       || { echo "REFUSE BAD_ARG: --tenant must be an 8-4-4-4-12 GUID" >&2; exit 2; }
+# IMP-13(b) — $LOCATION is interpolated unvalidated into capture-meta.json's
+# JSON below; a stray '"' (or anything else JSON needs escaped) would corrupt
+# that file, discovered only downstream as a confusing BAD_CAPTURE from
+# `build`. Every real ARM location name is lowercase letters/digits only
+# (LOCATION's own default, "unknown", and this repo's fixtures — "eastus",
+# "southeastasia" — match; hyphens allowed too, same charset as the AWS kit).
+case "$LOCATION" in
+  *[!a-z0-9-]*) echo "REFUSE BAD_ARG: --location must contain only lowercase letters, digits, and hyphens (got '$LOCATION')" >&2; exit 2 ;;
+esac
 
 command -v "$PYTHON" >/dev/null 2>&1 || { echo "REFUSE MISSING_DEP: $PYTHON not found" >&2; exit 2; }
 
@@ -140,12 +149,22 @@ if [ "$ACTIVE_TENANT" != "$TENANT" ]; then
   exit 2
 fi
 
-mkdir -p "$OUT"
+mkdir -p "$OUT" || { echo "REFUSE IO_ERROR: mkdir -p $OUT failed" >&2; exit 2; }
 FAILED=""
-printf '%s\n' "$PLAN" > "$OUT/.capture-plan.tsv"
+# IMP-13(a) — a failed write here used to surface later as a confusing
+# BAD_CAPTURE/SUBSCRIPTION_MISMATCH out of `discover.py build`, not as itself.
+printf '%s\n' "$PLAN" > "$OUT/.capture-plan.tsv" \
+  || { echo "REFUSE IO_ERROR: failed writing $OUT/.capture-plan.tsv" >&2; exit 2; }
 while IFS="$(printf '\t')" read -r capture kql; do
   [ -n "$capture" ] || continue
   echo "capture: $capture"
+  # IMP-5 — nothing removed a PRIOR run's pages before capturing (cleanup only
+  # happened on capture FAILURE, below). A re-run that produces fewer pages
+  # than last time (the estate shrank across a 1000-row page boundary, or the
+  # documented PARTIAL_CAPTURE recovery path: "fix RBAC/scope and re-run")
+  # left the stale higher-numbered pages in place, and merge_pages (discover.py)
+  # merged them as if current — deleted resources reappearing as live.
+  rm -f "$OUT/$capture".page*.json "$OUT/$capture.json"
   page=0
   skip=""
   ok=1
@@ -164,7 +183,19 @@ while IFS="$(printf '\t')" read -r capture kql; do
       echo "  FAILED (stderr kept at $OUT/$capture.stderr)" >&2
       break
     fi
-    skip="$("$PYTHON" "$KIT_DIR/discover.py" next-token --page "$pagefile" 2>/dev/null)"
+    # IMP-13(d) — next-token's REFUSE (a corrupt/unreadable page) used to be
+    # swallowed by `2>/dev/null` with its exit code never checked; an empty
+    # $skip from a refusal looked identical to "last page, stop paging" —
+    # paging ended early, silently, with the stderr evidence discarded. Now
+    # a nonzero exit is treated as this capture's own failure, same as an
+    # `az graph query` failure above, stderr kept at the same place.
+    skip="$("$PYTHON" "$KIT_DIR/discover.py" next-token --page "$pagefile" 2>"$OUT/$capture.stderr")" || ok=0
+    if [ "$ok" -eq 0 ]; then
+      FAILED="$FAILED $capture"
+      rm -f "$OUT/$capture".page*.json
+      echo "  FAILED: next-token could not read $pagefile (stderr kept at $OUT/$capture.stderr)" >&2
+      break
+    fi
     [ -n "$skip" ] || break
     page=$((page + 1))
   done
@@ -173,7 +204,9 @@ done < "$OUT/.capture-plan.tsv"
 rm -f "$OUT/.capture-plan.tsv"
 
 CAPTURED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-cat > "$OUT/capture-meta.json" <<EOF
+# IMP-13(a) — same as the plan-write above: never silently proceed with no
+# (or a truncated) capture-meta.json.
+cat > "$OUT/capture-meta.json" <<EOF || { echo "REFUSE IO_ERROR: failed writing $OUT/capture-meta.json" >&2; exit 2; }
 {
   "subscription": "$SUBSCRIPTION",
   "tenant": "$TENANT",

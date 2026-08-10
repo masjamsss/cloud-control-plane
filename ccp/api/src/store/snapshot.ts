@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { open as fsOpen, mkdir, rename } from 'node:fs/promises';
+import { open as fsOpen, mkdir, rename, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Item } from './configStore';
 import { verifyChain, type ChainEntry, type VerifyResult } from '../domain/audit';
@@ -91,16 +91,50 @@ export function summarizeSnapshot(items: Item[]): SnapshotSummary {
  * Crash-safe write: temp file + fsync + atomic rename (same discipline as
  * FileStore.writeAtomic, kept standalone so the scripts never touch the durable
  * store's code path). A reader mid-write sees the OLD or the NEW file, never a torn one.
+ *
+ * DATA-6/DATA-13 — this used to skip both of FileStore.writeAtomic's ERR-10
+ * hardening steps: a failing `writeFile`/`sync`/`rename` leaked the temp file (no
+ * cleanup path), and even a successful rename was not durable against power loss
+ * (no directory fsync — a POSIX rename is a directory operation, and without
+ * flushing the directory's own metadata a crash shortly after could resurrect the
+ * OLD file on recovery). Both fixed here, matching FileStore.writeAtomic exactly
+ * (duplicated, not imported, per this function's own "kept standalone" doc above).
  */
 export async function writeFileAtomic(file: string, data: string): Promise<void> {
-  await mkdir(dirname(file), { recursive: true });
+  const dir = dirname(file);
+  await mkdir(dir, { recursive: true });
   const tmp = `${file}.tmp-${process.pid}-${randomBytes(6).toString('hex')}`;
-  const fh = await fsOpen(tmp, 'w');
   try {
-    await fh.writeFile(data, 'utf8');
-    await fh.sync();
-  } finally {
-    await fh.close();
+    const fh = await fsOpen(tmp, 'w');
+    try {
+      await fh.writeFile(data, 'utf8');
+      await fh.sync();
+    } finally {
+      await fh.close();
+    }
+    await rename(tmp, file);
+  } catch (e) {
+    await rm(tmp, { force: true }).catch(() => undefined);
+    throw e;
   }
-  await rename(tmp, file);
+  await syncDir(dir);
+}
+
+/**
+ * fsync a directory so a rename into it survives power loss. Best-effort by design: some
+ * filesystems and platforms refuse to open a directory for sync, and failing a write that
+ * has already landed — over a durability nicety — would be a worse bug than the narrow
+ * window this closes. Process-kill safety never depended on it; the rename is atomic.
+ * (Same helper as FileStore.writeAtomic's — duplicated, see the doc comment above.)
+ */
+async function syncDir(dir: string): Promise<void> {
+  let dh;
+  try {
+    dh = await fsOpen(dir, 'r');
+    await dh.sync();
+  } catch {
+    // see above — deliberately swallowed
+  } finally {
+    await dh?.close().catch(() => undefined);
+  }
 }

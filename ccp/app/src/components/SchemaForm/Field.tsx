@@ -14,6 +14,11 @@ export interface FieldProps {
   /** Pre-resolved options for allowlist/inventory sources (falls back to resolveEnum). */
   options?: string[];
   inventory: Inventory;
+  /** UI-5 — set by RepeatedBlockField to `<param.name>.<index>` (composed at
+   * each nesting level) so every id/name this field derives is unique per
+   * instance. Undefined for a flat (non-repeated) field, which keeps the
+   * plain `field-<name>` id every existing test/ErrorSummary anchor expects. */
+  idPrefix?: string;
   onChange: (name: string, value: unknown) => void;
   onBlur: (name: string) => void;
 }
@@ -37,10 +42,11 @@ export function Field({
   touched,
   options,
   inventory,
+  idPrefix,
   onChange,
   onBlur,
 }: FieldProps): JSX.Element {
-  const id = `field-${param.name}`;
+  const id = idPrefix ? `field-${idPrefix}.${param.name}` : `field-${param.name}`;
   const labelId = `${id}-label`;
   const helpId = `${id}-help`;
   const hintId = `${id}-hint`;
@@ -102,8 +108,10 @@ export function Field({
   } else if (param.source === 'allowlist' && isRadioGroup) {
     control = (
       <div
+        id={id}
         className="sf-segmented"
         role="radiogroup"
+        tabIndex={-1}
         aria-labelledby={labelId}
         aria-describedby={describedBy}
         aria-invalid={showError}

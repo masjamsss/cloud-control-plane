@@ -248,6 +248,18 @@ export async function runBundle(
 
 const tail = (s: string, n = 400): string => (s.length > n ? `…${s.slice(-n)}` : s);
 
+/**
+ * API-16 / ERR-13 — a real `git rev-parse HEAD` output, not an error string that
+ * happened to fit in the same `{status,out}` shape. `git`'s own stderr on a failure
+ * ("fatal: not a git repository", "fatal: ambiguous argument 'HEAD'"…) is plain text
+ * that could — in principle, on a sufficiently pathological failure — pass through
+ * uninspected as if it were a commit id. Every `rev-parse HEAD` result in this file is
+ * checked against this before being trusted as a sha, whether it becomes `baseSha` (fed
+ * back into `commit`'s CAS push target) or the `sha` recorded onto the request row and
+ * the audit trail (routes/requests.ts:1203-1206) as "the landed commit".
+ */
+const SHA_RE = /^[0-9a-f]{7,64}$/;
+
 async function sh(
   cmd: string,
   cwd: string,
@@ -290,8 +302,18 @@ export function realSteps(
         return { error: `clone failed: ${clone.out}` };
       }
       const head = await git(['rev-parse', 'HEAD'], dir);
-      if (head.status !== 0) return { error: `rev-parse failed: ${head.out}` };
-      return { dir, baseSha: head.out.trim() };
+      const baseSha = head.out.trim();
+      // API-16 / ERR-13 — the clone-failure arm above always cleaned up; this one
+      // did not, leaking a full clone under tmpdir() every time a fresh checkout's
+      // HEAD somehow failed to resolve. There is no later cleanup to fall back on:
+      // runBundle only reaches `steps.cleanup` once `prepare` has already
+      // SUCCEEDED (it returns early on `'error' in prep`), so this was the one
+      // failure arm nothing else was ever going to remove.
+      if (head.status !== 0 || !SHA_RE.test(baseSha)) {
+        rmSync(dir, { recursive: true, force: true });
+        return { error: `rev-parse failed: ${head.out}` };
+      }
+      return { dir, baseSha };
     },
     async gate(dir, requestJsonPath) {
       const r = await sh(cfg.gateCmd, dir, { BUNDLE_CHECKOUT: dir, BUNDLE_REQUEST: requestJsonPath });
@@ -299,10 +321,25 @@ export function realSteps(
     },
     async commit(dir, baseSha, message) {
       // The request-evidence file rides the same commit as the gated edit.
-      await git(['add', '-A'], dir);
+      // API-16 — `add`'s exit status used to be discarded outright: a failure
+      // here (a locked index, a pathological path) previously fell straight
+      // through to `commit`, which can still succeed against whatever the index
+      // already held — landing a commit that silently misses the gate's own
+      // edits, the opposite of "what was reviewed is exactly what runs".
+      const add = await git(['add', '-A'], dir);
+      if (add.status !== 0) return { ok: false, detail: `git add failed: ${add.out}` };
       const c = await git(['-c', 'user.name=ccp-bundle', '-c', 'user.email=ccp-bundle@localhost', 'commit', '-m', message], dir);
       if (c.status !== 0) return { ok: false, detail: `commit failed (gate left no change?): ${c.out}` };
-      const sha = (await git(['rev-parse', 'HEAD'], dir)).out.trim();
+      const rev = await git(['rev-parse', 'HEAD'], dir);
+      const sha = rev.out.trim();
+      // API-16 — verify the shape before trusting it as a sha: this is what
+      // lands on the request row and the audit trail as "the landed commit"
+      // (routes/requests.ts:1203-1206). A pathological rev-parse failure right
+      // after a successful commit is exotic, but nothing downstream re-checks
+      // this string — it is recorded and shown to reviewers as-is.
+      if (rev.status !== 0 || !SHA_RE.test(sha)) {
+        return { ok: false, detail: `commit landed but HEAD did not resolve to a real sha: ${rev.out}` };
+      }
       // CAS: a plain ff push from a clone of baseSha — the remote rejects it if the
       // branch moved (someone landed in the middle). Never --force anything.
       const p = await git(['push', 'origin', `HEAD:refs/heads/${cfg.branch}`], dir);

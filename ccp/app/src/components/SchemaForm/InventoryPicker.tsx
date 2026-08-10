@@ -80,7 +80,10 @@ export function InventoryPicker({
   const listId = `${id}-listbox`;
   const maxItems = param.bounds?.maxItems;
 
-  const options = useMemo<PickerOption[]>(() => buildPickerOptions(param, inventory), [param, inventory]);
+  const options = useMemo<PickerOption[]>(
+    () => buildPickerOptions(param, inventory),
+    [param, inventory],
+  );
 
   const chosen = useMemo<string[]>(() => (multiple ? asListValue(value) : []), [multiple, value]);
   const selected = multiple ? undefined : options.find((o) => o.address === String(value ?? ''));
@@ -127,6 +130,20 @@ export function InventoryPicker({
       param.name,
       chosen.filter((v) => v !== address),
     );
+  };
+
+  // UI-14 — once a single-select value was committed, nothing offered "no
+  // selection" for an OPTIONAL param: typing reopened the query, but
+  // Escape/blur always restored the committed value. Shown only for the
+  // closed, committed view of a non-required param — a required param has
+  // no valid empty state to clear TO, so it gets no clear affordance.
+  const clearable = !multiple && !open && selected !== undefined && !param.required;
+
+  const clearSelection = (): void => {
+    onChange(param.name, '');
+    setQuery('');
+    onBlur(param.name);
+    inputRef.current?.focus();
   };
 
   const openMenu = (): void => {
@@ -218,16 +235,24 @@ export function InventoryPicker({
         id={id}
         type="text"
         role="combobox"
-        className="sf-input sf-combo__input"
+        className={'sf-input sf-combo__input' + (clearable ? ' sf-combo__input--clearable' : '')}
         autoComplete="off"
         aria-expanded={open}
-        aria-controls={listId}
+        aria-controls={open ? listId : undefined}
         aria-haspopup="listbox"
         aria-activedescendant={activeId}
         aria-invalid={invalid}
         aria-describedby={describedBy}
         aria-labelledby={labelId}
-        placeholder={multiple ? (atMax ? 'Selection is full' : 'Search resources…') : selected ? undefined : 'Search resources…'}
+        placeholder={
+          multiple
+            ? atMax
+              ? 'Selection is full'
+              : 'Search resources…'
+            : selected
+              ? undefined
+              : 'Search resources…'
+        }
         value={displayValue}
         onChange={(e) => {
           setQuery(e.target.value);
@@ -243,6 +268,17 @@ export function InventoryPicker({
           onBlur(param.name);
         }}
       />
+      {clearable && (
+        <button
+          type="button"
+          className="sf-combo__clear"
+          aria-label="Clear selection"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={clearSelection}
+        >
+          ×
+        </button>
+      )}
       {open && (
         // A plain div, not a literal <ul>/<li> (role="listbox"/"option" carry
         // the semantics assistive tech uses) — windowing means only a slice
@@ -262,7 +298,9 @@ export function InventoryPicker({
               No eligible {resourceType ?? 'resources'} in this account
             </div>
           ) : (
-            <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
+            <div
+              style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}
+            >
               {virtualizer.getVirtualItems().map((vi) => {
                 const opt = filtered[vi.index]!;
                 const i = vi.index;
@@ -307,7 +345,9 @@ export function InventoryPicker({
                       )}
                       <span className="sf-combo__name">{opt.name}</span>
                       <span className="sf-combo__addr">{opt.address}</span>
-                      {opt.current !== null && <span className="sf-combo__current">{opt.current}</span>}
+                      {opt.current !== null && (
+                        <span className="sf-combo__current">{opt.current}</span>
+                      )}
                     </div>
                   </div>
                 );

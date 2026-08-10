@@ -55,8 +55,23 @@ APP_PORT="$(grep -E '^APP_PORT=' "$ENVF" 2>/dev/null | tail -1 | cut -d= -f2)"; 
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   UP="$(cd "$CCP_DIR" && docker compose --profile runner --profile toolbox ps --format '{{.Service}} {{.Status}}' 2>/dev/null)"
   if [ -n "$UP" ]; then
-    echo "$UP" | while read -r line; do case "$line" in *Up*) ok "container: $line";; *) echo "${R}✗${N} container: $line";; esac; done
+    # OPS-13 — Docker reports an unhealthy container as "Up X minutes
+    # (unhealthy)", which still matches a bare `*Up*)` pattern; the
+    # unhealthy/Restarting cases must be checked FIRST or they green-light.
+    echo "$UP" | while read -r line; do
+      case "$line" in
+        *'(unhealthy)'*|*Restarting*) echo "${R}✗${N} container: $line" ;;
+        *Up*) ok "container: $line" ;;
+        *) echo "${R}✗${N} container: $line" ;;
+      esac
+    done
+    # The while loop above runs in a pipe subshell — FAIL=1 set inside it
+    # would not survive back to this shell, so it's set here instead, same
+    # as before. Both checks are needed: a status with no "Up" at all (e.g.
+    # "Exited (1) …") trips the first; "Up … (unhealthy)"/"Restarting …"
+    # (which DO contain "Up") need the second.
     echo "$UP" | grep -qv Up && FAIL=1
+    echo "$UP" | grep -Eq '\(unhealthy\)|Restarting' && FAIL=1
   else warn "no compose services found in $CCP_DIR — not a docker deploy, or different project dir"; fi
 
   # runner (opt-in profile: runner) — never a FAIL just for being off.
@@ -202,6 +217,33 @@ done
 [ -z "${LAST:-}" ] && warn "no self-update backups found — fine if you've never run self-update.sh"
 HOLD_HIT="$(ls /data/ccp/update/hold /var/lib/ccp-update/hold "$HOME/.ccp-update/hold" 2>/dev/null | head -1)"
 [ -n "$HOLD_HIT" ] && warn "self-update HOLD file present ($HOLD_HIT) — auto-updates are paused" || ok "no update hold"
+
+# ── GitHub App private key (OPS-15, opt-in — private-repo scanning) ──────────
+# CCP_GITHUB_APP_KEY_FILE is a CONTAINER path (readFileSync'd inside the api,
+# see forgeCredentials.ts) — it always resolves under the compose bind's
+# mountpoint (/run/secrets/forge), so the HOST file setup.sh/dockerd actually
+# manages is the same basename under CCP_GITHUB_APP_KEY_HOST_DIR (default
+# /data/ccp/forge). A configured-but-unreadable key fails per scan JOB with an
+# opaque credential error — this is the one place that surfaces it up front.
+KEY_FILE_CFG="$(grep -E '^CCP_GITHUB_APP_KEY_FILE=' "$ENVF" 2>/dev/null | tail -1 | cut -d= -f2-)"
+if [ -n "$KEY_FILE_CFG" ]; then
+  HOST_DIR_CFG="$(grep -E '^CCP_GITHUB_APP_KEY_HOST_DIR=' "$ENVF" 2>/dev/null | tail -1 | cut -d= -f2-)"
+  HOST_DIR_CFG="${HOST_DIR_CFG:-/data/ccp/forge}"
+  HOST_KEY_PATH="$HOST_DIR_CFG/$(basename "$KEY_FILE_CFG")"
+  if [ ! -f "$HOST_KEY_PATH" ]; then
+    bad "CCP_GITHUB_APP_KEY_FILE is set ($KEY_FILE_CFG) but $HOST_KEY_PATH does not exist on the host — private-repo scanning will fail per-job (docker-compose.yml's forge mount)"
+  else
+    KEY_UID="$(stat -c %u "$HOST_KEY_PATH" 2>/dev/null || stat -f %u "$HOST_KEY_PATH" 2>/dev/null)"
+    KEY_PERM="$(stat -c %a "$HOST_KEY_PATH" 2>/dev/null || stat -f %Lp "$HOST_KEY_PATH" 2>/dev/null)"
+    WORLD_READABLE=0
+    case "$KEY_PERM" in *4|*5|*6|*7) WORLD_READABLE=1 ;; esac
+    if [ "$KEY_UID" = "1000" ] || [ "$WORLD_READABLE" = "1" ]; then
+      ok "GitHub App key file readable by uid 1000 ($HOST_KEY_PATH, owner ${KEY_UID:-?} mode ${KEY_PERM:-?})"
+    else
+      bad "GitHub App key file $HOST_KEY_PATH is owned by uid ${KEY_UID:-?} mode ${KEY_PERM:-?} — not readable by uid 1000 (the api container's user); chown it to 1000, or chmod it world-readable"
+    fi
+  fi
+fi
 
 echo
 [ "$FAIL" -eq 0 ] && { printf '%s✓ doctor: no failures%s\n' "$G" "$N"; exit 0; } \

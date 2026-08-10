@@ -348,3 +348,40 @@ func TestRunExitCodes(t *testing.T) {
 		}
 	})
 }
+
+// CTL-7 — inventoryAddr must skip role:"reference" params exactly like
+// edit.targetAddress / prprep.inventoryAddr do: a reference param is also
+// source:"inventory" but names a DIFFERENT resource to read a value from,
+// never the block the op targets.
+func TestInventoryAddrSkipsReferenceRole(t *testing.T) {
+	refParam := manifests.Param{Name: "key_pair", Source: "inventory", Role: "reference"}
+	targetParam := manifests.Param{Name: "iam_instance_profile", Source: "inventory"}
+	op := manifests.Op{ID: "ec2-provision-instance", Params: []manifests.Param{refParam, targetParam}}
+	params := map[string]any{
+		"key_pair":             "aws_key_pair.deploy",
+		"iam_instance_profile": "aws_iam_instance_profile.web",
+	}
+	got := inventoryAddr(op, params)
+	if got != "aws_iam_instance_profile.web" {
+		t.Fatalf("inventoryAddr = %q, want the non-reference target (aws_iam_instance_profile.web), not the reference param that happens to come first", got)
+	}
+}
+
+// The ordinary case (a single, non-reference inventory param) is unaffected.
+func TestInventoryAddrOrdinaryCase(t *testing.T) {
+	op := manifests.Op{ID: "ec2-resize", Params: []manifests.Param{invParam("volume")}}
+	got := inventoryAddr(op, map[string]any{"volume": "aws_ebs_volume.data"})
+	if got != "aws_ebs_volume.data" {
+		t.Fatalf("inventoryAddr = %q, want aws_ebs_volume.data", got)
+	}
+}
+
+// No inventory param at all (or none present in params) — empty string, not
+// a panic (defensive: default in checkFor already falls back to this).
+func TestInventoryAddrNoInventoryParam(t *testing.T) {
+	op := manifests.Op{ID: "no-inventory-op", Params: []manifests.Param{growParam("size")}}
+	got := inventoryAddr(op, map[string]any{"size": 5})
+	if got != "" {
+		t.Fatalf("inventoryAddr = %q, want empty string", got)
+	}
+}

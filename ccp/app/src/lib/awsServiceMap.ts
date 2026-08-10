@@ -13,7 +13,7 @@
 // NOTE (lane-aws-compute, AWS Compute & Containers curated forms): the `drs`
 // entry was added BY HAND, matching the shape gen-aws-service-tiles.mjs would
 // emit — the script's own `src/data/provision-catalog.json` input is currently
-// retired (see fullCoverage.test.ts), so it cannot be re-run without first
+// retired (see provisionTileCompleteness.test.ts), so it cannot be re-run without first
 // restoring that input. Regenerating later should reconcile to the same entry
 // (aws_drs's only op-target type, classified via scripts/lib/awsServices.mjs's
 // `aws_drs` taxonomy rule, added alongside the sibling `aws_mgn` rule).

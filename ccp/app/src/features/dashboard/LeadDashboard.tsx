@@ -14,6 +14,7 @@ import { RiskBadge } from '@/components/ui/RiskBadge';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { DriftPanel } from '@/features/drift/DriftPanel';
 import { LoadError } from '@/components/LoadError';
+import { DEFAULT_WINDOW_SIZE, windowSlice } from '@/lib/windowing';
 import './dashboard.css';
 
 function userName(id: string): string {
@@ -151,6 +152,17 @@ export function LeadDashboard(): JSX.Element {
   }, [rows]);
   const maxRisk = Math.max(1, byRisk.LOW, byRisk.MEDIUM, byRisk.HIGH);
   const maxTeam = Math.max(1, ...byTeam.map(([, n]) => n));
+
+  // PERF-15: the all-teams, all-time table renders at most DEFAULT_WINDOW_SIZE
+  // rows at a time — every prior request, across every team, forever, with no
+  // cap otherwise. Resets to the default whenever team/status change, same
+  // rule as MyRequests/ApprovalsQueue. `exportCsv` above is deliberately
+  // unaffected — it writes ALL of `rows`, not just the windowed slice, since a
+  // CSV export with a silent row cap would be a much worse surprise than a
+  // "Show more" button.
+  const [visibleCount, setVisibleCount] = useState(DEFAULT_WINDOW_SIZE);
+  useEffect(() => setVisibleCount(DEFAULT_WINDOW_SIZE), [team, status]);
+  const { visible: visibleRows, hiddenCount } = windowSlice(rows, visibleCount);
 
   const exportCsv = (): void => {
     const cell = (v: unknown): string => {
@@ -329,7 +341,7 @@ export function LeadDashboard(): JSX.Element {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((r) => {
+                  visibleRows.map((r) => {
                     const op = getOperation(r.operationId, manifests);
                     const meta = getServiceMeta(r.service);
                     const title = op?.title ?? r.operationId;
@@ -373,6 +385,19 @@ export function LeadDashboard(): JSX.Element {
                       </tr>
                     );
                   })
+                )}
+                {hiddenCount > 0 && (
+                  <tr>
+                    <td colSpan={9} className="dash-table__more">
+                      <button
+                        type="button"
+                        className="dash-table__more-btn"
+                        onClick={() => setVisibleCount((n) => n + DEFAULT_WINDOW_SIZE)}
+                      >
+                        Show {Math.min(hiddenCount, DEFAULT_WINDOW_SIZE)} more ({hiddenCount} remaining)
+                      </button>
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>

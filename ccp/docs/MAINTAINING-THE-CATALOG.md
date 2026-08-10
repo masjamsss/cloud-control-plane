@@ -34,8 +34,8 @@ Every catalog change must keep ALL of these true. Each is machine-checked — ne
 | Invariant | Enforced by |
 |---|---|
 | Every manifest parses; op ids globally unique; one service slug per file | `src/test/manifests.test.ts` |
-| Every manifest's `service` has a `serviceMeta` entry (display/category/icon) | `src/test/coverage.test.ts` |
-| Every manifest's `service` is owned by a team (`project.json` teams) | `src/test/coverage.test.ts` |
+| Every manifest's `service` has a `serviceMeta` entry (display/category/icon) | `src/test/catalogManifestCompleteness.test.ts` |
+| Every manifest's `service` is owned by a team (`project.json` teams) | `src/test/catalogManifestCompleteness.test.ts` |
 | Every `inventory://<type>/…` enum type is in inventory OR declared legitimately-empty | `src/test/inventoryEnums.test.ts` (`EMPTY_TYPES`) |
 | Every `forcesReplace:false` write attribute resolves `in_place` at the pinned provider version | `npm run verify:safety` (ForceNew gate) |
 | A manifest's `resourceTypes` are all one provider (no mixed aws/azurerm) | `verify:safety` (single-provider gate) |

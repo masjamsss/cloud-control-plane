@@ -16,6 +16,7 @@ import { beyondCatalogTitle, isBeyondCatalogRequest } from '@/lib/beyondCatalog'
 import { provisionRequestTitle } from '@/lib/providerCatalog';
 import { BOUNDARY_PAGE_PATH, boundaryItems } from '@/lib/boundary';
 import { getInstanceIdentity } from '@/lib/instanceIdentity';
+import { requestStatusLabel } from '@/lib/statusCopy';
 
 /**
  * Pure data layer for the global command palette.
@@ -94,11 +95,6 @@ export function resourceToPaletteItem(r: InventoryResource): ResourcePaletteItem
 /** A short, glanceable id fragment — full UUIDs are too long for a one-line item. */
 function shortId(id: string): string {
   return id.length <= 10 ? id : id.slice(0, 8);
-}
-
-/** "AWAITING_CODE_REVIEW" → "awaiting code review" — quiet secondary text. */
-function humanizeStatus(status: string): string {
-  return status.toLowerCase().replace(/_/g, ' ');
 }
 
 /* ── Flat entry/row model ────────────────────────────────────────────────── */
@@ -272,7 +268,7 @@ export function buildPaletteSections({
       kind: 'request',
       id: `request:${r.id}`,
       title,
-      hint: humanizeStatus(r.status),
+      hint: requestStatusLabel(r.status),
       mono: shortId(r.id),
       searchText: norm(`request ${title} ${r.id} ${r.status}`),
       to: `/requests/${r.id}`,

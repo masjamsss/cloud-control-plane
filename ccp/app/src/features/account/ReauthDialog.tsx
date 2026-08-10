@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import type { JSX } from 'react';
 import type { HttpApiClient } from '@/lib/httpApi';
+import { useModal } from '@/lib/useModal';
 import '@/features/auth/login.css';
 import { isReauthError, reauthVia } from './accountFlow';
 import './reauth-dialog.css';
@@ -135,12 +136,17 @@ export function ReauthDialogView({
   onSubmit,
   onCancel,
 }: ReauthDialogViewProps): JSX.Element {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModal(dialogRef, onCancel);
+
   return (
     <div className="reauth-dialog__backdrop" onClick={onCancel}>
       <div
+        ref={dialogRef}
         className="reauth-dialog"
         role="dialog"
         aria-modal="true"
+        tabIndex={-1}
         aria-label="Confirm it's you"
         onClick={(e) => e.stopPropagation()}
       >

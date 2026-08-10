@@ -97,7 +97,9 @@ export function manifestForServiceSlug(
   const contributions = manifests
     .map((m) => ({
       m,
-      ops: m.operations.filter((op) => catalogServiceKey(op.target.resourceType, m.service) === slug),
+      ops: m.operations.filter(
+        (op) => catalogServiceKey(op.target.resourceType, m.service) === slug,
+      ),
     }))
     .filter((c) => c.ops.length > 0);
   // No contributions: either an op-less named service or a bare manifest slug navigated
@@ -581,6 +583,32 @@ export function removeRepeatedInstance(value: unknown, index: number): Record<st
   return readRepeatedInstances(value).filter((_, i) => i !== index);
 }
 
+/**
+ * UI-13 — RepeatedBlockField's local `subTouched` map is keyed
+ * `<instanceIndex>.<subFieldName>`. Removing an instance shifts every later
+ * instance down one index in the DATA array; this reindexes `touched`'s keys
+ * to match, so a sub-field's touched/blurred state stays attached to the SAME
+ * row it belonged to, not the row that slides into its old numeric slot. The
+ * removed row's own entries are dropped (nothing to carry forward); rows
+ * before the removed index are untouched by the shift. Pure so it can be
+ * unit-tested without mounting the component (no DOM/interaction test harness
+ * in this codebase — see TEST-7).
+ */
+export function reindexTouchedAfterRemove(
+  touched: Record<string, boolean>,
+  removedIndex: number,
+): Record<string, boolean> {
+  const next: Record<string, boolean> = {};
+  for (const [key, v] of Object.entries(touched)) {
+    const dot = key.indexOf('.');
+    const idx = Number(key.slice(0, dot));
+    if (idx === removedIndex) continue;
+    const rest = key.slice(dot);
+    next[`${idx > removedIndex ? idx - 1 : idx}${rest}`] = v;
+  }
+  return next;
+}
+
 /** Set one sub-field of the instance at `index`, returning a new array. */
 export function updateRepeatedInstance(
   value: unknown,
@@ -599,7 +627,11 @@ export function updateRepeatedInstance(
  * instance record (so a sub-field's `dependsOn` reads its instance siblings).
  * Empty object ⇒ the instance is valid. Shared by the field (inline display) and
  * validateParams (submit gate) so the two never disagree. A nested repeated
- * sub-field flags its parent when any of ITS instances is invalid (recursive).
+ * sub-field flags its parent when any of ITS instances is invalid (recursive) —
+ * UI-11: it ALSO applies its own `bounds.minItems`/`maxItems` to the nested
+ * block's instance COUNT first, the same check `validateParams` runs at the
+ * top level (`lib/interpreter.ts`), so a nested `minItems: 2` sub-block with
+ * one row is caught here too, not just when it's the outermost repeated param.
  */
 export function repeatedInstanceErrors(
   spec: RepeatedBlockSpec,
@@ -618,7 +650,14 @@ export function repeatedInstanceErrors(
     if (empty) continue;
     if (f.repeated) {
       const rows = readRepeatedInstances(v);
-      if (rows.some((r) => Object.keys(repeatedInstanceErrors(f.repeated!, r)).length > 0)) {
+      const b = f.bounds;
+      if (b?.minItems !== undefined && rows.length < b.minItems) {
+        errors[f.name] =
+          `${f.label} needs at least ${b.minItems} ${b.minItems === 1 ? 'entry' : 'entries'}`;
+      } else if (b?.maxItems !== undefined && rows.length > b.maxItems) {
+        errors[f.name] =
+          `${f.label} allows at most ${b.maxItems} ${b.maxItems === 1 ? 'entry' : 'entries'}`;
+      } else if (rows.some((r) => Object.keys(repeatedInstanceErrors(f.repeated!, r)).length > 0)) {
         errors[f.name] = `${f.label} has an entry that needs attention`;
       }
       continue;

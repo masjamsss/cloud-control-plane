@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, existsSync } from 'node:fs';
-import { mkdir, rename, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdirSync, rmSync, existsSync } from 'node:fs';
+import { mkdir, readFile, rename, writeFile, open as fsOpen } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import { z } from 'zod';
 import { redactHcl, redactTfJson } from '@app-lib/redact';
 import { canonicalJson } from './audit';
@@ -339,6 +339,25 @@ export async function writeProjectDataVersion(
     rmSync(tmp, { recursive: true, force: true });
     throw e;
   }
+  // DATA-6 — the rename above is atomic against a process kill regardless, but the
+  // directory ENTRY it creates is not durable against power loss until the
+  // containing directory's own metadata is flushed — the same "cheap hardening"
+  // FileStore.writeAtomic/ERR-10 applies. Best-effort: some filesystems refuse a
+  // directory open-for-sync, and failing an already-landed write over that would
+  // be worse than the narrow window this closes.
+  await syncDir(dirname(finalDir));
+}
+
+async function syncDir(dir: string): Promise<void> {
+  let dh;
+  try {
+    dh = await fsOpen(dir, 'r');
+    await dh.sync();
+  } catch {
+    // see above — deliberately swallowed
+  } finally {
+    await dh?.close().catch(() => undefined);
+  }
 }
 
 /** Best-effort removal of one staged version's files (upload row-write failed). */
@@ -362,13 +381,19 @@ export type ServedFile =
  * vanished file serves 404, never a partial). `chunk` MUST already be validated
  * against the version row's stored chunk list; the shape guard here is defense
  * in depth, not the authorization.
+ *
+ * PERF-6 — async `fs.promises.readFile`, not sync: the serve endpoints are on
+ * the app's hot read path (every route mount, pre-fix), and a served file can
+ * be most of the 16 MiB upload cap — a sync read blocks the WHOLE event loop
+ * (every other in-flight request, on any project) for the duration of that one
+ * disk read.
  */
-export function readProjectDataFile(
+export async function readProjectDataFile(
   root: string,
   projectId: string,
   version: number,
   file: ServedFile,
-): string | null {
+): Promise<string | null> {
   let rel: string;
   switch (file.kind) {
     case 'inventory':
@@ -388,7 +413,7 @@ export function readProjectDataFile(
   }
   const path = join(versionDir(root, projectId, version), rel);
   try {
-    return readFileSync(path, 'utf8');
+    return await readFile(path, 'utf8');
   } catch {
     return null;
   }

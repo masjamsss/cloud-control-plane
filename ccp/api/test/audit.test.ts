@@ -7,6 +7,7 @@ import { auditEntryHash, canonicalJson, record, type AuditEntryInput } from '../
 import { verifyChain, type ChainEntry } from '../scripts/verify-audit-chain';
 import { generateGoldenItems } from './fixtures/gen-golden';
 import type { AuditItem } from '../src/store/schema';
+import { nowIso } from '../src/clock';
 
 const golden = JSON.parse(readFileSync(new URL('./fixtures/audit-chain-golden.json', import.meta.url), 'utf8')) as AuditItem[];
 
@@ -76,7 +77,11 @@ describe('§7 hash-chained audit', () => {
 
     const onceFlaky = new FlakyStore(1); // first attempt races, retry succeeds
     await expect(record(onceFlaky, 'sample', entry)).resolves.toBeTruthy();
-    expect(await onceFlaky.query('P#sample#AUDIT#202607')).toHaveLength(1);
+    // TEST-13 — this `record` takes no `nowFn`, so it stamps the partition from the app
+    // clock. `recordN` above pins one explicitly and can hardcode 202607; this cannot,
+    // and hardcoding it here meant the assertion passed only while real time was in
+    // July 2026. Derive it from the same clock the write used.
+    expect(await onceFlaky.query(`P#sample#AUDIT#${nowIso().slice(0, 7).replace('-', '')}`)).toHaveLength(1);
 
     const alwaysFlaky = new FlakyStore(2); // both attempts race → CHAIN_CONTENTION
     await expect(record(alwaysFlaky, 'sample', entry)).rejects.toBeInstanceOf(ApiError);

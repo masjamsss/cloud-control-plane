@@ -112,8 +112,10 @@ describe('palette — ticket words resolve to the boundary page, never to silenc
 describe('router — the boundary page is a registered project-scoped route', () => {
   // router.tsx's createBrowserRouter needs a DOM at import time (see
   // lib/legacyRoute.ts), so registration is pinned at the source level —
-  // same mechanical file-scan style as copyLint.
-  const source = readFileSync(join(SRC, 'router.tsx'), 'utf8');
+  // same mechanical file-scan style as copyLint. The route tree itself
+  // lives in routeConfig.tsx (UI-9 split it out so it's importable as
+  // plain data — see routeConfig.tsx's docblock).
+  const source = readFileSync(join(SRC, 'routeConfig.tsx'), 'utf8');
 
   it('registers the not-in-control-plane path with the NotInControlPlane element', () => {
     expect(source).toContain("path: 'not-in-control-plane'");

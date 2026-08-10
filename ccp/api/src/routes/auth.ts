@@ -7,7 +7,7 @@ import type { AccountItem, TotpDevice } from '../store/schema';
 import { accountKey, nextAccountVersion, sessionKey } from '../store/schema';
 import { apiError } from '../errors';
 import { hashPassword, MIN_PASSWORD, verifyPassword, verifyPbkdf2 } from '../auth/credentials';
-import { mintSession, sha256hex, TOTP_PENDING_MS } from '../auth/sessions';
+import { mintSession, putSessionFieldGuarded, sha256hex, TOTP_PENDING_MS } from '../auth/sessions';
 import { publicAccount } from '../auth/account';
 import { failCode, SESSION_COOKIE } from '../middleware/session';
 import { sessionCookieOptions } from '../deploy';
@@ -503,11 +503,20 @@ export function authRoutes(): Hono<AppEnv> {
     if (!(await putAccountGuarded(store, account, updatedAccount))) return apiError(c, 'BAD_CREDENTIALS');
 
     const reauthAt = nowIso();
-    const updatedSession: SessionItem = { ...session, reauthAt };
-    await store.put(updatedSession);
+    // REM-2 — guarded on the `reauthAt` this handler read, narrowed to that one
+    // attribute: the session row used to be overwritten whole here, which two
+    // concurrent /reauth calls on the SAME session (two tabs) could race on. A
+    // lost condition is not treated as a failure — the row is re-read and the
+    // caller reports WHATEVER is actually stored: gone means the session was
+    // revoked mid-request (fail closed); present-but-different means another
+    // in-flight reauth won first, and its stamp is just as fresh a proof of
+    // elevation as this one would have been.
+    const write = await putSessionFieldGuarded(store, { PK: session.PK, SK: session.SK }, 'reauthAt', session.reauthAt, { reauthAt });
+    if (!write.ok && !write.current) return apiError(c, 'NO_SESSION');
+    const storedReauthAt = write.ok ? reauthAt : (write.current!.reauthAt ?? reauthAt);
 
     await record(store, projectId, { action: 'reauth-success', actor: account.id, targetType: 'session', targetId: account.id });
-    return c.json({ ok: true, reauthAt });
+    return c.json({ ok: true, reauthAt: storedReauthAt });
   });
 
   return auth;

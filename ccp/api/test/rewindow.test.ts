@@ -5,7 +5,7 @@ import { MemoryStore } from '../src/store/memoryStore';
 import type { ConfigStore } from '../src/store/configStore';
 import type { AppEnv } from '../src/appEnv';
 import { type AuditItem } from '../src/store/schema';
-import { __setNow } from '../src/clock';
+import { __setNow, nowIso } from '../src/clock';
 import { REWINDOW_STALE_MS } from '../src/domain/schedule';
 import { seed, seedRequests, sessionCookieFor, setSetting } from './helpers/seed';
 
@@ -55,7 +55,7 @@ function get(app: Hono<AppEnv>, path: string, cookie: string) {
 }
 
 async function auditActions(store: ConfigStore, action: string, requestId: string): Promise<AuditItem[]> {
-  const yyyymm = new Date().toISOString().slice(0, 7).replace('-', '');
+  const yyyymm = nowIso().slice(0, 7).replace('-', '');
   const entries = (await store.query(`P#sample#AUDIT#${yyyymm}`)) as AuditItem[];
   return entries.filter((e) => e.action === action && e.requestId === requestId);
 }

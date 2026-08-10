@@ -29,9 +29,22 @@ function toRows(diff: string): Row[] {
     }
     if (trimmed.startsWith('~') && trimmed.includes(' -> ')) {
       const body = trimmed.slice(1).trim(); // "attr = OLD -> NEW"
-      const parts = body.split(' -> ');
-      const lhs = parts[0] ?? body;
-      const rhs = parts[1] ?? '';
+      // UI-8 — was `body.split(' -> ')`, which splits on EVERY occurrence. Both
+      // sides are always `JSON.stringify(...)` output (lib/diff.ts's only emitter
+      // of this shape), so an old value that itself contains " -> " (a tag, a
+      // description — requester/estate data, not under this app's control) made
+      // the split yield 3+ parts: `parts[0]` truncated the old value at the FIRST
+      // arrow, `parts[1]` showed a fragment of the old value's remainder, and the
+      // REAL new value was silently dropped. `generateDiff` always writes the new
+      // value LAST on the line, so the boundary between old and new is the FINAL
+      // " -> " — splitting there is correct even when the old value embeds one.
+      // (The symmetric case — a NEW value that itself contains " -> " — is not
+      // resolvable by any delimiter-based split; that needs generateDiff to emit
+      // structured old/new instead of a re-parsed string, the recommendation's
+      // own "better" alternative, out of this fix's proportionate scope.)
+      const arrow = body.lastIndexOf(' -> ');
+      const lhs = arrow >= 0 ? body.slice(0, arrow) : body;
+      const rhs = arrow >= 0 ? body.slice(arrow + ' -> '.length) : '';
       const eq = lhs.indexOf('=');
       const attr = eq >= 0 ? lhs.slice(0, eq + 1) : lhs;
       const oldVal = eq >= 0 ? lhs.slice(eq + 1).trim() : '';

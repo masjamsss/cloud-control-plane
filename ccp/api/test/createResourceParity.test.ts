@@ -8,6 +8,7 @@ import { renderHclSkeleton } from '@/lib/hclSkeleton';
 import type { ManifestOperation } from '@/types';
 import { BASELINE_VALUES, BASELINE_VARIANTS } from '@/test/fixtures/skeletons/baselines/values';
 import { getOperation, loadManifests } from '../src/manifests';
+import { buildCatalogctlCached } from './helpers/catalogctlBuild';
 import { skipUnless } from './helpers/requireToolchain';
 
 /**
@@ -18,8 +19,10 @@ import { skipUnless } from './helpers/requireToolchain';
  * (hclSkeleton.ts#renderHclSkeleton) shows the L1 — MINUS the two-line DRAFT banner
  * (§5.2). The L1 draft the operator saw == the authored HCL the engineer reviews.
  *
- * The binary is BUILT once (`go build`) into a temp dir and invoked directly (not
- * `go run`). Best-effort: SKIP (never fail) when Go is unavailable — the Go golden
+ * TEST-12 — the binary comes from helpers/catalogctlBuild.ts's content-addressed
+ * cache, shared with scheduleWindowCheckParity.test.ts, instead of a fresh
+ * `go build` into a throwaway temp dir on every run (see that helper's header).
+ * Best-effort: SKIP (never fail) when Go is unavailable — the Go golden
  * corpus (internal/edit/idiomrender_test.go + create_test.go) is the
  * toolchain-independent backstop that keeps proving Go-render == golden everywhere.
  *
@@ -31,23 +34,7 @@ import { skipUnless } from './helpers/requireToolchain';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '../../..');
-const CATALOGCTL_DIR = join(REPO_ROOT, 'tools/catalogctl');
 const MANIFESTS_DIR = join(REPO_ROOT, 'ccp/app/src/data/manifests');
-
-function buildCatalogctl(): string | null {
-  try {
-    const dir = mkdtempSync(join(tmpdir(), 'catalogctl-create-parity-'));
-    const bin = join(dir, process.platform === 'win32' ? 'catalogctl.exe' : 'catalogctl');
-    const res = spawnSync('go', ['build', '-o', bin, './cmd/catalogctl'], {
-      cwd: CATALOGCTL_DIR,
-      encoding: 'utf8',
-      timeout: 120_000,
-    });
-    return res.status === 0 ? bin : null;
-  } catch {
-    return null;
-  }
-}
 
 function findSchema(): string | null {
   try {
@@ -59,7 +46,7 @@ function findSchema(): string | null {
   }
 }
 
-const CATALOGCTL_BIN = buildCatalogctl();
+const CATALOGCTL_BIN = buildCatalogctlCached();
 const SCHEMA = findSchema();
 if (!CATALOGCTL_BIN) {
   // eslint-disable-next-line no-console

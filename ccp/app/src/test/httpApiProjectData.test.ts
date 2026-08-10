@@ -179,6 +179,122 @@ describe('the serve-reads — null on 404 (no active data), values on 200', () =
   });
 });
 
+/**
+ * PERF-6 — the client caches the served inventory/manifests per project and
+ * revalidates with `If-None-Match` rather than re-fetching+re-parsing on every
+ * call. A bespoke fetch (not `fakeFetch` above, which has no header/ETag
+ * seam) so each test can inspect the incoming `If-None-Match` and answer with
+ * a custom `ETag` / 304, the same way the real serve endpoint does
+ * (PERF-6's server half — routes/projectData.ts's `servedEtag`).
+ */
+describe('PERF-6 — client-side cache + If-None-Match on the serve-reads', () => {
+  interface EtagCall {
+    url: string;
+    ifNoneMatch: string | null;
+  }
+
+  function etagFetch(
+    handler: (call: EtagCall) => { status: number; body?: unknown; etag?: string },
+  ): { fetch: typeof fetch; calls: EtagCall[] } {
+    const calls: EtagCall[] = [];
+    const fn = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const h = new Headers(init.headers);
+      const call: EtagCall = { url: String(input), ifNoneMatch: h.get('If-None-Match') };
+      calls.push(call);
+      const { status, body, etag } = handler(call);
+      const headers = new Headers({ 'Content-Type': 'application/json' });
+      if (etag) headers.set('ETag', etag);
+      return new Response(status === 304 || body === undefined ? null : JSON.stringify(body), {
+        status,
+        headers,
+      });
+    }) as typeof fetch;
+    return { fetch: fn, calls };
+  }
+
+  it('a repeat call sends the remembered ETag, and a 304 reuses the EXACT cached object (no re-parse)', async () => {
+    const inventory = { generatedAt: null, resources: [{ address: 'aws_instance.web' }] };
+    const { fetch, calls } = etagFetch((call) =>
+      call.ifNoneMatch ? { status: 304, etag: '"v1"' } : { status: 200, body: inventory, etag: '"v1"' },
+    );
+    const client = createHttpApiClient('', { fetch });
+
+    const first = await client.getProjectInventory('acme');
+    expect(first).toEqual(inventory);
+    expect(calls[0]!.ifNoneMatch).toBeNull(); // nothing cached yet — no revalidation header
+
+    const second = await client.getProjectInventory('acme');
+    expect(calls[1]!.ifNoneMatch).toBe('"v1"'); // the SECOND call revalidates against what the first one got
+    // Identity, not just equality: a 304 must hand back the SAME object the
+    // first call already parsed, never a fresh (if coincidentally equal) one —
+    // the whole point of this fix is skipping the re-parse.
+    expect(second).toBe(first);
+  });
+
+  it('manifests get their own cache entry, independent of inventory — one ETag namespace does not answer for the other', async () => {
+    const { fetch, calls } = etagFetch((call) => {
+      if (call.ifNoneMatch) return { status: 304, etag: '"shared-looking-tag"' };
+      return call.url.endsWith('/manifests')
+        ? { status: 200, body: [{ service: 'ec2' }], etag: '"m1"' }
+        : { status: 200, body: { resources: [] }, etag: '"i1"' };
+    });
+    const client = createHttpApiClient('', { fetch });
+    await client.getProjectManifests('acme');
+    await client.getProjectInventory('acme');
+    // Both first calls are real fetches with no revalidation header — a
+    // manifests fetch must not accidentally reuse an inventory ETag or vice
+    // versa (they are different resources at the same project id).
+    expect(calls[0]!.ifNoneMatch).toBeNull();
+    expect(calls[1]!.ifNoneMatch).toBeNull();
+  });
+
+  it('a response with no ETag is never cached — every subsequent call is a full, unconditional re-fetch', async () => {
+    const { fetch, calls } = etagFetch(() => ({ status: 200, body: { resources: [] } })); // no etag
+    const client = createHttpApiClient('', { fetch });
+    await client.getProjectInventory('acme');
+    await client.getProjectInventory('acme');
+    expect(calls.map((c) => c.ifNoneMatch)).toEqual([null, null]);
+  });
+
+  it('different projects get different cache entries — no cross-project reuse of an ETag', async () => {
+    const { fetch, calls } = etagFetch((call) => ({
+      status: 200,
+      body: { resources: [] },
+      etag: `"${call.url}"`, // a distinguishable tag per project's url
+    }));
+    const client = createHttpApiClient('', { fetch });
+    await client.getProjectInventory('acme');
+    await client.getProjectInventory('other'); // first call for a DIFFERENT project — must not send acme's ETag
+    expect(calls[0]!.ifNoneMatch).toBeNull();
+    expect(calls[1]!.ifNoneMatch).toBeNull();
+    expect(calls[1]!.url).not.toBe(calls[0]!.url);
+  });
+
+  it('a fresh 200 (new active version, new digest) replaces the cached ETag — a stale one is never reused', async () => {
+    let version = 1;
+    const { fetch, calls } = etagFetch((call) => {
+      if (call.ifNoneMatch === `"v${version}"`) return { status: 304, etag: `"v${version}"` };
+      return { status: 200, body: { resources: [{ address: `r${version}` }] }, etag: `"v${version}"` };
+    });
+    const client = createHttpApiClient('', { fetch });
+
+    const first = await client.getProjectInventory('acme'); // miss → 200, caches "v1"
+    const revalidated = await client.getProjectInventory('acme'); // hit → 304, still "v1"
+    expect(calls[1]!.ifNoneMatch).toBe('"v1"');
+    expect(revalidated).toBe(first);
+
+    version = 2; // the project's active version changed server-side
+    const afterActivate = await client.getProjectInventory('acme'); // sends stale "v1" → server says 200 "v2"
+    expect(calls[2]!.ifNoneMatch).toBe('"v1"');
+    expect(afterActivate).not.toBe(first);
+    expect(afterActivate).toEqual({ resources: [{ address: 'r2' }] });
+
+    const revalidatedAgain = await client.getProjectInventory('acme'); // now revalidates against "v2"
+    expect(calls[3]!.ifNoneMatch).toBe('"v2"');
+    expect(revalidatedAgain).toBe(afterActivate);
+  });
+});
+
 describe('THE SERVE-READ RULE on listManifests/getInventory (the app-rebuild killer)', () => {
   const EMPTY_SENTINEL: Inventory = { generatedAt: null, resources: [] };
 

@@ -5,6 +5,20 @@
 .rskel {
   padding: var(--space-2) 0;
 }
+/* UI-12 — visually-hidden "Loading…" text for the aria-busy live region;
+   same clip-rect technique approvals.css's .apv__sr-only uses (kept local
+   here too — there is no shared sr-only utility in this codebase). */
+.rskel__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
 .rskel__title,
 .rskel__rail,
 .rskel__row {

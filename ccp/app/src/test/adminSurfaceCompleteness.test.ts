@@ -35,9 +35,11 @@ const REQUIRED_SETTING_GROUPS = [
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('admin coverage — every managed domain has a portal surface (§8)', () => {
-  const routerSrc = readFileSync(join(SRC, 'router.tsx'), 'utf8');
+  // The route tree lives in routeConfig.tsx (UI-9 split it out of router.tsx
+  // so it's importable as plain data — see routeConfig.tsx's docblock).
+  const routerSrc = readFileSync(join(SRC, 'routeConfig.tsx'), 'utf8');
 
-  it('router.tsx mounts the admin subtree', () => {
+  it('routeConfig.tsx mounts the admin subtree', () => {
     // Sanity check for the assertions below — if this ever stops matching,
     // every per-route assertion below would trivially "pass" for the wrong reason.
     expect(routerSrc).toMatch(/path:\s*'admin'/);
@@ -48,10 +50,11 @@ describe('admin coverage — every managed domain has a portal surface (§8)', (
   // segments are declared separately) — so coverage is checked by the child
   // route's own quoted `path: '<name>'` literal within the admin subtree,
   // which is what's actually mechanically present and unambiguous.
-  it.each(REQUIRED_ADMIN_ROUTES)('admin route "%s" is registered in router.tsx', (name) => {
-    expect(routerSrc, `expected router.tsx to declare path: '${name}' under the admin subtree`).toMatch(
-      new RegExp(`path:\\s*'${name}'`),
-    );
+  it.each(REQUIRED_ADMIN_ROUTES)('admin route "%s" is registered in routeConfig.tsx', (name) => {
+    expect(
+      routerSrc,
+      `expected routeConfig.tsx to declare path: '${name}' under the admin subtree`,
+    ).toMatch(new RegExp(`path:\\s*'${name}'`));
   });
 
   const settingsSrc = readFileSync(join(SRC, 'lib', 'settings.ts'), 'utf8');

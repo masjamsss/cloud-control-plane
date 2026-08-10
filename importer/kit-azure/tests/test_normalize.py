@@ -77,6 +77,46 @@ class SplitGuardCheck(unittest.TestCase):
         monitor = open(os.path.join(self.env, "monitor.tf")).read()
         self.assertIn("azurerm_log_analytics_workspace", monitor)
 
+    def test_non_resource_top_level_blocks_are_preserved_not_dropped(self):
+        # IMP-12 — data/moved/import/locals/terraform blocks used to vanish entirely (only
+        # `resource` extents were ever copied anywhere).
+        with open(self.gen, "a") as fh:
+            fh.write(
+                '\n'
+                'terraform {\n'
+                '  required_version = ">= 1.10"\n'
+                '}\n'
+                '\n'
+                'locals {\n'
+                '  env = "prod"\n'
+                '}\n'
+                '\n'
+                'moved {\n'
+                '  from = azurerm_resource_group.old_name\n'
+                '  to   = azurerm_resource_group.renamed\n'
+                '}\n'
+                '\n'
+                'data "azurerm_client_config" "current" {\n'
+                '}\n'
+            )
+        r = self.split()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("IMP-12", r.stderr)
+        self.assertIn("non-resource top-level block", r.stderr)
+        for kind in ("terraform", "locals", "moved", "data"):
+            self.assertIn(kind, r.stderr)
+
+        uncls = open(os.path.join(self.env, "unclassified.tf")).read()
+        self.assertIn('required_version = ">= 1.10"', uncls)
+        self.assertIn('env = "prod"', uncls)
+        self.assertIn("from = azurerm_resource_group.old_name", uncls)
+        self.assertIn('data "azurerm_client_config" "current"', uncls)
+        self.assertIn("NEVER to be merged as-is", uncls)
+        # not dropped from the SERVICE files either
+        monitor = open(os.path.join(self.env, "monitor.tf")).read()
+        self.assertIn("azurerm_log_analytics_workspace", monitor)
+        self.assertNotIn("moved", monitor)
+
     def test_guard_adds_prevent_destroy_to_stateful_only(self):
         self.split()
         r = run_py(NORMALIZE, ["guard", "--env-dir", self.env, "--services", SERVICES])

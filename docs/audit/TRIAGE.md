@@ -221,6 +221,17 @@ at HEAD first, and if it is closed, close it with evidence rather than a patch.
 
 **Model:** opus · **Findings:** 8 · **Touches:** `scripts/, .github/workflows/`
 
+> **COMPLETE — all 8 closed.** Fixed: CI-8, CI-9, CI-6, CI-13, TEST-5. Verified already
+> closed by earlier work and closed with evidence rather than a patch: CI-5, ARCH-14, TEST-11
+> (**L-29** four times in one batch — half this batch needed no product change).
+> New rules live in `scripts/ci/check-workflow-safety.sh` and
+> `scripts/ci/publish-gate-selftest.sh`; residue in `R-47`–`R-51`.
+>
+> **Raised during the batch: TEST-13** (high) — the suites were coupled to the wall-clock
+> calendar and went red on a month boundary with no code change. Found while measuring for
+> TEST-5, fixed in the same branch, and it is why TEST-5's floor could be measured against a
+> green suite at all.
+
 
 | finding | sev | expected result |
 | --- | --- | --- |
@@ -909,7 +920,14 @@ For each finding you close:
 
 1. **`docs/audit/FINDINGS.md`** — flip the line to `- [x] … | fixed:<short-sha> | …`.
    The evidence field must be a commit sha, PR ref, or test name; `fixed:` with nothing is
-   rejected. Commit first, then amend the sha in.
+   rejected.
+
+   **Record the sha in a SECOND commit — never `git commit --amend` it in.** The amend
+   replaces the very commit the sha you just read names, so the reference is dangling from
+   the moment it is written. That is L-28, it is how eight entries got broken, and the gate
+   now **fails** on it rather than skipping past it. Same for a rebase or cherry-pick that
+   rewrites a commit after its sha is recorded: re-read the sha afterwards and correct the
+   line. `bash scripts/findings-gate.sh` tells you, in a full clone.
 2. **`docs/audit/FIXES.md`** — append a section. **The heading must be exactly `## <ID>`,
    one per finding.** A combined `## API-10 / CONC-4` header FAILS the gate — when two
    findings are the same defect, write the reasoning under one and a short cross-reference

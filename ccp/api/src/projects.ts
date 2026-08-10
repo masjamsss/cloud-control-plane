@@ -1,6 +1,16 @@
 import type { AccountItem, ProjectItem, RoleBinding, RoleName } from './store/schema';
 import { projectCollectionGsi } from './store/schema';
 import type { ConfigStore } from './store/configStore';
+import { PROJECT_ID_RE } from '@app-lib/projectId';
+
+/** Project id slug grammar — re-exported from `@app-lib/projectId`, ARCH-13's
+ * single home reachable by both the api and the app (the api cannot be
+ * imported the other way around, so a plain api-local constant could never
+ * be the actual single source of truth — see that file's own doc comment).
+ * The registry route (routes/projects.ts) validates register bodies against
+ * it, and the legacy-id resolver (deploy.ts) validates
+ * `CCP_LEGACY_PROJECT_ID` against it. */
+export { PROJECT_ID_RE };
 
 /**
  * Known projects — STORE-BACKED (the registry is durable), STORE-ONLY (data-birth
@@ -30,7 +40,7 @@ let hydrated = false;
 
 /**
  * The reserved control-plane scope (data-birth spec §5) — deliberately OUTSIDE the
- * project-id grammar ({@link PROJECT_ID_RE} below),
+ * project-id grammar ({@link PROJECT_ID_RE} above),
  * the same trick as the `'*'` wildcard below, so collision with a registrable id is
  * impossible by construction and no reserved-name list is needed. It is ALWAYS
  * routable (never requires a store row — no `ProjectItem` for it ever exists), is
@@ -42,13 +52,6 @@ let hydrated = false;
  * scope is this id.
  */
 export const CONTROL_SCOPE = '@control';
-
-/** Project id slug grammar — also structurally excludes the `'*'` wildcard binding
- * and the reserved `'@control'` scope (both start with a non-`[a-z]` character).
- * The single home for project-id syntax: the registry route (routes/projects.ts)
- * validates register bodies against it, and the legacy-id resolver (deploy.ts)
- * validates `CCP_LEGACY_PROJECT_ID` against it. */
-export const PROJECT_ID_RE = /^[a-z][a-z0-9-]{1,31}$/;
 
 export function isKnownProject(id: string): boolean {
   return KNOWN.has(id);

@@ -6,6 +6,7 @@ import type { ConfigStore } from '../src/store/configStore';
 import type { AppEnv } from '../src/appEnv';
 import type { AuditItem } from '../src/store/schema';
 import { seed, sessionCookieFor } from './helpers/seed';
+import { nowIso } from '../src/clock';
 
 /**
  * 0033 A12/P6 — POST /requests/:id/link-pr: the engineer-track loop closer.
@@ -63,7 +64,7 @@ function reject(app: Hono<AppEnv>, cookie: string, id: string) {
 }
 
 async function auditActions(store: ConfigStore, action: string, requestId: string): Promise<AuditItem[]> {
-  const yyyymm = new Date().toISOString().slice(0, 7).replace('-', '');
+  const yyyymm = nowIso().slice(0, 7).replace('-', '');
   const entries = (await store.query(`P#sample#AUDIT#${yyyymm}`)) as AuditItem[];
   return entries.filter((e) => e.action === action && e.requestId === requestId);
 }
@@ -110,6 +111,27 @@ describe('POST /requests/:id/link-pr — recording the fulfilling PR', () => {
     const res = await linkPr(app, await sessionCookieFor(store, 'putra'), id, { prUrl: PR_URL, prNumber: 999 });
     expect(res.status).toBe(200);
     expect((await res.json()).prNumber).toBe(999);
+  });
+
+  it('API-12: a URL tail is only a PR number under /pull/ or /merge_requests/ — an issue link, or any other trailing digits, derives nothing', async () => {
+    const { store, app } = await harness();
+    const cookie = await sessionCookieFor(store, 'putra');
+    // Same forge, same trailing digits, but /issues/ — not a PR at all.
+    const { id: issueLink } = await needsEngineerRequest(store, app);
+    const issueRes = await linkPr(app, cookie, issueLink, { prUrl: 'https://github.com/masjamsss/cloud-control-plane/issues/42' });
+    expect(issueRes.status).toBe(200);
+    expect((await issueRes.json()).prNumber).toBeUndefined();
+    // An arbitrary URL that merely ends in digits — no forge shape at all.
+    const { id: bareLink } = await needsEngineerRequest(store, app);
+    const bareRes = await linkPr(app, cookie, bareLink, { prUrl: 'https://example.com/9999' });
+    expect(bareRes.status).toBe(200);
+    expect((await bareRes.json()).prNumber).toBeUndefined();
+    // The GitLab shape the fix's OWN comment claims to support — the positive case,
+    // so the fix cannot pass by being unconditionally strict.
+    const { id: mrLink } = await needsEngineerRequest(store, app);
+    const mrRes = await linkPr(app, cookie, mrLink, { prUrl: 'https://gitlab.com/org/repo/-/merge_requests/55' });
+    expect(mrRes.status).toBe(200);
+    expect((await mrRes.json()).prNumber).toBe(55);
   });
 
   it('a URL with no numeric tail links URL-only (no stale/guessed number)', async () => {

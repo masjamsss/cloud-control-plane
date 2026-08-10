@@ -131,6 +131,17 @@ def merge_pages(capture_dir, capture):
         f for f in os.listdir(capture_dir)
         if re.fullmatch(re.escape(capture) + r"\.page\d+\.json", f)
     )
+    # IMP-5 — discover.sh now clears both forms before each capture, so this
+    # should never legitimately happen; a directory hand-assembled from a
+    # mixed fixture/live capture (or an interrupted cleanup) would otherwise
+    # be silently double-counted. Refuse rather than guess which form is current.
+    if os.path.exists(single) and paged:
+        refuse(
+            "BAD_CAPTURE",
+            f"{capture}: both a single-file capture ({capture}.json) and paged captures "
+            f"({len(paged)} page(s)) exist — ambiguous, would double-count rows. Remove the "
+            "stale form (a mixed fixture/live directory, or an interrupted capture) and re-run.",
+        )
     if os.path.exists(single):
         pages.append(single)
     pages.extend(os.path.join(capture_dir, f) for f in paged)
@@ -339,7 +350,12 @@ def cmd_list_subscriptions(args):
             line += f"   [mgmt group: {mg}]"
         print(line)
 
-    if len(data) >= 1000 and (doc.get("skip_token") or doc.get("skipToken")):
+    # IMP-9 — `doc` may be a bare list (line above: `data = doc if isinstance(doc, list)
+    # else ...`), and a bare list has no .get(). cmd_next_token already guards this
+    # correctly; this call didn't, so the exact large-tenant case the warning exists
+    # for (a bare-list capture at/over the 1000-row page) crashed with an unhandled
+    # AttributeError (exit 1) instead of the documented REFUSE/exit-2 contract.
+    if len(data) >= 1000 and isinstance(doc, dict) and (doc.get("skip_token") or doc.get("skipToken")):
         print("WARN: subscription list hit the 1000-row page and a continuation token is present "
               "— the list may be truncated (an unusually large tenant); page it before trusting "
               "completeness", file=sys.stderr)

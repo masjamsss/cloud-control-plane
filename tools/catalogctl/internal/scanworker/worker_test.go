@@ -43,18 +43,32 @@ type step struct {
 // reached through accessors rather than read directly — an unsynchronised
 // `ctrl.claims` read is a data race the -race detector fails on.
 type fakeControl struct {
-	mu        sync.Mutex
-	jobs      []*Job // handed out in order; exhausted ⇒ nil (nothing queued)
-	claims    int
-	steps     []step
-	claimErr  error
-	reportErr error
+	mu       sync.Mutex
+	jobs     []*Job // handed out in order; exhausted ⇒ nil (nothing queued)
+	claims   int
+	attempts int // EVERY Claim() call, success or error — claims counts only the non-error path, unchanged from before
+	steps    []step
+	claimErr error
+	// claimFailures caps how many LEADING Claim attempts return claimErr
+	// before the fake starts behaving normally — 0 (with claimErr set) means
+	// "every attempt fails forever", the shape
+	// TestAnUnreachableControlPlaneStopsTheWorker already relies on. A
+	// positive value simulates a TRANSIENT outage that recovers after that
+	// many attempts (ERR-15 / OPS-12's retry-with-backoff).
+	claimFailures int
+	reportErr     error
+	// failReportStatuses, non-nil, makes Report fail ONLY for a status in this
+	// set rather than every call — proves a best-effort terminal "failed"
+	// report still gets through after a "cloning"/"scanning" report failed
+	// (ERR-15). nil preserves the old "reportErr applies to every call" shape.
+	failReportStatuses map[string]bool
 }
 
 func (f *fakeControl) Claim(context.Context) (*Job, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.claimErr != nil {
+	f.attempts++
+	if f.claimErr != nil && (f.claimFailures == 0 || f.attempts <= f.claimFailures) {
 		return nil, f.claimErr
 	}
 	f.claims++
@@ -66,10 +80,22 @@ func (f *fakeControl) Claim(context.Context) (*Job, error) {
 	return j, nil
 }
 
+// attemptCount reports every Claim() call, error or not — claimCount below
+// only counts the non-error path, which is what a test racing a retry loop
+// against the fake's OWN internal state needs.
+func (f *fakeControl) attemptCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.attempts
+}
+
 func (f *fakeControl) Report(_ context.Context, _ *Job, status, reason string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.steps = append(f.steps, step{status, reason})
+	if f.failReportStatuses != nil && !f.failReportStatuses[status] {
+		return nil
+	}
 	return f.reportErr
 }
 
@@ -232,6 +258,50 @@ func TestCloneFailureIsReportedTerminal(t *testing.T) {
 	}
 }
 
+func TestCloningReportFailureStillAttemptsTerminalFailed(t *testing.T) {
+	requireCleanEnv(t)
+	// ERR-15 — before the fix, a failure to report "cloning" abandoned the job
+	// right here: runJob returned bare, with NO terminal status ever
+	// attempted. The server-side row was left wherever it last was (often
+	// still "claimed") until scanJobLease.ts's 30-minute lease eventually
+	// noticed. The fix routes this through `fail`, the same best-effort
+	// terminal-report path every other failure in this function already uses.
+	ctrl := &fakeControl{
+		jobs:               []*Job{job("J1")},
+		reportErr:          errors.New("connection reset"),
+		failReportStatuses: map[string]bool{"cloning": true}, // only "cloning" fails — "failed" must still get through
+	}
+	runOnce(t, ctrl, &fakeCloner{}, &fakeScanner{uploaded: true})
+
+	want := []string{"cloning", "failed"}
+	if got := ctrl.statuses(); !equal(got, want) {
+		t.Fatalf("statuses = %v, want %v — a report failure must still end in an attempted terminal status", got, want)
+	}
+	if !strings.Contains(ctrl.stepAt(1).reason, "could not report cloning") {
+		t.Fatalf("failure reason = %q, want it to explain the ORIGINAL report failure, not go silent", ctrl.stepAt(1).reason)
+	}
+}
+
+func TestScanningReportFailureStillAttemptsTerminalFailed(t *testing.T) {
+	requireCleanEnv(t)
+	// Same defect and same fix, one Report call later — a failed "scanning"
+	// report must not abandon a job that already cloned successfully.
+	ctrl := &fakeControl{
+		jobs:               []*Job{job("J1")},
+		reportErr:          errors.New("connection reset"),
+		failReportStatuses: map[string]bool{"scanning": true},
+	}
+	runOnce(t, ctrl, &fakeCloner{}, &fakeScanner{uploaded: true})
+
+	want := []string{"cloning", "scanning", "failed"}
+	if got := ctrl.statuses(); !equal(got, want) {
+		t.Fatalf("statuses = %v, want %v", got, want)
+	}
+	if !strings.Contains(ctrl.stepAt(2).reason, "could not report scanning") {
+		t.Fatalf("failure reason = %q", ctrl.stepAt(2).reason)
+	}
+}
+
 func TestUploadFailureIsAFailedJob(t *testing.T) {
 	requireCleanEnv(t)
 	// The worker has NOTHING on disk to fall back to (unlike a local run, whose
@@ -336,13 +406,138 @@ func TestAnIdlePollSaysSoAndClaimsNothing(t *testing.T) {
 
 func TestAnUnreachableControlPlaneStopsTheWorker(t *testing.T) {
 	requireCleanEnv(t)
-	// Unlike a per-job failure, this one IS fatal: a worker that cannot claim
-	// has nothing useful to do, and silently spinning would hide the outage.
+	// `--once` has no loop to retry into, so a claim failure here IS still
+	// fatal (a single shot that could not claim genuinely has nothing useful
+	// to do) — this is the ONE case ERR-15/OPS-12's retry-with-backoff does
+	// not apply to. See TestTransientClaimFailureRetriesInsteadOfExiting for
+	// the looping case, which is where the fix actually changes behavior.
 	ctrl := &fakeControl{claimErr: errors.New("connection refused")}
 	var out strings.Builder
 	err := Run(context.Background(), Opts{Server: "https://ccp.example", Once: true}, ctrl, &fakeCloner{}, &fakeScanner{}, &out)
 	if err == nil || !strings.Contains(err.Error(), "connection refused") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestTransientClaimFailureRetriesInsteadOfExiting(t *testing.T) {
+	requireCleanEnv(t)
+	// ERR-15 / OPS-12 — in the ordinary LOOPING mode (no --once), a claim
+	// failure must no longer exit the process and rely on Docker's restart
+	// policy to crash-loop back in. The first 2 attempts fail (simulating a
+	// control-plane restart); the 3rd recovers and hands over a real job,
+	// which must still run to completion in the SAME process.
+	ctrl := &fakeControl{
+		jobs:          []*Job{job("J1")},
+		claimErr:      errors.New("connection refused"),
+		claimFailures: 2,
+	}
+	var out strings.Builder
+	opts := Opts{Server: "https://ccp.example", WorkDir: t.TempDir(), Poll: time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+	// Stop once the recovered claim has landed (claimCount only counts the
+	// non-error path, so 1 here means "the 3rd attempt succeeded").
+	go func() {
+		for ctrl.claimCount() < 1 {
+			time.Sleep(time.Millisecond)
+		}
+		cancel()
+	}()
+	if err := Run(ctx, opts, ctrl, &fakeCloner{}, &fakeScanner{uploaded: true}, &out); err != nil {
+		t.Fatalf("Run returned an error for a TRANSIENT claim failure: %v", err)
+	}
+	if n := ctrl.attemptCount(); n < 3 {
+		t.Fatalf("attempts = %d, want at least 3 (2 failures then the recovering claim)", n)
+	}
+	if got := ctrl.statuses(); !equal(got, []string{"cloning", "scanning", "uploaded"}) {
+		t.Fatalf("the recovered claim's job did not run to completion: %v", got)
+	}
+	if !strings.Contains(out.String(), "retrying") {
+		t.Fatalf("the retry was not logged: %q", out.String())
+	}
+}
+
+/* ── OPS-12: the heartbeat liveness signal + its --healthcheck probe ────────── */
+
+func TestHeartbeatTouchedEachLoopIteration(t *testing.T) {
+	requireCleanEnv(t)
+	heartbeat := filepath.Join(t.TempDir(), "heartbeat")
+	ctrl := &fakeControl{}
+	var out strings.Builder
+	opts := Opts{Server: "https://ccp.example", WorkDir: t.TempDir(), Poll: time.Millisecond, Heartbeat: heartbeat}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		for ctrl.claimCount() < 3 { // a few idle iterations
+			time.Sleep(time.Millisecond)
+		}
+		cancel()
+	}()
+	if err := Run(ctx, opts, ctrl, &fakeCloner{}, &fakeScanner{}, &out); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	info, err := os.Stat(heartbeat)
+	if err != nil {
+		t.Fatalf("heartbeat file was never created: %v", err)
+	}
+	if age := time.Since(info.ModTime()); age > 5*time.Second {
+		t.Fatalf("heartbeat mtime is %s old right after Run returned", age)
+	}
+}
+
+func TestHeartbeatDisabledByDefaultIsANoOp(t *testing.T) {
+	requireCleanEnv(t)
+	// Opts.Heartbeat left empty, as every other test in this file does — Run
+	// must not create anything or fail over it.
+	runOnce(t, &fakeControl{}, &fakeCloner{}, &fakeScanner{})
+}
+
+func TestHealthcheckFreshHeartbeatIsHealthy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "heartbeat")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var errb strings.Builder
+	if got := runHealthcheck(path, &errb); got != 0 {
+		t.Fatalf("exit = %d, want 0 (stderr: %s)", got, errb.String())
+	}
+}
+
+func TestHealthcheckMissingHeartbeatIsUnhealthy(t *testing.T) {
+	var errb strings.Builder
+	if got := runHealthcheck(filepath.Join(t.TempDir(), "never-written"), &errb); got != 1 {
+		t.Fatalf("exit = %d, want 1", got)
+	}
+	if !strings.Contains(errb.String(), "heartbeat:") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}
+
+func TestHealthcheckStaleHeartbeatIsUnhealthy(t *testing.T) {
+	// The whole point: a heartbeat that stopped updating — a hung poll, a
+	// prescan that never returns (OPS-12's own two examples) — must be
+	// distinguishable from a container that is merely "Up".
+	path := filepath.Join(t.TempDir(), "heartbeat")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stale := time.Now().Add(-HeartbeatStaleness - time.Minute)
+	if err := os.Chtimes(path, stale, stale); err != nil {
+		t.Fatal(err)
+	}
+	var errb strings.Builder
+	if got := runHealthcheck(path, &errb); got != 1 {
+		t.Fatalf("exit = %d, want 1 (stderr: %s)", got, errb.String())
+	}
+	if !strings.Contains(errb.String(), "wedged") {
+		t.Fatalf("stderr = %q", errb.String())
+	}
+}
+
+func TestHealthcheckWithNoHeartbeatPathIsUnhealthy(t *testing.T) {
+	// --healthcheck with no --heartbeat has nothing to check — refusing to
+	// call that "healthy" is the fail-closed answer.
+	var errb strings.Builder
+	if got := runHealthcheck("", &errb); got != 1 {
+		t.Fatalf("exit = %d, want 1", got)
 	}
 }
 

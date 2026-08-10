@@ -12,8 +12,18 @@ authoritative ForceNew source.
 Since 0039 (Azure seam, lanes F1/F2) the tool is **per-provider**: the SAME
 compile-and-reflect engine also produces **`azurerm-v4.81.0-schema.json`** for
 a bounded 12-type spike scope. Everything below describes the AWS run first
-(the mature, 85-type case); see [**azurerm (a second provider)**](#azurerm-a-second-provider-0039-f1f2)
+(the mature, 85-type-scoped `-types types.txt` invocation `gen.sh` documents
+by default); see [**azurerm (a second provider)**](#azurerm-a-second-provider-0039-f1f2)
 for what differs.
+
+> **IMP-14 — the CURRENTLY COMMITTED `aws-v6.53.0-schema.json.gz` is not the
+> 85-type run described below.** Its own metadata reports
+> `summary.requested: 1677` (`sdkv2_reflected: 1240`,
+> `framework_unreflected: 437`) — the full AWS provider surface, not the
+> `types.txt`-scoped subset. See IMP-8 for why the committed artifact and the
+> documented `gen.sh` pipeline can diverge; this note exists so the 85/1677
+> mismatch reads as a known, tracked gap rather than a documentation error to
+> re-discover.
 
 ## Why this tool exists (L1)
 
@@ -63,10 +73,14 @@ The AWS provider is a **mux of two frameworks**:
   ForceNew **unknown** — consumers must treat them **fail-closed** (engineer-only /
   WARN), per `0013d §6.4` and the `0010 §3` "unresolved ⇒ treat AS ForceNew" rule.
 
-Of the 85 types in scope, **84 are SDKv2** (fully reflected) and **1 is
-framework**: `aws_s3_bucket_lifecycle_configuration` (migrated to the framework in
-v6). The dump marks it `framework_unreflected` rather than guessing — exactly the
-fail-closed behavior that prevents a B7-class hidden-ForceNew incident.
+Of the 85 `types.txt`-scoped types this section describes, **84 are SDKv2** (fully
+reflected) and **1 is framework**: `aws_s3_bucket_lifecycle_configuration` (migrated
+to the framework in v6). The dump marks it `framework_unreflected` rather than
+guessing — exactly the fail-closed behavior that prevents a B7-class hidden-ForceNew
+incident. (IMP-14: the currently-committed artifact's own `summary` reports far more
+of both — `sdkv2_reflected: 1240`, `framework_unreflected: 437` — because it is the
+full-provider run the note above flags, not this 85-type scope; the 84/1 split and
+the mechanism it illustrates still hold for the scope this paragraph describes.)
 
 ## Artifact structure
 

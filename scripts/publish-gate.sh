@@ -597,17 +597,60 @@ check_pg4() {
 
 # ═════════════════════════════════════════════════════════════════════════════════════
 # PG-5 — Secret-shaped assignments: a GUID/base64/hex value >=16 chars assigned to a
-# *_TOKEN|*_SECRET|*_KEY|password-named attribute -> FAIL, unless the sentinel or an
+# TOKEN|SECRET|KEY|PASSWORD|PASSWD-named attribute -> FAIL, unless the sentinel or an
 # .env.example placeholder; plus exact-match of every denylist secret anywhere -> FAIL.
 #
 # The attribute-name heuristic is intentionally approximate (a lightweight layer, not a
 # secret-shape authority) — PG-9 (gitleaks) is the authoritative, entropy-aware detector;
-# this check exists to still catch something even when gitleaks isn't installed.
+# this check exists to still catch something even when gitleaks isn't installed. That
+# sentence is now load-bearing rather than aspirational: PUBLISH_GATE_REQUIRE_ALL=1 makes a
+# missing PG-9 a failure, so "approximate, but backstopped" cannot silently become
+# "approximate, alone" (CI-8).
+#
+# CI-8 — WHAT THE NAME PATTERN MATCHES, AND WHY IT IS SHAPED THIS WAY.
+# It was `(_TOKEN|_SECRET|_KEY|[Pp]assword)`, which missed the single most common
+# accidental-commit shape in existence: `ADMIN_PASSWORD=...`, because `[Pp]assword` never
+# matches all-caps PASSWORD and the env-var convention is all-caps. Also missed:
+# `DB_PASSWD:`, `apikey =`, and `client_secret:` (the OAuth shape, which the finding did
+# not name).
+#
+# The fix is NOT case-insensitivity. Measured on this tree, `-i` takes the check from 7
+# hits to 49, and all 42 additions are camelCase identifier assignments — `tKey =
+# uploadTokenKey(id)`, `const driftVersionKey = ...` — because the value class matches a
+# plain identifier just as happily as a secret. A check with 42 false positives gets
+# switched off, which is how you end up with no check at all.
+#
+# What separates them is CASE UNIFORMITY, so that is what the pattern keys on: an env-var
+# shape (`_PASSWORD`, `API_KEY`) or a snake_case shape (`client_secret`, `apikey`), never a
+# camelCase word boundary. The leading `[_A-Z0-9]` / `[_a-z0-9]` also keeps a bare `key =`
+# out, which is what the original underscore requirement was protecting against.
+#
+# The floor stays at 16 rather than dropping to 12 as the finding recommended. Measured:
+# 12 adds seven matches to this tree and every one is a false positive — `aws_iam_role` as
+# a `_key:` value, EFS idempotency tokens (`d-eoyniqjaesh5`), `app-shared-fs`. The
+# recommendation was a guess at the trade; the count is the answer to it.
 # ═════════════════════════════════════════════════════════════════════════════════════
 # The two GUID-shaped literals are DELIBERATELY-FAKE test tokens, never real secrets: the
 # SCRUB_SENTINEL_GUID (S-1 re-oracle) and the redaction-suite stand-in "fakeToken" shared
 # verbatim by ccp/app/src/test/redact.test.ts and tools/catalogctl/internal/hclops/redact_test.go.
-PG5_PLACEHOLDER_MARKERS='REPLACE_ME|replace_me|CHANGE_ME|change-me|changeme|not-a-real-secret|do-not-commit|SuperSecret12345|hardcoded-literal-password|plainlookingword|12345678-1234-5678-1234-567812345678|deadbeef-0000-4000-8000-000000000000'
+#
+# CI-8 added the five below when the name heuristic widened (see check_pg5). Every one is an
+# input to a REDACTION test or a golden fixture — a redaction suite has to contain
+# secret-shaped text or it proves nothing, which is why these live next to `plainlookingword`
+# and the `deadbeef-` GUID already here, in the very same two files. Listed as literals rather
+# than exempting their files, so the files stay in scope for every other value:
+#   AAAAA-BBBBB-CCCCC-DDDDD-EEEEE  storage-gateway golden `activation_key`
+#   s3cr3t-value-9999              redact.test.ts `db_secret`
+#   aaaaaaaa-bbbb-cccc-dddd-...    redact.test.ts `client_secret`
+#   AKIA1234567890ABCDEFghij       redact_test.go `creation_token`; the AKIA prefix is already
+#                                  in PG-4's public example set (PG4_ALLOWLIST_AKIA)
+#   Xq9rT2vLbN8sWd41               CI-8's own probe value, quoted in docs/audit/13-ci-cd.md.
+#                                  The report kept these literal BECAUSE the old pattern could
+#                                  not see them; widening it made the report fail the gate it
+#                                  documents. The record is evidence and is not rewritten to
+#                                  satisfy a checker — the same call check-shipped-lanes.sh
+#                                  makes when it excludes docs/audit/ from its reference scan.
+PG5_PLACEHOLDER_MARKERS='REPLACE_ME|replace_me|CHANGE_ME|change-me|changeme|not-a-real-secret|do-not-commit|SuperSecret12345|hardcoded-literal-password|plainlookingword|12345678-1234-5678-1234-567812345678|deadbeef-0000-4000-8000-000000000000|AAAAA-BBBBB-CCCCC-DDDDD-EEEEE|s3cr3t-value-9999|aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee|AKIA1234567890ABCDEFghij|Xq9rT2vLbN8sWd41'
 
 check_pg5() {
   local total=0 example="" f ln m s
@@ -624,7 +667,7 @@ check_pg5() {
     [[ "$m" =~ $PG5_PLACEHOLDER_MARKERS ]] && continue
     total=$((total + 1))
     [[ -z "$example" ]] && example="$f:$ln"
-  done < <(grep_scan '(_TOKEN|_SECRET|_KEY|[Pp]assword)[[:space:]]*[:=][[:space:]]*"?[A-Za-z0-9+/=_-]{16,}')
+  done < <(grep_scan '([_A-Z0-9](TOKEN|SECRET|KEY|PASSWORD|PASSWD)|[_a-z0-9](token|secret|key|password|passwd))[[:space:]]*[:=][[:space:]]*"?[A-Za-z0-9+/=_-]{16,}')
   SCAN_FILES=("${saved_scan_files[@]}")
 
   for s in "${DL_SECRETS[@]}"; do
@@ -756,6 +799,20 @@ check_pg8() {
 # ═════════════════════════════════════════════════════════════════════════════════════
 check_pg9() {
   if ! command -v gitleaks >/dev/null 2>&1; then
+    # CI-8 — PG-5's header calls this check "the authoritative, entropy-aware detector" and
+    # explicitly stays approximate BECAUSE this one backs it up. Where that sentence is
+    # supposed to be true, its being absent is a failure, not a skip: PUBLISH_GATE_REQUIRE_ALL=1
+    # (set by publish-gate.yml) turns "could not scan" into a red gate that names what is
+    # missing. Unset — a developer's laptop — still degrades to a clean SKIP, which the
+    # verdict line then refuses to report as an unqualified PASS.
+    #
+    # Same shape as test/helpers/requireToolchain.ts, and the same reason: a proof that
+    # cannot run must break the build rather than quietly shrink the guarantee (TEST-4).
+    if [[ "${PUBLISH_GATE_REQUIRE_ALL:-}" == "1" ]]; then
+      echo "publish-gate.sh: ERROR — PUBLISH_GATE_REQUIRE_ALL=1 but gitleaks is not installed, so PG-9 would have scanned nothing. PG-5's approximate heuristic is explicitly backstopped by this check; without it the layered design collapses to the heuristic alone (CI-8). Install gitleaks >= v8.19.0." >&2
+      record "PG-9" "FAIL" 1 "gitleaks REQUIRED but not installed (PUBLISH_GATE_REQUIRE_ALL=1)" ""
+      return
+    fi
     echo "publish-gate.sh: WARNING — gitleaks not found; install for full coverage (PG-9 skipped). See https://github.com/gitleaks/gitleaks" >&2
     record "PG-9" "SKIP" 0 "gitleaks (not installed)" ""
     return
@@ -908,6 +965,25 @@ echo
 if ((FOUND_FAIL)); then
   echo "publish-gate.sh: FAIL — one or more checks reported a finding. See table above."
   exit 1
+fi
+
+# CI-8 — "PASS" on the last line must not be able to mean "I could not look".
+#
+# The verdict said "zero findings across all hard-fail checks" whether every check had run
+# or none had, and a reader who sees only that line cannot tell the difference. The WARNING
+# that a skip emits goes to stderr, scrolls past, and is routinely the one line nobody
+# reads. So the skips are named HERE, on the line that carries the verdict — a check that
+# did not run is reported as coverage this run does not have, never as a clean result.
+# Failing outright is deliberately not the answer: that would turn a laptop without
+# gitleaks into a red gate. PUBLISH_GATE_REQUIRE_ALL=1 is how a lane that MUST have the
+# full set says so (see check_pg9).
+_skipped=()
+for _i in "${!CHECK_IDS[@]}"; do
+  [[ "${CHECK_STATUS[$_i]}" == "SKIP" ]] && _skipped+=("${CHECK_IDS[$_i]}")
+done
+if ((${#_skipped[@]})); then
+  echo "publish-gate.sh: PASS — zero findings, but ${#_skipped[@]} check(s) DID NOT RUN: ${_skipped[*]}. This run does not clear what they cover."
+  exit 0
 fi
 echo "publish-gate.sh: PASS — zero findings across all hard-fail checks."
 exit 0

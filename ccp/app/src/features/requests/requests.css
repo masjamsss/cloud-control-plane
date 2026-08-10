@@ -109,6 +109,38 @@
   text-align: center;
   letter-spacing: 0;
 }
+/* PERF-15: the per-lane "Show more" affordance windowSlice's hiddenCount
+   gates on. Quiet chrome-idiom button (dashboard.css's .dash__export), not
+   the .reqs__clear text-link idiom — this is a repeatable list action, not a
+   one-shot filter reset. */
+.reqs__show-more {
+  display: block;
+  margin-top: var(--space-4);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: var(--space-3) var(--space-5);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: border-color var(--dur-base) var(--ease-standard), background-color var(--dur-base) var(--ease-standard);
+}
+.reqs__show-more:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.reqs__show-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reqs__show-more {
+    transition: none;
+  }
+}
 /* Divider rows, not boxed cards (Ledger contract #3) — the rows themselves
    (.rq-row below) carry the hairline separators; this is just the flex
    column that holds them, same shape as catalog.css's .catalog__rows. */

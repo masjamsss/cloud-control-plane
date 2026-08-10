@@ -111,6 +111,38 @@
 .apv__clear:hover {
   color: var(--accent-hover);
 }
+/* PERF-15: the "Show more" affordance windowSlice's hiddenCount gates on —
+   same quiet chrome-idiom button as requests.css's .reqs__show-more /
+   dashboard.css's .dash__export, not the .apv__clear text-link idiom (this is
+   a repeatable list action, not a one-shot filter reset). */
+.apv__show-more {
+  display: block;
+  margin: var(--space-5) 0 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: var(--space-3) var(--space-5);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: border-color var(--dur-base) var(--ease-standard), background-color var(--dur-base) var(--ease-standard);
+}
+.apv__show-more:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.apv__show-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .apv__show-more {
+    transition: none;
+  }
+}
 .apv__error {
   margin: 0 0 var(--space-5);
   padding: var(--space-3) var(--space-4);

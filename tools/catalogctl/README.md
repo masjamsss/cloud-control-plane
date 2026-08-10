@@ -68,26 +68,31 @@ installs itself via its package's `init()`. Verified directly against
 
 | Subcommand | Package | What it does |
 |---|---|---|
+| `drift-edit` | `internal/driftpropose` | (DOC-8/ARCH-12) Apply-time edit replay for a drift bundle request (spec §7 / addendum A2-A3, §2-F1c): re-runs the SAME edit `drift-propose` generated against a scratch checkout, this time against the checkout the bundle gate actually commits from — the edit-replay entrypoint that was missing before this subcommand existed. |
 | `drift-propose` | `internal/driftpropose` | Deterministic drift adopt/revert proposal generator (spec 2026-07-20-ccp-drift-portal (`docs/superpowers/specs/2026-07-20-ccp-drift-portal.md`, private planning archive — not published) §6): reads a stored `ccp.drift/v1` envelope + a scratch checkout, partitions every verdict into adopt / revert / not-generatable, and writes a digest-pinned `proposals.json`. Pure — no network, no AWS, no LLM, no wall-clock in the output. |
 | `edit` | `internal/edit` | Applies one manifest op to a `ccp.request/v1` YAML's target HCL. The resolution pipeline + codemod dispatch (spec §2–§3). |
 | `expected-diff` | `internal/edit` | Alias for `edit --dry-run` — prints the diff, writes nothing. |
 | `onboard` | `internal/onboard` | The untrusted-repo onboarding orchestrator (spec §6.3–§6.4): prescan → trust-ack gate → sandboxed `init` + schema → census. See [Adopt Cloud Control Plane in a foreign repo](../../ccp/README.md#adopt-cloud-control-plane-in-a-foreign-repo) in the Cloud Control Plane README for the end-user flow. |
 | `plan-check` | `internal/plancheck` | The mechanical L2 verifier (spec §6, proposal 0012): parses `terraform show -json` and enforces the planned diff is a subset of what the request asked for. Pure — no file access. |
 | `pr-prepare` | `internal/prprep` | Turns an **approved** request into the bot-PR artifact bundle (edited `.tf`, the request, a plan-digest placeholder, PR body, redacted diff). Deterministic, fully offline — `gh pr create` is a documented seam, not executed here. |
+| `scan-worker` | `internal/scanworker` | (DOC-8/ARCH-12) The control plane's own repository scanner (ADR-0033): claims a scan job from the api's `/scan-jobs` lane, clones the target repo into a bounded workspace, runs the same prescan pipeline `onboard` uses, and reports terminal status back — the container `ccp/scanner/Dockerfile` builds and runs. |
+| `window-check` | `internal/windowcheck` | (DOC-8/ARCH-12) Evaluates a maintenance-window + cooling-off schedule against a supplied instant and estate timezone; the parity oracle `domain/schedule.ts#evaluateTime` is TypeScript-ported against and cross-checked byte-for-byte (`ccp/api/test/scheduleWindowCheckParity.test.ts`). |
 
 Run `catalogctl <subcommand> -h` for real flag names — don't trust a copy of them pasted into
 a second doc; verify against the package's `flag.NewFlagSet` calls directly (e.g.
 `internal/onboard/onboard.go`'s `run()`).
 
-### The `edit` verbs (12)
+### The `edit` verbs (13)
 
 `internal/edit/edit.go` dispatches on the request's `codemodOp` through three tables — this
 *is* the exhaustive list (grep `dispatch`, `fileDispatch`, `instantiateHandlers` in that file
-to reconfirm, rather than trust a count in prose):
+to reconfirm, rather than trust a count in prose). DOC-8: a fourth dispatch point,
+`create.go`'s `createHandlers` (the pre-locate ACCEPT branch — a create has no existing block
+to locate), was previously omitted from that count:
 
 `set_attribute` · `set_attributes` · `append_foreach_entry` · `remove_foreach_entry` ·
 `append_list_entry` · `remove_list_entry` · `append_block` · `set_association_attribute` ·
-`swap_child_block` · `remove_block` · `moved_block` · `instantiate_module`
+`swap_child_block` · `remove_block` · `moved_block` · `instantiate_module` · `create_resource`
 
 ## Testing
 

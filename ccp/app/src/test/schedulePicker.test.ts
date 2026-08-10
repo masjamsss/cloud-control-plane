@@ -122,7 +122,13 @@ describe('SchedulePicker — render shape', () => {
   });
 
   it('kind "window" with a valid schedule: shows the datetime input, duration select (4h span pre-selected), and a preview', () => {
-    const at = '2026-08-01T15:00:00.000Z';
+    // TEST-13 — future-RELATIVE, not a calendar literal. This test renders the real
+    // component, which judges validity against `Date.now()` (SchedulePicker.tsx:94). Pinned
+    // at the literal '2026-08-01T15:00:00.000Z', the window became a PAST window on 1 August
+    // 2026, the preview line stopped rendering, and the assertion below started failing on
+    // the date rather than on the component. `defaultWindowAt()` is the component's own
+    // notion of the soonest valid start, so the fixture is valid by construction.
+    const at = defaultWindowAt();
     const endAt = new Date(Date.parse(at) + DEFAULT_WINDOW_MS).toISOString(); // exactly a 4h span
     const schedule: Schedule = { kind: 'window', at, endAt };
     const html = renderToStaticMarkup(React.createElement(SchedulePicker, { value: schedule, onChange: noop }));

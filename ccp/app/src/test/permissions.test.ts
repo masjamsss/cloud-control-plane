@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChangeRequest, Team, User } from '@/types';
 import { manifests } from '@/data/manifests';
 import { getOperation } from '@/lib/interpreter';
-import { approvalsRequiredFor, canApprove, canRequest, requestableServices } from '@/lib/permissions';
+import { approvalsRequiredFor, canApprove, canRequest } from '@/lib/permissions';
 
 const teams: Team[] = [{ id: 't1', name: 'Team 1', serviceSlugs: ['ec2', 'ebs'] }];
 const requester: User = { id: 'd', name: 'Dewi', role: 'requester', teamId: 't1' };
@@ -45,17 +45,4 @@ describe('canApprove — separation of duties', () => {
   it('you cannot approve your own request', () => expect(canApprove(approver, req({ requester: 'a' }))).toBe(false));
   it('you cannot approve twice', () =>
     expect(canApprove(approver, req({ approvals: [{ user: 'a', at: 'now' }] }))).toBe(false));
-});
-
-describe('requestableServices', () => {
-  it('a requester only their team', () => {
-    const set = requestableServices(requester, manifests, teams);
-    expect(set.has('ec2')).toBe(true);
-    expect(set.has('s3')).toBe(false);
-  });
-  it('a lead sees all', () => {
-    const set = requestableServices(lead, manifests, teams);
-    expect(set.size).toBe(new Set(manifests.map((m) => m.service)).size);
-    expect(set.has('s3')).toBe(true);
-  });
 });

@@ -10,6 +10,7 @@ import type {
 } from '@/lib/httpApi';
 import { recordAudit } from '@/lib/audit';
 import { getCurrentUser } from '@/lib/session';
+import { PROJECT_ID_RE } from '@/lib/projectId';
 
 /**
  * The demo stand-in for ccp-api's /projects registry + onboarding trust
@@ -119,7 +120,9 @@ function save(projects: StoredProject[]): void {
 
 /* ── validation (mirrors routes/projects.ts) ─────────────────────────────────── */
 
-const PROJECT_ID = /^[a-z][a-z0-9-]{1,31}$/;
+// ARCH-13: PROJECT_ID_RE (imported above, from ./projectId) is the single
+// home for this grammar — the api's projects.ts re-exports the SAME
+// constant from there rather than declaring its own copy.
 const GITHUB_OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})?$/;
 const GITHUB_REPO = /^[A-Za-z0-9_.-]{1,100}$/;
 /** One GitLab group/subgroup path segment (groups may nest: `platform/infra`). */
@@ -243,7 +246,7 @@ function validateRepoRef(repo: RepoRef): RepoRef {
 export function registerLocalProject(input: RegisterProjectInput): ServerProject {
   const id = input.id.trim();
   const name = input.name.trim();
-  if (!PROJECT_ID.test(id)) {
+  if (!PROJECT_ID_RE.test(id)) {
     fail('Project id must be a short lowercase slug (letters, numbers, dashes).');
   }
   if (name.length < 2 || name.length > 100) fail('Display name must be 2–100 characters.');

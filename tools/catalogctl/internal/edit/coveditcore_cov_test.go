@@ -1412,4 +1412,58 @@ func TestCoveditcoreAtomicWrite(t *testing.T) {
 			t.Fatalf("a file was created despite the error (stat err %v)", statErr)
 		}
 	})
+
+	// CTL-8 — os.CreateTemp always creates 0600; without an explicit chmod the
+	// rename silently drops an edited file's mode to 0600 even though the tool
+	// promises to touch only the located block's bytes, nothing else.
+	t.Run("preserves the edited file's existing permission mode (0600 -> 0644 case)", func(t *testing.T) {
+		dir := t.TempDir()
+		path := coveditcoreWriteFile(t, dir, "main.tf", "old\n")
+		if err := os.Chmod(path, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := atomicWrite(path, []byte("new\n")); err != nil {
+			t.Fatalf("atomicWrite: %v", err)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o644 {
+			t.Fatalf("mode after edit = %o, want 0644 (the file's mode BEFORE the edit)", got)
+		}
+	})
+
+	t.Run("preserves a non-default existing mode too (0640, not just 0644)", func(t *testing.T) {
+		dir := t.TempDir()
+		path := coveditcoreWriteFile(t, dir, "main.tf", "old\n")
+		if err := os.Chmod(path, 0o640); err != nil {
+			t.Fatal(err)
+		}
+		if err := atomicWrite(path, []byte("new\n")); err != nil {
+			t.Fatalf("atomicWrite: %v", err)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o640 {
+			t.Fatalf("mode after edit = %o, want 0640", got)
+		}
+	})
+
+	t.Run("a brand-new file gets 0644, not the temp file's raw 0600", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "fresh.tf")
+		if err := atomicWrite(path, []byte("new\n")); err != nil {
+			t.Fatalf("atomicWrite: %v", err)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o644 {
+			t.Fatalf("mode of a fresh file = %o, want 0644", got)
+		}
+	})
 }

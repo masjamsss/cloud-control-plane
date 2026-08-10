@@ -76,6 +76,11 @@ SECRET_REASON = (
 RESOURCE_HEADER_RE = re.compile(r'^resource "([A-Za-z0-9_]+)" "([A-Za-z_][A-Za-z0-9_]*)" \{$')
 IMPORT_BLOCK_RE = re.compile(r'^import \{\n  to = (\S+)\n  id = "([^"]*)"\n\}$', re.M)
 ATTR_RE = re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]*)"\s*$')
+# IMP-11 — a heredoc's OPEN marker (`<<EOT`, `<<-EOT`, `<<~EOT`), matched at
+# end-of-line the way `terraform fmt` always emits it (`attr = <<-EOT`).
+# `-`/`~` heredocs let the closing marker be indented; a plain `<<EOT` one
+# requires it at column 0 — see the strip/closed check in split_generated().
+HEREDOC_OPEN_RE = re.compile(r'<<(-|~)?([A-Za-z_][A-Za-z0-9_]*)\s*$')
 
 GUARD_LINES = [
     "",
@@ -123,6 +128,18 @@ def split_generated(text):
     ambiguity — an unterminated block, or two blocks resolving to the same
     address — withholds THAT address only; it never poisons a
     well-formed neighbor in the same file.
+
+    IMP-11: the opening-brace decoy above has a closing-brace twin — a
+    heredoc BODY can itself contain a line that is exactly "}" at column 0
+    (e.g. a captured user_data script emitting JSON), which would end-of-
+    block on decoy content and truncate the real block. So once a line
+    opens a heredoc (HEREDOC_OPEN_RE), "}"/new-header detection is
+    suspended until the matching terminator line closes it — a plain
+    `<<EOT` requires the label at column 0; `<<-EOT`/`<<~EOT` allow it
+    indented (terraform fmt's own convention, stripped before compare).
+    A heredoc still open at EOF/next-header falls through to the same
+    "unterminated" ambiguity as an unmatched brace — withheld, never
+    guessed.
     """
     lines = text.splitlines()
     blocks = {}
@@ -138,12 +155,23 @@ def split_generated(text):
         start = i
         j = i + 1
         end = None
+        heredoc = None  # (strip_indent, label) while scanning inside an open heredoc body
         while j < n:
+            if heredoc is not None:
+                strip_indent, label = heredoc
+                closed = (lines[j].strip() == label) if strip_indent else (lines[j] == label)
+                if closed:
+                    heredoc = None
+                j += 1
+                continue
             if lines[j] == "}":
                 end = j
                 break
             if RESOURCE_HEADER_RE.match(lines[j]):
                 break  # a new header before this one closed — unterminated, not nested HCL
+            hm = HEREDOC_OPEN_RE.search(lines[j])
+            if hm:
+                heredoc = (hm.group(1) in ("-", "~"), hm.group(2))
             j += 1
         if end is None:
             ambiguous[address] = (

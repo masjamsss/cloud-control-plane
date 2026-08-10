@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
@@ -12,6 +15,7 @@ import {
   proposePendingChange,
   rejectPendingChange,
   resetPendingChangesForTests,
+  subscribePendingChangesChanged,
   summarizePending,
 } from '@/lib/pendingChanges';
 import { PendingChangesBanner } from '@/components/PendingChangesBanner';
@@ -179,6 +183,48 @@ describe('acknowledge / reject — advisory local transitions', () => {
   });
 });
 
+describe('subscribePendingChangesChanged — the usePendingCount() external-store source (FE-7)', () => {
+  it('fires on a write', () => {
+    let calls = 0;
+    const unsubscribe = subscribePendingChangesChanged(() => (calls += 1));
+    propose();
+    expect(calls).toBe(1);
+    unsubscribe();
+  });
+
+  it('fires once per write, for every kind of write (propose, acknowledge, reject)', () => {
+    let calls = 0;
+    const unsubscribe = subscribePendingChangesChanged(() => (calls += 1));
+    const created = propose();
+    expect(calls).toBe(1);
+    acknowledgePendingChange(created.id);
+    expect(calls).toBe(2);
+    const other = propose({ targetKey: 'b' });
+    rejectPendingChange(other.id);
+    expect(calls).toBe(4);
+    unsubscribe();
+  });
+
+  it('stops firing after unsubscribe', () => {
+    let calls = 0;
+    const unsubscribe = subscribePendingChangesChanged(() => (calls += 1));
+    propose();
+    expect(calls).toBe(1);
+    unsubscribe();
+    propose({ targetKey: 'after-unsubscribe' });
+    expect(calls).toBe(1);
+  });
+
+  it('an acknowledge/reject on an unknown id (a no-op write) still does not fire — no localStorage write happened', () => {
+    let calls = 0;
+    const unsubscribe = subscribePendingChangesChanged(() => (calls += 1));
+    acknowledgePendingChange('no-such-id');
+    rejectPendingChange('no-such-id');
+    expect(calls).toBe(0);
+    unsubscribe();
+  });
+});
+
 describe('<PendingChangesBanner> — count logic (0 → hidden)', () => {
   it('renders nothing when there are no pending items', () => {
     const html = renderToStaticMarkup(
@@ -205,5 +251,30 @@ describe('<PendingChangesBanner> — count logic (0 → hidden)', () => {
       React.createElement(MemoryRouter, null, React.createElement(PendingChangesBanner)),
     );
     expect(html).toContain('1');
+  });
+});
+
+/**
+ * FE-7 — the mock branch's re-render-on-write (`usePendingCount` wired to
+ * `subscribePendingChangesChanged`, tested directly above) and the server
+ * branch's route-keyed refetch can't be observed through a real mount/write/
+ * re-render cycle without jsdom (see TEST-7) — `renderToStaticMarkup` is a
+ * one-shot render per call, so it re-reads the CURRENT store either way and
+ * would pass even against the pre-fix bare `pendingCount()` call. Both
+ * wirings are pinned at the source level instead, the same technique
+ * router.tsx's own registration tests already use for the identical reason.
+ */
+describe('<PendingChangesBanner> — store/route wiring is pinned (FE-7)', () => {
+  const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const source = readFileSync(join(SRC, 'components/PendingChangesBanner.tsx'), 'utf8');
+
+  it('the mock branch reads the count through usePendingCount (a real external-store binding), not a bare pendingCount() call', () => {
+    expect(source).toContain('usePendingCount');
+    expect(source).not.toMatch(/authoritative \? serverCount : pendingCount\(\)/);
+  });
+
+  it('the server-count effect is keyed on the route, in addition to `authoritative`', () => {
+    expect(source).toContain('useLocation');
+    expect(source).toMatch(/\[authoritative,\s*location\.pathname\]/);
   });
 });

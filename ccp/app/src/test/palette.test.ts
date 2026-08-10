@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type {
   ChangeRequest,
@@ -563,4 +566,44 @@ describe('ticket-vocabulary keywords find their op in the palette top 3 (0034 D6
       expect(failures, failures.join('\n')).toEqual([]);
     },
   );
+});
+
+/**
+ * UI-15 — "My requests" used to share CommandPalette's mount-time
+ * `[user, projectId]` effect with the (legitimately static) manifests/
+ * inventory groups, so a request submitted or approved since the palette
+ * last loaded stayed absent — or showed a stale status — until a user or
+ * project change, unlike Notifications.tsx's bell (fixed for the identical
+ * reason under UIUX-13, keyed on `open`). Fixed by splitting the requests
+ * fetch into its OWN effect keyed additionally on `open`, so only the slice
+ * that actually goes stale within a session is refetched on every palette
+ * open — not the whole, much heavier catalog + inventory.
+ *
+ * Pinned at the source level: mounting CommandPalette through a real
+ * open/close cycle needs a DOM (no jsdom in this repo — see TEST-7); this
+ * checks the effect wiring the way router.tsx's own registration tests
+ * already do for the identical reason.
+ */
+describe('CommandPalette — "My requests" refetches on open (UI-15)', () => {
+  const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const source = readFileSync(join(SRC, 'components/CommandPalette.tsx'), 'utf8');
+
+  it('the requests effect is its own useEffect, separate from manifests/inventory', () => {
+    const effects = [...source.matchAll(/}, \[([^\]]*)\]\);/g)].map((m) => m[1]!.trim());
+    expect(effects.length).toBeGreaterThanOrEqual(2);
+    expect(effects).toContain('user, projectId'); // manifests/inventory — unchanged
+    expect(effects).toContain('user, projectId, open'); // requests — the UI-15 fix
+  });
+
+  it('the requests effect (listRequests/listPendingApprovals) is the one keyed on open, not the catalog one', () => {
+    const requestsEffectStart = source.indexOf('api.listRequests(user.id)');
+    const requestsDeps = source.indexOf('}, [user, projectId, open]);');
+    const manifestsDeps = source.indexOf('}, [user, projectId]);');
+    expect(requestsEffectStart).toBeGreaterThan(-1);
+    expect(requestsDeps).toBeGreaterThan(requestsEffectStart);
+    // The catalog-only deps array closes BEFORE the requests fetch even starts
+    // — proof the two calls are not sharing one effect body.
+    expect(manifestsDeps).toBeGreaterThan(-1);
+    expect(manifestsDeps).toBeLessThan(requestsEffectStart);
+  });
 });

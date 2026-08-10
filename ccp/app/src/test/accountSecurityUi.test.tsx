@@ -218,8 +218,10 @@ describe('ReauthDialogView', () => {
 describe('router — /account is a registered project-scoped route, open to every role', () => {
   // router.tsx's createBrowserRouter needs a DOM at import time, so
   // registration is pinned at the source level (driftPanel.test.tsx's
-  // technique).
-  const source = readFileSync(join(SRC, 'router.tsx'), 'utf8');
+  // technique). The route tree itself lives in routeConfig.tsx (UI-9 split
+  // it out so it's importable as plain data — see routeConfig.tsx's
+  // docblock).
+  const source = readFileSync(join(SRC, 'routeConfig.tsx'), 'utf8');
 
   it('registers the account path with the AccountSecurityPage element and a title', () => {
     expect(source).toContain("path: 'account'");

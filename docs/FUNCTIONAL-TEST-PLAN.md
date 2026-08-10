@@ -120,7 +120,7 @@ curl -s -c /tmp/ccp.jar $CH -d '{"username":"<admin>","password":"<pw>"}' $API/a
 | DEMO-01 | Demo login works with the seeded roster | Visit `/login`; sign in `alice` / `alice` | Login page shows title **Sign in** and the sub-line "Change cloud infrastructure through reviewed forms…". Alice lands in the shell at `/p/sample/` with the full sample estate (services, inventory of 51 resources). No forced password change in mock (`mustChangePassword:false` by seed). | `ccp/app/src/test/accounts.test.ts`, `authFlow.test.ts` |
 | DEMO-02 | Wrong password is generic | Sign out; try `alice` / `wrong` | Inline `role=alert` error; generic failure text; password field cleared; no session. | `ccp/app/src/test/accountFlow.test.ts` |
 | DEMO-03 | How you can tell it's the demo | Check: (a) no `Set-Cookie`/network calls to any API on login (devtools); (b) admin controls that need a server render inside a disabled fieldset with the note **`This control is inactive until the server enforces it`**; (c) URL scope is `/p/sample` from first paint | All three hold. `SERVER_MODE==='mock'` drives (b) — the exact advisory string is pinned by test. | `ccp/app/src/test/advisoryGate.test.ts` |
-| DEMO-04 | Demo request → approval round-trip | As `dave` (requester, team ERP Basis): Services → EBS → pick a volume → "Grow an EBS volume" → size 60 → justification (>= 10 chars) → Review → Submit. Sign out, sign in as `carol` (approver) → `/p/sample/approvals` → the card → **Approve**. Then as `bob` (lead) → **Approve** again | Submit succeeds into the review queue (ebs-grow is `l1_with_guardrails` ⇒ ladder [L2, L3], "Awaiting 2 approvals"). Carol's approval records 1/2 (next step L3); Bob's approval completes 2/2 → status badge **Applied** (mock stamps APPLIED for `now` schedules; no real infra changes — this is the demo). | `ccp/app/src/test/approvalsQueue.test.ts`, `w1DayTwoOps.test.ts`, `fullCoverage.test.ts` |
+| DEMO-04 | Demo request → approval round-trip | As `dave` (requester, team ERP Basis): Services → EBS → pick a volume → "Grow an EBS volume" → size 60 → justification (>= 10 chars) → Review → Submit. Sign out, sign in as `carol` (approver) → `/p/sample/approvals` → the card → **Approve**. Then as `bob` (lead) → **Approve** again | Submit succeeds into the review queue (ebs-grow is `l1_with_guardrails` ⇒ ladder [L2, L3], "Awaiting 2 approvals"). Carol's approval records 1/2 (next step L3); Bob's approval completes 2/2 → status badge **Applied** (mock stamps APPLIED for `now` schedules; no real infra changes — this is the demo). | `ccp/app/src/test/approvalsQueue.test.ts`, `w1DayTwoOps.test.ts`, `provisionTileCompleteness.test.ts` |
 | DEMO-05 | Separation of duties in the demo | As `carol`, submit any request; open `/p/sample/approvals` | Her own card's **Approve** button is disabled (`canApprove` excludes own requests); the ladder shows "your own request". | `ccp/app/src/test/permissions.test.ts`, `approvalsQueue.test.ts` |
 | DEMO-06 | Team scope in the demo | As `dave` (ERP Basis), attempt a Network & Security service op | The catalog/action picker does not offer out-of-team services for requesters; direct navigation shows the op as not requestable for him. | `ccp/app/src/test/permissions.test.ts` |
 | DEMO-07 | Forces-replace typed confirmation (UI gate) | As `dave`: EBS → `ebs-set-encrypted` on a volume; try to submit without typing the address, then type a wrong one, then the exact address | Submit stays disabled until the typed value exactly equals the target address; wrong text shows **`That name does not match. Type the resource name exactly to continue.`**; exact match enables submit → request routed to the engineer track ("Needs engineer" badge). | `ccp/app/src/test/replaceConfirmGate.test.ts` |
@@ -187,7 +187,7 @@ curl -s -c /tmp/ccp.jar $CH -d '{"username":"<admin>","password":"<pw>"}' $API/a
 
 | ID | Title | Steps | Expected result | Automated? |
 |---|---|---|---|---|
-| REQ-01 | Self-service submit | `dave`: catalog → a LOW self-service op (e.g. add a tag) → valid params → justification ≥10 chars → submit | 201; status **`AWAITING_CODE_REVIEW`**; ladder `[L2]`, `approvalsRequired: 1`; appears in "My requests" and the approvals queue | `ccp/api/test/changeSet.test.ts`, app `fullCoverage.test.ts` |
+| REQ-01 | Self-service submit | `dave`: catalog → a LOW self-service op (e.g. add a tag) → valid params → justification ≥10 chars → submit | 201; status **`AWAITING_CODE_REVIEW`**; ladder `[L2]`, `approvalsRequired: 1`; appears in "My requests" and the approvals queue | `ccp/api/test/changeSet.test.ts`, app `provisionTileCompleteness.test.ts` |
 | REQ-02 | Out-of-bounds param | Same op, one value past its manifest bound (e.g. `ebs-grow` `new_size_gib: 99999`, max 16384) | **422 `PARAM_OUT_OF_BOUNDS`** "A parameter is outside its allowed bounds."; nothing stored; the SPA showed the same violation inline pre-submit | `ccp/api/test/adv2.test.ts` |
 | REQ-03 | Guardrails = two distinct people | `dave` submits `ebs-grow` (guardrailed); `carol` approves; `carol` tries again; `bob` completes | Ladder `[L2, L3]`, `approvalsRequired: 2`. First approval → step L3, still open. Same approver again → **409 `ALREADY_APPROVED`**. `bob` (lead, L3) completes → the request leaves the queue | `ccp/api/test/approvalLadder.test.ts`, `dualControl.test.ts` |
 | REQ-04 | Wrong-level approval | An approver (not lead) attempts the L3 step | **403 `WRONG_APPROVAL_LEVEL`** — L3 is lead-only | `ccp/api/test/approvalLadder.test.ts` |
@@ -202,7 +202,7 @@ curl -s -c /tmp/ccp.jar $CH -d '{"username":"<admin>","password":"<pw>"}' $API/a
 | REQ-13 | Cooling-off | Approve a request subject to a cooling period | Status **`APPROVED_COOLING`**; apply-eligibility only after `earliestApplyAt`; the window gate refuses before it (BEFORE_WINDOW verdict) | `ccp/api/test/cooling.test.ts` |
 | REQ-14 | Scheduled window lifecycle | Submit with a future window (≥ now+30 min); let it expire un-applied | Parks at **`AWAITING_DEPLOY_APPROVAL`**; after the window passes → **`WINDOW_EXPIRED`** (badge "Window expired") — parked, not terminal: re-window or cancel are the only moves | `ccp/api/test/windowExpiry.test.ts` |
 | REQ-15 | Re-window rules | Re-window the expired request (owner), then try as a stranger; try a window < now+30 min | Owner with fresh-enough approval → new window accepted; non-owner → **403 `REWINDOW_FORBIDDEN`**; too-soon window → **422** schedule validation | `ccp/api/test/rewindow.test.ts` |
-| REQ-16 | Cancel rules | Cancel own open request; then try cancelling someone else's | Own → status **`CANCELLED`** (terminal); foreign → **403 `CANCEL_FORBIDDEN`** | `ccp/api/test/requests` coverage (cancel arm) |
+| REQ-16 | Cancel rules | Cancel own open request; then try cancelling someone else's | Own → status **`CANCELLED`** (terminal); foreign → **403 `CANCEL_FORBIDDEN`** | `ccp/api/test/cooling.test.ts` (the `POST /:id/cancel` describe block) |
 | REQ-17 | Rate limits | Submit past the per-hour cap (default 50/h) or hold 20 open requests | **429 `RATE_LIMITED`** with a `Retry-After` header; existing requests unaffected | `ccp/api/test/rateLimit.test.ts` |
 | REQ-18 | Plan summary recording | Record a CI plan summary on a request (`POST /requests/:id/plan-summary`); then a malformed one | Valid summary stored and rendered on the detail card; malformed → **422 `VALIDATION_FAILED`** | `ccp/api/test/planSummary.test.ts` |
 | REQ-19 | Pinned review artifact | Approve a request after its inventory mutated | The approver sees the **pinned** diff captured at submit, byte-identical to what the requester reviewed — never a regenerated one | app `pinned-diff.test.ts`, `reviewArtifact.test.ts` |
@@ -214,10 +214,10 @@ curl -s -c /tmp/ccp.jar $CH -d '{"username":"<admin>","password":"<pw>"}' $API/a
 
 | ID | Title | Steps | Expected result | Automated? |
 |---|---|---|---|---|
-| ADMIN-01 | Teams CRUD | Create a team, assign services, rename, attempt delete while members exist | Create/rename OK (duplicate name → **409 `DUPLICATE_TEAM`**); delete with members → **409 `TEAM_NOT_EMPTY`**; empty team deletes | `ccp/api/test/teams` coverage |
+| ADMIN-01 | Teams CRUD | Create a team, assign services, rename, attempt delete while members exist | Create/rename OK (duplicate name → **409 `DUPLICATE_TEAM`**); delete with members → **409 `TEAM_NOT_EMPTY`**; empty team deletes | `ccp/api/test/adminSurface.test.ts` |
 | ADMIN-02 | Account admin | Create a user with a starting password; duplicate username; set per-project role | Created (user forced to change password on first login); duplicate → **409 `DUPLICATE_USERNAME`**; role change takes effect on the user's next request | `ccp/api/test/accountsAdmin.test.ts` |
 | ADMIN-03 | Risk policy | Set medium=2 in the risk policy; submit a MEDIUM request | `approvalsRequired` reflects the policy where the policy drives it (see PERMISSIONS.md §4 for the server-ladder split); the SPA renders the requirement it was told | `ccp/api/test/adv2.test.ts` policy case |
-| ADMIN-04 | Freeze toggle audit | Toggle freeze on/off | Both flips are audit-chained events with actor + timestamp; banner state follows | `ccp/api/test/settings` coverage |
+| ADMIN-04 | Freeze toggle audit | Toggle freeze on/off | Both flips are audit-chained events with actor + timestamp; banner state follows | `ccp/api/test/deploymentSettings.test.ts` (the toggle + audit); enforcement itself is covered separately across `adv2`/`changeSet`/`driftButtons` et al. |
 | ADMIN-05 | Non-admin denied | A lead (non-admin) calls an `/admin/*` route | **403 `NOT_ADMIN`** | `ccp/api/test/projectAuthz.test.ts` |
 | ADMIN-06 | Settings catalog honesty | Compare three visible settings against `ccp/docs/SETTINGS-CATALOG.md` rows | Each row's "enforced by" claim matches observed behavior (server-enforced vs SPA-advisory) | XLAYER-72 companion |
 | ADMIN-07 | Admin does not equal approver | An admin with no approver/lead role tries to approve | **403 `FORBIDDEN_ROLE`** — admin is account/settings power, not an approval level | `ccp/api/test/projectAuthz.test.ts` |
@@ -362,7 +362,7 @@ The repo uses five parity idioms, each exercised below: **(a)** a literally-shar
 
 ## 15. Traceability & the smoke subset
 
-**Fully covered by automation today:** the api request lifecycle + auth + account (65 files, 977 tests — `ccp/api/test/`), the SPA journeys in jsdom-free component/logic tests (141 files, 2631+ tests — `ccp/app/src/test/`), the CLI corpus (368+ subtests — `tools/catalogctl`), the install smoke (`ccp-smoke.yml`), and the publish gate (`publish-gate.yml`). **Manual-only:** the Docker/installer paths (INST-04..14), doctor/self-update (OPS-04), browser-real TOTP enrolment with a phone authenticator, and the XLAYER mutation/triangulation drills.
+**Fully covered by automation today:** the api request lifecycle + auth + account (100 files, 1411 tests — `npm test` in `ccp/api`, mostly under `ccp/api/test/`), the SPA journeys in jsdom-free component/logic tests (155 files, 2768 tests — `npm test` in `ccp/app`, `ccp/app/src/test/`), the CLI corpus (2425 subtests — `go test ./... -v | grep -c '^--- PASS'` in `tools/catalogctl`), the install smoke (`ccp-smoke.yml`), and the publish gate (`publish-gate.yml`). TEST-10 (2026-08): these three counts had drifted (65/977, 141/2631+, 368+) — the command each is derived from is quoted here so the next drift is a one-line refresh, not a re-investigation. **Manual-only:** the Docker/installer paths (INST-04..14), doctor/self-update (OPS-04), browser-real TOTP enrolment with a phone authenticator, and the XLAYER mutation/triangulation drills.
 
 **Smoke subset (~20 min) — run these 10 when time is short:**
 1. INST-01 (`run-local.sh --smoke` exits 0)
@@ -375,5 +375,26 @@ The repo uses five parity idioms, each exercised below: **(a)** a literally-shar
 8. REQ-11 (freeze blocks with 423 `GLOBAL_FREEZE`)
 9. ARM-01/03 (apply + drift lanes answer DISARMED)
 10. CLI-02 (window-check verdict tokens + exit codes)
+
+**Deferred XLAYER cases (not yet automated):** TEST-10 — these rows' own "Automated?" column
+said "new"/"manual release drill" with nothing tying that back to a tracked piece of work, so a
+reader had no way to tell "designed, not yet built" apart from "forgotten." Table, not GitHub
+issues, is the deliberate choice here — every row already carries its own spec (Steps/Expected
+result columns above), so a separate issue would only duplicate it; this table is that backlog,
+kept next to the rows it tracks instead of drifting away from them.
+
+| XLAYER row | What's missing | Where it lands |
+|---|---|---|
+| XLAYER-01 | New RTL case: every rendered field vs. the manifest for `s3-add-lifecycle-rule` | `ccp/app/src/test/` |
+| XLAYER-04 | New case: off-allowlist value rejected both SPA- and server-side | `ccp/app/src/test/` + `ccp/api/test/` |
+| XLAYER-06 | New case (api vitest + go test): grow-only ownership asymmetry across all three layers | `ccp/api/test/`, `tools/catalogctl` |
+| XLAYER-14 | New differential case pinning the known `cidr_blocks`/`cidr_block` divergence so its resolution is a passing assertion, not just a documented gap | `ccp/app/src/test/` or `ccp/api/test/` |
+| XLAYER-15 | New mutation arm on top of the existing `pinned-diff.test.ts` coverage | `ccp/app/src/test/` |
+| XLAYER-21 | Manual release drill (mutate the Go mirror, prove the parity test catches it) — a candidate for the same automated-mutation-test treatment `check-path-filters.sh`/`check-workflow-safety.sh` already gave other manual checks in this repo | `tools/catalogctl` parity harness |
+| XLAYER-41 | New subprocess case: the estate-tz disagreement scenario (Go `SCHEDULE_INVALID` vs. TS `IN_WINDOW`) | `ccp/api/test/scheduleWindowCheckParity.test.ts` |
+| XLAYER-50 | New seeded-violation fixtures for both manifest-lint and opTaxonomy/verbShape gates | `tools/catalogctl` + `ccp/app/src/test/` |
+| XLAYER-61 | New sweep: every bootstrap inventory address resolves a block (partial coverage exists in `projectRegistry.test.ts`) | `ccp/app/src/test/` |
+| XLAYER-70 | New thin asserts: one documented row proven live per generated doc, three-way (doc == code == wire) | `ccp/app/src/test/` or `ccp/api/test/` |
+| XLAYER-73 | New CI wrapper: execute every "Regenerate / verify" command block in the generated docs and check every quoted anchor | a new CI lane (`.github/workflows/`) |
 
 *Maintained alongside the code: when a case's expected value changes, the change is a product change — update the row in the same PR, citing the test that pins it.*

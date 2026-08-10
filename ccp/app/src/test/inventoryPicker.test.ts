@@ -1,3 +1,5 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { Inventory, InventoryResource, ManifestParam } from '@/types';
 import { manifests } from '@/data/manifests';
@@ -12,6 +14,7 @@ import {
   resourceTypeOf,
   type PickerOption,
 } from '@/lib/inventoryPicker';
+import { Field } from '@/components/SchemaForm/Field';
 
 const inventory = inventoryData as unknown as Inventory;
 
@@ -105,7 +108,9 @@ describe('buildPickerOptions — the picker option list, address-keyed (0025 RX-
   it('current value: falls back to the first attribute when no CURRENT_KEYS match', () => {
     const inv: Inventory = {
       generatedAt: '2026-01-01T00:00:00.000Z',
-      resources: [fixtureResource({ address: 'aws_ebs_volume.a', attributes: { odd_field: 'v1' } })],
+      resources: [
+        fixtureResource({ address: 'aws_ebs_volume.a', attributes: { odd_field: 'v1' } }),
+      ],
     };
     const [opt] = buildPickerOptions(fixtureParam(), inv);
     expect(opt!.current).toBe('v1');
@@ -129,7 +134,10 @@ describe('buildPickerOptions — the picker option list, address-keyed (0025 RX-
     };
     // enumSource's field is an attribute, not 'address' — resolveEnum returns
     // attribute VALUES here, which never match any resource.address.
-    const options = buildPickerOptions(fixtureParam({ enumSource: 'inventory://aws_ebs_volume/tag' }), inv);
+    const options = buildPickerOptions(
+      fixtureParam({ enumSource: 'inventory://aws_ebs_volume/tag' }),
+      inv,
+    );
     expect(options).toEqual<PickerOption[]>([
       { address: 'orphan-tag-value', name: 'orphan-tag-value', current: null },
     ]);
@@ -140,7 +148,7 @@ describe('buildPickerOptions — the picker option list, address-keyed (0025 RX-
     expect(buildPickerOptions(fixtureParam(), inv)).toEqual([]);
   });
 
-  it('holds against the real catalog: ec2-resize\'s instance param resolves real aws_instance addresses', () => {
+  it("holds against the real catalog: ec2-resize's instance param resolves real aws_instance addresses", () => {
     const op = getOperation('ec2-resize', manifests)!;
     const param = op.params.find((p) => p.source === 'inventory')!;
     const options = buildPickerOptions(param, inventory);
@@ -154,6 +162,49 @@ describe('buildPickerOptions — the picker option list, address-keyed (0025 RX-
       expect(r).toBeDefined();
       expect(opt.name).toBe(r!.name ?? opt.address);
     }
+  });
+});
+
+/* ── UI-14: single-select clear affordance (SSR string renders — no jsdom) ── */
+
+function renderField(param: ManifestParam, value: unknown, inv: Inventory): string {
+  return renderToStaticMarkup(
+    createElement(Field, {
+      param,
+      value,
+      inventory: inv,
+      onChange: () => undefined,
+      onBlur: () => undefined,
+    }),
+  );
+}
+
+const oneVolume: Inventory = {
+  generatedAt: '2026-01-01T00:00:00.000Z',
+  resources: [fixtureResource({ address: 'aws_ebs_volume.a', name: 'Vol A' })],
+};
+
+describe('InventoryPicker (via Field, SSR) — single-select clear affordance (UI-14)', () => {
+  it('an OPTIONAL param with a committed selection renders a clear button', () => {
+    const html = renderField(fixtureParam({ required: false }), 'aws_ebs_volume.a', oneVolume);
+    expect(html).toContain('sf-combo__clear');
+    expect(html).toContain('aria-label="Clear selection"');
+  });
+
+  it('a REQUIRED param with a committed selection renders NO clear button — nothing valid to clear TO', () => {
+    const html = renderField(fixtureParam({ required: true }), 'aws_ebs_volume.a', oneVolume);
+    expect(html).not.toContain('sf-combo__clear');
+  });
+
+  it('an optional param with NO selection yet renders no clear button either', () => {
+    const html = renderField(fixtureParam({ required: false }), '', oneVolume);
+    expect(html).not.toContain('sf-combo__clear');
+  });
+
+  it('aria-controls is only present while the listbox is actually in the DOM (closed by default in SSR)', () => {
+    const html = renderField(fixtureParam({ required: false }), 'aws_ebs_volume.a', oneVolume);
+    expect(html).toContain('role="combobox"');
+    expect(html).not.toContain('aria-controls');
   });
 });
 
@@ -192,16 +243,27 @@ describe('estimateMountedOptionCount — picker DOM node count stays bounded (00
     // "hypothetical 10,000-resource type" test below proves at real scale;
     // this test just wires the same formula through the ACTUAL bundled data.
     const byType = new Map<string, number>();
-    for (const r of inventory.resources) byType.set(r.resourceType, (byType.get(r.resourceType) ?? 0) + 1);
+    for (const r of inventory.resources)
+      byType.set(r.resourceType, (byType.get(r.resourceType) ?? 0) + 1);
     const broadest = Math.max(...byType.values());
     expect(broadest).toBeGreaterThan(0);
 
-    const mounted = estimateMountedOptionCount(broadest, PICKER_PANEL_PX, PICKER_ROW_PX, PICKER_OVERSCAN);
+    const mounted = estimateMountedOptionCount(
+      broadest,
+      PICKER_PANEL_PX,
+      PICKER_ROW_PX,
+      PICKER_OVERSCAN,
+    );
     expect(mounted).toBeLessThanOrEqual(20);
   });
 
   it('stays bounded even for a hypothetical 10,000-resource type — mounted count is independent of estate size', () => {
-    const mounted = estimateMountedOptionCount(10_000, PICKER_PANEL_PX, PICKER_ROW_PX, PICKER_OVERSCAN);
+    const mounted = estimateMountedOptionCount(
+      10_000,
+      PICKER_PANEL_PX,
+      PICKER_ROW_PX,
+      PICKER_OVERSCAN,
+    );
     expect(mounted).toBeLessThanOrEqual(20);
   });
 });

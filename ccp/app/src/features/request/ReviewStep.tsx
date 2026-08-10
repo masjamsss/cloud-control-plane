@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { JSX } from 'react';
+import type { JSX, Ref } from 'react';
 import type { Inventory, ManifestOperation, Schedule } from '@/types';
 import { exposureLabel } from '@/lib/interpreter';
 import { verbFor } from '@/lib/catalog';
@@ -63,6 +63,13 @@ export interface ReviewStepProps {
   onEdit: () => void;
   /** Persist the request (RequestForm builds the draft + navigates). */
   onSubmit: () => void;
+  /** UI-12: RequestForm moves focus here on entering Review, the same way it
+   * already moves focus to ErrorSummary on an invalid Configure→Review
+   * attempt — the happy path was the one gap. `tabIndex={-1}` on the heading
+   * (not a plain scroll) is what makes it a real focus target and what a
+   * screen reader announces as the page's new content. React 19: `ref` is a
+   * plain prop, no `forwardRef` needed (see ErrorSummary's docblock). */
+  headingRef?: Ref<HTMLHeadingElement>;
 }
 
 /**
@@ -87,6 +94,7 @@ export function ReviewStep({
   onReplaceConfirmationChange,
   onEdit,
   onSubmit,
+  headingRef,
 }: ReviewStepProps): JSX.Element {
   const meta = getServiceMeta(op.service);
   const summary = plainSummary(op, values, inventory);
@@ -160,7 +168,7 @@ export function ReviewStep({
       <div className="rq-review__head">
         <div>
           <p className="rq-review__eyebrow">REVIEW &amp; SUBMIT</p>
-          <h1 className="rq-review__title">
+          <h1 className="rq-review__title" ref={headingRef} tabIndex={-1}>
             {meta.displayName} · {op.title}
           </h1>
         </div>
@@ -202,11 +210,7 @@ export function ReviewStep({
             ? 'The complete resource block from the Terraform repo, before and after — so you see exactly what you’re changing, in context.'
             : 'The portal wrote this from your inputs — no HCL by hand. A senior approves this exact diff before it applies.'}
         </p>
-        {blockDiff && showFullBlock ? (
-          <FullBlockDiff diff={blockDiff} />
-        ) : (
-          <DiffView diff={diff} />
-        )}
+        {blockDiff && showFullBlock ? <FullBlockDiff diff={blockDiff} /> : <DiffView diff={diff} />}
         <ChangeAnnotations op={op} values={values} diff={diff} />
       </section>
 
@@ -281,8 +285,10 @@ export function ReviewStep({
       {preventDestroyProtected && (
         <p className="rq-quorum-warn" role="alert">
           This resource is protected — its Terraform sets{' '}
-          <code>lifecycle {'{'} prevent_destroy = true {'}'}</code>. Terraform will refuse to
-          destroy it as submitted; an engineer must lift the guard first.
+          <code>
+            lifecycle {'{'} prevent_destroy = true {'}'}
+          </code>
+          . Terraform will refuse to destroy it as submitted; an engineer must lift the guard first.
         </p>
       )}
 

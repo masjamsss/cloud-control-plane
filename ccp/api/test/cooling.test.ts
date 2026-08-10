@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Hono } from 'hono';
 import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store/memoryStore';
@@ -6,7 +6,7 @@ import type { ConfigStore } from '../src/store/configStore';
 import type { AppEnv } from '../src/appEnv';
 import { accountKey, type AccountItem, type AuditItem } from '../src/store/schema';
 import { coolingElapsed, coolingTargetStatus } from '../src/domain/cooling';
-import { __setNow } from '../src/clock';
+import { __setNow, nowIso } from '../src/clock';
 import { seed, seedAccount, seedRequests, sessionCookieFor } from './helpers/seed';
 
 /**
@@ -25,7 +25,24 @@ const GUARDRAILS_DRAFT = {
   justification: 'grow the volume to 250 GiB for month-end load',
   schedule: { kind: 'now' as const },
 };
-const WINDOW_DRAFT = { ...GUARDRAILS_DRAFT, schedule: { kind: 'window' as const, at: '2026-08-01T00:00:00.000Z' } };
+/**
+ * TEST-13 — the suite's clock, and every date derived FROM it.
+ *
+ * `WINDOW_DRAFT` used to pin `at: '2026-08-01T00:00:00.000Z'` as a literal, and the tests
+ * that needed it to be in the future froze the clock to 2026-07-16 one by one — the
+ * repeated comment "(else wall-clock elapses it)" is that dependency being noticed and
+ * worked around rather than removed. The tests that did NOT freeze ran against real time,
+ * so on 1 August 2026 the window they submit became a PAST window and the ladder settled
+ * `WINDOW_EXPIRED` instead of `AWAITING_DEPLOY_APPROVAL`.
+ *
+ * Freezing in `beforeEach` makes the fixture's meaning ("a window that has not opened
+ * yet") a property of the suite rather than of the date it is run on. The per-test
+ * `__setNow` calls below are now redundant but kept: where a test means "before the
+ * deadline", saying so beats inheriting it.
+ */
+const SUITE_NOW = Date.parse('2026-07-16T00:00:00.000Z');
+const WINDOW_AT = new Date(SUITE_NOW + 16 * 24 * 3600_000).toISOString(); // 2026-08-01, as before
+const WINDOW_DRAFT = { ...GUARDRAILS_DRAFT, schedule: { kind: 'window' as const, at: WINDOW_AT } };
 
 // data-birth: a header-less request now acts on the reserved `@control` scope, not
 // an implicit 'sample' (projects.ts CONTROL_SCOPE). This suite predates that concept
@@ -70,12 +87,15 @@ async function seedCoolingRow(
   return 'seed-sari-0';
 }
 
+/** TEST-13 — the write path stamps the audit partition from `src/clock.ts`; read the same
+ *  clock, not `new Date()`, or the lookup follows the calendar instead of the fixture. */
 async function auditActions(store: ConfigStore, action: string, requestId: string): Promise<AuditItem[]> {
-  const yyyymm = new Date().toISOString().slice(0, 7).replace('-', '');
+  const yyyymm = nowIso().slice(0, 7).replace('-', '');
   const entries = (await store.query(`P#sample#AUDIT#${yyyymm}`)) as AuditItem[];
   return entries.filter((e) => e.action === action && e.requestId === requestId);
 }
 
+beforeEach(() => __setNow(() => SUITE_NOW));
 afterEach(() => __setNow(null));
 
 describe('domain/cooling.ts — pure helpers', () => {

@@ -61,6 +61,7 @@ import {
   ackPending,
   rejectPending,
   publicPendingChange,
+  settlePendingExpiry,
   type Classification,
 } from "../domain/dualControl";
 import { afterProjectConfigApply } from "../domain/projectsLifecycle";
@@ -1142,11 +1143,22 @@ export function adminRoutes(
 
   /* ── dual-control config changes ────────────────────────────────────────── */
   a.get("/config-changes", async (c) => {
-    const pending = (await c
-      .get("store")
-      .queryGSI1(
-        pendingConfigGsi(c.get("projectId")),
-      )) as PendingConfigChangeItem[];
+    const store = c.get("store");
+    const projectId = c.get("projectId");
+    const fetched = (await store.queryGSI1(
+      pendingConfigGsi(projectId),
+    )) as PendingConfigChangeItem[];
+    // API-6 / DATA-7 — list-settle, same doctrine as routes/requests.ts's
+    // cooling/window settle loop: sequential, not Promise.all (concurrent
+    // transacts against the SAME chain head would only self-contend). A row
+    // past its 72h lease is expired HERE, on the read that would otherwise
+    // just keep showing it as PENDING forever — this IS `sweepExpired`'s
+    // production caller, the gap the finding named.
+    const pending: PendingConfigChangeItem[] = [];
+    for (const p of fetched) {
+      const { item } = await settlePendingExpiry(store, projectId, p);
+      pending.push(item);
+    }
     return c.json(pending.map(publicPendingChange));
   });
 

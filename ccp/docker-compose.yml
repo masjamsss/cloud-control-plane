@@ -24,6 +24,16 @@
 
 name: ccp
 
+# OPS-10 — every service used the default json-file driver with no max-size/
+# max-file, so container logs (the runner in particular relays whole CI job
+# logs) could grow unbounded on the host's /docker partition. One shared cap,
+# applied to every service below (`logging: *default-logging`).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   # api + app carry NO `profiles:` key — they are the implicit "core" profile, so
   # the bare `docker compose up -d --build` used by install.sh and self-update.sh
@@ -35,6 +45,11 @@ services:
       dockerfile: api/Dockerfile  # it resolves at runtime (see api/Dockerfile header)
     image: ccp-api:local
     restart: unless-stopped
+    logging: *default-logging
+    # OPS-10 — no service had a memory ceiling; a spike in any one container
+    # could OOM the host that also holds the governance store. Override via
+    # CCP_API_MEM_LIMIT in .env if 1g is wrong for your estate's size.
+    mem_limit: ${CCP_API_MEM_LIMIT:-1g}
     environment:
       NODE_ENV: production
       PORT: ${PORT:-8801}
@@ -68,6 +83,10 @@ services:
       CCP_FORGE_SEAL_KEY: ${CCP_FORGE_SEAL_KEY:-}
       CCP_GITHUB_APP_ID: ${CCP_GITHUB_APP_ID:-}
       CCP_GITHUB_APP_KEY_FILE: ${CCP_GITHUB_APP_KEY_FILE:-}
+      # DOC-9: the inline alternative to CCP_GITHUB_APP_KEY_FILE above, for a host
+      # with no secret-mount story — read by forgeCredentials.ts#githubAppConfig,
+      # unused (the file wins) whenever CCP_GITHUB_APP_KEY_FILE is also set.
+      CCP_GITHUB_APP_KEY: ${CCP_GITHUB_APP_KEY:-}
     volumes:
       # The GitHub App's private key, when one is configured — a read-only bind
       # of a host file so it keeps its own permissions and never enters the
@@ -99,23 +118,31 @@ services:
         VITE_INSTANCE_TAGLINE: ${CCP_INSTANCE_TAGLINE:-}
     image: ccp-app:local
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - api                       # start ordering only; the SPA is static and needs no live api to serve
     ports:
       - "127.0.0.1:${APP_PORT:-8800}:8080"
 
   # ── CI runner (opt-in, profile: runner) ──────────────────────────────────────
-  # Self-hosted GitHub Actions runner for this repo. Every workflow already says
+  # Self-hosted GitHub Actions runner for this repo. Every workflow EXCEPT the two
+  # that build Docker images (docker-build.yml, release-images.yml — pinned to
+  # ubuntu-latest on purpose, see either file's own header) already says
   # `runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}`, so bringing this online
   # with label `ccp` + setting the repo variable CI_RUNNER=ccp is the whole
-  # cutover (rollback: delete the variable) — see ccp/docs/go-live.md → "CI runner".
-  # No docker socket (verified: no workflow in .github/workflows/ uses docker), no
-  # published ports, unprivileged user (see runner/Dockerfile + entrypoint.sh).
+  # cutover for those (rollback: delete the variable) — see ccp/docs/go-live.md →
+  # "CI runner". No docker socket (verified: no workflow ROUTED TO THIS RUNNER
+  # uses docker — the two that do are never routed here), no published ports,
+  # unprivileged user (see runner/Dockerfile + entrypoint.sh).
   runner:
     build: { context: ./runner }
     image: ccp-runner:local
     profiles: ["runner"]
     restart: unless-stopped
+    logging: *default-logging
+    # OPS-10 — the runner relays entire CI job logs and can run arbitrarily
+    # memory-hungry builds; override via CCP_RUNNER_MEM_LIMIT if 4g is wrong.
+    mem_limit: ${CCP_RUNNER_MEM_LIMIT:-4g}
     stop_grace_period: 2m          # let an in-flight CI job wind down
     environment:
       RUNNER_REPO_URL: ${RUNNER_REPO_URL:-}   # e.g. https://github.com/<owner>/<repo>
@@ -156,12 +183,18 @@ services:
     image: ccp-scanner:local
     profiles: ["scanner"]
     restart: unless-stopped
+    logging: *default-logging
     stop_grace_period: 30s              # let an in-flight scan report a terminal status
     command:
       - --server
       - ${CCP_SCANNER_SERVER:-http://api:${PORT:-8801}}
       - --workdir
       - /workspace
+      # OPS-12 — MUST match scanner/Dockerfile's HEALTHCHECK: that probe reads
+      # this exact path back. compose's `command:` fully replaces the image's
+      # default CMD, so it has to be repeated here rather than inherited.
+      - --heartbeat
+      - /workspace/.heartbeat
     environment:
       # The ONLY credential this container gets. Same value as the api's
       # CCP_SCANNER_KEY — it is the shared key for the /scan-jobs lane, and it
@@ -195,4 +228,5 @@ services:
     image: ccp-toolbox:local
     profiles: ["toolbox"]
     restart: "no"
+    logging: *default-logging
     command: ["toolbox-selfcheck"]      # one-shot: prints terraform/catalogctl/git versions

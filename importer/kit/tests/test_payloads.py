@@ -318,6 +318,62 @@ class SplitterAmbiguousTests(PayloadsTestCase):
             self.assertIsNotNone(clean["importPayload"], f"{live_id} must not be poisoned by its broken neighbor")
             self.assertIsNone(clean["payloadWithheldReason"])
 
+    def test_heredoc_body_column_zero_closing_brace_does_not_truncate_the_block(self):
+        # IMP-11 — the decoy-BRACE-inside-a-heredoc case generated.tf.fixture
+        # already covers is an OPENING '{'; this is its closing-brace twin: a
+        # heredoc body line that is exactly "}" at column 0 (e.g. embedded
+        # JSON a captured user_data script emits). The unfixed scanner ends
+        # the block right there — the truncated skeleton still "ends with }"
+        # (the embedded one), so apply_stateful_guard's own check doesn't
+        # catch it, and the real remainder (a JSON label line, the EOT
+        # terminator, the resource's real closing brace) is silently dropped.
+        heredoc_generated = self.path("generated-heredoc.tf")
+        with open(heredoc_generated, "w") as fh:
+            fh.write(
+                'resource "aws_instance" "oob_heredoc_one" {\n'
+                '  instance_type = "t3.micro"\n'
+                '  user_data     = <<-EOT\n'
+                '    #!/bin/bash\n'
+                "    cat <<'JSON' > /tmp/x.json\n"
+                '{\n'
+                '  "key": "value"\n'
+                '}\n'
+                'JSON\n'
+                '  EOT\n'
+                '}\n'
+                '\n'
+                'resource "aws_instance" "oob_clean_two" {\n'
+                '  instance_type = "t3.large"\n'
+                '}\n'
+            )
+        cand_rows = [
+            candidate_row("aws_instance", "i-heredoc0000000001", "oob_heredoc_one", "heredoc-one"),
+            candidate_row("aws_instance", "i-clean0000000002", "oob_clean_two", "clean-two"),
+        ]
+        cand_path, imports_tf = self.gen_imports(cand_rows, out_name="imports-heredoc.tf")
+        findings_path = self.path("findings-heredoc.json")
+        write_findings(findings_path, [
+            finding_row(c["type"], c["id"], c["name"]) for c in cand_rows
+        ])
+        r = self.run_payloads(findings_path, cand_path, extra=[
+            "--imports", imports_tf, "--generated", heredoc_generated,
+        ])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("2 attached, 0 withheld", r.stdout)
+
+        heredoc = self.finding_by_id("i-heredoc0000000001")
+        self.assertIsNone(heredoc["payloadWithheldReason"])
+        skeleton = heredoc["importPayload"]["skeletonHcl"]
+        # the full body — including the embedded JSON's column-0 '}' and the
+        # heredoc's own terminator — must survive, verbatim, past the decoy.
+        self.assertIn('  "key": "value"', skeleton)
+        self.assertIn('JSON\n  EOT\n}\n', skeleton, "the block's REAL closing brace, not the decoy")
+        self.assertEqual(skeleton.count('resource "aws_instance"'), 1, "not merged with its neighbor")
+
+        clean = self.finding_by_id("i-clean0000000002")
+        self.assertIsNone(clean["payloadWithheldReason"])
+        self.assertIn('resource "aws_instance" "oob_clean_two"', clean["importPayload"]["skeletonHcl"])
+
     def test_duplicate_address_in_generated_tf_is_withheld(self):
         dup_generated = self.path("generated-dup.tf")
         with open(dup_generated, "w") as fh:

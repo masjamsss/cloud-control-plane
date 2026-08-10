@@ -1,6 +1,8 @@
+import { useSyncExternalStore } from 'react';
 import { scopedKey } from '@/lib/projectScope';
 import { recordAudit } from '@/lib/audit';
 import { getCurrentUser } from '@/lib/session';
+import { createEmitter, subscribeWithStorage } from '@/lib/useStore';
 
 /**
  * The dual-control queue — render layer
@@ -35,6 +37,12 @@ export interface PendingConfigChange {
 const storeKey = (): string => scopedKey('pendingChanges');
 const memory = new Map<string, string>();
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+/** FE-7 — same-tab write notifications. Unlike settings.ts/audit.ts's stores,
+ * this one had no emitter at all: propose/ack/reject wrote straight to
+ * storage and nothing told a mounted reader (PendingChangesBanner's mock
+ * branch) to re-render — see lib/useStore.ts's module doc for why the
+ * native `storage` event alone (cross-tab only) isn't enough. */
+const emitter = createEmitter();
 
 /**
  * Hard cap on stored items — mirrors audit.ts's CAP=500.
@@ -60,6 +68,9 @@ function writeRaw(value: string): void {
   } catch {
     memory.set(storeKey(), value);
   }
+  // Notify same-tab subscribers — the native `storage` event never fires in
+  // the document that made the write, only in every OTHER one.
+  emitter.emit();
 }
 
 function load(): PendingConfigChange[] {
@@ -90,6 +101,27 @@ export function getPendingChange(id: string): PendingConfigChange | undefined {
 /** How many items are still awaiting a decision — what the banner counts. */
 export function pendingCount(): number {
   return load().filter((c) => c.status === 'PENDING').length;
+}
+
+/** Subscribe to this store changing (this tab's writes + other tabs', via the
+ * native `storage` event) — exported for direct testing (no jsdom/RTL in this
+ * repo — see lib/useStore.ts's module doc) and reused by usePendingCount()
+ * below. */
+export const subscribePendingChangesChanged = subscribeWithStorage(emitter, storeKey);
+
+/**
+ * React binding for {@link pendingCount} — FE-7: the mock-mode banner used to
+ * read `pendingCount()` as a bare synchronous call, so a same-tab
+ * propose/ack/reject never re-rendered it (unlike settings/session/teams,
+ * which all went through `useSyncExternalStore`). `pendingCount()` itself is
+ * the getSnapshot function directly — no cached-object dance like
+ * settings.ts's `computeSettingsSnapshot` needed: it returns a plain
+ * `number`, and primitives are `Object.is`-stable by value, not identity, so
+ * recomputing it on every call already satisfies useSyncExternalStore's
+ * contract.
+ */
+export function usePendingCount(): number {
+  return useSyncExternalStore(subscribePendingChangesChanged, pendingCount, pendingCount);
 }
 
 export interface ProposePendingChangeInput {

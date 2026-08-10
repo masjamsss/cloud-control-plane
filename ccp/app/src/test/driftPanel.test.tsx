@@ -170,7 +170,12 @@ describe('driftCardModel + DriftStatusCard — the states, extended (out-of-band
       report: baseReport({
         capturedAt,
         planExitCode: 2,
-        counts: { drifted: 7, security: 1, byClass: { benign_inplace: 6, security_posture: 1 }, unmanaged: 2 },
+        counts: {
+          drifted: 7,
+          security: 1,
+          byClass: { benign_inplace: 6, security_posture: 1 },
+          unmanaged: 2,
+        },
         sweep: sweptSection(2),
       }),
     };
@@ -320,7 +325,9 @@ describe('DriftReportBody — the invisibleToPlan footer always renders, whateve
     const withAbsorbed = render(
       React.createElement(DriftReportBody, {
         report: baseReport({
-          absorbed: [{ address: 'aws_s3_bucket.app_backup', class: 'churn_absorbed', riskTier: 'info' }],
+          absorbed: [
+            { address: 'aws_s3_bucket.app_backup', class: 'churn_absorbed', riskTier: 'info' },
+          ],
         }),
       }),
     );
@@ -337,8 +344,10 @@ describe('DriftReportBody — the invisibleToPlan footer always renders, whateve
 describe('router — /drift is a registered project-scoped route, open to every role', () => {
   // router.tsx's createBrowserRouter needs a DOM at import time, so
   // registration is pinned at the source level — the notInControlPlane.test.ts
-  // technique.
-  const source = readFileSync(join(SRC, 'router.tsx'), 'utf8');
+  // technique. The route tree itself lives in routeConfig.tsx (UI-9 split
+  // it out so it's importable as plain data — see routeConfig.tsx's
+  // docblock).
+  const source = readFileSync(join(SRC, 'routeConfig.tsx'), 'utf8');
 
   it('registers the drift path with the DriftPage element', () => {
     expect(source).toContain("path: 'drift'");
@@ -346,7 +355,10 @@ describe('router — /drift is a registered project-scoped route, open to every 
   });
 
   it('is NOT wrapped in a RoleGate, unlike Approvals/Dashboard', () => {
-    const driftBlock = source.slice(source.indexOf("path: 'drift'"), source.indexOf("path: 'approvals'"));
+    const driftBlock = source.slice(
+      source.indexOf("path: 'drift'"),
+      source.indexOf("path: 'approvals'"),
+    );
     expect(driftBlock).not.toContain('RoleGate');
   });
 });

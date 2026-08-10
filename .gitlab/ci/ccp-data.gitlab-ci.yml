@@ -12,6 +12,12 @@
 #                              (unset = generate only, keep the artifact)
 #   CCP_PROJECT_ID          the control-plane project id
 #   CCP_SCAN_ROOT             optional; default environments/prod
+#   CCP_DATA_REQUIRE_UPLOAD   optional; unset (default) is the air-gap-
+#                              friendly ERR-16 behavior — an unreachable
+#                              control plane warns and exits 0, keeping the
+#                              bundle as an artifact. Set to "1" to opt OUT
+#                              of that fallback: an unreachable control plane
+#                              then hard-fails the job instead of going green.
 #
 # A protected variable only reaches pipelines on PROTECTED refs — protect the
 # default branch or the job dies with "CCP_UPLOAD_TOKEN is empty".

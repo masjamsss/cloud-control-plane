@@ -17,9 +17,9 @@ permissions:
 
 jobs:
   gate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install gitleaks (PG-9)
         run: |
           set -euo pipefail
@@ -45,5 +45,21 @@ jobs:
           # cannot run reach PG-9 at all.
           gitleaks dir --help >/dev/null 2>&1 || {
             echo "::error::the pinned gitleaks has no 'dir' subcommand — PG-9 would scan nothing"; exit 1; }
+      - name: PG-5 still catches the shapes people actually commit
+        # Runs BEFORE the gate. CI-8: the pattern was blind to `ADMIN_PASSWORD=` — the most
+        # common accidental-commit shape there is — and nothing anywhere probed it, so the
+        # blindness was invisible for as long as it existed. These probes are what make the
+        # heuristic's reach a checked property instead of a claim in a comment.
+        run: bash scripts/ci/publish-gate-selftest.sh
+
       - name: Run publish gate (generic mode)
+        # CI-8 — PUBLISH_GATE_REQUIRE_ALL=1 makes a missing gitleaks a RED gate here rather
+        # than a skip. The install step above already fails loudly if the binary or its `dir`
+        # subcommand is absent, so this is defence in depth — but it is the half that lives
+        # in the SCRIPT, which is what an adopting estate actually runs. A deployment that
+        # copies the gate without copying this workflow still gets the guarantee by setting
+        # the variable; without it, PG-5's approximate heuristic would be the only secret
+        # check standing, which is the collapse CI-8 describes.
         run: bash scripts/publish-gate.sh
+        env:
+          PUBLISH_GATE_REQUIRE_ALL: '1'

@@ -10,6 +10,7 @@ import {
   tierOf,
 } from '../src/domain/exposure';
 import { seed, seedRequests, sessionCookieFor } from './helpers/seed';
+import { nowIso } from '../src/clock';
 
 /**
  * Server-side `exposure` enforcement (0014 dim-1 finding 4.2): exposure was parsed,
@@ -263,7 +264,7 @@ describe('the computed requirement is audited', () => {
     const created = await (await submit(app, await sessionCookieFor(store, 'sari'), ENGINEER_DRAFT)).json();
     await approve(app, await sessionCookieFor(store, 'putra'), created.id);
 
-    const yyyymm = new Date().toISOString().slice(0, 7).replace('-', '');
+    const yyyymm = nowIso().slice(0, 7).replace('-', '');
     const entries = (await store.query(`P#sample#AUDIT#${yyyymm}`)) as AuditItem[];
 
     const submitted = entries.find((e) => e.action === 'request-submit' && e.requestId === created.id);

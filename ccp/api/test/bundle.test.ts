@@ -1,11 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store/memoryStore';
 import { bundleConfig, realSteps, runBundle, type BundleSteps, type StepResult } from '../src/domain/bundle';
+import * as execMod from '../src/domain/exec';
 import { seed, seedRequests, sessionCookieFor } from './helpers/seed';
 
 /**
@@ -125,6 +126,86 @@ describe('realSteps — the git workspace (local bare origin; no network)', () =
     expect(commitStep.detail).toMatch(/push rejected/);
     // the interloper commit is untouched; our bundle commit did NOT land
     expect(g(bare, 'log', '-1', '--format=%s', 'main')).toBe('interloper');
+    rmSync(join(bare, '..'), { recursive: true, force: true });
+  });
+});
+
+/**
+ * API-16 / ERR-13 — a workspace leak and two unchecked git results. The clone
+ * itself and the rev-parse/add/commit failures around it are all real git
+ * calls against the local bare origin above (no network); only the ONE step
+ * each test needs to fail is intercepted via a spy on `execCapture` (real for
+ * every OTHER call, including the clone that must actually create the
+ * workspace this is testing gets cleaned up) — reproducing a genuinely
+ * pathological git failure (e.g. a fresh clone whose HEAD somehow will not
+ * resolve) is not otherwise reliably constructible with real git.
+ */
+describe('realSteps — API-16 / ERR-13: the workspace leak and the two unchecked git results', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('prepare() cleans up the clone when rev-parse HEAD fails, same as it already does on a clone failure', async () => {
+    const { bare } = makeOrigin();
+    const real = execMod.execCapture;
+    let leakedDir: string | undefined;
+    vi.spyOn(execMod, 'execCapture').mockImplementation(async (file, args, opts) => {
+      if (file === 'git' && args[0] === 'rev-parse') {
+        leakedDir = opts?.cwd;
+        return { status: 1, out: 'fatal: fake rev-parse failure' };
+      }
+      return real(file, args, opts);
+    });
+    const steps = realSteps({ remote: bare, branch: 'main', gateCmd: 'true', triggerCmd: 'true' });
+    const result = await steps.prepare();
+    expect('error' in result).toBe(true);
+    expect(leakedDir, 'the rev-parse call never happened — the test itself is broken').toBeTruthy();
+    expect(existsSync(leakedDir!), `clone workspace ${leakedDir} was left behind`).toBe(false);
+    rmSync(join(bare, '..'), { recursive: true, force: true });
+  });
+
+  it("commit() refuses when `git add` fails, rather than committing whatever the index already held", async () => {
+    const { bare } = makeOrigin();
+    const real = execMod.execCapture;
+    vi.spyOn(execMod, 'execCapture').mockImplementation(async (file, args, opts) => {
+      if (file === 'git' && args[0] === 'add') return { status: 128, out: 'fatal: fake add failure' };
+      return real(file, args, opts);
+    });
+    const steps = realSteps({ remote: bare, branch: 'main', gateCmd: 'echo x > "$BUNDLE_CHECKOUT/x.txt"', triggerCmd: 'true' });
+    const out = await runBundle(steps, '{}', 'bundle');
+    expect(out.ok).toBe(false);
+    const commitStep = out.steps.find((s) => s.step === 'commit')!;
+    expect(commitStep.ok).toBe(false);
+    expect(commitStep.detail).toContain('git add failed');
+    // nothing landed on main — the failed add must not have been silently skipped past
+    expect(g(bare, 'log', '-1', '--format=%s', 'main')).toBe('seed');
+    rmSync(join(bare, '..'), { recursive: true, force: true });
+  });
+
+  it('commit() refuses rather than recording a malformed sha when the post-commit rev-parse fails', async () => {
+    const { bare } = makeOrigin();
+    const real = execMod.execCapture;
+    let commitLanded = false;
+    let revParseCalls = 0;
+    vi.spyOn(execMod, 'execCapture').mockImplementation(async (file, args, opts) => {
+      if (file === 'git' && args[0] === 'rev-parse') {
+        revParseCalls++;
+        // The FIRST rev-parse is prepare()'s own baseSha read — must stay real,
+        // or this test would never reach commit() at all. Only the SECOND
+        // (commit()'s post-commit read) is the one under test here.
+        if (revParseCalls >= 2) return { status: 0, out: 'not-a-real-sha (fake malformed output)' };
+      }
+      if (file === 'git' && args.includes('commit')) commitLanded = true;
+      return real(file, args, opts);
+    });
+    const steps = realSteps({ remote: bare, branch: 'main', gateCmd: 'echo x > "$BUNDLE_CHECKOUT/x.txt"', triggerCmd: 'true' });
+    const out = await runBundle(steps, '{}', 'bundle');
+    expect(commitLanded, 'the test never reached the commit it means to test').toBe(true);
+    expect(out.ok).toBe(false);
+    const commitStep = out.steps.find((s) => s.step === 'commit')!;
+    expect(commitStep.ok).toBe(false);
+    expect(commitStep.detail).toContain('did not resolve to a real sha');
+    expect(out.sha).toBeUndefined(); // never handed a bogus sha up to the caller
     rmSync(join(bare, '..'), { recursive: true, force: true });
   });
 });

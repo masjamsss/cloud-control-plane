@@ -4,6 +4,7 @@ import { MemoryStore } from '../src/store/memoryStore';
 import type { AuditItem, RequestItem } from '../src/store/schema';
 import { requestKey } from '../src/store/schema';
 import { seed, seedAccount, sessionCookieFor, setSetting } from './helpers/seed';
+import { nowIso } from '../src/clock';
 
 /**
  * The multi-operation CHANGE SET (Phase B). A request may hold an ordered `items` list —
@@ -537,7 +538,7 @@ describe('change set — the whole set is audited as ONE change', () => {
       })
     ).json();
 
-    const yyyymm = new Date().toISOString().slice(0, 7).replace('-', '');
+    const yyyymm = nowIso().slice(0, 7).replace('-', '');
     const entries = (await store.query(`P#sample#AUDIT#${yyyymm}`)) as AuditItem[];
     const submits = entries.filter((e) => e.action === 'request-submit' && e.requestId === created.id);
     expect(submits).toHaveLength(1);

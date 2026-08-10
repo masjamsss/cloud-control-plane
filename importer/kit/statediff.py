@@ -98,7 +98,16 @@ DEFAULT_IGNORE = os.path.join(REPO_ROOT, "scripts", "drift", "sweep-ignore.json"
 DEFAULT_WATCHLIST = os.path.join(REPO_ROOT, "scripts", "drift", "security-watchlist.json")
 
 FINDING_CLASS = "unmanaged_resource"
-SWEEP_METHOD = "importer-kit discover: 43 per-type listers + resourcegroupstaggingapi family sweep"
+
+
+# IMP-14: was a hardcoded "43 per-type listers" — a second, driftable copy of a count
+# services.json already carries authoritatively (its own `types` mapping). Interpolated
+# from the SAME loaded services doc `main()` already validates, so this can never say a
+# number services.json itself does not currently have.
+def sweep_method(services):
+    return f"importer-kit discover: {len(services['types'])} per-type listers + resourcegroupstaggingapi family sweep"
+
+
 CANDIDATE_CAP = 20
 IGNORE_KINDS = ("id", "arn", "tagKey", "idPrefix")
 
@@ -476,7 +485,7 @@ def main(argv=None):
     out_doc = {
         "schema": 1,
         "generator": "importer/kit/statediff.py",
-        "method": SWEEP_METHOD,
+        "method": sweep_method(services),
         "account": manifest.get("account", "unknown"),
         "region": region,
         "capturedAt": manifest.get("capturedAt", "unknown"),

@@ -78,6 +78,54 @@ export function parseInventoryEnum(
 }
 
 /**
+ * PERF-13 — one full `inventory.resources` scan per (inventory, resourceType, field)
+ * triple, not per call. `resolveEnum` runs inline in `SchemaForm`'s render for every
+ * inventory-sourced param, and every keystroke in ANY field lifts state to the parent and
+ * re-renders the whole form — at the 50k-resource cap that was ~200k filter/map
+ * operations per keystroke across a form's several enum fields.
+ *
+ * `WeakMap<Inventory, …>` keyed on the inventory OBJECT rather than a manual cache with
+ * explicit invalidation: the inventory reference changes on every real fetch (project
+ * switch, refresh), which is exactly when a stale scan would be wrong, and the whole
+ * entry is garbage-collected the moment nothing else references that inventory anymore
+ * — no cache to clear, no staleness window to reason about.
+ *
+ * Keyed on `(resourceType, field)`, not on the param or its name: two different params
+ * that happen to share an `enumSource` (a real shape — several ops reference the same
+ * inventory field) get ONE cached scan between them, not one each.
+ *
+ * DELIBERATELY NOT extended to the allowlist branch below: `narrowAllowlist` reads the
+ * admin override from live settings, which a session can change WHILE a form is open (an
+ * admin tightens an allowlist in another tab). Caching that branch would let a form go on
+ * offering a value an admin had just revoked. It is also the cheap branch — a small
+ * static list, not the inventory scan this fix exists for — so there is nothing to buy by
+ * caching it.
+ */
+const inventoryEnumCache = new WeakMap<Inventory, Map<string, Map<string, string[]>>>();
+
+function inventoryEnumValues(inventory: Inventory, type: string, field: string): string[] {
+  let byType = inventoryEnumCache.get(inventory);
+  if (!byType) {
+    byType = new Map();
+    inventoryEnumCache.set(inventory, byType);
+  }
+  let byField = byType.get(type);
+  if (!byField) {
+    byField = new Map();
+    byType.set(type, byField);
+  }
+  const cached = byField.get(field);
+  if (cached) return cached;
+  const values = inventory.resources
+    .filter((r) => r.resourceType === type)
+    .map((r) => (field === 'address' ? r.address : String(r.attributes[field] ?? '')))
+    .filter((v) => v !== '');
+  const result = field === 'address' ? values : [...new Set(values)];
+  byField.set(field, result);
+  return result;
+}
+
+/**
  * Resolve the allowed values for a parameter — inventory-driven dropdowns
  * (enumSource `inventory://<resourceType>/<field>`) or a static allowlist.
  *
@@ -97,13 +145,7 @@ export function resolveEnum(
   operationId?: string,
 ): string[] {
   const src = parseInventoryEnum(param.enumSource);
-  if (src) {
-    const values = inventory.resources
-      .filter((r) => r.resourceType === src.type)
-      .map((r) => (src.field === 'address' ? r.address : String(r.attributes[src.field] ?? '')))
-      .filter((v) => v !== '');
-    return src.field === 'address' ? values : [...new Set(values)];
-  }
+  if (src) return inventoryEnumValues(inventory, src.type, src.field);
   if (param.bounds?.allowlist) {
     const base = param.bounds.allowlist.map((a) => String(a));
     return operationId ? narrowAllowlist(operationId, param.name, base) : base;

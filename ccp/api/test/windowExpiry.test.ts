@@ -5,7 +5,7 @@ import { MemoryStore } from '../src/store/memoryStore';
 import type { ConfigStore } from '../src/store/configStore';
 import type { AppEnv } from '../src/appEnv';
 import type { AuditItem } from '../src/store/schema';
-import { __setNow } from '../src/clock';
+import { __setNow, nowIso } from '../src/clock';
 import { seed, sessionCookieFor, setSetting } from './helpers/seed';
 
 /**
@@ -43,8 +43,19 @@ function get(app: Hono<AppEnv>, path: string, cookie: string) {
   return app.request(path, { headers: { cookie, 'x-ccp-project': 'sample' } });
 }
 
+/**
+ * TEST-13 — read the audit partition the WRITE PATH used, not the one wall time implies.
+ *
+ * Audit entries are partitioned by the month of the write, stamped from `src/clock.ts`.
+ * Every request below is made under a frozen July-2026 clock, so the entries land in
+ * `202607` — but this helper derived the key from `new Date()`, the REAL month. The two
+ * agreed only while real time happened to be in July 2026. On 1 August they diverged, and
+ * every assertion here started reading an empty partition: six files, twelve failures, no
+ * code change. `nowIso()` honours the same injected clock the write path reads, so the
+ * lookup follows the fixture instead of the calendar.
+ */
 async function auditActions(store: ConfigStore, action: string, requestId: string): Promise<AuditItem[]> {
-  const yyyymm = new Date().toISOString().slice(0, 7).replace('-', '');
+  const yyyymm = nowIso().slice(0, 7).replace('-', '');
   const entries = (await store.query(`P#sample#AUDIT#${yyyymm}`)) as AuditItem[];
   return entries.filter((e) => e.action === action && e.requestId === requestId);
 }

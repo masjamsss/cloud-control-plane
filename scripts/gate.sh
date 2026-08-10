@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
 # Local pre-push gate — mirrors the GitHub Actions workflows (catalogctl,
-# ccp-api, ccp-app, importer, terraform) so a failing check is caught in seconds
-# LOCALLY instead of minutes of Actions time (and a red PR).
+# ccp-api, ccp-app, importer) so a failing check is caught in seconds LOCALLY
+# instead of minutes of Actions time (and a red PR).
+#
+# CI-11 — "terraform" was dropped from that list: there is no standalone
+# terraform.yml lane. `terraform fmt`/`validate` run as steps INSIDE
+# ccp-api.yml/ccp-apply.yml (and this gate's own tf-fmt/tf sections mirror
+# that, by name, below) — but neither is a lane of its own the way the other
+# four names in the list are.
 #
 # Usage:
 #   scripts/gate.sh              # fast gates: go + api + app + py + tf-fmt  (default)
@@ -151,7 +157,11 @@ gate_tf() {
         step "checkov SKIPPED — .checkov.yaml/.checkov.baseline absent (this repo ships no estate tree)"
         SUMMARY+=$'\n'"  \033[33m~ SKIP\033[0m  checkov (no .checkov.yaml/.checkov.baseline in this repo)"
       fi
-    else step "checkov not installed — SKIP (runs in CI)"; fi
+    # CI-11 — this used to say "runs in CI", reassuring a developer that skipping it
+    # locally was fine because a backstop existed. It does not: checkov runs in NO
+    # workflow anywhere in this repo (grep .github/workflows/*.yml — zero hits). This
+    # local run, when installed, is the ONLY infra-scan coverage that exists.
+    else step "checkov not installed — SKIPPED (no CI backstop; install checkov locally for full mode)"; fi
 
     # (data-birth, 2026-07-21: the portal-data-freshness local mirror that used
     # to run here — regenerating inventory.json + block chunks and diffing them

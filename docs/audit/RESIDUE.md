@@ -43,6 +43,15 @@ Being written three times without being tracked is the reason this file exists.
 
 **Not fully closed at the seam** — see R-2.
 
+### R-4 · `planSummary` is typed `string` in the contract
+*Recorded as residue on **DOC-2**, tracked by **DOC-11**.*
+
+The `PlanSummary` schema DOC-2 added carried a note that `ChangeRequest.planSummary` still
+declared `{type: string}` and did not `$ref` it — deliberately, so this residue would be
+picked up as its own finding rather than folded silently into DOC-2's fix.
+
+**Resolved by DOC-11**: `ChangeRequest.planSummary` now `$ref`s `PlanSummary` directly.
+
 ### R-2 · `ifEquals` passes when the attribute is absent
 *Residue on **DATA-1**.*
 
@@ -60,24 +69,20 @@ site, deciding for each whether "absent" means "expected absent" or "cannot guar
 Kept as an **executable demonstration** in `ccp/api/test/requestRowLostUpdate.test.ts`
 rather than a comment, so it fails visibly if anyone assumes it is fixed.
 
+### R-5 · The scan worker does not report its own terminal failure
+*Recorded as residue on **ERR-3**, tracked by **ERR-15**.*
+
+`worker.go` returned without attempting a terminal `failed` report after a progress-report
+failure. The server-side lease (OPS-4) makes recovery independent of the worker, which is
+the stronger guarantee — but it did not make the worker better behaved.
+
+**Resolved by ERR-15**: a failed "cloning"/"scanning" progress report now routes through
+`fail()`, the same best-effort terminal-report attempt every other failure path in `runJob`
+already gets.
+
 ---
 
 ## tracked — an open finding covers it
-
-### R-4 · `planSummary` is typed `string` in the contract
-*Residue on **DOC-2**.*
-**Tracked by: DOC-11.**
-
-The API stores and serves a structured object. The new `PlanSummary` schema carries a note
-where a reader comparing the two will hit it.
-
-### R-5 · The scan worker does not report its own terminal failure
-*Residue on **ERR-3**.*
-**Tracked by: ERR-15.**
-
-`worker.go` returns without attempting a terminal `failed` report after a progress-report
-failure. The server-side lease (OPS-4) makes recovery independent of the worker, which is
-the stronger guarantee — but it does not make the worker better behaved.
 
 ### R-6 · The bundle's landed-but-untriggered half state
 *Residue on **ERR-2**.*
@@ -257,6 +262,60 @@ Nothing open covers the free-form gate command today.
 
 Note also that the verification is **inert on every real request today**: no request carries
 a plan pin, because the pin-writer does not exist (R-21 / API-3).
+
+### R-48 · A release can still be half-published
+*Residue on **CI-6**.*
+
+The three publishing jobs are independent. If `api` pushes and `app-demo` fails, the release
+is half-published with no rollback and no retry story — the preflight gate this fix added
+decides *whether* to publish, not what happens when one of three publishes succeeds.
+
+Closing it means either a coordinated build-then-push (build all three, push only if every
+build succeeded) or a documented rollback. Both are real design work, and guessing at one
+under a batch about gate trust would have shipped a mechanism nobody had thought through.
+
+Also left: the overwrite refusal is proxied by `git rev-parse refs/tags/v$VERSION` rather than
+asking the registry what is already published. A tag deleted after release, or an image pushed
+by some other route, is outside what that proxy can see.
+
+### R-49 · The OpenAPI contract is checked for its operation set, not its response shapes
+*Residue on **ARCH-14** and **TEST-11**.*
+
+`openapi.test.ts` now diffs the live Hono route table against the contract in both directions,
+so a route the spec forgot and a path the spec invents both fail. What it still does not do is
+what TEST-11's recommendation ends with: validate live responses against the spec's response
+schemas. A route can serve a shape the contract does not describe and nothing notices.
+
+That is a different kind of check — it needs a fixture request per operation and a JSON-schema
+validator, and the honest version has to decide what to do about the operations whose responses
+depend on estate state. Recorded rather than half-built.
+
+### R-50 · A time-triggered breakage still waits for an unrelated PR to surface it
+*Residue on **TEST-13**.*
+
+The suite is no longer coupled to the calendar, but the reason nobody noticed for days is
+untouched: `ccp-api.yml` is path-filtered, so a PR that changes nothing under `ccp/api/**`
+never runs it. The breakage was introduced by *time passing*, which no path filter can model —
+the first person to touch the api inherits a red lane they did not cause.
+
+A scheduled run of the api suite would close it, and that is a lane-shape decision (cost,
+who gets paged on a red nightly, whether it blocks) rather than a test fix, so it is recorded
+rather than guessed at. Note CI-13's sibling case: the smoke lane's filter was *widened*
+wrongly, and this one is *narrow* wrongly, for the same underlying reason — a path filter
+answers "did the inputs change", and neither the calendar nor a runner image is an input.
+
+### R-51 · The app's function coverage is recorded, not fixed
+*Residue on **TEST-5**. **Tracked by: TEST-7.***
+
+Measuring put a number on the SPA's testing gap — **54.62% of functions** — and a floor stops
+it eroding, but neither moves it. The cause is TEST-7's: ~25 app test files assert on component
+source strings rather than rendering, so the functions they "cover" are never executed. Raising
+this floor means writing DOM/interaction tests, which is TEST-7's body of work and is still
+open.
+
+Recorded here so the low floor reads as a measurement of a known gap rather than as an
+acceptable target — a floor nobody remembers the reason for is a floor that quietly becomes the
+ceiling.
 
 ## accepted — deliberately permanent
 
@@ -483,3 +542,17 @@ ambiguous value with no way to tell the two cases apart after the fact, and ever
 the quota list above included, where both readings are correctly terminal — would need
 auditing against the new pair. Recorded here rather than folded into a consistency pass
 that could not have done it honestly.
+
+### R-47 · PG-1…PG-6 are still blind inside binary-classified files
+*Residue on **CI-8**.*
+
+The content checks scan with `grep -I`, so a secret inside any file git's heuristics call
+binary is invisible to all six; PG-8 only catches known blob *extensions*. CI-8 names this and
+it is not fixed here.
+
+**Accepted, because the layered design now actually holds.** The reason to accept it was
+previously false: PG-9 was the entropy-aware detector meant to cover what the heuristics miss,
+and CI-2 had left it scanning nothing in CI. With `PUBLISH_GATE_REQUIRE_ALL=1` making a missing
+gitleaks a red gate, the backstop is present wherever it is claimed to be — which is the
+condition under which "the heuristic is deliberately approximate" is an honest statement rather
+than the whole story.

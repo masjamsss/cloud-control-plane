@@ -67,6 +67,29 @@ describe('audit chain month-partition walk (calendar correctness)', () => {
     }
   });
 
+  // API-11 — the month walk used to give up after 120 months (ten years) even
+  // though every walk site already stops itself the moment it has collected
+  // the chain head's own declared `count` — the 120-cap was never the
+  // INTENDED stopping condition, only a corrupted-store safety valve, but at
+  // ten years it was low enough to BE the real ceiling for a genuinely
+  // long-lived, self-hosted deployment. Hitting it silently truncated the
+  // read: verifyChain then reported a perfectly intact chain as BROKEN.
+  it('reads a chain spanning more than ten years intact (the old 120-month cap would have truncated it)', async () => {
+    const store = new MemoryStore();
+    await appendAt(store, 'p', '2015-03-01T00:00:00.000Z', 2); // 11+ years before the read below
+    await appendAt(store, 'p', '2026-07-10T00:00:00.000Z', 3);
+
+    __setNow(() => Date.parse('2026-07-31T12:00:00.000Z'));
+
+    const { entries } = await readAuditChronological(store, 'p');
+    expect(entries).toHaveLength(5); // the old 120-month walk would have found only 3
+
+    const doc = await exportAuditChain(store, 'p');
+    expect(doc.count).toBe(5);
+    expect(doc.entries).toHaveLength(5);
+    expect(doc.verified, doc.verification.message).toBe(true);
+  });
+
   it('still sees entries stamped ahead of the reader (backward clock adjustment)', async () => {
     // An entry is stamped with the clock at WRITE time. A backward correction
     // (NTP, VM resume) taken just after a month boundary leaves entries in a

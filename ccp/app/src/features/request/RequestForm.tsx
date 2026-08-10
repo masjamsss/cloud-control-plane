@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { ChangeRequest, Inventory, ManifestOperation, Schedule, ServiceManifest } from '@/types';
+import type {
+  ChangeRequest,
+  Inventory,
+  ManifestOperation,
+  Schedule,
+  ServiceManifest,
+} from '@/types';
 import { api } from '@/lib/api';
 import { useActiveProjectId } from '@/lib/ProjectContext';
 import { isChangeFrozen, isOpDisabled, useSettings } from '@/lib/settings';
@@ -54,7 +60,9 @@ function seedValues(
       if (target) {
         init[p.name] = target;
       } else {
-        const eligible = inventory.resources.filter((r) => r.resourceType === op.target.resourceType);
+        const eligible = inventory.resources.filter(
+          (r) => r.resourceType === op.target.resourceType,
+        );
         const only = eligible[0];
         if (eligible.length === 1 && only) init[p.name] = only.address;
       }
@@ -134,6 +142,11 @@ export function RequestForm(): JSX.Element {
   const settings = useSettings();
 
   const errorRef = useRef<HTMLDivElement>(null);
+  // UI-12: the target for the focus move on a step transition — each is only
+  // ever mounted for its own step, so there is no ambiguity about which one
+  // is in the DOM when its `.focus()` call runs.
+  const reviewHeadingRef = useRef<HTMLHeadingElement>(null);
+  const configureHeadingRef = useRef<HTMLHeadingElement>(null);
   const projectId = useActiveProjectId();
 
   useEffect(() => {
@@ -205,7 +218,6 @@ export function RequestForm(): JSX.Element {
     setRefusal(null); // a different draft entirely — the old verdict cannot apply
     setSubmitting(false); // and it is certainly not still in flight
   }, [op, inventory, target, fromLoaded, reuse]);
-
 
   const validation = useMemo(
     () => (op && inventory ? validateParams(op, values, inventory) : { ok: false, errors: {} }),
@@ -303,12 +315,30 @@ export function RequestForm(): JSX.Element {
     }
     setStep('review');
     window.scrollTo({ top: 0 });
+    // UI-12: a successful "Review request" swaps the whole page content —
+    // without this, keyboard focus dies on the unmounted button (falls back
+    // to <body>) and nothing tells assistive tech the step changed. rAF
+    // (same technique the invalid path above already uses for errorRef)
+    // waits for the Review markup to actually be in the DOM before focusing it.
+    requestAnimationFrame(() => reviewHeadingRef.current?.focus());
+  };
+
+  const onBackToEdit = (): void => {
+    setStep('configure');
+    window.scrollTo({ top: 0 });
+    requestAnimationFrame(() => configureHeadingRef.current?.focus());
   };
 
   // The identity of the state the server is being asked to judge. Recomputed on every
   // render — cheap, and it must never lag the draft it describes, or a refusal would go
   // on blocking an edit the requester has already made (FE-3).
-  const currentDraftKey = draftKey({ values, schedule, justification, replaceConfirmation, settings });
+  const currentDraftKey = draftKey({
+    values,
+    schedule,
+    justification,
+    replaceConfirmation,
+    settings,
+  });
 
   /** Pair a refusal with the draft it is a verdict about, so it can expire on its own. */
   const refuse = (reason: string): DraftRefusal => ({ reason, forKey: currentDraftKey });
@@ -317,7 +347,9 @@ export function RequestForm(): JSX.Element {
     // Admin gates re-checked at submit. A real backend re-enforces both.
     if (isChangeFrozen()) {
       setRefusal(
-        refuse('Change requests are frozen by an administrator right now. Try again once the freeze is lifted.'),
+        refuse(
+          'Change requests are frozen by an administrator right now. Try again once the freeze is lifted.',
+        ),
       );
       return;
     }
@@ -383,8 +415,9 @@ export function RequestForm(): JSX.Element {
           onScheduleChange={setSchedule}
           replaceConfirmation={replaceConfirmation}
           onReplaceConfirmationChange={setReplaceConfirmation}
-          onEdit={() => setStep('configure')}
+          onEdit={onBackToEdit}
           onSubmit={onSubmit}
+          headingRef={reviewHeadingRef}
         />
       </div>
     );
@@ -400,7 +433,9 @@ export function RequestForm(): JSX.Element {
         ]}
       />
 
-      <h1 className="rq-title">{opHeadline(op)}</h1>
+      <h1 className="rq-title" ref={configureHeadingRef} tabIndex={-1}>
+        {opHeadline(op)}
+      </h1>
       <OpDescription op={op} variant="form" />
 
       <div className="rq-strip">
@@ -415,8 +450,8 @@ export function RequestForm(): JSX.Element {
 
       {op.exposure === 'engineer_only' && (
         <p className="rq-note-engineer">
-          This change is bounded for an engineer. You can still request it here — on submit it routes
-          to an engineer to author and review the Terraform.
+          This change is bounded for an engineer. You can still request it here — on submit it
+          routes to an engineer to author and review the Terraform.
         </p>
       )}
 
@@ -429,7 +464,9 @@ export function RequestForm(): JSX.Element {
             </p>
           )}
 
-          {errorItems.length > 0 && revealErrors && <ErrorSummary ref={errorRef} items={errorItems} />}
+          {errorItems.length > 0 && revealErrors && (
+            <ErrorSummary ref={errorRef} items={errorItems} />
+          )}
 
           <SchemaForm
             operationId={op.id}

@@ -1,9 +1,10 @@
-import { Fragment } from 'react';
+import { Fragment, useRef } from 'react';
 import type { JSX } from 'react';
 import type { Schedule } from '@/types';
 import type { DriftProposal, DriftVerdict } from '@/types/drift';
 import { Button } from '@/components/ui/Button';
 import { SchedulePicker } from '@/features/request/SchedulePicker';
+import { useModal } from '@/lib/useModal';
 import './drift.css';
 
 /**
@@ -69,13 +70,18 @@ export function LegitimizeDrawer({
   canSubmit,
 }: LegitimizeDrawerProps): JSX.Element {
   const justificationTooShort = justification.trim().length < MIN_LEGITIMIZE_JUSTIFICATION;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModal(dialogRef, onClose);
 
   return (
     <Fragment>
       <div className="drift-drawer__backdrop" onClick={onClose} />
       <div
+        ref={dialogRef}
         className="drift-drawer drift-drawer--legitimize"
         role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         aria-label={`Legitimize security-posture drift for ${verdict.address}`}
       >
         <header className="drift-drawer__head">
@@ -83,17 +89,22 @@ export function LegitimizeDrawer({
             <p className="drift-drawer__eyebrow">Legitimize — converge code instead of reverting</p>
             <code className="drift-drawer__addr">{verdict.address}</code>
           </div>
-          <button type="button" className="drift-drawer__close" onClick={onClose} aria-label="Close">
+          <button
+            type="button"
+            className="drift-drawer__close"
+            onClick={onClose}
+            aria-label="Close"
+          >
             ×
           </button>
         </header>
 
         <p className="drift-drawer__legitimize-explain" role="note">
-          This does not touch Terraform right now. It starts a full-scrutiny request: an engineer authors the
-          exact code change that keeps the live value shown below, a lead records it, and the change rides the
-          normal review lane — the same as any other engineer-authored change. The revert choice (C1) stays
-          available on this row until the next clean check closes the drift record; starting a legitimize
-          request does not remove it.
+          This does not touch Terraform right now. It starts a full-scrutiny request: an engineer
+          authors the exact code change that keeps the live value shown below, a lead records it,
+          and the change rides the normal review lane — the same as any other engineer-authored
+          change. The revert choice (C1) stays available on this row until the next clean check
+          closes the drift record; starting a legitimize request does not remove it.
         </p>
 
         <table className="drift-drawer__attrs">
@@ -141,11 +152,15 @@ export function LegitimizeDrawer({
             />
             <p id="drift-legitimize-justification-help" className="drift-drawer__help">
               Recorded on the request and read by the engineer who authors the change — at least{' '}
-              {MIN_LEGITIMIZE_JUSTIFICATION} characters, and it must cite the emergency: what happened, the
-              CloudTrail evidence for it, and why it should stand.
+              {MIN_LEGITIMIZE_JUSTIFICATION} characters, and it must cite the emergency: what
+              happened, the CloudTrail evidence for it, and why it should stand.
             </p>
 
-            <SchedulePicker value={schedule} onChange={onScheduleChange} name="sched-drift-legitimize" />
+            <SchedulePicker
+              value={schedule}
+              onChange={onScheduleChange}
+              name="sched-drift-legitimize"
+            />
 
             {error && (
               <p className="drift-drawer__error" role="alert">
@@ -153,7 +168,11 @@ export function LegitimizeDrawer({
               </p>
             )}
 
-            <Button variant="primary" onClick={onSubmit} disabled={submitting || justificationTooShort}>
+            <Button
+              variant="primary"
+              onClick={onSubmit}
+              disabled={submitting || justificationTooShort}
+            >
               {submitting ? 'Starting…' : 'Start legitimize request'}
             </Button>
           </div>

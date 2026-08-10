@@ -1,10 +1,11 @@
-import { Fragment } from 'react';
+import { Fragment, useRef } from 'react';
 import type { JSX } from 'react';
 import type { Schedule } from '@/types';
 import type { DriftProposal, DriftVerdict } from '@/types/drift';
 import { Button } from '@/components/ui/Button';
 import { SchedulePicker } from '@/features/request/SchedulePicker';
 import { formatProjectTime } from '@/lib/datetime';
+import { useModal } from '@/lib/useModal';
 import { DRIFT_BLAST_RADIUS_NOTE, MIN_JUSTIFICATION } from './ProposalDrawer';
 import './drift.css';
 
@@ -86,13 +87,18 @@ export function RestoreDrawer({
   canSubmit,
 }: RestoreDrawerProps): JSX.Element {
   const justificationTooShort = justification.trim().length < MIN_JUSTIFICATION;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModal(dialogRef, onClose);
 
   return (
     <Fragment>
       <div className="drift-drawer__backdrop" onClick={onClose} />
       <div
+        ref={dialogRef}
         className="drift-drawer drift-drawer--restore"
         role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         aria-label={`Restore proposal for ${verdict.address}`}
       >
         <header className="drift-drawer__head">
@@ -100,7 +106,12 @@ export function RestoreDrawer({
             <p className="drift-drawer__eyebrow">Restore — out-of-band deletion</p>
             <code className="drift-drawer__addr">{verdict.address}</code>
           </div>
-          <button type="button" className="drift-drawer__close" onClick={onClose} aria-label="Close">
+          <button
+            type="button"
+            className="drift-drawer__close"
+            onClick={onClose}
+            aria-label="Close"
+          >
             ×
           </button>
         </header>
@@ -129,8 +140,9 @@ export function RestoreDrawer({
         </table>
 
         <p className="drift-drawer__noedit" role="note">
-          No code edit — the gated apply re-asserts the code already on main, scoped to this address. The
-          resulting plan must show a pure create (or an already-converged no-op) here, nothing else.
+          No code edit — the gated apply re-asserts the code already on main, scoped to this
+          address. The resulting plan must show a pure create (or an already-converged no-op) here,
+          nothing else.
         </p>
 
         <div className="drift-drawer__caution" role="note">
@@ -156,12 +168,16 @@ export function RestoreDrawer({
               onChange={(e) => onJustificationChange(e.target.value)}
             />
             <p id="drift-restore-justification-help" className="drift-drawer__help">
-              Recorded on the request — at least {MIN_JUSTIFICATION} characters. Name the CloudTrail deletion
-              evidence you captured (who/what/when) and why this deletion should be reversed rather than
-              accepted (removing the resource from code instead).
+              Recorded on the request — at least {MIN_JUSTIFICATION} characters. Name the CloudTrail
+              deletion evidence you captured (who/what/when) and why this deletion should be
+              reversed rather than accepted (removing the resource from code instead).
             </p>
 
-            <SchedulePicker value={schedule} onChange={onScheduleChange} name="sched-drift-restore" />
+            <SchedulePicker
+              value={schedule}
+              onChange={onScheduleChange}
+              name="sched-drift-restore"
+            />
 
             {error && (
               <p className="drift-drawer__error" role="alert">
@@ -169,7 +185,11 @@ export function RestoreDrawer({
               </p>
             )}
 
-            <Button variant="primary" onClick={onSubmit} disabled={submitting || justificationTooShort}>
+            <Button
+              variant="primary"
+              onClick={onSubmit}
+              disabled={submitting || justificationTooShort}
+            >
               {submitting ? 'Submitting…' : 'Submit restore request'}
             </Button>
           </div>

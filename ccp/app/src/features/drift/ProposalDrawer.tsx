@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, useRef } from 'react';
 import type { JSX } from 'react';
 import type { Schedule } from '@/types';
 import type { DriftProposal, DriftVerdict } from '@/types/drift';
@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { DiffView } from '@/components/DiffView';
 import { SchedulePicker } from '@/features/request/SchedulePicker';
+import { useModal } from '@/lib/useModal';
 import type { DriftProposalState } from './driftProposalState';
 import './drift.css';
 
@@ -94,7 +95,10 @@ export function DriftProposalChip({ state, onOpen }: DriftProposalChipProps): JS
     );
   }
   return (
-    <Badge color="muted" title="An eligible fix was not generated for this resource on this deployment.">
+    <Badge
+      color="muted"
+      title="An eligible fix was not generated for this resource on this deployment."
+    >
       Generation not armed
     </Badge>
   );
@@ -140,21 +144,33 @@ export function ProposalDrawer({
 }: ProposalDrawerProps): JSX.Element {
   const isAdopt = proposal.flavor === 'adopt';
   const justificationTooShort = justification.trim().length < MIN_JUSTIFICATION;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModal(dialogRef, onClose);
 
   return (
     <Fragment>
       <div className="drift-drawer__backdrop" onClick={onClose} />
       <div
+        ref={dialogRef}
         className="drift-drawer"
         role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         aria-label={`${isAdopt ? 'Adopt' : 'Revert'} proposal for ${verdict.address}`}
       >
         <header className="drift-drawer__head">
           <div>
-            <p className="drift-drawer__eyebrow">{isAdopt ? 'Adopt fix' : 'Revert — security posture'}</p>
+            <p className="drift-drawer__eyebrow">
+              {isAdopt ? 'Adopt fix' : 'Revert — security posture'}
+            </p>
             <code className="drift-drawer__addr">{verdict.address}</code>
           </div>
-          <button type="button" className="drift-drawer__close" onClick={onClose} aria-label="Close">
+          <button
+            type="button"
+            className="drift-drawer__close"
+            onClick={onClose}
+            aria-label="Close"
+          >
             ×
           </button>
         </header>
@@ -188,7 +204,8 @@ export function ProposalDrawer({
         )}
         {!isAdopt && (
           <p className="drift-drawer__noedit" role="note">
-            No code edit — the gated apply re-imposes the code already on main over the console change.
+            No code edit — the gated apply re-imposes the code already on main over the console
+            change.
           </p>
         )}
 
@@ -206,7 +223,8 @@ export function ProposalDrawer({
         {canSubmit ? (
           <div className="drift-drawer__form">
             <label className="drift-drawer__field-label" htmlFor="drift-proposal-justification">
-              Why {isAdopt ? 'adopt' : 'revert'} this now? <span className="drift-drawer__req">*</span>
+              Why {isAdopt ? 'adopt' : 'revert'} this now?{' '}
+              <span className="drift-drawer__req">*</span>
             </label>
             <textarea
               id="drift-proposal-justification"
@@ -221,7 +239,11 @@ export function ProposalDrawer({
               the evidence you captured (who/what changed, and where it is recorded).
             </p>
 
-            <SchedulePicker value={schedule} onChange={onScheduleChange} name="sched-drift-proposal" />
+            <SchedulePicker
+              value={schedule}
+              onChange={onScheduleChange}
+              name="sched-drift-proposal"
+            />
 
             {error && (
               <p className="drift-drawer__error" role="alert">
@@ -229,8 +251,16 @@ export function ProposalDrawer({
               </p>
             )}
 
-            <Button variant="primary" onClick={onSubmit} disabled={submitting || justificationTooShort}>
-              {submitting ? 'Submitting…' : isAdopt ? 'Submit adopt request' : 'Submit revert request'}
+            <Button
+              variant="primary"
+              onClick={onSubmit}
+              disabled={submitting || justificationTooShort}
+            >
+              {submitting
+                ? 'Submitting…'
+                : isAdopt
+                  ? 'Submit adopt request'
+                  : 'Submit revert request'}
             </Button>
           </div>
         ) : (

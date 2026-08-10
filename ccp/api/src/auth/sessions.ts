@@ -167,6 +167,50 @@ async function slideIdleWindow(
   }
 }
 
+/**
+ * REM-2 — the general-purpose version of {@link slideIdleWindow}'s shape, for the
+ * other session-row writers CONC-3 left uncovered (the reauth stamp, the
+ * multi-device TOTP enrollment offer's mint + clear). Narrowed to an `update`
+ * guarded on ONE attribute's captured OLD value — never a whole-row `put` — so a
+ * write here can no longer clobber a concurrent mutation to any OTHER field on the
+ * same session row, and a revoked (deleted) row cannot be conditioned back into
+ * existence (the store's `ifEquals` fails closed against a missing item).
+ *
+ * `set` may still carry more than one field (an enrollment offer's secret and its
+ * timestamp always change together) — `guardAttr`/`guardValue` only need to be ONE
+ * of them, since a mismatch on any single field the read captured proves the row
+ * moved under this request.
+ *
+ * DELIBERATELY DOES NOT DECIDE what a lost condition means, unlike
+ * `slideIdleWindow` (whose one caller always treats "row present" as "fine, someone
+ * else did the work"). The three REM-2 call sites disagree on that: a lost reauth
+ * stamp is harmless if the row still exists (a racing tab's fresher stamp is
+ * equally valid proof of elevation), a lost enrollment-offer MINT must refuse
+ * outright (the secret/QR this call is about to hand back would not be what
+ * `confirm` later checks against), and a lost enrollment-offer CLEAR is best-effort
+ * (the device it is cleaning up after was already committed via the account's own
+ * guarded write). Each caller reads `current` and decides for itself — the same
+ * division of labor `resolveSession` already has with `slideIdleWindow`.
+ */
+export async function putSessionFieldGuarded(
+  store: ConfigStore,
+  sKey: { PK: string; SK: string },
+  guardAttr: string,
+  guardValue: unknown,
+  set: Record<string, unknown>,
+): Promise<{ ok: true } | { ok: false; current: SessionItem | null }> {
+  try {
+    await store.transact([
+      { kind: 'update', pk: sKey.PK, sk: sKey.SK, set, ifEquals: { attr: guardAttr, value: guardValue } },
+    ]);
+    return { ok: true };
+  } catch (e) {
+    if (!(e instanceof ConditionError)) throw e;
+    const current = (await store.get(sKey.PK, sKey.SK)) as SessionItem | null;
+    return { ok: false, current };
+  }
+}
+
 /** Kill every live session for a user (reset/disable/revoke). Returns the count revoked. */
 export async function killAllSessions(store: ConfigStore, userId: string): Promise<number> {
   const sessions = await store.queryGSI1(sessionUserGsi(userId));

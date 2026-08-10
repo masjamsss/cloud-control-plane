@@ -58,6 +58,41 @@ class DiscoverSh(unittest.TestCase):
         self.assertTrue(manifest["coverage"]["captured"])
         self.assertEqual(manifest["coverage"]["totalSwept"], 0)
 
+    def test_rerun_clears_stale_pages_from_a_prior_larger_capture(self):
+        # IMP-5 — nothing removed a PRIOR run's pages before capturing. A re-run
+        # producing FEWER pages than last time (the documented PARTIAL_CAPTURE
+        # recovery path, or the estate shrinking across a 1000-row boundary)
+        # left the stale higher-numbered page(s) in place, and merge_pages
+        # merged them as if current — deleted resources reappearing as live.
+        os.makedirs(self.out)
+        stale_page = os.path.join(self.out, "resources.page5.json")
+        with open(stale_page, "w") as fh:
+            json.dump({
+                "data": [{
+                    "id": "/subscriptions/x/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/phantom-deleted-vnet",
+                    "name": "phantom-deleted-vnet", "type": "microsoft.network/virtualnetworks",
+                    "location": "southeastasia", "resourceGroup": "rg",
+                    "subscriptionId": FIXTURE_SUBSCRIPTION, "tags": {},
+                }],
+                "count": 1, "total_records": 1,
+            }, fh)
+        # a stale SINGLE-FILE form too — the other half of the same defect
+        # (merge_pages used to merge <capture>.json + <capture>.page*.json
+        # together unconditionally when both existed).
+        stale_single = os.path.join(self.out, "resources.json")
+        with open(stale_single, "w") as fh:
+            json.dump({"data": [], "count": 0, "total_records": 0}, fh)
+
+        r = run_sh(DISCOVER_SH, ["--subscription", FIXTURE_SUBSCRIPTION, "--tenant", FIXTURE_TENANT,
+                                 "--out", self.out], extra_env=self._live_env())
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+
+        self.assertFalse(os.path.exists(stale_page), "the stale higher-numbered page must be cleared before capturing")
+        self.assertFalse(os.path.exists(stale_single), "the stale single-file form must be cleared too")
+        manifest = json.load(open(os.path.join(self.out, "discovery-manifest.json")))
+        names = [row.get("name") for row in manifest["resources"]]
+        self.assertNotIn("phantom-deleted-vnet", names, "a deleted resource must not resurrect from a stale page")
+
     def test_subscription_mismatch_refuses_before_any_capture(self):
         r = run_sh(DISCOVER_SH, ["--subscription", FIXTURE_SUBSCRIPTION, "--tenant", FIXTURE_TENANT,
                                  "--out", self.out], extra_env=self._live_env(STUB_SUBSCRIPTION=MISMATCH_SUB))
@@ -83,6 +118,55 @@ class DiscoverSh(unittest.TestCase):
         r = run_sh(DISCOVER_SH, ["--subscription", "not-a-guid", "--tenant", FIXTURE_TENANT, "--out", self.out])
         self.assertEqual(r.returncode, 2)
         self.assertIn("GUID", r.stderr)
+
+    def test_location_with_a_quote_refuses_before_any_capture(self):
+        # IMP-13(b) — $LOCATION is interpolated unvalidated into capture-meta.json's
+        # JSON; a stray '"' would corrupt that file rather than refuse cleanly.
+        r = run_sh(DISCOVER_SH, ["--subscription", FIXTURE_SUBSCRIPTION, "--tenant", FIXTURE_TENANT,
+                                 "--out", self.out, "--location", 'eastus"'], extra_env=self._live_env())
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("REFUSE BAD_ARG", r.stderr)
+        self.assertIn("--location", r.stderr)
+        self.assertFalse(os.path.exists(self.out), "nothing may be captured for a bad --location")
+
+    def test_mkdir_failure_refuses_loudly(self):
+        # IMP-13(a) — `mkdir -p "$OUT"` used to be unchecked.
+        with open(self.out, "w") as fh:
+            fh.write("not a directory\n")
+        r = run_sh(DISCOVER_SH, ["--subscription", FIXTURE_SUBSCRIPTION, "--tenant", FIXTURE_TENANT,
+                                 "--out", self.out], extra_env=self._live_env())
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("REFUSE IO_ERROR", r.stderr)
+
+    def test_meta_write_failure_refuses_loudly_not_a_confusing_downstream_error(self):
+        # IMP-13(a) — capture-meta.json's write used to be unchecked.
+        r = run_sh(DISCOVER_SH, ["--subscription", FIXTURE_SUBSCRIPTION, "--tenant", FIXTURE_TENANT,
+                                 "--out", self.out], extra_env=self._live_env())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        meta = os.path.join(self.out, "capture-meta.json")
+        os.remove(meta)
+        os.makedirs(meta)
+        r = run_sh(DISCOVER_SH, ["--subscription", FIXTURE_SUBSCRIPTION, "--tenant", FIXTURE_TENANT,
+                                 "--out", self.out], extra_env=self._live_env())
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("REFUSE IO_ERROR", r.stderr)
+        self.assertIn("capture-meta.json", r.stderr)
+
+    def test_corrupt_page_makes_next_token_fail_loudly_not_silently_stop_paging(self):
+        # IMP-13(d) — next-token's own REFUSE on an unreadable page used to be
+        # swallowed (`2>/dev/null`, exit code never checked): an empty $skip
+        # from that refusal looked identical to "no more pages, stop" — paging
+        # ended early, silently, with the diagnostic stderr thrown away.
+        bad_page = os.path.join(self.tmp.name, "not-json.txt")
+        with open(bad_page, "w") as fh:
+            fh.write("not valid json at all")
+        r = run_sh(DISCOVER_SH, ["--subscription", FIXTURE_SUBSCRIPTION, "--tenant", FIXTURE_TENANT,
+                                 "--out", self.out], extra_env=self._live_env(STUB_GRAPH_FILE=bad_page))
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("REFUSE PARTIAL_CAPTURE", r.stderr)
+        self.assertIn("next-token could not read", r.stderr)
+        manifest = json.load(open(os.path.join(self.out, "discovery-manifest.json")))
+        self.assertFalse(manifest["coverage"]["captured"])  # the gap is IN the artifact too
 
     # ── --list-subscriptions: the per-subscription iteration list (multi-sub estates) ──────────
     def test_list_subscriptions_dry_run(self):
@@ -157,6 +241,17 @@ class VerifySh(unittest.TestCase):
         r = self.verify("steady", {"STUB_PLAN_FILE": self.plan, "STUB_PLAN_EXIT": "2"})
         self.assertEqual(r.returncode, 2)
         self.assertIn("not a no-op", r.stderr)
+
+    def test_steady_phase_distinguishes_plan_error_from_real_drift(self):
+        # IMP-13(c) — -detailed-exitcode's contract is 0 no-op / 1 plan ERROR
+        # / 2 real drift; exit 1 used to get the SAME "not a no-op" message
+        # as exit 2, reading like drift when the plan didn't even complete.
+        self.write_plan("Error: some provider error\n")
+        r = self.verify("steady", {"STUB_PLAN_FILE": self.plan, "STUB_PLAN_EXIT": "1"})
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("ERRORED", r.stderr)
+        self.assertIn("not drift", r.stderr)
+        self.assertNotIn("not a no-op", r.stderr)
 
     def test_fmt_gate_fails_first(self):
         r = self.verify("import", {"STUB_FMT_EXIT": "3"})

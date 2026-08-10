@@ -30,6 +30,11 @@ export function AuditHistory(): JSX.Element {
   // localAuditExport). An api build keeps the arming rule for the chain export.
   const demo = SERVER_MODE === 'mock';
   const [entries, setEntries] = useState<AuditRow[]>([]);
+  // FE-8 — present only while ccp-api's chain has more entries beyond what's
+  // loaded (the local/advisory branch never sets one — its whole log is
+  // always one page). Drives the "Load older" control below.
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -37,10 +42,11 @@ export function AuditHistory(): JSX.Element {
   useEffect(() => {
     let alive = true;
     void loadAuditRows(authoritative, authClient, listAudit())
-      .then((rows) => {
+      .then((page) => {
         if (!alive) return;
         setLoadError(null);
-        setEntries(rows);
+        setEntries(page.rows);
+        setCursor(page.cursor);
       })
       .catch((err: unknown) => {
         if (!alive) return;
@@ -50,6 +56,23 @@ export function AuditHistory(): JSX.Element {
       alive = false;
     };
   }, [authoritative]);
+
+  async function onLoadMore(): Promise<void> {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await loadAuditRows(authoritative, authClient, listAudit(), cursor);
+      setLoadError(null);
+      // Append — never replace: this is strictly OLDER entries past what's
+      // already shown, same newest-first ordering the server already pages in.
+      setEntries((prev) => [...prev, ...page.rows]);
+      setCursor(page.cursor);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Could not load older entries.');
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   const [query, setQuery] = useState('');
   const q = useDebouncedValue(query.trim().toLowerCase(), 200);
@@ -93,7 +116,11 @@ export function AuditHistory(): JSX.Element {
         <div className="audit__head-id">
           <h2 className="audit__title">History</h2>
           <span className="audit__note">
-            {entries.length} events · governance actions, newest first
+            {/* FE-8 — honest about a partial window: the server pages at a
+                default limit, so "N events" alone used to read as the WHOLE
+                history even when it silently wasn't. */}
+            {entries.length} event{entries.length === 1 ? '' : 's'} loaded · governance actions,
+            newest first{cursor ? ' · more available' : ''}
           </span>
         </div>
         <div className="audit__head-actions">
@@ -120,9 +147,8 @@ export function AuditHistory(): JSX.Element {
 
       {!authoritative && (
         <p className="audit__advisory" role="note">
-          Recorded locally and advisory — ccp-api keeps the authoritative audit chain once it
-          serves this view. What you see here is this browser’s record of admin actions, not the
-          server’s.
+          Recorded locally and advisory — ccp-api keeps the authoritative audit chain once it serves
+          this view. What you see here is this browser’s record of admin actions, not the server’s.
         </p>
       )}
 
@@ -161,6 +187,17 @@ export function AuditHistory(): JSX.Element {
             </li>
           ))}
         </ol>
+      )}
+
+      {cursor && (
+        <button
+          type="button"
+          className="audit__load-more"
+          onClick={() => void onLoadMore()}
+          disabled={loadingMore}
+        >
+          {loadingMore ? 'Loading…' : 'Load older events'}
+        </button>
       )}
     </div>
   );

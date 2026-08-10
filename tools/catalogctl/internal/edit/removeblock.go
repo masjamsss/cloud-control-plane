@@ -185,8 +185,22 @@ func preventDestroyProvablyFalse(a *hclsyntax.Attribute) bool {
 	}
 }
 
-// danglingRef does the spec's naive substring scan for the address across all
+// danglingRef does the spec's substring scan for the address across all
 // *.tf in envDir, excluding the block being removed.
+//
+// CTL-6 — a SAFETY GATE (fail-closed: never deletes something referenced),
+// but a raw bytes.Contains over-refused: `aws_ebs_volume.data` is a byte-
+// for-byte PREFIX of `aws_ebs_volume.data_archive`, so a reference to the
+// unrelated sibling (`aws_ebs_volume.data_archive.id`) matched too, and a
+// completely unreferenced resource could never be removed if any
+// prefix-named sibling existed elsewhere — prefix-named siblings
+// (`app`/`app_server`, `data`/`data_archive`) are the norm in real estates.
+// `containsAddress` requires an identifier BOUNDARY on both sides of the
+// match, so it matches identifiers exactly rather than any substring —
+// this can only shrink the set of byte ranges counted as "referenced," and
+// a GENUINE reference in valid HCL is, by construction, never immediately
+// adjacent (on either side) to another identifier character, so this
+// cannot turn a real reference into a missed one (no new false negatives).
 func danglingRef(envDir, address string, loc *hclops.Located) bool {
 	needle := []byte(address)
 	files, err := filepath.Glob(filepath.Join(envDir, "*.tf"))
@@ -200,14 +214,48 @@ func danglingRef(envDir, address string, loc *hclops.Located) bool {
 		}
 		if fp == loc.File {
 			outside := append(append([]byte{}, b[:loc.Start]...), b[loc.End:]...)
-			if bytes.Contains(outside, needle) {
+			if containsAddress(outside, needle) {
 				return true
 			}
 			continue
 		}
-		if bytes.Contains(b, needle) {
+		if containsAddress(b, needle) {
 			return true
 		}
 	}
 	return false
+}
+
+// isIdentByte reports whether b can appear inside a resource-address
+// identifier segment (a Terraform type or name token: letters, digits,
+// underscore, or dash).
+func isIdentByte(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_' || b == '-'
+}
+
+// containsAddress reports whether needle appears in haystack as a STANDALONE
+// identifier — never as a byte-range embedded inside some other, longer
+// name that merely happens to share needle as a prefix or suffix. Scans
+// EVERY occurrence (a plain bytes.Contains only proves the first one
+// exists; a boundary-rejected first hit must not short-circuit a later,
+// genuine one further in the file).
+func containsAddress(haystack, needle []byte) bool {
+	if len(needle) == 0 {
+		return false
+	}
+	start := 0
+	for {
+		idx := bytes.Index(haystack[start:], needle)
+		if idx == -1 {
+			return false
+		}
+		pos := start + idx
+		beforeOK := pos == 0 || !isIdentByte(haystack[pos-1])
+		afterPos := pos + len(needle)
+		afterOK := afterPos == len(haystack) || !isIdentByte(haystack[afterPos])
+		if beforeOK && afterOK {
+			return true
+		}
+		start = pos + 1 // re-scan from just past this occurrence's start (handles overlaps)
+	}
 }

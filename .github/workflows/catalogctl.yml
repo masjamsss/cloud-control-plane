@@ -24,12 +24,17 @@ permissions:
 
 jobs:
   go:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: tools/catalogctl/go.mod
+          # CI-12 — setup-go enables module caching by default, keyed on a
+          # cache-dependency-path; unset, it looks for go.sum at the repo ROOT, which
+          # doesn't exist here (the module lives under tools/catalogctl/), so the
+          # cache step warned and caching was silently ineffective every run.
+          cache-dependency-path: tools/catalogctl/go.sum
       - run: go build ./...
       - run: go vet ./...
       - name: gofmt is canonical

@@ -73,7 +73,14 @@ if [ "$PHASE" = "steady" ]; then
   ( cd "$ENV_DIR" && "$TF_BIN" plan -detailed-exitcode -input=false -no-color ) >"$PLAN_OUT" 2>&1
   RC=$?
   tail -5 "$PLAN_OUT"
-  [ "$RC" -eq 0 ] || fail plan-steady "plan is not a no-op (exit $RC) — see output above; triage per docs/runbooks/drift-detection.md"
+  # IMP-13 — -detailed-exitcode's contract is 0 no-op / 1 plan ERROR / 2 real
+  # drift; the old message called exit 1 "not a no-op" too, which reads like
+  # drift when the plan didn't even complete. Distinguish them.
+  case "$RC" in
+    0) ;;
+    1) fail plan-steady "plan ERRORED (exit 1) — this is a plan failure, not drift; fix the error above and re-verify" ;;
+    *) fail plan-steady "plan is not a no-op (exit $RC) — see output above; triage per docs/runbooks/drift-detection.md" ;;
+  esac
   echo "VERIFY PASS: fmt clean, validate clean, steady-state plan is a no-op"
   exit 0
 fi

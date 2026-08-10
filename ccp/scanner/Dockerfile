@@ -63,5 +63,17 @@ RUN install -d -o 1000 -g 1000 -m 0700 /workspace
 WORKDIR /workspace
 USER 1000
 
+# OPS-12 — LIVENESS, not readiness: a wedged worker (hung poll, stuck prescan —
+# only the clone has its own timeout) used to look "Up" indefinitely, since this
+# was the only long-running service in the stack with no healthcheck at all.
+# `catalogctl scan-worker` touches --heartbeat once per loop iteration
+# (internal/scanworker's Run); `--healthcheck` reads that file's mtime back and
+# exits 0/1. Runs the SAME BINARY, not a shell one-liner over stat/find/date —
+# this image ships no shell tooling on purpose (see the header above), so a
+# `CMD-SHELL` probe was never an option. --heartbeat here MUST match the
+# running worker's own --heartbeat flag (docker-compose.yml's `scanner.command`).
+HEALTHCHECK --interval=5m --timeout=5s --start-period=2m --retries=3 \
+  CMD ["catalogctl", "scan-worker", "--healthcheck", "--heartbeat", "/workspace/.heartbeat"]
+
 ENTRYPOINT ["catalogctl", "scan-worker"]
-CMD ["--workdir", "/workspace"]
+CMD ["--workdir", "/workspace", "--heartbeat", "/workspace/.heartbeat"]

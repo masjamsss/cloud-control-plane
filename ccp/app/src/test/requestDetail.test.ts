@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
@@ -33,7 +36,11 @@ describe('CoolingPanel — the Cancel button visibility rule, at the render leve
   it('renders nothing at all for a status other than APPROVED_COOLING', () => {
     const html = render(
       React.createElement(CoolingPanel, {
-        request: { status: 'APPLIED', requester: 'sari', earliestApplyAt: '2026-07-11T00:00:00.000Z' },
+        request: {
+          status: 'APPLIED',
+          requester: 'sari',
+          earliestApplyAt: '2026-07-11T00:00:00.000Z',
+        },
         currentUser: owner,
         onCancel: () => {},
         busy: false,
@@ -45,7 +52,11 @@ describe('CoolingPanel — the Cancel button visibility rule, at the render leve
   it('CANCELLED also renders nothing — shown via the StatusBadge chip instead, not a standing banner', () => {
     const html = render(
       React.createElement(CoolingPanel, {
-        request: { status: 'CANCELLED', requester: 'sari', earliestApplyAt: '2026-07-11T00:00:00.000Z' },
+        request: {
+          status: 'CANCELLED',
+          requester: 'sari',
+          earliestApplyAt: '2026-07-11T00:00:00.000Z',
+        },
         currentUser: owner,
         onCancel: () => {},
         busy: false,
@@ -57,7 +68,11 @@ describe('CoolingPanel — the Cancel button visibility rule, at the render leve
   it('APPROVED_COOLING + the owner viewing: the banner AND the Cancel button both render', () => {
     const html = render(
       React.createElement(CoolingPanel, {
-        request: { status: 'APPROVED_COOLING', requester: 'sari', earliestApplyAt: '2026-07-11T00:00:00.000Z' },
+        request: {
+          status: 'APPROVED_COOLING',
+          requester: 'sari',
+          earliestApplyAt: '2026-07-11T00:00:00.000Z',
+        },
         currentUser: owner,
         onCancel: () => {},
         busy: false,
@@ -73,7 +88,11 @@ describe('CoolingPanel — the Cancel button visibility rule, at the render leve
   it('APPROVED_COOLING + a Lead who is NOT the requester: still shows the Cancel button (senior override)', () => {
     const html = render(
       React.createElement(CoolingPanel, {
-        request: { status: 'APPROVED_COOLING', requester: 'sari', earliestApplyAt: '2026-07-11T00:00:00.000Z' },
+        request: {
+          status: 'APPROVED_COOLING',
+          requester: 'sari',
+          earliestApplyAt: '2026-07-11T00:00:00.000Z',
+        },
         currentUser: lead,
         onCancel: () => {},
         busy: false,
@@ -85,7 +104,11 @@ describe('CoolingPanel — the Cancel button visibility rule, at the render leve
   it('APPROVED_COOLING + a plain approver who is neither requester nor Lead/admin: NO Cancel button, banner still shows', () => {
     const html = render(
       React.createElement(CoolingPanel, {
-        request: { status: 'APPROVED_COOLING', requester: 'sari', earliestApplyAt: '2026-07-11T00:00:00.000Z' },
+        request: {
+          status: 'APPROVED_COOLING',
+          requester: 'sari',
+          earliestApplyAt: '2026-07-11T00:00:00.000Z',
+        },
         currentUser: notOwnerApprover,
         onCancel: () => {},
         busy: false,
@@ -99,7 +122,11 @@ describe('CoolingPanel — the Cancel button visibility rule, at the render leve
   it('busy:true disables the button and swaps its label', () => {
     const html = render(
       React.createElement(CoolingPanel, {
-        request: { status: 'APPROVED_COOLING', requester: 'sari', earliestApplyAt: '2026-07-11T00:00:00.000Z' },
+        request: {
+          status: 'APPROVED_COOLING',
+          requester: 'sari',
+          earliestApplyAt: '2026-07-11T00:00:00.000Z',
+        },
         currentUser: owner,
         onCancel: () => {},
         busy: true,
@@ -114,7 +141,11 @@ describe('CoolingPanel — the Cancel button visibility rule, at the render leve
   it('an error renders as role="alert" text', () => {
     const html = render(
       React.createElement(CoolingPanel, {
-        request: { status: 'APPROVED_COOLING', requester: 'sari', earliestApplyAt: '2026-07-11T00:00:00.000Z' },
+        request: {
+          status: 'APPROVED_COOLING',
+          requester: 'sari',
+          earliestApplyAt: '2026-07-11T00:00:00.000Z',
+        },
         currentUser: owner,
         onCancel: () => {},
         busy: false,
@@ -173,16 +204,33 @@ describe('WindowPanel — the gate-truth panel + Cancel/Re-window visibility rul
   const notOwnerApprover = { id: 'budi', role: 'approver' };
   const lead = { id: 'budi', role: 'lead' };
 
-  const beforeWindow = { kind: 'window' as const, at: '2026-07-12T18:00:00.000Z', endAt: '2026-07-12T22:00:00.000Z' };
-  const openWindow = { kind: 'window' as const, at: '2026-07-12T10:00:00.000Z', endAt: '2026-07-12T22:00:00.000Z' };
-  const coolingWindow = { kind: 'window' as const, at: '2026-07-12T10:00:00.000Z', endAt: '2026-07-12T22:00:00.000Z' };
+  const beforeWindow = {
+    kind: 'window' as const,
+    at: '2026-07-12T18:00:00.000Z',
+    endAt: '2026-07-12T22:00:00.000Z',
+  };
+  const openWindow = {
+    kind: 'window' as const,
+    at: '2026-07-12T10:00:00.000Z',
+    endAt: '2026-07-12T22:00:00.000Z',
+  };
+  const coolingWindow = {
+    kind: 'window' as const,
+    at: '2026-07-12T10:00:00.000Z',
+    endAt: '2026-07-12T22:00:00.000Z',
+  };
 
   const noop = (): void => {};
 
   it('renders nothing for a status other than WINDOW_EXPIRED/AWAITING_DEPLOY_APPROVAL', () => {
     const html = render(
       React.createElement(WindowPanel, {
-        request: { status: 'APPLIED', requester: 'sari', schedule: beforeWindow, earliestApplyAt: undefined },
+        request: {
+          status: 'APPLIED',
+          requester: 'sari',
+          schedule: beforeWindow,
+          earliestApplyAt: undefined,
+        },
         currentUser: owner,
         onCancel: noop,
         onRewindow: noop,
@@ -197,7 +245,12 @@ describe('WindowPanel — the gate-truth panel + Cancel/Re-window visibility rul
   it('renders nothing for AWAITING_DEPLOY_APPROVAL + schedule.kind:"now" (a freeze-held row — no window to show)', () => {
     const html = render(
       React.createElement(WindowPanel, {
-        request: { status: 'AWAITING_DEPLOY_APPROVAL', requester: 'sari', schedule: { kind: 'now' }, earliestApplyAt: undefined },
+        request: {
+          status: 'AWAITING_DEPLOY_APPROVAL',
+          requester: 'sari',
+          schedule: { kind: 'now' },
+          earliestApplyAt: undefined,
+        },
         currentUser: owner,
         onCancel: noop,
         onRewindow: noop,
@@ -212,7 +265,12 @@ describe('WindowPanel — the gate-truth panel + Cancel/Re-window visibility rul
   it('WINDOW_EXPIRED: shows the closed message, a Cancel button, AND a re-window form for the owner', () => {
     const html = render(
       React.createElement(WindowPanel, {
-        request: { status: 'WINDOW_EXPIRED', requester: 'sari', schedule: beforeWindow, earliestApplyAt: undefined },
+        request: {
+          status: 'WINDOW_EXPIRED',
+          requester: 'sari',
+          schedule: beforeWindow,
+          earliestApplyAt: undefined,
+        },
         currentUser: owner,
         onCancel: noop,
         onRewindow: noop,
@@ -231,7 +289,12 @@ describe('WindowPanel — the gate-truth panel + Cancel/Re-window visibility rul
   it('AWAITING_DEPLOY_APPROVAL, before the window opens: shows "opens" copy, Cancel AND Re-window both offered', () => {
     const html = render(
       React.createElement(WindowPanel, {
-        request: { status: 'AWAITING_DEPLOY_APPROVAL', requester: 'sari', schedule: beforeWindow, earliestApplyAt: undefined },
+        request: {
+          status: 'AWAITING_DEPLOY_APPROVAL',
+          requester: 'sari',
+          schedule: beforeWindow,
+          earliestApplyAt: undefined,
+        },
         currentUser: owner,
         onCancel: noop,
         onRewindow: noop,
@@ -248,7 +311,12 @@ describe('WindowPanel — the gate-truth panel + Cancel/Re-window visibility rul
   it('AWAITING_DEPLOY_APPROVAL, window CURRENTLY open: Cancel offered, Re-window is NOT (mid-window, §2.4)', () => {
     const html = render(
       React.createElement(WindowPanel, {
-        request: { status: 'AWAITING_DEPLOY_APPROVAL', requester: 'sari', schedule: openWindow, earliestApplyAt: undefined },
+        request: {
+          status: 'AWAITING_DEPLOY_APPROVAL',
+          requester: 'sari',
+          schedule: openWindow,
+          earliestApplyAt: undefined,
+        },
         currentUser: owner,
         onCancel: noop,
         onRewindow: noop,
@@ -287,7 +355,12 @@ describe('WindowPanel — the gate-truth panel + Cancel/Re-window visibility rul
   it('a plain approver who is neither requester nor Lead/admin: text renders, NEITHER button does', () => {
     const html = render(
       React.createElement(WindowPanel, {
-        request: { status: 'WINDOW_EXPIRED', requester: 'sari', schedule: beforeWindow, earliestApplyAt: undefined },
+        request: {
+          status: 'WINDOW_EXPIRED',
+          requester: 'sari',
+          schedule: beforeWindow,
+          earliestApplyAt: undefined,
+        },
         currentUser: notOwnerApprover,
         onCancel: noop,
         onRewindow: noop,
@@ -305,7 +378,12 @@ describe('WindowPanel — the gate-truth panel + Cancel/Re-window visibility rul
   it('a Lead who is NOT the requester still gets both actions (senior override)', () => {
     const html = render(
       React.createElement(WindowPanel, {
-        request: { status: 'WINDOW_EXPIRED', requester: 'sari', schedule: beforeWindow, earliestApplyAt: undefined },
+        request: {
+          status: 'WINDOW_EXPIRED',
+          requester: 'sari',
+          schedule: beforeWindow,
+          earliestApplyAt: undefined,
+        },
         currentUser: lead,
         onCancel: noop,
         onRewindow: noop,
@@ -321,7 +399,12 @@ describe('WindowPanel — the gate-truth panel + Cancel/Re-window visibility rul
   it('cancelBusy disables the Cancel button and swaps its label', () => {
     const html = render(
       React.createElement(WindowPanel, {
-        request: { status: 'WINDOW_EXPIRED', requester: 'sari', schedule: beforeWindow, earliestApplyAt: undefined },
+        request: {
+          status: 'WINDOW_EXPIRED',
+          requester: 'sari',
+          schedule: beforeWindow,
+          earliestApplyAt: undefined,
+        },
         currentUser: owner,
         onCancel: noop,
         onRewindow: noop,
@@ -336,7 +419,12 @@ describe('WindowPanel — the gate-truth panel + Cancel/Re-window visibility rul
   it('rewindowBusy disables the Re-window button and swaps its label', () => {
     const html = render(
       React.createElement(WindowPanel, {
-        request: { status: 'WINDOW_EXPIRED', requester: 'sari', schedule: beforeWindow, earliestApplyAt: undefined },
+        request: {
+          status: 'WINDOW_EXPIRED',
+          requester: 'sari',
+          schedule: beforeWindow,
+          earliestApplyAt: undefined,
+        },
         currentUser: owner,
         onCancel: noop,
         onRewindow: noop,
@@ -351,7 +439,12 @@ describe('WindowPanel — the gate-truth panel + Cancel/Re-window visibility rul
   it('a cancelError renders as role="alert" text', () => {
     const html = render(
       React.createElement(WindowPanel, {
-        request: { status: 'WINDOW_EXPIRED', requester: 'sari', schedule: beforeWindow, earliestApplyAt: undefined },
+        request: {
+          status: 'WINDOW_EXPIRED',
+          requester: 'sari',
+          schedule: beforeWindow,
+          earliestApplyAt: undefined,
+        },
         currentUser: owner,
         onCancel: noop,
         onRewindow: noop,
@@ -368,7 +461,12 @@ describe('WindowPanel — the gate-truth panel + Cancel/Re-window visibility rul
   it('a rewindowError renders as role="alert" text', () => {
     const html = render(
       React.createElement(WindowPanel, {
-        request: { status: 'WINDOW_EXPIRED', requester: 'sari', schedule: beforeWindow, earliestApplyAt: undefined },
+        request: {
+          status: 'WINDOW_EXPIRED',
+          requester: 'sari',
+          schedule: beforeWindow,
+          earliestApplyAt: undefined,
+        },
         currentUser: owner,
         onCancel: noop,
         onRewindow: noop,
@@ -414,7 +512,12 @@ describe('RequestAgainLink — one click from a terminal request back into the f
   });
 
   it('renders NOTHING for open/parked statuses — cancel/rewindow own those', () => {
-    for (const status of ['AWAITING_CODE_REVIEW', 'NEEDS_ENGINEER', 'WINDOW_EXPIRED', 'APPROVED_COOLING']) {
+    for (const status of [
+      'AWAITING_CODE_REVIEW',
+      'NEEDS_ENGINEER',
+      'WINDOW_EXPIRED',
+      'APPROVED_COOLING',
+    ]) {
       expect(renderLink(status), status).toBe('');
     }
   });
@@ -425,7 +528,12 @@ describe('RequestAgainLink — one click from a terminal request back into the f
         MemoryRouter,
         null,
         React.createElement(RequestAgainLink, {
-          request: { id: 'req-9', service: 'redshift', operationId: 'beyond-catalog-request', status: 'REJECTED' },
+          request: {
+            id: 'req-9',
+            service: 'redshift',
+            operationId: 'beyond-catalog-request',
+            status: 'REJECTED',
+          },
         }),
       ),
     );
@@ -508,5 +616,30 @@ describe('LinkPrPanel — who sees the PR-link control, and when it can submit',
 
   it('busy swaps the label', () => {
     expect(renderPanel({ busy: true })).toContain('Linking…');
+  });
+});
+
+/**
+ * FE-13 — WindowPanel's `rewindowAt` and LinkPrPanel's `prUrl` are local
+ * `useState`, seeded ONCE from the request each panel first mounts with.
+ * `/requests/A` → `/requests/B` reuses the SAME RequestDetail element (same
+ * route), so without a key the same panel instance — and its stale draft
+ * value — survives the navigation into B's render. `key={request.id}`
+ * forces a fresh mount (and fresh initial state) on every request-id
+ * change; that can only be proven by mounting RequestDetail through a real
+ * navigation, which needs jsdom (none in this repo — see TEST-7), so it's
+ * pinned at the source level instead, the same technique router.tsx's own
+ * registration tests already use.
+ */
+describe('RequestDetail — WindowPanel/LinkPrPanel are keyed by request id (FE-13)', () => {
+  const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const source = readFileSync(join(SRC, 'features/requests/RequestDetail.tsx'), 'utf8');
+
+  it('<WindowPanel key={request.id} ...> — a fresh mount, fresh rewindowAt, on every request-id change', () => {
+    expect(source).toMatch(/<WindowPanel\s+key=\{request\.id\}/);
+  });
+
+  it('<LinkPrPanel key={request.id} ...> — a fresh mount, fresh prUrl, on every request-id change', () => {
+    expect(source).toMatch(/<LinkPrPanel\s+key=\{request\.id\}/);
   });
 });

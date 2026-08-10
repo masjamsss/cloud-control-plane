@@ -14,18 +14,18 @@ name: findings
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['docs/audit/**', 'scripts/findings-gate.sh', 'scripts/findings-baseline.txt', 'scripts/findings-topics.txt', '.github/workflows/findings.yml']
+    paths: ['docs/audit/**', 'scripts/findings-gate.sh', 'scripts/ci/findings-gate-selftest.sh', 'scripts/findings-baseline.txt', 'scripts/findings-topics.txt', '.github/workflows/findings.yml']
   push:
     branches: [main]
-    paths: ['docs/audit/**', 'scripts/findings-gate.sh', 'scripts/findings-baseline.txt', 'scripts/findings-topics.txt', '.github/workflows/findings.yml']
+    paths: ['docs/audit/**', 'scripts/findings-gate.sh', 'scripts/ci/findings-gate-selftest.sh', 'scripts/findings-baseline.txt', 'scripts/findings-topics.txt', '.github/workflows/findings.yml']
 permissions:
   contents: read
 
 jobs:
   ledger:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           # Full history, deliberately. The gate verifies that every `fixed:<sha>` in
           # FINDINGS.md is an ancestor of HEAD (L-28), and it can only verify a sha this
@@ -33,5 +33,13 @@ jobs:
           # one is skipped, and the check passes having dereferenced nothing. That is the
           # same defect the check exists to catch, one level up.
           fetch-depth: 0
+      - name: the sha check can still catch a dangling reference
+        # Runs BEFORE the gate it tests. The gate's own verdict is only worth reading if
+        # the check behind it still bites, and the version that shipped first did not: it
+        # skipped every sha destroyed by `git commit --amend` as "not in this clone",
+        # which is the exact shape L-28 was written about. This drives it against
+        # synthetic repositories where the answer is known.
+        run: bash scripts/ci/findings-gate-selftest.sh
+
       - name: findings ledger is complete and ratcheting
         run: bash scripts/findings-gate.sh

@@ -970,6 +970,102 @@ describe('the serve endpoints — active-only, target-bound (least disclosure)',
       expect((await s.app.request(path, { headers: hdrs(s.root) })).status, path).toBe(404);
     }
   });
+
+  /**
+   * PERF-6 — the serve endpoints stop sending a fresh copy of unchanged
+   * content: `ETag` is the SAME digest the upload pipeline already verified
+   * and stores (schema.ts's `ProjectDataVersionItem.digests` — the exact
+   * served bytes, not a recomputed hash), and a matching `If-None-Match`
+   * gets 304 with no body instead of the full JSON again.
+   */
+  describe('PERF-6 — ETag / If-None-Match on the served content', () => {
+    it('inventory and manifests carry an ETag equal to their stored digest; blocks index/chunk carry none', async () => {
+      const s = await setup();
+      await serveReady(s);
+
+      const inv = await s.app.request('/projects/acme/inventory', { headers: hdrs(s.root) });
+      const invBody = (await inv.json()) as unknown;
+      expect(inv.headers.get('etag')).toBe(`"${digest(invBody)}"`);
+
+      const man = await s.app.request('/projects/acme/manifests', { headers: hdrs(s.root) });
+      const manBody = (await man.json()) as unknown;
+      expect(man.headers.get('etag')).toBe(`"${digest(manBody)}"`);
+
+      // No whole-part digest is stored for the blocks index/chunk files
+      // (only inventory/blocks/manifests are hashed as a whole at upload) —
+      // they must not fabricate one.
+      const index = await s.app.request('/projects/acme/blocks/index', { headers: hdrs(s.root) });
+      expect(index.headers.get('etag')).toBeNull();
+      const chunk = await s.app.request('/projects/acme/blocks/main', { headers: hdrs(s.root) });
+      expect(chunk.headers.get('etag')).toBeNull();
+    });
+
+    it('If-None-Match with the current ETag → 304, no body; a stale/wrong one still gets the fresh 200 body', async () => {
+      const s = await setup();
+      await serveReady(s);
+
+      const first = await s.app.request('/projects/acme/inventory', { headers: hdrs(s.root) });
+      const etag = first.headers.get('etag')!;
+      expect(etag).toBeTruthy();
+
+      const cached = await s.app.request('/projects/acme/inventory', {
+        headers: { ...hdrs(s.root), 'if-none-match': etag },
+      });
+      expect(cached.status).toBe(304);
+      expect(await cached.text()).toBe('');
+      expect(cached.headers.get('etag')).toBe(etag);
+
+      const stale = await s.app.request('/projects/acme/inventory', {
+        headers: { ...hdrs(s.root), 'if-none-match': '"not-the-real-digest"' },
+      });
+      expect(stale.status).toBe(200);
+      expect((await stale.json()) as { resources: unknown[] }).toHaveProperty('resources');
+    });
+
+    it('a wildcard If-None-Match (*) also short-circuits to 304', async () => {
+      const s = await setup();
+      await serveReady(s);
+      const res = await s.app.request('/projects/acme/inventory', {
+        headers: { ...hdrs(s.root), 'if-none-match': '*' },
+      });
+      expect(res.status).toBe(304);
+    });
+
+    it('activating a new version changes the ETag — a client pinned to the old digest gets a fresh 200, not a stale 304', async () => {
+      const s = await setup();
+      await serveReady(s);
+      const before = await s.app.request('/projects/acme/inventory', { headers: hdrs(s.root) });
+      const oldEtag = before.headers.get('etag')!;
+
+      const { token } = await mintToken(s);
+      const v2 = bundle({
+        inventory: {
+          generatedAt: '2026-07-18T00:00:00.000Z',
+          sourceCommit: COMMIT,
+          source: 'scan of terraform-acme environments/prod',
+          resources: [
+            {
+              address: 'aws_instance.web2',
+              resourceType: 'aws_instance',
+              name: 'web2',
+              service: 'ec2',
+              attributes: { instance_type: 't3.micro', tags_name: 'WEB02' },
+            },
+          ],
+        },
+      });
+      expect((await upload(s, token, v2)).status).toBe(201);
+      await activateViaTwoAdmins(s, 2);
+
+      const after = await s.app.request('/projects/acme/inventory', {
+        headers: { ...hdrs(s.root), 'if-none-match': oldEtag },
+      });
+      expect(after.status).toBe(200); // the old ETag no longer matches the newly active version
+      expect(after.headers.get('etag')).not.toBe(oldEtag);
+      const body = (await after.json()) as { resources: Array<{ address: string }> };
+      expect(body.resources[0]!.address).toBe('aws_instance.web2');
+    });
+  });
 });
 
 /* ═══ archive / unarchive ═════════════════════════════════════════════════ */

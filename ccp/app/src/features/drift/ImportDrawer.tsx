@@ -1,10 +1,11 @@
-import { Fragment } from 'react';
+import { Fragment, useRef } from 'react';
 import type { JSX } from 'react';
 import type { Schedule } from '@/types';
 import type { DriftFinding, DriftProposal } from '@/types/drift';
 import { Button } from '@/components/ui/Button';
 import { SchedulePicker } from '@/features/request/SchedulePicker';
 import { formatProjectTime } from '@/lib/datetime';
+import { useModal } from '@/lib/useModal';
 import { DRIFT_BLAST_RADIUS_NOTE, MIN_JUSTIFICATION } from './ProposalDrawer';
 import { UnmanagedFooter } from './UnmanagedResources';
 import './drift.css';
@@ -64,13 +65,18 @@ export function ImportDrawer({
 }: ImportDrawerProps): JSX.Element {
   const payload = proposal.importPayload;
   const justificationTooShort = justification.trim().length < MIN_JUSTIFICATION;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModal(dialogRef, onClose);
 
   return (
     <Fragment>
       <div className="drift-drawer__backdrop" onClick={onClose} />
       <div
+        ref={dialogRef}
         className="drift-drawer drift-drawer--import"
         role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         aria-label={`Import proposal for ${finding.name}`}
       >
         <header className="drift-drawer__head">
@@ -78,7 +84,12 @@ export function ImportDrawer({
             <p className="drift-drawer__eyebrow">Import — unmanaged resource</p>
             <code className="drift-drawer__addr">{payload?.address ?? finding.name}</code>
           </div>
-          <button type="button" className="drift-drawer__close" onClick={onClose} aria-label="Close">
+          <button
+            type="button"
+            className="drift-drawer__close"
+            onClick={onClose}
+            aria-label="Close"
+          >
             ×
           </button>
         </header>
@@ -114,8 +125,8 @@ export function ImportDrawer({
           <h3 className="drift-drawer__heading">Evidence</h3>
           {finding.actor === null && (
             <p className="unmanaged-row__actor">
-              No CloudTrail match found yet — the evidence lookup duty is still open; capture what you can by
-              hand before submitting.
+              No CloudTrail match found yet — the evidence lookup duty is still open; capture what
+              you can by hand before submitting.
             </p>
           )}
           {finding.actor && (
@@ -137,8 +148,8 @@ export function ImportDrawer({
               <code>{payload.skeletonHcl}</code>
             </pre>
             <p className="drift-drawer__help">
-              Writes to {payload.targetFile} unchanged from what is shown above — the gate requires the resulting
-              plan show only this import at a no-op, nothing else.
+              Writes to {payload.targetFile} unchanged from what is shown above — the gate requires
+              the resulting plan show only this import at a no-op, nothing else.
             </p>
           </section>
         )}
@@ -163,11 +174,15 @@ export function ImportDrawer({
               onChange={(e) => onJustificationChange(e.target.value)}
             />
             <p id="drift-import-justification-help" className="drift-drawer__help">
-              Recorded on the request — at least {MIN_JUSTIFICATION} characters. Name why this resource belongs in
-              Terraform rather than being deleted in AWS.
+              Recorded on the request — at least {MIN_JUSTIFICATION} characters. Name why this
+              resource belongs in Terraform rather than being deleted in AWS.
             </p>
 
-            <SchedulePicker value={schedule} onChange={onScheduleChange} name="sched-drift-import" />
+            <SchedulePicker
+              value={schedule}
+              onChange={onScheduleChange}
+              name="sched-drift-import"
+            />
 
             {error && (
               <p className="drift-drawer__error" role="alert">
@@ -175,7 +190,11 @@ export function ImportDrawer({
               </p>
             )}
 
-            <Button variant="primary" onClick={onSubmit} disabled={submitting || justificationTooShort}>
+            <Button
+              variant="primary"
+              onClick={onSubmit}
+              disabled={submitting || justificationTooShort}
+            >
               {submitting ? 'Submitting…' : 'Submit import request'}
             </Button>
           </div>
