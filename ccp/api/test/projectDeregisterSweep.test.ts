@@ -70,7 +70,7 @@ async function setup(): Promise<{ store: ConfigStore; app: App; putra: string; r
   };
 }
 
-function register(app: App, cookie: string, over: Partial<typeof REGISTER> = {}): Promise<Response> {
+async function register(app: App, cookie: string, over: Partial<typeof REGISTER> = {}): Promise<Response> {
   return app.request('/projects', { method: 'POST', headers: hdrs(cookie, { json: true }), body: JSON.stringify({ ...REGISTER, ...over }) });
 }
 
