@@ -459,3 +459,35 @@ export function classifyFinding(f: ClassifiableFinding): FindingEligibility {
   }
   return { bucket: 'import', reason: 'unmanaged resource — import-eligible' };
 }
+
+/** A finding's identity key: `arn` when derivable, else `tfType`+`liveId`
+ * (see {@link DriftFinding}'s own doc). Byte-for-byte port of the api's
+ * `findingIdentityKey` (domain/driftProposals.ts) — DOC-7. */
+function findingIdentityKey(f: { arn?: string | null; tfType: string; liveId?: string }): string {
+  return f.arn != null && f.arn !== '' ? `arn:${f.arn}` : `type:${f.tfType}#id:${f.liveId ?? ''}`;
+}
+
+/**
+ * The CURRENT sweep finding matching an import proposal's pinned identity
+ * (`importPayload.arn`/`tfType`/`liveId`) — the app's own port of the api's
+ * `findCurrentFinding` (domain/driftProposals.ts). `undefined` when no
+ * current finding matches (the resource was resolved, removed from a
+ * later sweep, or never existed) — the same fail-closed treatment the
+ * api's own submit-time re-check gives a vanished finding.
+ *
+ * DOC-7: before this helper existed, the app matched proposal↔finding by a
+ * top-level `DriftProposal.arn`/`tfType` pair the real api never serves
+ * (only the mock did) — this lookup silently never matched anything
+ * against a real deployment. Two call sites now: {@link DriftPage}'s
+ * open-import-drawer lookup (display only), and the mock's own
+ * submit-time re-derivation (`lib/api.ts`) — advisory in both; the real
+ * server always re-derives this again from its own stored data regardless
+ * of what either returns.
+ */
+export function findCurrentFinding(
+  findings: readonly DriftFinding[],
+  identity: { arn: string | null; tfType: string; liveId: string },
+): DriftFinding | undefined {
+  const key = findingIdentityKey(identity);
+  return findings.find((f) => findingIdentityKey(f) === key);
+}

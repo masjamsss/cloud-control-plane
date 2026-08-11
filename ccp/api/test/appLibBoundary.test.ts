@@ -82,6 +82,9 @@ const ALLOWED_APP_MODULES = [
   '@app-lib/permissions',
   // Policy defaults + the approvals-required derivation shared with the SPA.
   '@app-lib/policy',
+  // ARCH-8: the ladder's WHO predicate (canSignApprovalStep) — one definition for the
+  // server's actual gate and the SPA's ladder display, not two hand-mirrored copies.
+  '@app-lib/approvalLadder',
   // The param-activation predicate: the SPA renders by it, the api validates by it.
   '@app-lib/dependsOn',
   // The shared redactor — one rule set for what never leaves the estate.

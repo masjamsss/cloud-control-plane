@@ -5210,3 +5210,122 @@ catalog, the SPA renders the per-project uploaded one.*
       npx vitest run` — 105 files, 1435 passed. `python3 scripts/docs-error-codes-check.py`:
       59 codes documented. `npx vitest run test/openapi.test.ts`: 23/23 (YAML validated
       separately — `python3 -c "import yaml; yaml.safe_load(open(...))"`).
+
+## DOC-7
+
+*App `DriftProposal` type does not match the wire: `importPayload` has a different shape, and
+top-level `arn`/`tfType` are mock-only.*
+
+- [x] **Defect reproduced first, and it was worse than the finding's own text.** The finding's
+      Impact section calls the top-level `arn`/`tfType` mismatch "dead-but-documented" because
+      `driftProposalState.ts`'s finding→proposal matcher keys on `importPayload.address`, not
+      `arn`. True for THAT matcher — but `DriftPage.tsx:467` runs the OPPOSITE lookup
+      (proposal→finding, to resolve the full record `ImportDrawer` renders) via
+      `status.report.sweep?.findings.find((f) => f.arn === openImportProposal.arn)`. The real
+      api's `routes/drift.ts#listRichProposals` never puts `arn`/`tfType` on a served
+      `DriftProposal` at all (only the mock did) — so against a real deployment this lookup
+      always compared `f.arn` to `undefined`, meaning the import drawer either found nothing or
+      silently matched whichever finding happened to have no `arn`. Live, not dead.
+- [x] **Cause, not symptom.** Two distinct payload shapes exist on the wire —
+      `DriftImportPayload` (a finding's own `{address, targetFile, importBlock, skeletonHcl}`)
+      and the api's `DriftImportProposalPayloadSchema` (a proposal's own
+      `{arn, tfType, liveId, targetFile, importBlock, skeletonHcl}`, no `address` — it is
+      already `addresses[0]`) — but the app typed `DriftProposal.importPayload` as the FIRST
+      shape and gave `DriftProposal` its own top-level `arn`/`tfType` besides. The OpenAPI YAML
+      already had this right (`DriftImportProposalPayload`, `ccp-api.yaml:265-271`, and no
+      `arn`/`tfType` on `DriftProposal` at `:328-338`) — only the app's hand-written type and
+      the mock disagreed with it.
+- [x] **The type now matches the wire, not the mock.** Added `DriftImportProposalPayload`
+      (`types/drift.ts`) mirroring the YAML exactly; `DriftProposal.importPayload` now types
+      against it. Removed `DriftProposal.arn`/`.tfType` entirely — the real api never serves
+      them, and once the matching logic below stopped needing them, keeping unserved fields
+      around was the exact "type asserts a field the wire never carries" class of bug DOC-7
+      exists to prevent, not a smaller version of it.
+- [x] **A real identity function, not a deleted one.** `lib/driftEligibility.ts#findCurrentFinding`
+      is a byte-for-byte port of the api's own `domain/driftProposals.ts#findCurrentFinding`/
+      `findingIdentityKey` (arn wins when non-empty, else `tfType`+`liveId`) — used to resolve
+      `DriftPage.tsx`'s open-import-drawer finding AND, replacing the SAME buggy `f.arn ===
+      row.arn` pattern, the mock's own submit-time re-derivation in `lib/api.ts` (which also
+      re-derives the finding-level `importPayload.address` from `row.addresses[0]` rather than
+      copying the proposal-level payload verbatim — the same shape confusion, one level deeper).
+- [x] **`ImportDrawer.tsx`'s header fixed to match.** `payload?.address ?? finding.name` never
+      rendered the address in real api mode (the finding's own second Impact bullet) — changed
+      to `proposal.addresses[0] ?? finding.name`, the field that actually names the address an
+      import would create.
+- [x] **Regression tests.**
+      `test/driftEligibility.test.ts` — 7 new cases for `findCurrentFinding`: arn match,
+      tfType+liveId fallback (arn null on both sides), no match, arn-bearing vs. fallback
+      identities never cross-match, and two arn-less findings told apart by `liveId` alone (the
+      case that actually proves the fallback is a real key and not a shared bucket for "no
+      arn"). `test/unmanagedResources.test.tsx` — asserts the drawer header renders
+      `proposal.addresses[0]`, not `finding.name`.
+- [x] **Negative tests confirmed, independently, for both fixes.** (1) Reverted
+      `findingIdentityKey`'s fallback branch to always key on `arn` alone (collapsing every
+      arn-less finding to the same key): the new "two different arn-less findings" test failed
+      exactly as predicted (`expected {liveId: 'db-oob-99', ...} to be {liveId: 'db-oob-01',
+      ...}` — the wrong finding, not a thrown error, which is the more dangerous failure mode
+      DOC-7 warned about). (2) Reverted `ImportDrawer.tsx`'s header back to
+      `payload?.address ?? finding.name`: the new header test failed with the finding-name
+      fallback rendered instead of the address. Both restored; full suites green again.
+- [x] **Evidence in the status line.** `ccp/app`: `npx tsc --noEmit` clean; `npx vitest run` —
+      160 files, 2830 passed; `npx eslint . --ext .ts,.tsx` — 0 errors (7 pre-existing warnings
+      in files untouched by this fix); `node scripts/check-contrast.mjs`,
+      `python3 scripts/list-missing-help.py`, `npx vite-node scripts/verify-manifest-safety.ts`,
+      `npx vite-node scripts/verify-source-genericity.ts` — all pass.
+
+## ARCH-8
+
+*The governance domain is implemented twice (server + browser mock) with acknowledged
+behavioral divergence.*
+
+- [x] **The triage line's two concrete asks, both delivered.** (1) Shrink the mock's surface
+      toward "the http client over an in-browser toy store" by moving a pure rule into the
+      shared layer, following ARCH-7's shape. (2) Enumerate mock-vs-api behavioral gaps in ONE
+      table in `ccp/README.md` instead of scattered comments.
+- [x] **What was and was not already shared, checked by reading rather than assuming.** The
+      finding's own Location line names `permissions.ts`/`policy.ts`/`quorum.ts` as duplicated.
+      `permissions.ts`'s `canRequest`/`canApprove` turned out to ALREADY be imported by the api
+      through `@app-lib/permissions` — not duplicated at all. `quorum.ts` is explicitly
+      documented mock-only by its own doc comment (api-mode's `requestFeasibility.ts` is a
+      genuinely different, richer computation — project-binding and activation the local
+      account directory can't see). Neither was touched.
+- [x] **The one real, unmirrored duplicate: the ladder's WHO rule.**
+      `lib/approvalLadder.ts#canSignApprovalStep` and `domain/eligibility.ts#canSignStep` were
+      byte-for-byte identical logic (`step === 'L3' ? role === 'lead' : role === 'approver' ||
+      role === 'lead'`), hand-copied — the app's own doc comment said "Mirrors the server's
+      `canSignStep`", the api's said "the single source of truth", and both were true only by
+      coincidence. Now one definition: the api imports `canSignApprovalStep` through
+      `@app-lib/approvalLadder` (added to `appLibBoundary.test.ts`'s `ALLOWED_APP_MODULES`,
+      ARCH-6's checked seam) and `canSignStep` is a thin wrapper around it, keeping its exported
+      `LadderStep`/`RoleName` signature unchanged for every existing caller.
+- [x] **Negative test confirmed the delegation is real, not coincidental agreement.** Broke
+      `canSignApprovalStep`'s L2 branch (`return step === 'L3' ? role === 'lead' : true;`) in
+      the APP file only, touching nothing in `ccp/api`: `domain/eligibility.ts#canSignStep`'s
+      own existing test (`test/approvalLadder.test.ts`, `test/eligibility.test.ts`) failed
+      immediately (`canSignStep('L2', 'requester')` returned `true`). Restored; both suites
+      green. This is the proof the api is really calling through the alias, not independently
+      agreeing with it.
+- [x] **A third, previously-undocumented gap surfaced while writing the table, and it was NOT
+      fixed here.** `routes/requests.ts` computes `approvalsRequired` from
+      `domain/exposure.ts#ladderFor(reviewTier, forcesReplace)` alone —
+      `domain/config.ts#loadPolicy`'s per-risk-tier `ApprovalPolicy` is read back only for
+      `policyVersion` stamping, never to size the ladder (`routes/requests.ts`'s own comment:
+      "risk is display-only now — it no longer varies the count"). The mock's `lib/policy.ts` /
+      `ApprovalPolicyAdmin.tsx` still implement and expose the OLD model as live and effective,
+      in BOTH modes' UI, including against a real `ccp-api`. Fixing this means picking one of
+      three product decisions (remove the admin screen, re-wire the ladder to widen with
+      policy, or relabel the screen as versioning-only) — none of which is "shrink the mock" or
+      "write a table." Named rather than silently absorbed: `docs/audit/RESIDUE.md` R-76, and
+      the stale doc comment in `domain/config.ts` that claimed `approvalsFor` was "imported
+      read-only from the app" (never true — it isn't imported anywhere in `ccp/api/src`) is
+      corrected to say so.
+- [x] **The table itself.** `ccp/README.md`'s "Mock mode vs. api mode" section now carries a
+      9-row table naming, per behavior, which side is authoritative and why — including the
+      two now-genuinely-shared rules, the accounts/audit/cooling-scheduler-bundle machinery the
+      mock was always honest about not implementing, and the policy-count gap this fix
+      surfaced. Closes with a one-line rule for where the NEXT shared predicate should live.
+- [x] **Evidence in the status line.** `ccp/api`: `npx tsc --noEmit` clean; `npx vitest run` —
+      105 files, 1435 passed (`test/appLibBoundary.test.ts`, `test/eligibility.test.ts`,
+      `test/approvalLadder.test.ts`, `test/perProjectAuthz.test.ts` all pass, unchanged
+      expectations). `ccp/app`: `npx tsc --noEmit` clean; `npx vitest run` — 160 files, 2830
+      passed (`test/approvalLadder.test.ts` unchanged expectations, 23/23).

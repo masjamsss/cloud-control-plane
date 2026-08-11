@@ -345,6 +345,38 @@ finding should be opened for the extraction, and it should also absorb **R-11** 
 `requireToolchain.ts` duplication), which exists for the same reason: two packages, two
 `node_modules`, no shared home.
 
+### R-76 · The admin-editable approval policy no longer sizes anything
+*Residue on **ARCH-8**.*
+
+ARCH-8 asked for the mock's WHO rule to stop being a hand-mirrored copy (done: the api's
+`domain/eligibility.ts#canSignStep` now imports `lib/approvalLadder.ts#canSignApprovalStep`
+through the `@app-lib` seam, RULE B-allowlisted, same pattern as `permissions.ts`) and for the
+mock-vs-api behavioral gaps to be written down in one place (`ccp/README.md`'s "Mock mode vs.
+api mode" table). Writing that table surfaced a THIRD thing worth naming on its own: the
+approval-COUNT model has silently forked, not just been re-implemented.
+
+`ccp-api` still serves `GET`/`PUT /admin/policy` — a real deployment's Lead can still edit
+per-risk-tier approval counts (`low`/`medium`/`high`, plus a delete floor), the value is
+stored, versioned, and the version is stamped onto every request row (`policyVersion`). But
+`routes/requests.ts` computes `approvalsRequired` from `domain/exposure.ts#ladderFor(reviewTier,
+forcesReplace)` alone — a fixed two-level ladder keyed on exposure — and says so in its own
+comment: *"risk is display-only now — it no longer varies the count."* The mock's
+`lib/policy.ts`/`ApprovalPolicyAdmin.tsx` still implement and expose the OLD model, live, in
+both modes' UI — including against a real `ccp-api`, where the screen an admin uses to "raise
+the bar for high-risk changes" edits a number nothing downstream reads.
+
+**Why this was not fixed here.** Three defensible outcomes exist — remove the admin screen and
+endpoint (accept `policyVersion` becomes dead too), re-wire `ladderFor` to widen with `policy`
+(a real behavior change to what gates a request, needing its own review), or keep it as
+deliberate audit/versioning-only metadata and say so on the screen itself (the smallest change,
+but still a product decision about what the UI should tell an admin who edits it expecting an
+effect). None of those is "shrink the mock's surface" or "write a table" — ARCH-8's own two
+asks — so this is named rather than picked for them.
+
+**Not currently tracked by any finding id.** A follow-up finding should decide which of the
+three outcomes above, then update `ccp-api/src/routes/admin.ts`'s policy handler (or the ladder,
+or `ApprovalPolicyAdmin.tsx`'s copy) and this table's row accordingly.
+
 ## accepted — deliberately permanent
 
 ### R-7 · A fix landed inside another finding's commit

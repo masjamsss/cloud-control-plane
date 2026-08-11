@@ -93,20 +93,26 @@ const IMPORT_PROPOSAL: DriftProposal = {
   lastSeenReportVersion: 1,
   diff: null,
   attrs: [],
-  arn: IMPORT_FINDING.arn,
-  tfType: IMPORT_FINDING.tfType,
-  importPayload: IMPORT_FINDING.importPayload,
+  // DOC-7: proposal-level import payload — {@link DriftImportProposalPayload}
+  // — distinct from IMPORT_FINDING.importPayload's finding-level shape
+  // above (no `address`; carries the reviewed identity instead).
+  importPayload: {
+    arn: IMPORT_FINDING.arn ?? null,
+    tfType: IMPORT_FINDING.tfType,
+    liveId: IMPORT_FINDING.liveId!,
+    targetFile: IMPORT_FINDING.importPayload!.targetFile,
+    importBlock: IMPORT_FINDING.importPayload!.importBlock,
+    skeletonHcl: IMPORT_FINDING.importPayload!.skeletonHcl,
+  },
 };
 
 /** A FORGED import proposal claiming to cover the SECURITY finding's own
- * arn — simulates a tampered/buggy generation output. The UI must never
- * trust this label into rendering an import affordance. */
+ * address — simulates a tampered/buggy generation output. The UI must
+ * never trust this label into rendering an import affordance. */
 const FORGED_IMPORT_FOR_SECURITY: DriftProposal = {
   ...IMPORT_PROPOSAL,
   digest: 'f6'.repeat(32),
   addresses: ['aws_iam_role.oob_admin_role'],
-  arn: SECURITY_FINDING.arn,
-  tfType: SECURITY_FINDING.tfType,
 };
 
 function baseReportWithSweep(findings: DriftFinding[]): DriftReport {
@@ -338,6 +344,12 @@ describe('ImportDrawer — the pinned code, evidence, blast-radius note, and sub
     expect(html).toContain('import {');
     expect(html).toContain('aws_instance.oob_bastion_9');
     expect(html).toContain('resource &quot;aws_instance&quot; &quot;oob_bastion_9&quot;');
+  });
+
+  it('DOC-7: the header shows the address the import would create (proposal.addresses[0]), not the finding name — the proposal-level import payload carries no address field of its own', () => {
+    const html = render(React.createElement(ImportDrawer, { ...baseProps, canSubmit: true }));
+    expect(html).toContain('drift-drawer__addr">aws_instance.oob_bastion_9<');
+    expect(html).not.toContain('drift-drawer__addr">bastion-9<');
   });
 
   it('renders the standing blast-radius note (shared verbatim with ProposalDrawer) and the delete-in-AWS footer link', () => {
