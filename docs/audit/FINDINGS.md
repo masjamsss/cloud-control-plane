@@ -248,7 +248,7 @@ Durability, rollback, schema validation on load, and store-seam fidelity against
 
 The same rule implemented in two places, free to drift.
 
-- [ ] ARCH-5 | medium | duplication | open | 01-architecture.md | Two sources of truth for the catalog: the server validates against the image-baked catalog, the SPA renders the per-project uploaded one
+- [x] ARCH-5 | medium | duplication | fixed:268d5a2 | 01-architecture.md | Two sources of truth for the catalog: the server validates against the image-baked catalog, the SPA renders the per-project uploaded one
 - [x] ARCH-7 | medium | duplication | fixed:3cf798c | 01-architecture.md | The request-status vocabulary is an unowned, drifted contract
 - [ ] ARCH-8 | medium | duplication | open | 01-architecture.md | The governance domain is implemented twice (server + browser mock) with acknowledged behavioral divergence
 - [x] DOC-13 | medium | duplication | fixed:the YAML prose now names APPLYING/HALTED_DRIFT/HALTED_APPLY_FAILED; test/openapi.test.ts checks agreement automatically | 14-contracts-docs.md | Request-status vocabulary is three-way inconsistent (SPA union vs server writes vs YAML prose)
