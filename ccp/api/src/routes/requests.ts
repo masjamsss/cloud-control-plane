@@ -7,7 +7,7 @@ import { PlanSummarySchema, type PlanCounts } from '../store/planSummarySchema';
 import { initialStatusFor, ladderFor, nextLadderStep, reviewTierFor, strictestTier, tierOf, type LadderStep, type ReviewTier } from '../domain/exposure';
 import type { AppEnv } from '../appEnv';
 import type { ChainHeadItem, ProjectItem, RequestItem, RequestSetItem } from '../store/schema';
-import { approvalKey, chainHead, projectKey, requestCollectionGsi, requestIdempotencyKey, requestKey } from '../store/schema';
+import { IDEMPOTENCY_KEY_RE, approvalKey, chainHead, projectKey, requestCollectionGsi, requestIdempotencyKey, requestKey } from '../store/schema';
 import { itemsOf } from '../domain/changeset';
 import type { TransactWrite } from '../store/configStore';
 import { ConditionError } from '../store/configStore';
@@ -101,7 +101,10 @@ const SubmitBody = z.object({
   items: z.array(SubmitItem).min(1).max(MAX_CHANGE_SET_ITEMS).optional(),
   justification: z.string().min(10),
   schedule: ScheduleSchema,
-  idempotencyKey: z.string().min(1).max(200).optional(),
+  // DATA-15 — a constrained charset, not just a length. This value is concatenated into
+  // a partition key alongside the actor id, and an unconstrained one makes that join
+  // ambiguous (see IDEMPOTENCY_KEY_RE). A rejected key is a 400, never a stored row.
+  idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_RE).optional(),
 });
 
 const RejectBody = z.object({ reason: z.string().optional() });

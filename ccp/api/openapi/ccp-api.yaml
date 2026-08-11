@@ -90,7 +90,7 @@ components:
           description: "the change set: an ordered list of operations enacted as ONE reviewed change. length 1 is normalized to single-op. Every item is validated atomically (unknown op → VALIDATION_FAILED; disabled → OP_DISABLED; out-of-team → TEAM_SCOPE; bounds → PARAM_OUT_OF_BOUNDS; forces-replace without a matching confirmation → REPLACE_CONFIRMATION_REQUIRED) and the whole set is rejected on the FIRST failure — nothing is stored"},
         justification: {type: string, minLength: 10},
         schedule: {type: object, description: "{kind:'now'} | {kind:'window', at, endAt?} — validated server-side (0024 §2.1 V1-V6): at must be RFC3339, >= now+30min, <= now+90d; endAt, if sent, must be > at and span <= 24h (else defaults to at+4h). Rejected with SCHEDULE_INVALID/SCHEDULE_TOO_SOON/SCHEDULE_TOO_FAR (422)"},
-        idempotencyKey: {type: string, description: dedupe key; replays return the original request } }
+        idempotencyKey: {type: string, maxLength: 200, pattern: '^[A-Za-z0-9._:@~-]{1,200}$', description: "dedupe key; replays return the original request. Constrained charset (DATA-15) — it is concatenated into the marker row's partition key, and '#' or a control character there would make that key ambiguous; a violating key is VALIDATION_FAILED (400)"} }
     SubmitItem:   # one operation inside a change set — client supplies ONLY intent; service/macd/exposure/tier server-computed per item
       type: object
       required: [operationId, targetAddress, params]

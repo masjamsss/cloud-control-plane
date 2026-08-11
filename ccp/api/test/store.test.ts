@@ -312,7 +312,10 @@ describe('GSI1 membership follows GSI1PK', () => {
   it('drops it via a transact update too, not just a put', async () => {
     const store = new MemoryStore();
     await store.put(row('a', 'OPEN'));
-    await store.transact([{ kind: 'update', pk: 'THING#a', sk: 'META', set: { status: 'APPLIED', GSI1PK: undefined } }]);
+    // DATA-14 (3): spelled `remove`, not `set: { GSI1PK: undefined }`. DynamoDB's SET
+    // cannot assign an absent value, and the old spelling did not survive being stored
+    // (JSON drops an undefined-valued key) — see test/storeSeamFidelity.test.ts.
+    await store.transact([{ kind: 'update', pk: 'THING#a', sk: 'META', set: { status: 'APPLIED' }, remove: ['GSI1PK'] }]);
     expect(await store.queryGSI1('OPEN')).toEqual([]);
     expect((await store.get('THING#a', 'META'))?.status).toBe('APPLIED');
   });
