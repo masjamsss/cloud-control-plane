@@ -114,8 +114,8 @@ Unguarded full-row writes and lost updates. Largely one root cause — the store
 - [x] DATA-8 | medium | concurrency | fixed:b3d34f5 | 03-data-integrity.md | Pending-change status transitions have no CAS: concurrent ack + reject can apply a change and record it as REJECTED
 - [x] DATA-9 | medium | concurrency | fixed:9dce28b | 03-data-integrity.md | No single-writer guard: restore can be silently clobbered by a running server; nothing prevents two processes on one file
 - [x] ERR-11 | medium | concurrency | fixed:09fb510 | 09-error-handling.md | The bundle idempotency claim guards on `status`, not `bundle.state`: concurrent applies can both run
-- [ ] ERR-8 | medium | concurrency | open | 09-error-handling.md | No process-level failure handling: no graceful shutdown, no rejection/exception handlers, npm-as-PID-1
-- [ ] OPS-8 | medium | concurrency | open | 10-reliability-operations.md | No graceful shutdown: `npm` as PID 1, no SIGTERM handling, default 10 s grace on the api
+- [x] ERR-8 | medium | concurrency | fixed:aaf11c9; node as PID 1 + graceful drain (src/shutdown.ts) + boot failures exit non-zero; test/processLifecycle.test.ts | 09-error-handling.md | No process-level failure handling: no graceful shutdown, no rejection/exception handlers, npm-as-PID-1
+- [x] OPS-8 | medium | concurrency | fixed:aaf11c9; same defect as ERR-8, closed by it; adds stop_grace_period above the drain budget; test/processLifecycle.test.ts | 10-reliability-operations.md | No graceful shutdown: `npm` as PID 1, no SIGTERM handling, default 10 s grace on the api
 - [ ] TEST-6 | medium | concurrency | open | 12-testing-quality.md | No route-level concurrency/race tests; store-level concurrency only
 - [ ] API-14 | low | concurrency | open | 02-api-correctness.md | Conditional-write collisions inside `transactWithAudit` surface as the wrong error
 - [ ] CONC-12 | low | concurrency | open | 04-concurrency.md | The store-backed submit rate limiter is check-then-insert: concurrent submits breach both caps
