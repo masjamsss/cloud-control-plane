@@ -56,6 +56,7 @@ describe("§8 error taxonomy", () => {
         "TEAM_NOT_EMPTY",
         "BACKEND_NOT_EMPTY",
         "DUPLICATE_PROJECT", // 0033 §3.2 — projects registry
+        "PROJECT_ID_RETIRED", // API-9 — a deregistered id is retired, never re-issued
         "DRIFT_PROPOSAL_STALE", // drift-portal spec §4.3 — proposal not from the latest report / already submitted
         "INSTANCE_STALE", // ADR-0023 — instance-identity version guard lost a race (PUT /admin/instance)
         "SCANNER_DISABLED", // ADR-0033 — the server-side scanner lane is not armed on this deployment

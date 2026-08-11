@@ -147,6 +147,15 @@ export const ERRORS = {
     status: 409,
     reason: "That project id is already registered.",
   },
+  // API-9 — a deregistered id is RETIRED, never re-issued. Its own code because
+  // "already registered" would be a lie about a project that no longer exists,
+  // and the admin needs to be told to pick a different id rather than to go
+  // hunting for a project they cannot see.
+  PROJECT_ID_RETIRED: {
+    status: 409,
+    reason:
+      "That project id was deregistered and cannot be reused — choose a different id.",
+  },
   // drift-portal spec §4.3 — a proposal not from the latest report, already
   // submitted, or otherwise no longer 'open' is never submittable.
   DRIFT_PROPOSAL_STALE: {

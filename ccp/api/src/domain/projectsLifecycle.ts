@@ -1,7 +1,11 @@
 import type { ConfigStore } from "../store/configStore";
-import type { PendingConfigChangeItem } from "../store/schema";
-import { PROJECT_DATA_SK_PREFIX } from "../store/schema";
+import type {
+  PendingConfigChangeItem,
+  ProjectRetirementItem,
+} from "../store/schema";
+import { projectRetirementKey } from "../store/schema";
 import { record } from "./audit";
+import { nowIso } from "../clock";
 import { refreshKnownProjects } from "../projects";
 import { removeProjectData, resolveProjectDataRoot } from "./projectData";
 
@@ -63,19 +67,37 @@ export async function afterProjectConfigApply(
     await refreshKnownProjects(store);
   }
   if (applied.kind === "project-deregister") {
-    // Satellite cleanup, fail closed: no upload token AND no onboarding token
-    // survives its project, no stale metadata rows, no servable files. (The
-    // META row itself was the dual-controlled delete the ack just applied.)
+    // Satellite cleanup, fail closed. THE RULE IS THE PARTITION, NOT A PREFIX
+    // LIST (API-9): everything a project accumulates lives under `PROJECT#<id>`,
+    // so deregistration deletes what it FINDS there rather than the three
+    // prefixes someone remembered. The old list named UPLOADTOKEN#, ONBOARDTOKEN#
+    // and DATA#v, and by the time the audit ran it had been outgrown four times
+    // over — FORGECRED (the sealed forge credential), SCANJOB#, DRIFT#v… /
+    // DRIFT#latest and DRIFTPROP# all survived their project. A satellite row
+    // type invented tomorrow is swept by this loop on the day it is invented.
+    //
+    // (The META row itself was the dual-controlled delete the ack just applied,
+    // so it is already gone; if a store somehow still carries it, sweeping it
+    // here is the same fail-closed outcome.)
     const pk = `PROJECT#${targetId}`;
-    for (const prefix of [
-      "UPLOADTOKEN#",
-      "ONBOARDTOKEN#",
-      PROJECT_DATA_SK_PREFIX,
-    ]) {
-      const rows = await store.query(pk, prefix);
-      for (const row of rows) await store.delete(row.PK, row.SK);
-    }
+    const survivors = await store.query(pk);
+    for (const row of survivors) await store.delete(row.PK, row.SK);
     removeProjectData(opts.dataRoot ?? resolveProjectDataRoot(), targetId);
+    // RETIRE THE ID. A complete sweep still cannot make id reuse safe: the
+    // project-scoped partitions (`P#<id>#REQ…`, `#AUDIT…`, `#TEAM…`, `#POLICY`)
+    // are NOT under this PK and cannot even be enumerated through the store seam
+    // (query is by exact PK; there is no scan), and the audit chain must survive
+    // as evidence in any case. So the id is retired rather than recycled — the
+    // tombstone is written LAST, after the sweep, and `POST /projects` refuses
+    // any id whose partition is non-empty. See RESIDUE R-96.
+    const tomb: ProjectRetirementItem = {
+      ...projectRetirementKey(targetId),
+      projectId: targetId,
+      retiredAt: nowIso(),
+      retiredBy: ackerId,
+      sweptRows: survivors.length,
+    };
+    await store.put(tomb);
     await refreshKnownProjects(store);
   }
   if (applied.kind === "project-unarchive") {

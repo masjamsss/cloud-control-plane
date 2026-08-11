@@ -1306,6 +1306,33 @@ export function sessionUserGsi(userId: string): string {
 export function projectKey(id: string): Key {
   return { PK: `PROJECT#${id}`, SK: "META" };
 }
+/**
+ * The RETIREMENT TOMBSTONE for a deregistered project id (API-9).
+ *
+ * Deregistration sweeps the whole `PROJECT#<id>` partition and then writes this
+ * row, so the partition is never empty again — and `POST /projects` refuses any
+ * id whose partition still holds a row. That is what makes "a new tenant
+ * inherits the previous tenant's state" unrepresentable rather than merely
+ * unlikely: the id is retired, not recycled.
+ *
+ * It carries no secret and no tenant data — only when the id was retired and by
+ * whom, so the refusal can say something true to the admin who hits it.
+ */
+export function projectRetirementKey(id: string): Key {
+  return { PK: `PROJECT#${id}`, SK: "RETIRED" };
+}
+export const ProjectRetirementItem = z.object({
+  PK: z.string(),
+  SK: z.string(), // 'RETIRED'
+  projectId: z.string(),
+  retiredAt: z.string(),
+  /** The acking admin — deregistration is always a two-admin envelope. */
+  retiredBy: z.string(),
+  /** How many satellite rows the deregister sweep removed. Evidence that the
+   * sweep ran, and the number the regression test asserts is non-zero. */
+  sweptRows: z.number().int().nonnegative(),
+});
+export type ProjectRetirementItem = z.infer<typeof ProjectRetirementItem>;
 /** The GLOBAL settlement-marker row (data-birth spec §9) — one per store. */
 export function settlementKey(): Key {
   return { PK: "SETTLEMENT", SK: "META" };

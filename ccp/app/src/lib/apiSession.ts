@@ -51,22 +51,59 @@ function bindingFor(
 }
 
 /**
+ * The role/team a user holds on a project they have NO binding on.
+ *
+ * FE-9 — this is an authz decision, so it fails CLOSED. `requester` with no team
+ * is the floor the existing permission helpers already read correctly:
+ * `canApprove` refuses anything that is not approver/lead, `canRequest` refuses a
+ * requester whose team owns no services (and no team owns none), `shellNavItems`
+ * hides Approvals, and the manage tier (`lead && isAdmin`) cannot be reached. It
+ * is deliberately NOT a new "none" role: adding a fourth role to {@link Role}
+ * would make every existing `switch`/lookup table over roles silently incomplete,
+ * which is how a fail-open comes back. The floor value composes with the checks
+ * that already exist.
+ */
+const NO_BINDING: { role: Role; teamId: string } = { role: 'requester', teamId: '' };
+
+/**
  * Project the public account ccp-api returns onto the app's {@link Account}
- * shape, RESOLVED for `projectId`. `role`/`teamId` are the account's values on
- * that account (or the `'*'` wildcard's), falling back to the scalar the server
- * already resolved when `roles` is absent. The credential fields
- * (hash/salt/iterations) are server-side only and never read by the UI once
- * signed in, so they carry inert placeholders — this account exists purely to
- * answer currentUser() from the server's own truth.
+ * shape, RESOLVED for `projectId`.
+ *
+ * THE RULE: once the server sends a `roles` map, that map is the ONLY authority
+ * for role/team — an explicit entry, the `'*'` wildcard, or (no entry) no role
+ * here. The scalar `role`/`teamId` the server resolved are read ONLY when there
+ * is no map at all, which is the legacy/single-account backend the fallback was
+ * written for.
+ *
+ * It used to be `binding?.role ?? a.role`, which also fired when the map existed
+ * and simply had no entry for the active project — so switching to a project the
+ * user holds no role on rendered them with whatever role the LOGIN scope had
+ * resolved. A lead on `sample` browsing `acme` got lead affordances on `acme`:
+ * nav items, approve buttons, drift operator controls. The server re-enforces all
+ * of it, so the cost was wrong UI and guaranteed 403s rather than real privilege —
+ * but a client authorization model that resolves one scope's role for another
+ * scope is a fail-open, and the next reader to trust it is the bug.
+ *
+ * The same rule covers a binding that carries no `teamId`: the team comes from
+ * the binding or is empty, never from the scope the login happened to use.
+ *
+ * The credential fields (hash/salt/iterations) are server-side only and never
+ * read by the UI once signed in, so they carry inert placeholders — this account
+ * exists purely to answer currentUser() from the server's own truth.
  */
 export function authAccountToAccount(a: AuthAccount, projectId: string): Account {
   const binding = bindingFor(a.roles, projectId);
+  const scoped = a.roles
+    ? binding
+      ? { role: binding.role, teamId: binding.teamId ?? NO_BINDING.teamId }
+      : NO_BINDING
+    : { role: a.role as Role, teamId: a.teamId };
   return {
     id: a.id,
     username: a.username,
     displayName: a.displayName,
-    role: (binding?.role ?? a.role) as Role,
-    teamId: binding?.teamId ?? a.teamId,
+    role: scoped.role,
+    teamId: scoped.teamId,
     passwordHash: '',
     salt: '',
     iterations: 0,

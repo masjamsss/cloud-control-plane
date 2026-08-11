@@ -22,6 +22,7 @@ import {
   onboardTokenKey,
   projectCollectionGsi,
   projectKey,
+  projectRetirementKey,
   repoRefOf,
   scanJobKey,
   scanJobQueueGsi,
@@ -722,8 +723,35 @@ export function projectRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     // without needing a fresh store read; a store row of ANY status ALSO
     // collides (draft/pending-trust/trusted rows exist but aren't yet known).
     const k = projectKey(id);
-    if (isKnownProject(id) || (await store.get(k.PK, k.SK)))
-      return apiError(c, "DUPLICATE_PROJECT");
+    if (isKnownProject(id)) return apiError(c, "DUPLICATE_PROJECT");
+    // API-9 — THE CLAIM RULE IS AN EMPTY PARTITION, NOT AN ABSENT META ROW.
+    //
+    // Registering used to check only `PROJECT#<id>/META`. Everything else a
+    // project accumulates lives in that same partition (upload + onboarding
+    // tokens, the sealed FORGECRED, SCANJOB#, DRIFT#…, DRIFTPROP#), so an id
+    // whose META row was gone but whose satellites were not read as "free" —
+    // and the next tenant to take the id inherited the previous tenant's forge
+    // credential, drift pointer and proposals. That is a cross-tenant leak, not
+    // untidiness: the scan-claim lane opens whatever FORGECRED it finds under
+    // the acting project's partition.
+    //
+    // Reading the whole partition (one bounded query, the same cost the drift
+    // and scan-job listings already pay) makes the check the SHAPE of the
+    // problem rather than a list of today's satellites: any row at all — a
+    // deregistration tombstone, a leftover this build has never heard of —
+    // refuses the claim. A `RETIRED` tombstone gets the specific code, because
+    // "already registered" would be a lie about a project that is gone.
+    const partition = await store.query(k.PK);
+    if (partition.length > 0) {
+      const retired = partition.find(
+        (row) => row.SK === projectRetirementKey(id).SK,
+      );
+      return apiError(
+        c,
+        retired ? "PROJECT_ID_RETIRED" : "DUPLICATE_PROJECT",
+        retired ? { retiredAt: String(retired.retiredAt ?? "") } : undefined,
+      );
+    }
 
     // Canonical storage regardless of which shape was sent: always the
     // host-agnostic `repo`, plus the legacy `github` mirror when the host is
