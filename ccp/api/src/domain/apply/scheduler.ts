@@ -116,6 +116,22 @@ export function applyClaimExpired(req: Pick<RequestItem, 'applyClaimedAt' | 'upd
   return now - claimedMs >= APPLY_LEASE_MS;
 }
 
+/**
+ * CONC-10 — {@link settleApplyClaim}'s precondition, hoisted into a cheap SYNCHRONOUS
+ * predicate so a list read can decide whether to call the settler at all. Same shape as
+ * `domain/schedule.ts#needsWindowSettlement`, and for the same reason: a list endpoint
+ * settles every row it returns, but on any real corpus almost none of them need it.
+ *
+ * It is the settler's literal guard, not a second copy of the rule — `settleApplyClaim`
+ * calls THIS — so the screen and the settler cannot disagree about which rows need work.
+ */
+export function needsApplyClaimSettlement(
+  req: Pick<RequestItem, 'status' | 'applyClaimedAt' | 'updatedAt'>,
+  now: number,
+): boolean {
+  return req.status === APPLYING && applyClaimExpired(req, now);
+}
+
 export interface RunOptions {
   notifier?: Notifier;
   /** Master auto-apply freeze (from `CCP_APPLY_FROZEN`). true → audited no-op. */
@@ -638,6 +654,52 @@ async function holdNoPlan(store: ConfigStore, projectId: string, req: RequestIte
   const notifier = opts.notifier ?? nullNotifier;
   await notifier.notify({ kind: 'held-no-plan', projectId, requestId: req.id, message, at: nowIsoStr });
   return { requestId: req.id, result: 'held-no-plan' };
+}
+
+/**
+ * CONC-10 — SETTLE-ON-READ for an expired apply claim. Releases an `APPLYING` row whose
+ * claim has outlived {@link APPLY_LEASE_MS} to `HALTED_APPLY_FAILED`, on the next READ of
+ * that row, and returns the row's true current state (the settled row, the row someone
+ * else moved first, or the row untouched). A no-op for anything that is not a lease-
+ * expired `APPLYING` row — idempotent, and safe to call on every row of a list.
+ *
+ * WHY THIS EXISTS ON TOP OF THE TICK'S SWEEP. API-2 gave the claim a lease and taught
+ * `runDueApplies` to halt an expired one, which closes the wedge — for as long as the
+ * scheduler is armed. `runDueApplies` has exactly ONE production caller, the
+ * `CCP_SCHEDULER=1` timer in `loop.ts`, so the release depended on the same subsystem
+ * whose worker just died still being switched on. Disarming the scheduler after a crash
+ * mid-apply is the obvious operator move, and it re-created the original dead end:
+ * `APPLYING` is refused by approve, reject, rewindow, cancel and the bundle alike, so the
+ * remedy was editing the store by hand — CONC-10 verbatim.
+ *
+ * Settling on read is the doctrine every other lease in this codebase already follows
+ * (`settleCooling`, `settleWindow`, `settleScanJobLease`, `settlePendingExpiry`): no
+ * background timer, no operator verb to remember, and the release happens on the next
+ * read or the next tick, whichever comes first.
+ *
+ * It shares `halt()` with the sweep rather than re-deriving the transition, so the two
+ * paths write the same status, the same timeline event and the same audit action by
+ * construction. `now` is a PARAMETER, never a clock read — this module stays deterministic
+ * and its callers pass the same `nowMs()` they screen with.
+ *
+ * The notifier defaults to the null one: the request timeline and the hash-chained audit
+ * (the two channels this product actually has — see `notify.ts`) are both written either
+ * way, and the injectable pager belongs to the loop that owns a notifier instance.
+ */
+export async function settleApplyClaim(
+  store: ConfigStore,
+  projectId: string,
+  req: RequestItem,
+  now: number,
+  opts: RunOptions = {},
+): Promise<RequestItem> {
+  if (!needsApplyClaimSettlement(req, now)) return req;
+  const k = requestKey(projectId, req.id);
+  await halt(store, projectId, req, 'APPLY_LEASE_EXPIRED', APPLYING, new Date(now).toISOString(), opts);
+  // Re-read rather than trust the write: a lost `ifEquals` guard means someone else moved
+  // the row (a concurrent tick, a settle from another request), and the caller must see
+  // what actually landed — the same idempotent-reread `settleWindow` performs.
+  return ((await store.get(k.PK, k.SK)) as RequestItem | null) ?? req;
 }
 
 async function halt(store: ConfigStore, projectId: string, req: RequestItem, reason: HaltReason, fromStatus: string, nowIsoStr: string, opts: RunOptions): Promise<ApplyOutcome> {
