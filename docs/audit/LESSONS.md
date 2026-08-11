@@ -821,3 +821,85 @@ other six were. **A total that does not add up is a defect report** — if a che
 `n of m` and cannot account for `m - n`, the missing ones are not passing, they are
 unexamined, and the summary line has to say which. See `scripts/ci/findings-gate-selftest.sh`,
 whose scenario B is exactly the eight shas above.
+
+### L-30 — A retry budget is a policy about concurrency, not a magic number
+
+Findings: PERF-11
+
+Every chain-head write in this codebase retried **once** and then threw a 409 at the user.
+Two is the number you write when the question in your head is "what if it collides?" — and
+one retry answers that question perfectly. It is the wrong question. The right one is "how
+many writers are live on this row at once?", because a CAS loop admits exactly one winner per
+round, so the *last* of N concurrent writers needs N attempts. Two writers, fine. Three — two
+approvers and the settle loop of somebody's list refresh — and a real user gets an error for
+clicking approve.
+
+The transferable part is the reframing: **a retry budget must be derived from the expected
+concurrency of the contended resource, not from the expected number of collisions.** Those
+two quantities feel similar and differ by the whole failure mode. Once stated that way the
+number falls out of the deployment (how many actors can touch one project at once?) instead
+of out of taste, and it can be written down as a named constant with the reasoning attached —
+which is also what stops the next reader from "tidying" it back to 2.
+
+Two details that decide whether the fix survives contact.
+
+**Full jitter, not fixed back-off.** The writers that collided lost at the same instant. Sleep
+them all for the same interval and they wake at the same instant and collide again — the
+back-off has bought a delay and removed no contention. Randomising the *whole* interval, not
+adding a jitter fudge to a fixed one, is what actually spreads them, and it is why a small
+budget works at all.
+
+**Raising a budget can expose a bug that a small budget was hiding.** Two of the converted
+loops re-read the row to ask "did somebody legitimately move this?" — but only on attempt 0.
+At a budget of 2 the unchecked window was one round wide and effectively unreachable. At 8 it
+becomes a live path where a genuine state change is reported as contention. The retry count
+was load-bearing for a correctness check nobody had noticed was conditional on it. When you
+widen a loop, re-read what inside it was written assuming the loop was narrow.
+
+### L-31 — A seam option nothing implements is worse than a seam option nothing declares
+
+Findings: PERF-8
+
+`QueryOptions.after` was added to the `ConfigStore` seam with a careful comment explaining it
+as DynamoDB's `ExclusiveStartKey` — "what lets a paged endpoint fetch page N without
+re-reading pages 1..N-1". `queryGSI1` implemented it. `query`, the primary index, silently
+ignored it. A caller passing it got every row from the top of the partition and no error at
+all.
+
+That is the L-1 shape wearing different clothes. L-1 is about a *check* that cannot run
+looking like a check that passed; this is about a *capability* that was never built looking
+like a capability that worked. Both fail in the same direction — the caller is told yes — and
+this one is arguably nastier, because the declaration is in a shared interface that reads as a
+contract. The audit reader's page cost stayed O(chain) while the seam said it did not have to.
+
+**Do differently:** when an interface grows an optional parameter, the implementation that
+does not support it must **refuse**, not ignore. A seam whose whole purpose is "local and
+deployed behave identically" cannot afford an option that is honoured on one index and
+discarded on the other, because every local test then measures a cost the real table would
+charge for. Cheap version: after adding an option to an interface, grep the implementations
+for the parameter name and count them — the ones that do not mention it are the ones lying.
+
+### L-32 — A monotonic id generator quietly outranks the clock you injected
+
+Findings: PERF-8, PERF-7
+
+Making the audit chain pageable rested on one invariant: an entry lives in the month partition
+its own ULID names. The partition comes from `at`, which comes from the injected `clock.ts`
+seam. The id came from `ulid()`, which reads `Date.now()` directly. Under the seam every test
+froze one and not the other, so the invariant was false everywhere it could be observed —
+seeding the id from the same clock reading is what made it true.
+
+The second half is the part worth remembering. `monotonicFactory()` never emits a timestamp
+below the highest it has already emitted **in this process**. So seeding it from a frozen
+clock does not give you "the time I asked for"; it gives you `max(what I asked for, everything
+asked for earlier in this file)`. Two fixtures that rewound the clock therefore produced ids
+stamped with a previous test's month, and the assertions failed for a reason that had nothing
+to do with the code under test. The same mechanism is a genuine production property under a
+backward NTP step, which is why the fast path here has a real fallback rather than an assert.
+
+**Do differently:** the one-clock rule (L-26) covers what reads the clock. It does not cover
+what *derives from* a clock reading and then applies its own ordering guarantee on top — id
+generators, sequence numbers, monotonic counters. Those need the seam too, and they need to be
+tested with the clock moving **forward**, because a fixture that rewinds time is not testing
+your code, it is testing the generator's monotonicity rule. If a value carries a timestamp,
+find out whose clock it actually came from before building an invariant on it.

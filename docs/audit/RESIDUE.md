@@ -317,6 +317,44 @@ Recorded here so the low floor reads as a measurement of a known gap rather than
 acceptable target — a floor nobody remembers the reason for is a floor that quietly becomes the
 ceiling.
 
+### R-53 · The chain-write retry policy is named in one place but spent in sixteen
+*Residue on **PERF-11** and **PERF-8**.*
+
+Two related leftovers, both bounded, both recorded rather than guessed at.
+
+**The retry budget reaches the sites PERF-11 names, and no further.** `CHAIN_WRITE_ATTEMPTS`
+and `chainBackoff` live in `domain/audit.ts`, and the loops PERF-11 lists — `record`,
+`transactWithAudit`, `routes/requests.ts`, `domain/cooling.ts`, `domain/schedule.ts`,
+`domain/apply/scheduler.ts` — now spend that budget. Six further hand-rolled
+`for (attempt < 2)` loops still exist with the old two-attempt budget:
+`domain/dualControl.ts` (×2), `domain/scanJobLease.ts`, `routes/drift.ts` (×2) and
+`routes/projectData.ts`. None is named by PERF-11, each sits in another batch's files
+(B-S7, B-O7/B-O11, B-O13), and converting them is a two-line change per site now that the
+policy is a named import — so this is a lane boundary, not a design gap. Anyone opening those
+files should take the import with them.
+
+The deeper version is worth stating because the next person will meet it: the reason there
+are sixteen loops at all is that each caller needs to tell its OWN condition failure apart
+from chain contention, which the store cannot currently report (R-10, and CONC-15/API-14 are
+the finding-shaped version). Once that separation exists, all sixteen collapse into one
+helper and this residue disappears with them.
+
+**A page walk that finds no more entries runs to the month ceiling.** `readAuditPage` used
+`seen >= total` to stop once it had read the whole chain. With a cursor, the entries above it
+are filtered out at the store, so `seen` no longer counts the chain and that bound cannot
+apply — the walk instead terminates on `monthsBackward`'s own `MAX_MONTHS_WALKED` ceiling
+(1200). This costs nothing on the store that ships: an absent partition is one map lookup
+returning an empty array, and the walk only reaches the ceiling on the FINAL page of a paging
+session, since any earlier page fills and breaks out. Measured at well under a millisecond;
+the whole 13-test file runs in 68 ms.
+
+On a real DynamoDB it would be up to 1200 queries on that last page, which is not acceptable
+and is why this is recorded rather than accepted. The fix is to give the walk a floor it can
+know: the chain head would have to carry the genesis month (or the oldest partition would
+have to be discoverable in O(1)), which is an additive change to `ChainHeadItem` that every
+existing chain would need backfilled. That is a store-schema decision, so it belongs with
+B-O3's `DATA-16` (the snapshot format/version marker) rather than being smuggled in here.
+
 ## accepted — deliberately permanent
 
 ### R-7 · A fix landed inside another finding's commit
