@@ -5014,3 +5014,160 @@ leak."
 - [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/fileStore.test.ts
       test/snapshotWriteAtomic.test.ts` (14 passed); full suite `npx vitest run` (102 files, 1421
       passed); `npx tsc --noEmit` clean.
+
+## ERR-8
+
+*No process-level failure handling: no graceful shutdown, no rejection/exception handlers,
+npm-as-PID-1.* **Closes OPS-8, which is the same defect from the ops report.**
+
+Three defects sit behind one finding, and they compound: the first makes the second
+unreachable, and the third is a failure mode the previous fix in this area introduced.
+
+- [x] **The defect is reproduced first** — a probe signalled each launch chain the way
+      Docker signals PID 1 (the direct child only, in its own process group — *not* the
+      process group, which is what makes this reproduce at all), against the real
+      `src/server.ts` on a temp store:
+
+      | CMD chain | processes | result of `kill -TERM <pid 1>` |
+      | --- | --- | --- |
+      | `npm run start` *(shipped)* | 4 — `npm → sh → tsx → node` | npm exits **rc=143**, handler never runs, **`ccp.json.lock` survives**, **orphan still serving the port** |
+      | `tsx src/server.ts` *(the finding's recommendation)* | 2 — `tsx → node` | handler runs (tsx forwards), rc propagates |
+      | `node --import tsx src/server.ts` | 1 | handler runs, **rc=0**, lock released, listener gone |
+
+      The load-bearing observation is the third column of row one. **CONC-7's SIGTERM/SIGINT
+      writer-lock handback — real code, with a passing test — has never once executed in the
+      shipped container**, because the signal it waits for is delivered to npm. A unit test
+      that calls the handler directly cannot see this; only signalling PID 1 can.
+
+      The boot half was reproduced separately, against a corrupt-but-present store file (the
+      exact case the finding names, and neither a `DeployConfigError` nor a
+      `SettlementConfigError`, so it took the uncaught path):
+
+      ```
+      ccp-api ERROR unhandledRejection ? — SyntaxError: ... is not valid JSON
+          at FileStore.load (src/store/fileStore.ts:144:27)
+          at async start (src/server.ts:91:17)
+      RESULT: exited rc=0
+      ```
+
+      **A fatal boot failure reported success.** `void start()` had no catch; the rejection
+      reached OPS-2's deliberately non-exiting handler; the handler returned; and with no
+      listener bound there was nothing left to keep the event loop alive, so Node ran out of
+      work and exited *cleanly*. This is L-1 at the process level — a boot that could not
+      happen was indistinguishable from a boot that succeeded — and it is **worse than the
+      pre-OPS-2 behaviour**, where the same rejection crashed non-zero. Every consumer of
+      that exit code was misinformed: `docker run` with no restart policy, Kubernetes
+      `restartPolicy: OnFailure`, systemd `Restart=on-failure`, and `install.sh`'s
+      `compose up … || die`.
+
+- [x] **The fix addresses the cause, not the symptom** — three causes, three fixes.
+
+      **1. PID 1 (`api/Dockerfile`).** `CMD ["node", "--import", "tsx", "src/server.ts"]`.
+      **The finding's own recommendation — `CMD ["node_modules/.bin/tsx", "src/server.ts"]`
+      — is better but not right, and is not what shipped.** The tsx CLI spawns a child node
+      and stays resident as a supervisor, so PID 1 would still be a process that is not ours:
+      signal delivery would depend on tsx forwarding, and the container's exit code would be
+      tsx's translation of node's. `node --import tsx` is the documented tsx entrypoint,
+      installs the same loader, and leaves exactly one process — measured above. The
+      tsconfig `paths` aliases resolve identically under it, proved by booting the real
+      server this way and watching it serve, since `server.ts`'s import graph reaches
+      `@app-lib/redact` through `domain/projectData`.
+
+      **2. The drain (`src/shutdown.ts`, new; wired in `server.ts`).** Fixing PID 1 only
+      makes a handler *reachable* — CONC-7's handler called `process.exit(0)` synchronously,
+      which is right about the lock and cuts every in-flight request. The order is the whole
+      content: stop the scheduler first (nothing else can un-start a tick that would claim
+      work this process is about to stop being able to finish) → `server.close()` →
+      `closeIdleConnections()` → let in-flight requests finish under a deadline → **release
+      the writer lock last, on every path including the timeout**. Last, because in-flight
+      requests are still writing through it; on every path, because a lock left behind makes
+      the next boot clear one it cannot prove is dead. `closeIdleConnections()` is not
+      cosmetic: without it one idle keep-alive socket from the reverse proxy holds
+      `close()`'s callback until its own timeout, so every shutdown would burn the full
+      deadline and look like a drain failure. The handlers are now registered for **every**
+      store kind — the old block sat inside an `instanceof FileStore` guard, so a memory-store
+      deployment had no signal handling at all, though the in-flight HTTP requests the drain
+      protects exist either way.
+
+      A timed-out drain still exits **0**. It is a shutdown we were *asked* to perform, and a
+      failure code would make an on-failure supervisor restart a process an operator
+      deliberately stopped; the overrun is surfaced as a loud log line instead, which is the
+      part an operator can act on.
+
+      **3. The exit policy, phase-aware (`src/log.ts`, `server.ts`) — this is R-16's
+      resolution.** R-16 recorded that neither process handler exits, and gave the right
+      reason *for a serving process*: it is supervised with `restart: unless-stopped`, so
+      exiting on any stray throw is a restart loop that serves nothing, and staying up and
+      loud is the better failure mode. **That reasoning is kept unchanged for the serving
+      phase.** It does not survive being applied to boot, as the transcript above shows. So
+      the policy now splits on the one fact that distinguishes the two cases: **before the
+      listener is up a process-level fault is fatal and exits 1; after it, it is logged and
+      survived.** The invariant is the same on both sides — tell the supervisor the truth. A
+      process that has not bound a port will never serve this request or any other, and
+      non-zero is the only signal that says so. `void start()` becomes
+      `start().catch(…)`, which covers the store, settlement and version-stamp failures that
+      live inside it; the phase flag covers a fault that arrives outside that promise.
+
+      **4. Compose (`ccp/docker-compose.yml`).** `stop_grace_period: 30s` on the api —
+      Docker's default is 10s, which is *below* the 15s drain budget, so the process would be
+      SIGKILLed part-way through its own shutdown: the drain would look implemented and never
+      complete. The ordering is the invariant, and the regression test asserts the
+      relationship rather than the two numbers. `init: true` is added as well, for the
+      separate reason that the armed lanes spawn `docker run` children from inside this
+      container and a node at PID 1 does not reap orphaned grandchildren; the CMD fix stands
+      on its own, so an operator using plain `docker run` still gets correct signals.
+
+- [x] **A regression test pins it** — new `test/processLifecycle.test.ts` (11 tests), in
+      three sections matching the three defects. **Negative test confirmed: 6 of the 11
+      failed against the unfixed code** (`git stash` of the four changed files, run, restore)
+      — both CMD rules, both compose rules, the real-process SIGTERM drain, and the
+      boot-failure exit code.
+
+      The container rule is written as a rule, not a list (**L-25**): the check rejects *any*
+      process manager at the head of `CMD` (`npm`, `npx`, `yarn`, `pnpm`, `sh`, `bash`, …) and
+      rejects the shell form outright, rather than pinning the one `npm` spelling that was
+      there — a future `CMD ["sh", "-c", …]` reintroduces the identical defect and is caught.
+
+      The five drain-sequencer tests exercise a module that did not exist before, so a stash
+      cannot show them red. They were **mutation-tested instead — five wrong shutdowns
+      reintroduced one at a time, all five caught**: releasing the lock before the drain
+      instead of after; never hanging up idle sockets; skipping the lock handback on the
+      timeout path; making a second signal a no-op instead of an escape hatch; letting a
+      throwing `scheduler.stop()` abort the drain.
+
+- [x] **Assert the setup fired (L-1)** — and this is where the negative run earned its keep
+      twice over. The compose check originally grepped the whole file for
+      `stop_grace_period:` and **passed against the unfixed compose**, because it was
+      matching the `scanner` service's own `30s`, which has nothing to do with the api: a
+      green test protecting nothing, visible only because it was run against the code it was
+      meant to fail on. It now slices the `api:` block and asserts the slice really is that
+      block and really stopped before the next service. Separately, the first version of the
+      shell probe reported a *clean* result for the single-process chain that in fact came
+      from the npm chain's **orphan still holding the port** — the same lesson, in the
+      instrument rather than the test. The real-process tests now assert the api booted, and
+      that the writer lock **exists** before SIGTERM, so "the lock is gone afterwards" cannot
+      be vacuously true; the boot-failure test asserts the failure was the corrupt store we
+      planted, so a non-zero exit for some unrelated reason is not accepted as evidence.
+
+- [x] **The failure mode is loud** — a boot failure exits non-zero with an operator-grade
+      line naming boot as the phase; a drain overrun logs the deadline it passed; a failed
+      lock handback logs rather than hanging the exit.
+
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run
+      test/processLifecycle.test.ts` (11 passed); full suite `npx vitest run` (103 files,
+      1432 passed, 1 skipped); `npx tsc --noEmit` clean.
+
+**Residue: R-60** — no test drives `docker stop` against the built image; the shipped-artifact
+proof is CI's existing boot-and-probe step plus the static CMD rule.
+**Residue: R-61** — the drain does not await store writes that no HTTP connection is holding
+open.
+
+## OPS-8
+
+*No graceful shutdown: `npm` as PID 1, no SIGTERM handling, default 10 s grace on the api.*
+
+**Same defect as ERR-8, from the ops report rather than the error-handling one — fixed once,
+under [`ERR-8`](#err-8), which carries the reasoning, the measurements and the test.** OPS-8
+adds one detail ERR-8 does not name and it is fixed there: the default 10s
+`stop_grace_period`, which is *below* the drain budget and would have had Docker SIGKILL the
+process part-way through the very shutdown this closes.

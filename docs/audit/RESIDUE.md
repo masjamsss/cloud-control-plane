@@ -556,3 +556,43 @@ and CI-2 had left it scanning nothing in CI. With `PUBLISH_GATE_REQUIRE_ALL=1` m
 gitleaks a red gate, the backstop is present wherever it is claimed to be — which is the
 condition under which "the heuristic is deliberately approximate" is an honest statement rather
 than the whole story.
+
+### R-60 · Nothing drives `docker stop` against the built image
+*Residue on **ERR-8 / OPS-8**.*
+
+The PID 1 defect existed *because* the shipped artifact's behaviour was never exercised: the
+handler had a passing unit test and had never run in a container. The fix is now guarded by a
+static rule over the Dockerfile `CMD` (any process-manager head, and the shell form, are
+refused) and by CI's existing `docker-build.yml` step, which builds the api image, boots it and
+waits for `/readyz=200` — so a CMD that cannot start the process is caught. What is *not*
+covered is the stop half: no test sends `docker stop` to the built image and asserts it exits
+0 within the grace period with the writer lock released.
+
+**Not done here on purpose, twice over.** That step belongs in `.github/workflows/docker-build.yml`,
+which is `B-O8`'s lane, and widening into it is exactly what the runbook says not to do. And it
+cannot be written honestly from this environment: the docker CLI is present but there is no
+daemon, so the image was never built here — the container-shape claims in this batch rest on the
+static rules, the process-level probes against the real entrypoint, and review.
+
+**State:** accepted, bounded. No open finding owns the workflow addition, so this entry is its
+only record — deliberately, rather than claiming a tracker that does not exist. The cheap
+version is three lines in the existing job that already has the container running:
+`docker stop --timeout 30`, assert the exit code, and grep the logs for `shutdown complete`.
+
+### R-61 · The drain does not await store writes no connection is holding open
+*Residue on **ERR-8 / OPS-8**.*
+
+ERR-8's recommendation says the SIGTERM handler should "await the FileStore write chain". The
+drain awaits `server.close()`, which covers request-driven durability *transitively and
+completely*: a request that awaits `persist()` has not answered yet, so its connection is still
+open and the drain is still waiting on it. The gap is writes with no connection behind them —
+the auto-apply scheduler's tick being the real instance. `scheduler.stop()` prevents a *new*
+tick, but a tick already in flight can still be cut at the deadline.
+
+Closing it properly needs `FileStore` to expose "the write chain is idle" — `flush()` is
+private and there is no public equivalent. That is `ccp/api/src/store/*`, which is `B-O3`'s
+lane, so the seam is described here rather than reached into.
+
+**State:** open, bounded and small. In practice the exposure is one scheduler tick's writes
+during a 15s drain, on a deployment that has explicitly set `CCP_SCHEDULER=1`; the store's own
+atomic-rename design means the outcome is a lost write, never a corrupt snapshot.
