@@ -22,7 +22,7 @@ import { isSystemDriftOp } from '../domain/systemOps';
 import { disabledOps, isFrozen, loadPolicy, loadTeams, resolveRisk } from '../domain/config';
 import { checkSubmitRateLimit } from '../middleware/rateLimit';
 import { recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
-import { bundleArmed, bundleClaimLive, bundleConfig, realSteps, runBundle } from '../domain/bundle';
+import { bundleArmed, bundleClaimLive, bundleConfig, realSteps, runBundle, type BundleOutcome } from '../domain/bundle';
 import { resolveLaneRemote, type LaneProject } from '../domain/laneRepo';
 import { resolveKnob } from '../domain/deploymentSettings';
 import { coolingElapsed, settleCooling } from '../domain/cooling';
@@ -1193,21 +1193,52 @@ export function requestRoutes(): Hono<AppEnv> {
     }
 
     // The bundle itself (gate → CAS commit → trigger). Never terraform apply here.
-    const outcome = await runBundle(
-      realSteps(cfg),
-      JSON.stringify(bundleRequestPayload(req, projectId)),
-      `ccp: apply request ${req.id} (${req.operationId} on ${req.targetAddress})\n\nApproved in the portal (ADR-0016 bundle); plan gated + digest-pinned.\nRequested-by: ${req.requester}; bundle-run-by: ${account.id}`,
-    );
+    //
+    // CONC-6 — `runBundle` is TOTAL: it reports a failed run rather than throwing, so
+    // there is always an outcome to write a terminal state from (see domain/bundle.ts).
+    // This catch is defence in depth for everything OUTSIDE it — payload serialisation,
+    // building `realSteps` — because the one thing this handler must never do is return
+    // while the row still carries the `running` claim it just wrote. Before this, a throw
+    // anywhere in here escaped to the error handler as a 500 and left the claim behind;
+    // nothing in this system clears a stuck claim on the row's behalf, so one throw
+    // blocked one-click apply for that request until ERR-2's lease aged it out an hour
+    // later — and before ERR-2, forever.
+    let outcome: BundleOutcome;
+    try {
+      outcome = await runBundle(
+        realSteps(cfg),
+        JSON.stringify(bundleRequestPayload(req, projectId)),
+        `ccp: apply request ${req.id} (${req.operationId} on ${req.targetAddress})\n\nApproved in the portal (ADR-0016 bundle); plan gated + digest-pinned.\nRequested-by: ${req.requester}; bundle-run-by: ${account.id}`,
+      );
+    } catch (e) {
+      outcome = {
+        ok: false,
+        steps: [{ step: 'prepare', ok: false, detail: `the apply bundle threw before reporting an outcome: ${e instanceof Error ? e.message : String(e)}` }],
+      };
+    }
 
     const done = nowIso();
     const bundle = outcome.ok ? { state: 'triggered' as const, sha: outcome.sha, at: done } : { state: 'failed' as const, at: done };
-    const events = [
-      ...req.events,
-      { at: done, type: outcome.ok ? 'bundle-triggered' : 'bundle-failed', label: outcome.ok ? `Apply bundle landed ${outcome.sha?.slice(0, 9)} and satisfied the deploy gate` : `Apply bundle failed at ${outcome.steps.find((s) => !s.ok)?.step ?? '?'}`, actor: account.id },
-    ];
-    // One chained audit entry carrying the full per-step evidence (gate output tail,
-    // landed SHA, trigger result) — the bundle's audit trail of record.
-    const entry: AuditEntryInput = {
+    const outcomeEvent = {
+      at: done,
+      type: outcome.ok ? 'bundle-triggered' : 'bundle-failed',
+      label: outcome.ok
+        ? `Apply bundle landed ${outcome.sha?.slice(0, 9)} and satisfied the deploy gate`
+        : `Apply bundle failed at ${outcome.steps.find((s) => !s.ok)?.step ?? '?'}`,
+      actor: account.id,
+    };
+
+    /**
+     * One chained audit entry carrying the full per-step evidence (gate output tail,
+     * landed SHA, trigger result) — the bundle's audit trail of record.
+     *
+     * `live` is the row as it is at the moment of writing, not the pre-image this handler
+     * read minutes ago: recording `before`/`after` from a stale snapshot would describe a
+     * request that no longer exists. `reachedRow` says whether the request row itself
+     * took the transition, which is the one thing a reader of this chain cannot otherwise
+     * work out (CONC-6).
+     */
+    const outcomeEntry = (live: RequestItem | null, reachedRow: boolean): AuditEntryInput => ({
       action: 'request-bundle',
       actor: account.id,
       targetType: 'request',
@@ -1218,27 +1249,148 @@ export function requestRoutes(): Hono<AppEnv> {
       // record. The cross-estate clone was possible for years because the answer lived
       // only in one process's environment; a reader of this chain could not have told
       // that a request for estate B landed in estate A's repo.
-      after: { status: req.status, bundle, steps: outcome.steps, remote: { source: cfg.remoteSource, detail: cfg.remoteDetail, branch: cfg.branch } },
-    };
+      after: {
+        status: live?.status ?? req.status,
+        bundle,
+        steps: outcome.steps,
+        remote: { source: cfg.remoteSource, detail: cfg.remoteDetail, branch: cfg.branch },
+        ...(reachedRow
+          ? {}
+          : {
+              requestRowUpdated: false,
+              note: 'this outcome was recorded on its own, because it could not be written together with the request row — the steps above are what actually executed, whatever the request row now says',
+            }),
+      },
+    });
+
+    // ── recording the outcome (CONC-6) ──────────────────────────────────────────
+    //
+    // Two facts, and they are NOT the same kind of fact:
+    //
+    //   * the REQUEST ROW's bundle state is a STATE TRANSITION. It may legitimately lose
+    //     to a concurrent writer, and forcing it would overwrite that writer.
+    //   * the AUDIT ENTRY records that a deploy FIRED. A gate ran, a commit landed on
+    //     `main`, a CI apply was triggered. Nothing a later writer does makes any of that
+    //     untrue, so it must not be conditional on the row's guard.
+    //
+    // The old loop coupled them into one transact and, on a lost guard, retried with the
+    // SAME stale guard — which for a row that really has moved can never succeed — then
+    // threw CHAIN_CONTENTION. The trigger had already fired and the chain recorded
+    // NOTHING AT ALL: a live deploy in flight with no evidence anywhere that it existed.
     const hKey = chainHead(projectId);
-    for (let attempt = 0; attempt < 2; attempt++) {
+    const OUTCOME_ATTEMPTS = 3;
+
+    /**
+     * Does the row still carry THIS run's claim? `bundle.at` is the claim's identity: a
+     * takeover (ERR-2) writes a new one, and this run's outcome must never land on top of
+     * a later run's claim — that would report one bundle's result as another's.
+     */
+    const claimIsMine = (row: RequestItem | null): boolean =>
+      row?.bundle?.state === 'running' && row.bundle.at === now;
+
+    let recordedRow = false;
+    let claimLost = false;
+    for (let attempt = 0; attempt < OUTCOME_ATTEMPTS && !recordedRow; attempt++) {
+      // Re-read on EVERY attempt, and re-derive everything from what is read. `events` is
+      // a full-array replacement, so deriving it once from the pre-image silently erases
+      // whatever landed while the bundle ran — a cancel's own timeline entry, a window
+      // settling. The outcome is APPENDED to the timeline as it actually is, never
+      // written over it.
+      const live = (await store.get(k.PK, k.SK)) as RequestItem | null;
+      if (!claimIsMine(live)) {
+        claimLost = true;
+        break;
+      }
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
-      const { writes } = recordIn(projectId, head, entry);
+      const { writes } = recordIn(projectId, head, outcomeEntry(live, true));
       try {
         await store.transact([
-          // Guarded on the seq THIS handler's claim wrote (ERR-11). Guarding on `status`
-          // let an outcome land on a row that had moved under the running bundle — a
-          // cancel, a settle, or the losing half of the double-run the claim now prevents.
-          { kind: 'update', pk: k.PK, sk: k.SK, set: { bundle, updatedAt: done, events, eventSeq: claimSeq + 1 }, ifEquals: { attr: 'eventSeq', value: claimSeq } },
+          {
+            kind: 'update',
+            pk: k.PK,
+            sk: k.SK,
+            set: {
+              bundle,
+              updatedAt: done,
+              events: [...live!.events, outcomeEvent],
+              eventSeq: (live!.eventSeq ?? 0) + 1,
+            },
+            // Guarded on the seq read THIS iteration, not on the one the claim wrote:
+            // "nothing moved since I looked a moment ago". Ownership of the run is
+            // established separately and explicitly by `claimIsMine` above, so the guard
+            // no longer has to carry both meanings — which is what made a lost race
+            // unrecoverable rather than merely worth re-reading.
+            ifEquals: { attr: 'eventSeq', value: live!.eventSeq },
+          },
           ...writes,
         ]);
-        break;
+        recordedRow = true;
       } catch (e) {
-        if (e instanceof ConditionError && attempt === 0) continue; // chain contention → retry once
-        if (e instanceof ConditionError) throw new ApiError('CHAIN_CONTENTION');
-        throw e;
+        if (!(e instanceof ConditionError)) throw e;
+        // Either the row moved or the chain head did. Both are answered by going round
+        // again with FRESH reads — never by retrying a stale guard.
       }
     }
+
+    if (!recordedRow) {
+      // The transition could not be attached to the request row. The deploy still fired,
+      // so the chain still gets the entry — marked as not having reached the row.
+      let recordedAudit = false;
+      for (let attempt = 0; attempt < OUTCOME_ATTEMPTS && !recordedAudit; attempt++) {
+        const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
+        const live = (await store.get(k.PK, k.SK)) as RequestItem | null;
+        const { writes } = recordIn(projectId, head, outcomeEntry(live, false));
+        try {
+          await store.transact(writes);
+          recordedAudit = true;
+        } catch (e) {
+          if (!(e instanceof ConditionError)) throw e;
+        }
+      }
+      if (!recordedAudit) throw new ApiError('CHAIN_CONTENTION');
+
+      // The claim can only still be ours if what defeated the combined write was the
+      // CHAIN, not the row. Release it to its terminal state so a transient chain jam
+      // cannot leave a fully-approved request wedged at `running` for the length of
+      // ERR-2's lease — the wedge is the defect, and the lease is a backstop for crashes,
+      // not a substitute for releasing a claim this handler is still holding. Row only:
+      // the audit entry for this exact outcome landed a moment ago, so this write carries
+      // no fact the chain does not already have.
+      if (!claimLost) {
+        const live = (await store.get(k.PK, k.SK)) as RequestItem | null;
+        if (claimIsMine(live)) {
+          try {
+            await store.transact([
+              {
+                kind: 'update',
+                pk: k.PK,
+                sk: k.SK,
+                set: { bundle, updatedAt: done, events: [...live!.events, outcomeEvent], eventSeq: (live!.eventSeq ?? 0) + 1 },
+                ifEquals: { attr: 'eventSeq', value: live!.eventSeq },
+              },
+            ]);
+          } catch (e) {
+            // Lost again ⇒ somebody else now owns the row; the lease covers it.
+            if (!(e instanceof ConditionError)) throw e;
+          }
+        }
+      }
+
+      // A SPECIFIC code, carrying the evidence. `CHAIN_CONTENTION` said "the chain is
+      // busy, please retry" about a deploy that had already fired — an answer that is
+      // both wrong and dangerous to act on, since retrying re-runs the whole bundle.
+      return c.json(
+        {
+          code: 'BUNDLE_OUTCOME_CONTENDED',
+          reason: claimLost
+            ? 'The bundle ran, but this request moved on while it was running (its claim was taken over or the row changed), so its bundle state was not updated. The full outcome is recorded in the audit chain — read it before re-running anything.'
+            : 'The bundle ran, but the audit chain was too busy to attach the outcome to this request. The full outcome is recorded in the audit chain — read it before re-running anything.',
+          details: { bundle, steps: outcome.steps },
+        },
+        409,
+      );
+    }
+
     return c.json({ ok: outcome.ok, status: req.status, bundle, steps: outcome.steps }, outcome.ok ? 200 : 502);
   });
 

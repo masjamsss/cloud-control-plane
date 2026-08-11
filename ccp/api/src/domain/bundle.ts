@@ -122,11 +122,22 @@ export interface BundleSteps {
   cleanup(dir: string): Await<void>;
 }
 
+/** The stages a run passes through, in order. Also the vocabulary of {@link BundleOutcome.steps}. */
+export type BundleStep = 'prepare' | 'gate' | 'plan-digest' | 'commit' | 'trigger';
+
 export interface BundleOutcome {
   ok: boolean;
   /** Step log in execution order — becomes the audit payload. */
-  steps: Array<{ step: 'prepare' | 'gate' | 'plan-digest' | 'commit' | 'trigger'; ok: boolean; detail: string }>;
-  /** The landed commit on success. */
+  steps: Array<{ step: BundleStep; ok: boolean; detail: string }>;
+  /**
+   * The commit this run put on the branch, when it got that far.
+   *
+   * ERR-12 — read this as "a commit LANDED", not as "the run succeeded". It is set
+   * whenever `commit` returned a sha, including when the run then failed at `trigger` or
+   * threw: the change is on `main` at that point and no later failure takes it back off.
+   * The route depends on exactly that distinction to tell a dead run (nothing landed,
+   * re-runnable from the top) from a half-run (landed, needs only its trigger fired).
+   */
   sha?: string;
 }
 
@@ -206,42 +217,99 @@ export function verifyGateDigest(pinned: string | undefined, gateOut: string): D
   return { ok: true, state: 'verified', detail: `plan digest verified (${pinned.slice(0, 12)}…)` };
 }
 
+/**
+ * TOTAL BY CONSTRUCTION — this function does not throw (CONC-6).
+ *
+ * It used to. `writeFileSync` on a full disk, a step implementation raising, anything
+ * unexpected inside the sequence: the exception propagated out of the route, which had no
+ * catch, so the caller got a 500 and — far worse — the request row kept the claim's
+ * `bundle.state:'running'` forever. Nothing in this system clears a stuck claim on the
+ * row's behalf, so a single throw permanently blocked one-click apply for that request.
+ * ERR-2's lease later bounded that wedge to an hour, but an hour of a fully-approved
+ * change being un-appliable is still a defect, and the lease is a backstop for crashes,
+ * not a licence to leave recoverable failures to it.
+ *
+ * So a throw is converted into what it actually is: a failed run, logged against the stage
+ * that was executing, with every step already completed still in the log. That log is the
+ * audit evidence, and the evidence of a partially-executed bundle is worth more than an
+ * exception type. The caller therefore always gets an outcome it can write a TERMINAL
+ * bundle state from.
+ *
+ * `sha` is populated on the throw path too, whenever the commit had already landed —
+ * see {@link BundleOutcome.sha}.
+ */
 export async function runBundle(
   steps: BundleSteps,
   requestJson: string,
   message: string,
 ): Promise<BundleOutcome> {
   const log: BundleOutcome['steps'] = [];
-  const prep = await steps.prepare();
-  if ('error' in prep) {
-    log.push({ step: 'prepare', ok: false, detail: prep.error });
-    return { ok: false, steps: log };
-  }
-  log.push({ step: 'prepare', ok: true, detail: `base ${prep.baseSha.slice(0, 9)}` });
+  // The stage in progress, so an exception can be attributed to the step that raised it
+  // rather than to the run as a whole.
+  let stage: BundleStep = 'prepare';
+  // Set the moment a commit is known to be on the branch — see BundleOutcome.sha.
+  let landed: string | undefined;
+  let dir: string | undefined;
   try {
+    const prep = await steps.prepare();
+    if ('error' in prep) {
+      log.push({ step: 'prepare', ok: false, detail: prep.error });
+      return { ok: false, steps: log };
+    }
+    dir = prep.dir;
+    log.push({ step: 'prepare', ok: true, detail: `base ${prep.baseSha.slice(0, 9)}` });
+
+    // Still `prepare`: writing the evidence file is workspace setup, and an ENOSPC here
+    // (the finding's own example) is a prepare failure, not a gate failure.
     const reqPath = join(prep.dir, '.bundle-request.json');
     writeFileSync(reqPath, requestJson);
+
+    stage = 'gate';
     const gate = await steps.gate(prep.dir, reqPath);
     log.push({ step: 'gate', ok: gate.ok, detail: gate.detail });
     if (!gate.ok) return { ok: false, steps: log };
 
     // ARCH-3 — the api verifies the reviewed-plan property itself, BEFORE committing,
     // instead of inferring it from the operator command's exit code.
+    stage = 'plan-digest';
     const pinned = (JSON.parse(requestJson) as { planDigest?: string }).planDigest;
     const verdict = verifyGateDigest(pinned, gate.detail);
     log.push({ step: 'plan-digest', ok: verdict.ok, detail: verdict.detail });
     if (!verdict.ok) return { ok: false, steps: log };
 
+    stage = 'commit';
     const commit = await steps.commit(prep.dir, prep.baseSha, message);
     log.push({ step: 'commit', ok: commit.ok, detail: commit.detail });
     if (!commit.ok || !commit.sha) return { ok: false, steps: log };
+    landed = commit.sha;
 
+    stage = 'trigger';
     const trig = await steps.trigger(commit.sha);
     log.push({ step: 'trigger', ok: trig.ok, detail: trig.detail });
     return { ok: trig.ok, steps: log, sha: commit.sha };
+  } catch (e) {
+    log.push({ step: stage, ok: false, detail: `${stage} threw: ${errorText(e)}` });
+    return { ok: false, steps: log, ...(landed !== undefined ? { sha: landed } : {}) };
   } finally {
-    await steps.cleanup(prep.dir);
+    // Only reachable once `prepare` handed back a directory; a cleanup that itself throws
+    // must not turn a recorded outcome back into an exception, which is the whole point
+    // of this function being total. A leaked temp dir is a smaller problem than a wedged
+    // request, and it is already the documented behaviour of the failure arms in
+    // `prepare` (API-16 / ERR-13).
+    if (dir !== undefined) {
+      try {
+        await steps.cleanup(dir);
+      } catch {
+        /* deliberately swallowed — see above */
+      }
+    }
   }
+}
+
+/** Message text from an unknown throw, without assuming it is an `Error`. */
+function errorText(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  return typeof e === 'string' ? e : JSON.stringify(e);
 }
 
 /* ── real effect implementations ────────────────────────────────────────────── */

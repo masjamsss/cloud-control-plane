@@ -556,3 +556,29 @@ and CI-2 had left it scanning nothing in CI. With `PUBLISH_GATE_REQUIRE_ALL=1` m
 gitleaks a red gate, the backstop is present wherever it is claimed to be — which is the
 condition under which "the heuristic is deliberately approximate" is an honest statement rather
 than the whole story.
+
+### R-75 · The bundle-outcome write still gives up under sustained contention
+*Residue on **CONC-6**.*
+
+`routes/requests.ts`'s outcome-attach loop re-reads the request row and the chain head fresh
+on every attempt and CASes on the seq it just read — a single competing writer between the read
+and the transact is exactly what that CAS is for, and the loop simply goes round again with a
+fresh read. What it does not do is retry unboundedly: `OUTCOME_ATTEMPTS = 3`. Under SUSTAINED
+contention on the row or the chain head — several writers landing inside the same handful of
+iterations, not one lost race — the budget can still be exhausted, and the handler falls into
+the audit-only path: the entry lands (marked `requestRowUpdated:false`), but the claim this run
+still holds is released with an unaudited row write (the fact was already recorded a moment
+earlier, so this write carries nothing new).
+
+That fallback is a deliberate, bounded degradation, not a silent one — the caller gets
+`BUNDLE_OUTCOME_CONTENDED` with the full outcome in `details`, never a lost record. What is not
+covered is the CONSTANT: is 3 attempts enough for this system's actual concurrency? The
+regression test (`test/bundleOutcomeRecord.test.ts`) pins the behavioural CONTRACT — the audit
+entry lands, the code is specific, the claim is released or explicitly left to the lease — not
+the retry count against a measured contention rate the way `L-30` (PERF-11, a parallel batch)
+argues a retry budget should be derived.
+
+**State:** open, bounded. The pattern PERF-11 established (a NAMED constant + full jitter
+back-off, derived from expected concurrency rather than an arbitrary number) is the shape to
+apply here too, once `domain/audit.ts`'s `CHAIN_WRITE_ATTEMPTS`/`chainBackoff` (PERF-11, a
+parallel batch's file) are available to reuse rather than duplicating a second retry policy.

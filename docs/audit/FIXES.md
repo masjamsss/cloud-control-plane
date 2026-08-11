@@ -5073,3 +5073,88 @@ part this entry exists to record.
 - [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json` clean;
       `npx vitest run test/bundleClaimLease.test.ts test/bundle.test.ts
       test/applyLaneExclusion.test.ts` → 30 passed (up from 28).
+
+## CONC-6
+
+*The bundle claim has no crash/exception/race recovery: `bundle.state:'running'` can stick
+forever, and a raced outcome write loses the record of a fired deploy.*
+
+- [x] **Defect reproduced first** — both halves, through the real route:
+      - **The exception path.** `realSteps.prepare` opens its workspace with
+        `mkdtempSync(join(tmpdir(), …))`, so pointing `TMPDIR` at a path that does not exist
+        makes it throw `ENOENT` — the same shape as the `writeFileSync` ENOSPC the finding
+        names, and reachable end-to-end. Against the unfixed code `POST /:id/apply` answered
+        **500**, and the row kept the `bundle.state:'running'` claim the handler had written
+        moments earlier.
+      - **The raced outcome.** With a store wrapper landing a competing claim on the request
+        row while the bundle ran, the unfixed handler answered **`CHAIN_CONTENTION`** — after
+        the gate had run, a commit had landed on `main` and the CI apply had been triggered —
+        and the audit chain contained **no `request-bundle` entry at all**.
+- [x] **Cause, not symptom** — three changes, one idea: *a fired deploy is a fact, and a
+      fact is not a state transition.*
+      1. **`runBundle` is now TOTAL** (`domain/bundle.ts`). A throw at any stage is converted
+         into the failed outcome it actually is, attributed to the stage that raised it, with
+         every already-completed step still in the log — a partially-executed bundle's step
+         log is evidence, and worth more than an exception type. `cleanup` still runs, and a
+         `cleanup` that throws no longer turns a recorded outcome back into an exception. The
+         route keeps its own `try/catch` as defence in depth for everything outside that call,
+         because the one thing the handler must never do is return while holding the claim it
+         wrote.
+      2. **The outcome write re-reads and re-derives on every attempt**, and appends to the
+         timeline instead of replacing it. `events` is a full-array replacement, so deriving it
+         once from a pre-image read minutes earlier silently erased anything that landed while
+         the bundle ran. The CAS now guards the seq read *this iteration* ("nothing moved since
+         I looked a moment ago"); ownership of the run is established separately and explicitly
+         by comparing `bundle.at` against the claim this handler wrote. Splitting those two
+         meanings is what makes a lost race merely worth re-reading instead of unrecoverable.
+      3. **The audit entry is written even when the row refuses the transition**, marked
+         `requestRowUpdated:false` with the reason, and the caller gets the specific code
+         **`BUNDLE_OUTCOME_CONTENDED`** carrying `details:{bundle,steps}`. `CHAIN_CONTENTION`
+         said "the chain is busy; please retry" about a deploy that had already fired — an
+         answer that is both wrong and actively dangerous, since retrying re-runs the bundle.
+      **The finding's recommendation was partly unimplementable as written.** It suggests
+      recording the outcome "guarded on `bundle.state:'running'` (which cancel never touches)".
+      The store seam compares `ifEquals` with `!==` on a top-level attribute
+      (`memoryStore.ts`), and `bundle` is an object that is deep-cloned on read — so that
+      guard could never match, on any row, ever. The property it was reaching for is real, so
+      it is enforced as an explicit ownership check (`bundle.at` identifies the claim) rather
+      than as a CAS that would have silently failed 100% of the time.
+      One further deliberate choice: on the doubly-unlucky path where the chain is too busy to
+      attach the outcome, the handler writes the audit entry alone, then releases a still-held
+      claim to its terminal state with an **unaudited row write**. That write carries no fact
+      the chain does not already have — the entry for that exact outcome landed immediately
+      before it — and the alternative is leaving a fully-approved request wedged at `running`
+      for the length of ERR-2's lease over a transient jam.
+- [x] **Regression test** — new `test/bundleOutcomeRecord.test.ts`, 8 cases in three groups:
+      `runBundle` totality (a throw at each of the four stages becomes a failed outcome; the
+      partial step log survives; a post-commit throw still reports the landed sha; cleanup
+      still runs; a throwing cleanup does not resurrect the exception), the route's
+      terminal-state property (the `TMPDIR` reproduction above, asserting 502-not-500, a
+      `failed` bundle state, and — the consequence the finding is actually about — that the
+      *next* apply is no longer refused), and the contended-outcome property (the audit entry
+      lands, `requestRowUpdated:false`, the specific code, and the other run's claim left
+      untouched).
+      **Negative test confirmed** — reverting `domain/bundle.ts` and `routes/requests.ts` to
+      their pre-fix state fails **7 of the 8**, with exactly the finding's symptoms:
+      `expected 500 to be 502` on the route case and
+      `expected 'CHAIN_CONTENTION' to be 'BUNDLE_OUTCOME_CONTENDED'` on the raced one. Both
+      files restored, re-verified green.
+- [x] **Failure is loud** — every assertion names the property ("the claim must be released to
+      a terminal state", "a fired deploy must be in the audit chain", "not CHAIN_CONTENTION —
+      that says retry, and retrying re-runs the deploy"). L-1 is pinned in three places: the
+      throwing-step cases assert the throwing stage was actually *called*, the route case
+      asserts the run really died in `prepare` (rather than being refused for some unrelated
+      reason), and the race case asserts the takeover actually landed. The eighth test is a
+      CONTROL that runs the same fixture with nothing racing and asserts the outcome *does*
+      reach the row — so a fixture that could never record an outcome cannot masquerade as the
+      defect being absent.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json`
+      clean; full suite `npm test` → 103 files, 1431 passed (up from 1421).
+      `python3 scripts/docs-error-codes-check.py` passes with the new inline code documented;
+      `openapi/ccp-api.yaml`, `ccp/docs/ERROR-STATES.md` and `ccp/docs/API-SPEC.md` updated —
+      the last two also corrected a pre-existing contract inaccuracy, both still describing the
+      claim as "a CAS on the observed status", which ERR-11 changed to `eventSeq`.
+
+**Residue:** the outcome write can still lose a concurrent timeline entry in a
+microsecond-wide window, and a chain that stays contended still leaves the run's own claim to
+the lease. See `R-75`.
