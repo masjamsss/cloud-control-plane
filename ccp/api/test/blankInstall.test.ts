@@ -8,6 +8,7 @@ import { canonicalJson } from '../src/domain/audit';
 import { CONTROL_SCOPE, __resetKnownProjectsForTests, isKnownProject } from '../src/projects';
 import { bootstrap } from '../scripts/bootstrap';
 import { sessionCookieFor } from './helpers/seed';
+import { getOperation } from '../src/manifests';
 
 /**
  * data-birth spec §12 lane A acceptance — "a fresh store with a founding
@@ -71,7 +72,14 @@ function bundle(): Record<string, unknown> {
     index: { 'aws_instance.web': 'main' },
     chunks: { main: { 'aws_instance.web': { file: 'main.tf', line: 1, source: 'resource "aws_instance" "web" {}' } } },
   };
-  const manifests = [{ service: 'ec2', scope: 'estate', resourceTypes: ['aws_instance'], summary: 'EC2 ops.', operations: [{ id: 'ec2-resize', service: 'ec2', macd: 'Change' }] }];
+  // ARCH-5 — the uploaded operation must agree with the bundled catalog's governance
+  // fields (exposure, forcesReplace, params, …) or submit refuses it as CATALOG_SKEW.
+  // Using the REAL bundled `ec2-resize` definition here, not a hand-written stub, is
+  // what a real estate's CI upload actually looks like, and keeps this fixture from
+  // silently drifting out of agreement the next time ec2.json's manifest changes.
+  const ec2Resize = getOperation('ec2-resize');
+  if (!ec2Resize) throw new Error('bundled catalog is missing ec2-resize — fixture assumption broken');
+  const manifests = [{ service: 'ec2', scope: 'estate', resourceTypes: ['aws_instance'], summary: 'EC2 ops.', operations: [ec2Resize] }];
   return {
     digests: { inventorySha256: digest(inventory), blocksSha256: digest(blocks), manifestsSha256: digest(manifests) },
     inventory,

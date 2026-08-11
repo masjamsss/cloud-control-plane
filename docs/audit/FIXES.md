@@ -5121,3 +5121,92 @@ are now loud. Left un-extracted, deliberately, as **R-60**.
 frontend-package internals through a path alias, and `planSummarySchema.ts` is still a copy
 (**R-60**). The redaction/toolchain helper duplication that triage parks on ARCH-6 (`R-11`)
 is unaddressed for the same reason (**R-60** covers it).
+
+## ARCH-5
+
+*Two sources of truth for the catalog: the server validates against the image-baked
+catalog, the SPA renders the per-project uploaded one.*
+
+- [x] **Defect reproduced first.** Confirmed by reading, not assuming: `manifests.ts#getOperation`
+      resolves every submit-time operation from the image-bundled catalog
+      (`ccp/app/src/data/manifests/*.json`, vendored at build time) with no per-project
+      resolution anywhere in `routes/requests.ts`'s submit handler. The SPA, for a real
+      onboarded estate, builds its forms from `GET /projects/:id/manifests` — the ACTIVE
+      per-project uploaded set. Nothing anywhere compared the two. Built a fixture where they
+      disagree (an uploaded `ec2-set-encrypted` claiming `l1_self_service` +
+      `forcesReplace:false` against a bundled definition of `engineer_only` +
+      `forcesReplace:true`) and submitted against the unfixed handler: it silently applied
+      the BUNDLED rule with no signal to the requester that their form had lied to them.
+- [x] **Cause, not symptom.** Two manifest sets exist for a real reason — CI-staged,
+      dual-control-activated, per-estate data is how the product is supposed to work — but
+      the SUBMIT PATH had never been taught that the set it enforces and the set the form was
+      built from can be different documents.
+- [x] **The authority decision, and why the finding's own recommendation is rejected.**
+      The bundled catalog is authoritative for every submit-time decision; the uploaded set
+      is a presentation artifact. This is not a preference — `domain/projectData.ts`'s
+      `UploadManifest` validates an uploaded operation as `{id:string}.passthrough()`, so
+      `exposure`/`riskFloor`/`forcesReplace` on an uploaded manifest are never read by
+      anything, while the bundled catalog's same fields are CI-gate-enforced
+      (`verify:safety`'s ForceNew gate). The finding's first recommendation — resolve
+      submit-time operations from the project's active manifest version — is rejected in
+      writing: `domain/requirement.ts` derives the approval ladder from `op.exposure` and
+      `routes/requests.ts` demands the typed replace-confirmation from `op.forcesReplace`;
+      resolving from the uploaded set would move BOTH onto unvalidated tenant-supplied data —
+      a governance escalation wearing the costume of a lookup change (L-27's shape exactly).
+      Written up in full in `ccp/docs/DOMAIN-MODEL.md` §1.1 "Catalog authority", which the
+      code's own doc comments cite by name rather than re-deriving the reasoning per file.
+- [x] **Authority alone does not close the finding — the requester has to be told.**
+      Pre-fix, a requester whose form offered an out-of-bounds value got
+      `PARAM_OUT_OF_BOUNDS`, blaming them for a value their own screen said was allowed.
+      `domain/catalogSkew.ts#operationSkew` detects the divergence per submitted item;
+      `routes/requests.ts` refuses with `422 CATALOG_SKEW`, `details:{operationId,fields}`,
+      checked BEFORE the param-bounds/replace-confirmation gates so the refusal names the
+      real cause instead of manifesting as one of those two misleading codes.
+- [x] **The comparison is subtractive, and that is deliberate (L-25).** Everything on
+      `ManifestOperation` is compared except a small NAMED set of presentation-only fields
+      (`title`, `summary`, `consoleLabel`, `description`, `pinned`, `keywords`; param-level:
+      `label`, `help`, `sensitive`, `group`, `tier`, `uiWidget`). A field added to the type
+      tomorrow is compared by default — the failure direction of forgetting to update an
+      allowlist is a loud refusal to submit, never a silent divergence. Params are compared
+      BY NAME (reordering a form is presentation; a param present on only one side, or
+      carrying different bounds, is not), and a malformed param with no string `name` is
+      counted as divergence rather than silently invisible to the by-name map.
+- [x] **The served-side read is memoised, and the memo key is why it is safe.** A served
+      data version is immutable once staged and activation only ever moves the version
+      pointer (`ProjectDataVersionItem`), so a cache keyed by `(dataRoot, projectId,
+      activeVersion)` can never be stale — an activation changes the key, a de-activation
+      makes the lookup miss. The `dataRoot` is part of the key specifically because more
+      than one `createApp` instance can exist in one test process pointed at different
+      directories; without it the second instance would silently read the first's catalog —
+      "a cache returning a confidently wrong answer, which is worse than no cache."
+- [x] **Regression test — `test/catalogAuthority.test.ts`, 8 cases.** The escalation case
+      (above) written out explicitly: bundled `engineer_only`+`forcesReplace`, uploaded
+      claiming `l1_self_service`+no-confirmation — asserts the SERVER still requires two
+      approvals and the typed confirmation (authority holds) AND that the mismatch is
+      surfaced as `CATALOG_SKEW` naming both diverging fields (the requester is told, not
+      silently overridden). Presentation-field divergence (a re-worded `summary`) does NOT
+      trip the refusal — pins that the allowlist actually excludes what it claims to.
+- [x] **Two pre-existing fixtures were never realistic once the two catalogs are actually
+      compared — fixed, not worked around.** `test/errors.test.ts`'s exhaustive 422-taxonomy
+      list needed `CATALOG_SKEW` added (a new code, mechanical). More substantively,
+      `test/blankInstall.test.ts`'s full onboarding-ladder acceptance test uploaded a
+      3-field stub (`{id, service, macd}`) for `ec2-resize` that had NEVER agreed with the
+      real bundled definition (which carries `params`, `exposure`, `forcesReplace`,
+      `riskFloor`, …) — invisible before this fix because nothing compared them, and a real
+      defect in the fixture's realism once something finally does. Fixed by resolving the
+      REAL bundled operation via `manifests.ts#getOperation('ec2-resize')` and using it
+      directly as the uploaded manifest too, so the fixture cannot silently drift out of
+      agreement with what it is supposed to represent the next time `ec2.json` changes.
+- [x] **Assert the setup fired (L-1).** The escalation test asserts the UNFIXED behavior's
+      shape first — that the bundled op really is `engineer_only`/`forcesReplace:true` —
+      before asserting the fixed behavior refuses the uploaded downgrade.
+- [x] **Negative test confirmed.** Reverted `catalogSkew.ts`/`servedCatalog.ts` (moved
+      aside) and the wiring in `errors.ts`/`index.ts`/`routes/requests.ts`: 4 of 8 new tests
+      fail, each asserting a `CATALOG_SKEW` refusal that no longer happens (e.g. `expected
+      'REPLACE_CONFIRMATION_REQUIRED' to be 'CATALOG_SKEW'` on the escalation case — the
+      server silently obeyed the downgraded uploaded definition). Restored; 8/8 green, full
+      suite unaffected.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json &&
+      npx vitest run` — 105 files, 1435 passed. `python3 scripts/docs-error-codes-check.py`:
+      59 codes documented. `npx vitest run test/openapi.test.ts`: 23/23 (YAML validated
+      separately — `python3 -c "import yaml; yaml.safe_load(open(...))"`).

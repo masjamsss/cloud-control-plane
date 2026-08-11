@@ -85,7 +85,9 @@ export function createApp(store: ConfigStore, opts: CreateAppOptions = {}): Hono
   // routes vs the standing self-service routes), same split instance.ts uses
   // for public-vs-admin.
   app.route('/auth', accountRoutes());
-  app.route('/requests', requestRoutes());
+  // requestRoutes needs the data root too (ARCH-5): submit compares the operation it
+  // enforces against the project's ACTIVE served catalog, which lives under it.
+  app.route('/requests', requestRoutes({ dataRoot: opts.projectDataRoot }));
   app.route('/admin/migrate', migrateRoutes()); // more specific — before /admin
   // Instance rename: admin-only but GLOBAL (not project-scoped) — mounted
   // before /admin so it never inherits adminRoutes' requireProjectMembership.
