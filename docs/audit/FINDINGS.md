@@ -158,7 +158,7 @@ Failures that produce no signal — swallowed rejections, best-effort compensati
 - [ ] ARCH-9 | medium | silent-failure | open | 01-architecture.md | Single-process, single-file scaling ceiling with in-process singletons the planned DynamoDB path would silently break
 - [x] CI-9 | medium | silent-failure | fixed:scripts/ci/check-workflow-safety.sh (no job gated on vars.CI_RUNNER) | 13-ci-cd.md | The recurring data lane keeps the silent-skip gate its own sibling workflow documents as a trap
 - [ ] DATA-5 | medium | silent-failure | open | 03-data-integrity.md | Store rows are not validated against the schemas on load: corrupt-but-parseable state is accepted silently
-- [ ] ERR-6 | medium | silent-failure | open | 09-error-handling.md | `executor.replan()` failures are an unmodeled halt: unbounded silent retry, and they abort the rest of the project's due list
+- [x] ERR-6 | medium | silent-failure | fixed:ca713a6 | 09-error-handling.md | `executor.replan()` failures are an unmodeled halt: unbounded silent retry, and they abort the rest of the project's due list
 - [x] FE-8 | medium | silent-failure | fixed:loadAuditRows returns {rows, cursor}; AuditHistory adds a "Load older events" control + honest "N events loaded ... more available" caption | 05-frontend-flows.md | AuditHistory silently truncates to the first page (100 entries) — the cursor is fetched and thrown away
 - [ ] OPS-6 | medium | silent-failure | open | 10-reliability-operations.md | Plain `compose up` (including every self-update cycle) silently strips the armed overlay
 - [x] TEST-8 | medium | silent-failure | fixed:treeDiff() now walks gotDir too, catching extra files golden.go never accounted for; golden_test.go TestTreeDiff | 12-testing-quality.md | Golden-tree comparison is one-directional: extra files created by an edit go unnoticed
@@ -183,9 +183,9 @@ States nothing can leave: wedged jobs, dead-end requests, permanently disabled c
 - [x] UI-2 | high | stuck-state | fixed:ed4ca42 | 06-frontend-ui-robustness.md | Resource drill-in dead-ends for every "named service" whose slug is not a literal manifest file: all 16 azure-fixture services are broken
 - [ ] API-4 | medium | stuck-state | open | 02-api-correctness.md | The bundle "claim" is not a mutual-exclusion, and a crashed bundle wedges the request at `running`
 - [ ] API-9 | medium | stuck-state | open | 02-api-correctness.md | Project deregistration leaves orphaned satellite rows; a reused id inherits the previous tenant's state
-- [ ] CONC-10 | medium | stuck-state | open | 04-concurrency.md | Stuck `APPLYING` after a worker crash has no reclaim or operator path
+- [x] CONC-10 | medium | stuck-state | fixed:417e051 | 04-concurrency.md | Stuck `APPLYING` after a worker crash has no reclaim or operator path
 - [ ] ERR-12 | medium | stuck-state | open | 09-error-handling.md | Trigger failure after a landed commit: honest-but-dead-end half state, and spawn timeouts are indistinguishable from exit-1
-- [ ] ERR-5 | medium | stuck-state | open | 09-error-handling.md | `TerraformExecutor.init()` caches a rejected promise: one transient init failure bricks the executor until restart
+- [x] ERR-5 | medium | stuck-state | fixed:d0b03ae | 09-error-handling.md | `TerraformExecutor.init()` caches a rejected promise: one transient init failure bricks the executor until restart
 - [x] UI-4 | medium | stuck-state | fixed:b5b703b | 06-frontend-ui-robustness.md | Mutation handlers `await` API calls without try/catch: a network failure permanently wedges busy/submitting state
 - [ ] API-15 | low | stuck-state | open | 02-api-correctness.md | A dangling idempotency marker makes its key permanently unusable
 - [ ] DATA-12 | low | stuck-state | open | 03-data-integrity.md | Crash between the version-row transact and the file write leaves an activatable orphan row in the upload lane
@@ -300,7 +300,7 @@ Red suites, silent skips, fixtures that pin the wrong premise.
 - [x] ERR-1 | high | blocking-io | fixed:domain/exec.ts replaces spawnSync with an awaited spawn; test/execNonBlocking.test.ts | 09-error-handling.md | Synchronous child processes block the entire API event loop for minutes
 - [x] OPS-3 | high | blocking-io | fixed:domain/exec.ts replaces spawnSync with an awaited spawn; test/execNonBlocking.test.ts | 10-reliability-operations.md | Armed-lane commands run `spawnSync` on the event loop: the whole API freezes for up to 15 minutes and health checks flap
 - [x] PERF-2 | high | blocking-io | fixed:domain/exec.ts replaces spawnSync with an awaited spawn; test/execNonBlocking.test.ts | 11-performance-scalability.md | `spawnSync` on the serving thread: the API freezes for up to 10-15 minutes during bundle/drift work
-- [ ] API-8 | medium | stuck-state | open | 02-api-correctness.md | Freeze-held `kind:'now'` requests dead-end in AWAITING_DEPLOY_APPROVAL after the freeze lifts
+- [x] API-8 | medium | stuck-state | fixed:2b50722 | 02-api-correctness.md | Freeze-held `kind:'now'` requests dead-end in AWAITING_DEPLOY_APPROVAL after the freeze lifts
 - [ ] CONC-8 | medium | data-persistence | open | 04-concurrency.md | Every authenticated request triggers a full-store snapshot write; snapshot serialization is synchronous O(store) on the event loop
 - [ ] FE-6 | medium | duplication | open | 05-frontend-flows.md | Api-mode submit gates read the advisory localStorage settings, not the server's — the freeze preview is dead and a stale local freeze silently blocks valid submits
 - [ ] PERF-12 | medium | scale-and-paging | open | 11-performance-scalability.md | Upload ingest does 4+ full canonical-JSON passes over the 16 MiB bundle synchronously on the event loop
@@ -422,4 +422,4 @@ The apply scheduler and cooling windows.
 
 - [x] API-3 | high | scheduler | fixed:a19e688 | 02-api-correctness.md | Arming the scheduler halts every scheduled request: nothing ever writes the plan pin it requires
 - [x] API-7 | medium | scheduler | fixed:a19e688 | 02-api-correctness.md | Scheduler ignores `earliestApplyAt`: a still-cooling request auto-applies the moment its window opens
-- [ ] PERF-14 | low | scheduler | open | 11-performance-scalability.md | Scheduler tick re-scans every project's full request collection every minute
+- [x] PERF-14 | low | scheduler | fixed:cf35d5a | 11-performance-scalability.md | Scheduler tick re-scans every project's full request collection every minute
