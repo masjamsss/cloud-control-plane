@@ -65,8 +65,11 @@ function fixture(extraEnv = ''): string {
     join(dir, '.env'),
     [
       'VITE_API_BASE=https://ccp.example.com/api',
-      'CCP_TOTP_KEY=placeholder-not-a-real-key',
-      'CCP_SCANNER_KEY=placeholder-scanner-key-at-least-32-chars-long',
+      // PG-5 recognises 'not-a-real-secret' as a placeholder marker (see
+      // ccp/scripts/test/compose-logging-and-limits.test.sh for the same fixture
+      // shape) — an arbitrary-looking placeholder value trips the publish gate.
+      'CCP_TOTP_KEY=not-a-real-secret',
+      'CCP_SCANNER_KEY=not-a-real-secret',
       'CCP_DOCKER_GID=999',
       extraEnv,
     ].join('\n'),
