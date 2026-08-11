@@ -5014,3 +5014,185 @@ leak."
 - [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/fileStore.test.ts
       test/snapshotWriteAtomic.test.ts` (14 passed); full suite `npx vitest run` (102 files, 1421
       passed); `npx tsc --noEmit` clean.
+
+## PERF-10
+
+*Submit-path full scans: the rate-limit check and the feasibility check each re-scan whole
+collections per submission.*
+
+- [x] **Defect reproduced first, both halves.** `checkSubmitRateLimit` called
+      `queryGSI1(requestCollectionGsi(projectId))` — the WHOLE project's request history,
+      every row deep-cloned — on every submit, to count the handful belonging to one
+      requester. Measured: 0.009 ms empty, 28 ms at 5,000 requests, and the cost is the
+      project's entire lifetime because nothing is ever pruned from the collection.
+      `computeFeasibility` had the same shape one layer down: `eligibleApprovers` cloned the
+      ENTIRE global account directory to derive two integers (total signers, lead count),
+      7.1 ms at 5,000 accounts, on the same submit critical path — twice, since the finding
+      names both checks and they run back to back.
+- [x] **Cause, not symptom.** Neither check had an index scoped to the question it was
+      actually asking. The rate limiter's question is "how many of THIS requester's recent
+      or open requests are there", answerable from a partition of size `maxOpen +
+      submissionsPerHour`, not the project's history. The feasibility question is "how many
+      signers, and how many leads", two integers with no need for an intermediate array at
+      all.
+- [x] **The fix is two different shapes, because the two questions are different.**
+  - **Rate limit — a maintained per-requester index (`RQUOTA#<requester>` partition,
+    `store/schema.ts#submitQuotaKey`).** One pointer row per submit, not one counter row: a
+    shared mutable counter lets two concurrent submits by the same account both read N and
+    both write N+1, so the count drifts DOWN by one per collision and silently stops
+    limiting; two pointer rows at different SKs cannot lose each other's write. **Settle on
+    read**: a pointer whose request has gone terminal is pruned as it is discovered, so the
+    partition converges on "this requester's open work plus their last hour" regardless of
+    project history. **Materialize once per requester** (a `MATERIALIZED` marker row) — the
+    old full scan is deliberately still there, run exactly once, because an index that
+    cannot tell "nothing indexed yet" from "nothing open" would silently stop enforcing
+    `maxOpen` for every requester who already had open work on an existing deployment: the
+    fail-open this fix cannot afford to introduce while fixing a different cost problem.
+    Returned as writes (`SubmitAdmission`), never committed by the checker itself — they
+    ride the SAME transact as the request row they describe (`routes/requests.ts`,
+    `routes/drift.ts` x2), because a separately-committed pointer and request can disagree
+    in either direction (pointer with no request over-counts and locks a slot nobody used;
+    request with no pointer under-counts and stops limiting).
+  - **Feasibility — no index, a fold.** `eligibility.ts#countEligibleApprovers` uses a new
+    optional store primitive, `foldGSI1`, that visits each row in a partition WITHOUT
+    cloning it — only the accumulator escapes. Deliberately not a maintained
+    "eligible-approvers-per-project" cache: eligibility depends on per-project role, account
+    status, `mustChangePassword` and TOTP enrolment, so a cache would need updating from
+    admin, settlement, login, password-change and TOTP-enrolment — and a site that forgot
+    would understate the signer count, which reads to a requester as "this can never be
+    approved". A wrong count here is a governance-visible lie, so the answer stays derived;
+    only the copying is removed. A store without `foldGSI1` falls back to the old
+    `loadAccounts`-based path — same answer, old cost, never a hard dependency.
+- [x] **What the fix does NOT change.** The counting predicate is identical to
+      `eligibleApprovers`'s (same `isEligibleApprover`, same per-project `roleFor`), and
+      `computeFeasibility`'s existing test suite (`test/feasibility.test.ts`, unmodified)
+      exercises the new path end to end and is unchanged and green — the numbers it already
+      pinned did not move. `occupiesQuotaSlot`/`TERMINAL_STATUSES` — what "holds a slot" and
+      "is terminal forever" mean — are untouched; the index is built ON that existing
+      contract, not a new one.
+- [x] **Left for CONC-12, on purpose.** `checkSubmitRateLimit` is still read-then-write: two
+      concurrent submits by the same requester can both read the partition below the cap and
+      both admit. That overshoot is bounded (by at most the number of true concurrent
+      racers) and self-correcting (the index stays exact once both writes land) — closing it
+      is a check-then-insert redesign, which is CONC-12's finding, not this one's. Noted, not
+      widened into.
+- [x] **Regression test — `test/rateLimit.test.ts`, new describe block, 2 tests measuring
+      the read rather than describing it** (the pattern this repo already uses for the same
+      defect class — see `auditPaging.test.ts`'s PERF-8 tests): a `CountingStore` counts
+      calls to `queryGSI1` against the request-collection key specifically. 300 old,
+      terminal seeded requests for one requester; first submit materializes (exactly one
+      scan, and the fixture is large enough — bigger than `submissionsPerHour + maxOpen` —
+      for the cost to be real); the partition prunes down to one live pointer, not 300; a
+      SECOND submit by the same requester triggers **zero** further scans. A second test
+      pins that a 429 (refused before the caller's transact ever runs) leaves no orphan
+      pointer.
+- [x] **Assert the setup fired (L-1).** The fixture size is asserted against the default
+      caps before the scan-count assertions run, so the test cannot pass by coincidence on a
+      fixture too small to make the old cost visible.
+- [x] **Negative test confirmed** — reverted `middleware/rateLimit.ts`, `routes/requests.ts`,
+      `routes/drift.ts`, `store/configStore.ts` and `store/memoryStore.ts` to `main` (kept
+      the new `schema.ts` key helpers, since the test needs them to exist to import at all)
+      and reran: **"expected [] to have a length of 1 but got +0"** — the old checker never
+      wrote a pointer at all, because it has no index to write one into. Restored; 10/10
+      green.
+- [x] **Failure is loud.** A scan-count regression fails with the exact call count
+      (`expect(store.requestCollectionScans).toBe(0)` reports what it actually was), not a
+      bare pass/fail.
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/rateLimit.test.ts`
+      (10 passed); full suite `npx vitest run` (103 files, 1433 passed); `npx tsc --noEmit`
+      clean.
+
+## PERF-12
+
+*Upload ingest does 4+ full canonical-JSON passes over the 16 MiB bundle synchronously on the
+event loop.*
+
+- [x] **Defect reproduced first.** Ingest ran, back to back, synchronously: `digestsOf` over
+      the uploaded bundle (one canonical pass per part), then `rerunRedaction` serializing
+      EVERY resource and viewOnly block TWICE just to ask "did the redactor change this"
+      (`canonicalJson(redacted) !== canonicalJson(original)`), then `digestsOf` again over
+      the (usually identical) result. Measured at 20k resources: 313 ms + 398 ms + 372 ms
+      across three of those passes, on the single thread that serves every interactive
+      request — a ~1.1 s window where the server answers nobody, not "the upload is slow".
+- [x] **Cause, not symptom.** Two independent costs, and the fix is two independent
+      changes because they do not share a mechanism.
+  - The redundant-comparison cost: `canonicalJson(a) !== canonicalJson(b)` builds TWO full
+    strings to answer a boolean, per resource, per block, per manifest. The actual question
+    is structural equality, which needs no string at all.
+  - The blocking cost: even a minimal single pass over a 16 MiB bundle is tens of
+    milliseconds of synchronous CPU, and nothing handed the event loop back during it —
+    every other request queues behind the whole upload regardless of how cheap the pass is
+    made.
+- [x] **The fix, matched to each cause.**
+  - **`sameJsonValue`** (`domain/projectData.ts`) — walks two JSON values in parallel,
+    allocates nothing, stops at the first difference. `rerunRedaction`'s three masking sites
+    (blocks, resources, manifests) all switched to it. The redactor returns the SAME string
+    instance for every value it leaves alone, so an already-clean bundle (the ordinary case
+    — CI redacts before upload, and every redactor is idempotent) compares by reference
+    nearly all the way down.
+  - **`hashCanonical`** (streaming sha256, iterative with an explicit stack rather than
+    `canonicalJson`'s recursive one-string-per-level-then-concatenate) replaces
+    `sha256(canonicalJson(v))` in `partDigest`/`digestsOf`. Byte-identical BY CONSTRUCTION —
+    it emits the same fragments `canonicalJson` would concatenate, in the same order,
+    including `canonicalJson`'s `?? 'null'` handling of `undefined`/functions — and never
+    materializes the full string (the allocation half of the 16 MiB cost).
+  - **`RedactionResult.changed`** — set by the comparison itself (not derived from
+    `warnings.length`, which is prose a future part could forget to add), and used by the
+    route: when redaction masked nothing, the stored bundle is structurally identical to the
+    uploaded one, so the SECOND `digestsOf` pass is skipped and the first pass's digests are
+    reused. This is sound only because `sameJsonValue` is a real equality check, not a
+    heuristic — `test/projectDataIngest.test.ts` pins the equivalence directly rather than
+    asserting it in a comment.
+  - **Cooperative yielding** (`yieldToEventLoop` via `setImmediate`, every `YIELD_EVERY`
+    (500) items of work, budget SHARED across all three masking passes so the loop is
+    handed back on a cadence tied to total ingest work rather than to whichever pass happens
+    to be running) — `setImmediate` specifically, not `setTimeout(0)`, because it runs
+    pending I/O callbacks first, which is the actual "let another request through"
+    behaviour wanted here.
+- [x] **Where an easier fix was rejected.** Moving ingest to a worker thread would remove
+      the blocking cost without touching the redundant-comparison one, and trades a
+      synchronous cost for IPC/serialization overhead on every 16 MiB payload — a bigger
+      architectural change for a problem cooperative yielding already solves within the
+      existing single-process model this codebase commits to elsewhere (ERR-8/OPS-8 in the
+      parallel B-O6 batch).
+- [x] **Regression test — `test/projectDataIngest.test.ts` (new file, three properties,
+      because two of the three optimizations are only safe if the third holds):**
+  1. `hashCanonical` agrees with `sha256(canonicalJson(v))` — the pre-existing implementation
+     kept as a literal oracle — over a 21-value corpus built for awkward cases (unicode,
+     escapes, non-finite numbers, an explicit `undefined` property, unsorted keys, deep
+     nesting), asserting the corpus actually produces 21 DISTINCT digests (L-1 — a broken
+     hash agreeing with itself 21 times on `null` would look identical to 21 real passes).
+  2. `redaction.changed` correctly predicts whether `digestsOf` on the stored vs. uploaded
+     bundle agree, in both directions (a clean bundle AND a bundle the redactor has to
+     mask), with the fixture asserted to actually trip the redactor before trusting either
+     branch.
+  3. `sameJsonValue` agrees with `canonicalJson(a) === canonicalJson(b)` pairwise across the
+     full corpus, PLUS a dedicated event-loop-hold measurement: an 8,000-resource bundle is
+     ingested while a 1 ms interval timer watches for the longest gap between its own fires
+     (the longest span the loop was held). Asserted as a RATIO (longest block < 50% of total
+     ingest time), deliberately not a millisecond ceiling (L-25 — the rule, not a number tied
+     to one machine's speed) — before the fix the whole ingest ran as one uninterrupted span,
+     so the ratio was ~1.0.
+- [x] **Assert the setup fired (L-1).** The event-loop test asserts the fixture really
+      produced 8,000 resources and a well-formed digest, and that the total ingest time
+      exceeded 40 ms — a measurement of "was the loop held" is meaningless if the work
+      measured was too small to hold it for a detectable interval.
+- [x] **Negative test confirmed.** `hashCanonical`/`sameJsonValue` are new code compared
+      directly against the existing `canonicalJson` oracle in every assertion above, so
+      disagreement IS the failure mode, not a reverted-and-reran step. For the event-loop
+      property specifically: first tried removing only `rerunRedaction`'s three `tick()`
+      calls — the test still PASSED, because `hashCanonical`'s own yields (inside
+      `digestsOf`, called before and, when nothing needed re-hashing, not again after) were
+      by themselves enough to keep this fixture's ratio under 50%. That is a real result, not
+      a failure of the test: it shows the property is about TOTAL yielding across the whole
+      ingest, which is exactly what the shared `sinceYield` budget in `rerunRedaction` is for
+      (see the fix above) rather than a per-function guarantee. Removed BOTH yield mechanisms
+      (`hashCanonical`'s `yieldToEventLoop()` call and `rerunRedaction`'s `tick()`) and
+      reran: **"ingest held the event loop for 1539ms of 1538ms total"** — effectively 100%,
+      confirming the un-yielded shape the fix replaces. Both restored; 10/10 green.
+- [x] **Failure is loud.** The corpus test names which shape disagreed
+      (`` `hashCanonical disagrees with the reference for: ${name}` ``); the event-loop test
+      reports the actual held time against the actual total, not a bare threshold miss.
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/projectDataIngest.test.ts`
+      (10 passed); full suite `npx vitest run` (103 files, 1433 passed); `npx tsc --noEmit`
+      clean.
