@@ -108,7 +108,7 @@ Unguarded full-row writes and lost updates. Largely one root cause — the store
 - [ ] API-5 | medium | concurrency | open | 02-api-correctness.md | Cancel can race an in-flight bundle: the change applies but the request reads CANCELLED
 - [x] CONC-11 | medium | concurrency | fixed:951aaf9 | 04-concurrency.md | Registry writes that bump `version` without guarding it (trust-request upload, identity confirm) can clobber concurrent registry ops and rewind the dual-control version guard
 - [x] CONC-4 | medium | concurrency | fixed:3b243aa | 04-concurrency.md | A revoked session can be resurrected by the concurrent idle-window slide
-- [ ] CONC-6 | medium | concurrency | open | 04-concurrency.md | The bundle claim has no crash/exception/race recovery: `bundle.state:'running'` can stick forever, and a raced outcome write loses the record of a fired deploy
+- [x] CONC-6 | medium | concurrency | fixed:bf6597d | 04-concurrency.md | The bundle claim has no crash/exception/race recovery: `bundle.state:'running'` can stick forever, and a raced outcome write loses the record of a fired deploy
 - [x] CONC-7 | medium | concurrency | fixed:9dce28b | 04-concurrency.md | `FileStore` has no single-writer enforcement: two processes on the same data file silently destroy each other's writes
 - [x] CONC-9 | medium | concurrency | fixed:b3d34f5 | 04-concurrency.md | Dual-control ack does not guard the pending row's status: a concurrently rejected proposal can still apply
 - [x] DATA-8 | medium | concurrency | fixed:b3d34f5 | 03-data-integrity.md | Pending-change status transitions have no CAS: concurrent ack + reject can apply a change and record it as REJECTED
