@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store/memoryStore';
-import type { ConfigStore } from '../src/store/configStore';
+import type { ConfigStore, Item } from '../src/store/configStore';
 import type { RequestItem } from '../src/store/schema';
 import { requestKey } from '../src/store/schema';
 import { seed, seedRequests, sessionCookieFor } from './helpers/seed';
@@ -64,17 +64,25 @@ function makeOrigin(): string {
   return bare;
 }
 
-/** Arm the bundle with commands that succeed but do nothing. */
-function arm(): void {
+/** Arm the bundle with commands that succeed but do nothing (or a caller's gate). */
+function arm(gateCmd = 'true'): void {
   Object.assign(process.env, {
     CCP_BUNDLE: '1',
     CCP_GIT_REMOTE: makeOrigin(),
-    CCP_BUNDLE_GATE_CMD: 'true',
+    CCP_BUNDLE_GATE_CMD: gateCmd,
     CCP_BUNDLE_TRIGGER_CMD: 'true',
   });
 }
 
-async function seededApp(bundle?: RequestItem['bundle']): Promise<{
+/**
+ * `wrap` lets a test hand the ROUTE a decorated store while keeping the raw one to read
+ * and to write the interleaving from — the only way to produce a real read-then-claim
+ * race against a handler that cannot be suspended.
+ */
+async function seededApp(
+  bundle?: RequestItem['bundle'],
+  wrap?: (inner: ConfigStore) => ConfigStore,
+): Promise<{
   store: ConfigStore;
   app: ReturnType<typeof createApp>;
   id: string;
@@ -92,7 +100,23 @@ async function seededApp(bundle?: RequestItem['bundle']): Promise<{
     ],
     ...(bundle ? { bundle } : {}),
   });
-  return { store, app: createApp(store), id: 'seed-sari-0' };
+  return { store, app: createApp(wrap ? wrap(store) : store), id: 'seed-sari-0' };
+}
+
+/** A store that runs `onGet` after every `get` — the interleaving the race needs. */
+function racingStore(inner: ConfigStore, onGet: (pk: string, sk: string) => Promise<void>): ConfigStore {
+  return {
+    async get(pk: string, sk: string): Promise<Item | null> {
+      const v = await inner.get(pk, sk);
+      await onGet(pk, sk);
+      return v;
+    },
+    put: (item, opts) => inner.put(item, opts),
+    query: (pk, prefix, opts) => inner.query(pk, prefix, opts),
+    queryGSI1: (gsi1pk, opts) => inner.queryGSI1(gsi1pk, opts),
+    transact: (writes) => inner.transact(writes),
+    delete: (pk, sk) => inner.delete(pk, sk),
+  };
 }
 
 const post = async (app: ReturnType<typeof createApp>, cookie: string, id: string): Promise<Response> =>
@@ -192,5 +216,98 @@ describe('ERR-11 — the claim guards on what it actually changes', () => {
     await post(app, await sessionCookieFor(store, 'lina'), id);
     const after = await readRow(store, id);
     expect(after.eventSeq).toBeGreaterThan(before.eventSeq ?? 0);
+  });
+});
+
+/**
+ * API-4 (defect 1) — the claim is a MUTUAL EXCLUSION, not a formality.
+ *
+ * The two ERR-11 cases above are necessary but not sufficient, and this file shipped
+ * without noticing: both of them only establish that the claim *advances* `eventSeq`, and
+ * one of them supplies its own `ifEquals` rather than exercising the route's. Reverting the
+ * route's claim to the original `ifEquals {attr:'status'}` — the exact defect API-4 names —
+ * left every test in this file, in `bundle.test.ts` and in `applyLaneExclusion.test.ts`
+ * green. A guard nothing discriminates is a guard nobody is protecting.
+ *
+ * What actually has to hold is the property, not the attribute name: a request-row write
+ * that lands between this handler's READ and its CLAIM must cost the handler the claim.
+ * `status` cannot deliver that, because the claim does not move `status` — so a concurrent
+ * claim leaves it exactly where the loser last saw it and the loser's CAS sails through.
+ * That is how two applies ran two clones, two gate commands and two pushes against one
+ * request, with only git's non-fast-forward rejection standing between them and a double
+ * landing.
+ *
+ * The race is driven by a store wrapper because a route test cannot otherwise produce the
+ * interleaving: the two handlers would have to be suspended between their read and their
+ * write. The wrapper lands the competing write at exactly that point.
+ */
+describe('API-4 — a write between the read and the claim costs the handler the claim', () => {
+  /** Fires the gate into a marker OUTSIDE the checkout, so it survives `cleanup(dir)`. */
+  function gateMarker(): { cmd: string; ran: () => boolean } {
+    const dir = mkdtempSync(join(tmpdir(), 'bundle-gate-marker-'));
+    temps.push(dir);
+    const marker = join(dir, 'gate-ran');
+    return {
+      // Also edits the checkout, so an unraced run reaches `triggered` rather than
+      // dying at "gate left no change" — the control below asserts the whole lane.
+      cmd: `echo ran > '${marker}' && echo approved-edit > "$BUNDLE_CHECKOUT/change.tf"`,
+      ran: () => existsSync(marker),
+    };
+  }
+
+  it('THE RACE: the claim LOSES and the bundle never runs — no clone, no gate, no push', async () => {
+    const gate = gateMarker();
+    arm(gate.cmd);
+
+    // One competing request-row write, landed the instant the handler has read the row.
+    // It moves `eventSeq` and deliberately NOT `status` — precisely what a second apply's
+    // own claim does, and the reason a status guard cannot see it.
+    let raced = false;
+    let racedSeq = -1;
+    const k = requestKey('sample', 'seed-sari-0');
+    let inner!: ConfigStore;
+    const { store, app, id } = await seededApp(undefined, (s) => {
+      inner = s;
+      return racingStore(s, async (pk, sk) => {
+        if (raced || pk !== k.PK || sk !== k.SK) return;
+        raced = true;
+        const row = (await inner.get(pk, sk)) as RequestItem;
+        racedSeq = (row.eventSeq ?? 0) + 1;
+        await inner.transact([
+          { kind: 'update', pk, sk, set: { eventSeq: racedSeq }, ifEquals: { attr: 'eventSeq', value: row.eventSeq } },
+        ]);
+      });
+    });
+
+    const res = await post(app, await sessionCookieFor(store, 'lina'), id);
+
+    // L-1 — the setup fired: without the interleaving every assertion below would hold
+    // for the boring reason that nothing raced.
+    expect(raced, 'the competing write must have landed inside the handler').toBe(true);
+    expect(racedSeq).toBeGreaterThan(0);
+
+    expect(res.status, 'a lost claim is reported, not run').toBe(409);
+    expect((await res.json()).code).toBe('STATE_CONFLICT');
+
+    // The effects are what matter: the gate command is the first thing a claimed run
+    // spawns, and it never got the chance.
+    expect(gate.ran(), 'THE DEFECT: the gate ran on a request this handler never claimed').toBe(false);
+
+    const row = await readRow(store, id);
+    expect(row.bundle, 'no claim was written').toBeUndefined();
+    expect(row.eventSeq, 'the row still carries the racer\'s write, unclobbered').toBe(racedSeq);
+  });
+
+  it('CONTROL: with nothing racing, the SAME fixture claims and runs the gate', async () => {
+    // Proves the refusal above is caused by the race and not by the marker plumbing, the
+    // gate command, or the fixture being un-appliable in the first place.
+    const gate = gateMarker();
+    arm(gate.cmd);
+    const { store, app, id } = await seededApp();
+
+    const res = await post(app, await sessionCookieFor(store, 'lina'), id);
+    expect(res.status, 'an unraced apply is not refused').toBe(200);
+    expect(gate.ran(), 'the gate must be able to run at all').toBe(true);
+    expect((await readRow(store, id)).bundle?.state).toBe('triggered');
   });
 });

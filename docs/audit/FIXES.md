@@ -5014,3 +5014,62 @@ leak."
 - [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/fileStore.test.ts
       test/snapshotWriteAtomic.test.ts` (14 passed); full suite `npx vitest run` (102 files, 1421
       passed); `npx tsc --noEmit` clean.
+
+## API-4
+
+*The bundle "claim" is not a mutual-exclusion, and a crashed bundle wedges the request at
+`running`.*
+
+**VERIFY-AND-CLOSE — no production code changed.** B-O1's instruction: "Both defects look
+closed already — ERR-11 made the claim guard `eventSeq` (which the claim advances), and ERR-2
+added the lease + takeover. Confirm against the code, add a regression test if none pins it."
+Both are indeed closed in the code. **One of them was closed and unprotected**, which is the
+part this entry exists to record.
+
+- [x] **Defect reproduced first** — both halves checked against the branch point (`e957eb7`),
+      then each one *re-broken* to see what the suite would say (L-29 + the runbook's negative
+      run, applied to a verify-first finding rather than to a fix):
+      - **Defect 1 (the claim is not exclusive).** Closed at `routes/requests.ts:1160`: the
+        claim CASes `ifEquals {attr:'eventSeq', value: req.eventSeq}` and itself sets
+        `eventSeq: claimSeq` at `:1157`. **But nothing pinned it.** Reverting that one guard to
+        the original `ifEquals {attr:'status', value: req.status}` — the exact pre-ERR-11 shape
+        the finding names — left **all 28 tests** in `bundleClaimLease.test.ts`,
+        `bundle.test.ts` and `applyLaneExclusion.test.ts` green. The two existing ERR-11 cases
+        assert only that the claim *advances* `eventSeq`, and one of them supplies its own
+        `ifEquals` rather than exercising the route's, so both pass unchanged against a route
+        guarded on `status`.
+      - **Defect 2 (a crashed bundle wedges `running` forever).** Closed at `:1126-1129`
+        (refuse only while `bundleClaimLive`) + `:1145-1147` (the takeover event), and it **is**
+        pinned: forcing `claimExpired = false` — the pre-ERR-2 "running is forever" shape —
+        failed 3 tests in the ERR-2 block ("the request must be appliable again", the
+        `bundle-claim-expired` timeline assertion, and the unparseable-timestamp case).
+- [x] **Cause, not symptom** — no production change, and deliberately none: re-fixing a closed
+      defect is the most expensive way to spend this batch. The cause of the *gap* was in the
+      test, not the route — a guard that no test discriminates is a guard nobody is protecting,
+      and the next person to touch this handler would have had nothing telling them why the
+      attribute is `eventSeq` and not the more obvious `status`.
+- [x] **Regression test** — new `describe('API-4 — a write between the read and the claim costs
+      the handler the claim')` in `test/bundleClaimLease.test.ts`. It pins the **property**, not
+      the attribute name (L-25): a request-row write landing between this handler's read and its
+      claim must cost the handler the claim. `status` cannot deliver that, because the claim
+      does not move `status`. The race is driven by a store wrapper — a route test cannot
+      otherwise produce the interleaving, since the two handlers would have to be suspended
+      between their read and their write — which lands one competing write (advancing `eventSeq`
+      and deliberately *not* `status`, exactly what a second apply's own claim does) at that
+      point. The assertion is on the **effects**: the gate command writes a marker file outside
+      the checkout (so it survives `cleanup(dir)`), and a handler that lost its claim must never
+      have spawned it.
+      **Negative test confirmed** — with the claim reverted to the `status` guard the race case
+      fails `a lost claim is reported, not run: expected 200 to be 409`, and a 200 there means
+      the bundle really did clone, run the gate, push and fire the trigger on a row that had
+      moved under it. Guard restored, re-verified green.
+- [x] **Failure is loud** — every assertion carries its own message naming what broke ("the gate
+      ran on a request this handler never claimed", "no claim was written"), and L-1 is pinned
+      explicitly: the test asserts `raced === true`, so a wrapper that silently stopped firing
+      turns into a failure instead of a race test that never raced. The `CONTROL` case runs the
+      same fixture with nothing racing and asserts the gate marker *is* written and the row
+      reaches `triggered` — so a broken marker, gate command or fixture cannot masquerade as the
+      defect being absent.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json` clean;
+      `npx vitest run test/bundleClaimLease.test.ts test/bundle.test.ts
+      test/applyLaneExclusion.test.ts` → 30 passed (up from 28).
