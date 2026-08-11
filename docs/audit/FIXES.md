@@ -5158,3 +5158,124 @@ forever, and a raced outcome write loses the record of a fired deploy.*
 **Residue:** the outcome write can still lose a concurrent timeline entry in a
 microsecond-wide window, and a chain that stays contended still leaves the run's own claim to
 the lease. See `R-75`.
+
+## API-5
+
+*Cancel can race an in-flight bundle: the change applies but the request reads CANCELLED.*
+
+- [x] **Defect reproduced first.** `AWAITING_DEPLOY_APPROVAL` is in `CANCELLABLE_STATUSES`,
+      and the bundle claim (API-4) deliberately leaves `status` untouched — so a cancel
+      issued while a bundle is mid-flight satisfied `ifEquals status ==
+      AWAITING_DEPLOY_APPROVAL` unconditionally. Reproduced directly: seeded a request with
+      `bundle:{state:'running', at:<now>}`, called `POST /cancel` — before this fix it
+      returned 200 and set `status:'CANCELLED'` while the (simulated) bundle was still
+      landing a commit on `main` and firing the CI apply trigger.
+- [x] **Cause, not symptom.** Cancel checked only `status`, never `bundle`. The two are
+      independent attributes by design (API-4's whole point was that the claim must NOT
+      move `status`, so a concurrent read of the request during a bundle run still shows
+      the true pre-apply status) — but that independence is exactly what let cancel act as
+      though no bundle existed.
+- [x] **The fix shape was one of two the finding itself offered (refuse, or require
+      confirmation) — refuse, and here is why.** A confirmation dialog would still be built
+      from the SAME stale status this defect is about — by the time a lead sees "are you
+      sure?", the bundle may already have landed the commit. Refuse is the only shape that
+      hands the caller the CURRENT truth. Reuses `bundleClaimExpired`, the exact
+      live/expired distinction `/apply` already applies (ERR-2): a LIVE claim blocks
+      cancel with 409 `BUNDLE_RUNNING` (the same code `/apply`'s own non-reentrancy guard
+      already uses, not a new one — the same fact, "a bundle is in flight," told to two
+      different callers); an EXPIRED claim (a crashed run) does NOT block it, because
+      refusing on a claim nothing will ever finish would just move the wedge from
+      `bundle.state` (fixed by API-4/CONC-6) to `status`.
+- [x] **What this closes vs. what CONC-6 already closed.** The finding's second half — "on
+      the bundle's lost outcome write, record a standalone audit entry instead of
+      throwing" — was independently fixed by the parallel CONC-6 work in this same batch
+      (`BUNDLE_OUTCOME_CONTENDED` + the always-written audit entry). This entry closes only
+      the remaining half: stopping the race at its SOURCE rather than only recording it
+      better after the fact.
+- [x] **Regression test — `test/bundleCancelRace.test.ts`, 5 cases:** a live claim blocks
+      cancel with the specific code; the row is asserted UNCHANGED (not just the response
+      code) so the test cannot pass on a refusal that still let the write through; an
+      expired claim does NOT block cancel; no bundle claim at all cancels normally
+      (control); an already-`triggered` (terminal) bundle does not block cancel — this
+      guard is specifically about a claim still `running`.
+- [x] **Assert the setup fired (L-1).** The expired-claim test asserts the fixture's `at`
+      is actually past `BUNDLE_LEASE_MS` before relying on that gap mattering.
+- [x] **Negative test confirmed** — reverted the guard (`if (false && …)`), reran: the
+      live-claim test fails `expected 409 to be 200`, and the row-unchanged test fails
+      `expected 'CANCELLED' to be 'AWAITING_DEPLOY_APPROVAL'` — the exact defect. Restored;
+      5/5 green.
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/bundleCancelRace.test.ts`
+      (5 passed); full suite (below, shared with ERR-12); `openapi/ccp-api.yaml`,
+      `API-SPEC.md`, `ERROR-STATES.md` updated for `/cancel`'s new refusal.
+
+## ERR-12
+
+*Trigger failure after a landed commit: honest-but-dead-end half state, and spawn timeouts
+are indistinguishable from exit-1.*
+
+- [x] **Half of this finding was already fixed, verified rather than re-fixed.** The
+      "spawn timeouts indistinguishable from exit-1" half named `bundle.ts`'s old
+      `spawnSync`-based `sh()`/`git()`, which a prior fix (`domain/exec.ts#execCapture`,
+      closing API-1/CONC-5/OPS-3/PERF-2) replaced entirely. Read the current
+      implementation: a timeout resolves `status:124` with an explicit `` `timed out after
+      ${ms}ms` `` appended to the captured output, and a spawn error resolves `status:1`
+      with `` `spawn failed: ${e.message}` `` — exactly the finding's own recommendation
+      ("include `r.error?.message` and an explicit 'timed out after Nms'"), already
+      shipped. Confirmed live: `bundle.ts`'s `sh()` and `git()` both call `execCapture`, not
+      `spawnSync`. Nothing to fix here; closing with this evidence rather than a patch.
+- [x] **Defect reproduced first, the remaining half.** A landed commit whose trigger then
+      failed wrote `bundle.state:'failed'` with NO `sha` at the row level — identical to a
+      run that never got anywhere. Reproduced against a real git remote (the same harness
+      CONC-6's tests use): armed with a trigger command that always fails, called
+      `/apply` — the commit genuinely landed on the bare repo (confirmed by reading its
+      history), and the row/response both said plain `failed`, losing the landed commit's
+      identity. A same-request retry against the unfixed code re-cloned, re-gated, and hit
+      `commit failed (gate left no change?)` — technically true, actively misleading: the
+      change was already there.
+- [x] **Cause, not symptom.** The row-state mapping had exactly two outcomes (`triggered`
+      on success, `failed` on anything else), collapsing "never got anywhere" and "landed,
+      then something after commit went wrong" into the same bucket — even though
+      `runBundle`'s own outcome (via CONC-6's `sha` propagation) already knew the
+      difference internally.
+- [x] **The fix: a third state, and a resume path that uses it.**
+      `bundle.state:'landed-untriggered'` (schema.ts) carries the landed `sha`.
+      `domain/bundle.ts#retriggerBundle` fires ONLY the trigger step for a sha a previous
+      run already landed — deliberately not a re-run of prepare/gate/commit, because
+      re-attempting commit for a change already on the branch is the exact confusion this
+      finding is about (and, worse than misleading, a genuine risk of a second commit if
+      the branch moved). The route detects `bundle.state === 'landed-untriggered'` (or an
+      EXPIRED `running` claim that itself carries a `sha` — see next bullet) and calls
+      `retriggerBundle` instead of the full `runBundle`.
+- [x] **A second gap found while implementing the first, not left for someone else to
+      find.** The claim write unconditionally overwrote `bundle` with `{state:'running',
+      at:now}` on every attempt, INCLUDING a resume — so a crash mid-retrigger would leave
+      a `running` claim with no memory of the landed sha, and the next attempt, seeing
+      only an ordinary expired claim, would fall back to a full re-run and reintroduce the
+      exact defect this fix closes. Fixed by carrying `sha` forward into the claim
+      whenever the current attempt IS a resume, and by treating an EXPIRED `running` claim
+      that carries a `sha` as a resume candidate too, not only the more obvious
+      `landed-untriggered` state.
+- [x] **Regression test — `test/bundleOutcomeRecord.test.ts`, 3 new cases, against a REAL
+      git remote (not a mock trigger):** trigger failure reports `landed-untriggered` with
+      the sha, not `failed`; a retry with the trigger now fixed resumes and reports
+      `steps:[{step:'trigger',…}]` ONLY (proving prepare/gate/commit did not re-run) —
+      verified by reading the remote's own commit history before and after and asserting
+      it is IDENTICAL, not by trusting the response; and a simulated crash mid-retrigger
+      (the row forced back to a `running` claim carrying the sha, dated to force
+      expiry) still resumes correctly on the next attempt.
+- [x] **Assert the setup fired (L-1).** The "no second commit" test asserts the remote
+      really does hold the landed commit (2 commits: seed + the change) BEFORE the retry
+      runs, so "identical before and after" cannot pass because nothing was checked either
+      time.
+- [x] **Negative test confirmed** — reverted `bundle.ts`/`requests.ts`/`schema.ts` to HEAD
+      (post-CONC-6) with the new tests kept: all 3 new tests fail. The first:
+      `expected 'failed' to be 'landed-untriggered'`. The second: `expected [seed-commit]
+      to include undefined` — on unfixed code the failed-trigger response carries no `sha`
+      at all (the whole defect), so the test's own setup assertion ("the landed commit
+      must already be on the remote") is the first thing to catch it, before the
+      no-second-commit property is even reached. The third: `expected 502 to be 200` on
+      the crash-resume case. Restored; 11/11 green in that file, full suite 104 files /
+      1439 passed.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json &&
+      npx vitest run` — 104 files, 1439 passed; `python3 scripts/docs-error-codes-check.py`
+      passes (BUNDLE_RUNNING is reused on `/cancel`, not a new literal).

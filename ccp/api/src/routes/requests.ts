@@ -22,7 +22,7 @@ import { isSystemDriftOp } from '../domain/systemOps';
 import { disabledOps, isFrozen, loadPolicy, loadTeams, resolveRisk } from '../domain/config';
 import { checkSubmitRateLimit } from '../middleware/rateLimit';
 import { recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
-import { bundleArmed, bundleClaimLive, bundleConfig, realSteps, runBundle, type BundleOutcome } from '../domain/bundle';
+import { bundleArmed, bundleClaimLive, bundleConfig, realSteps, retriggerBundle, runBundle, type BundleOutcome } from '../domain/bundle';
 import { resolveLaneRemote, type LaneProject } from '../domain/laneRepo';
 import { resolveKnob } from '../domain/deploymentSettings';
 import { coolingElapsed, settleCooling } from '../domain/cooling';
@@ -1128,6 +1128,23 @@ export function requestRoutes(): Hono<AppEnv> {
       return c.json({ code: 'BUNDLE_RUNNING', reason: 'A bundle for this request is already in flight.' }, 409);
     }
     if (req.bundle?.state === 'triggered') return apiError(c, 'STATE_CONFLICT');
+    // ERR-12 — captured BEFORE the claim below overwrites `bundle`, and read from THIS
+    // closure's `req`, not re-read later: the claim write only ever updates `events` on
+    // the local `req` (see below), so this stays valid across it. A landed-untriggered
+    // request skips prepare/gate/commit entirely and resumes from the trigger alone —
+    // see `retriggerBundle`'s doc comment for why re-running the earlier steps is wrong,
+    // not just wasteful.
+    //
+    // ALSO true for a `running` claim that has EXPIRED (claimExpired) if that claim
+    // itself carries a `sha` — a crash during a PREVIOUS retrigger attempt (see the
+    // claim write below, which carries `sha` forward into `running` for exactly this
+    // case) leaves the row looking like an ordinary stuck claim, and losing "this was a
+    // resume" here would silently fall back to a full re-run that re-attempts a commit
+    // for a change already on the branch — the exact confusion this finding is about.
+    const resumeSha =
+      req.bundle?.state === 'landed-untriggered' || (req.bundle?.state === 'running' && claimExpired)
+        ? req.bundle.sha
+        : undefined;
 
     // Claim (idempotency guard) — CAS on `eventSeq`, which THIS WRITE ADVANCES (ERR-11).
     //
@@ -1152,7 +1169,12 @@ export function requestRoutes(): Hono<AppEnv> {
           pk: k.PK,
           sk: k.SK,
           set: {
-            bundle: { state: 'running', at: now },
+            // ERR-12 — carry `sha` forward into the claim when this run IS a resume
+            // (`resumeSha` set). Without it, a crash mid-retrigger leaves a `running`
+            // claim with no memory of the landed commit, and the NEXT attempt — seeing
+            // only an expired claim, not the sha behind it — would fall back to a full
+            // re-run and re-attempt a commit for a change already on the branch.
+            bundle: { state: 'running', at: now, ...(resumeSha !== undefined ? { sha: resumeSha } : {}) },
             updatedAt: now,
             eventSeq: claimSeq,
             ...(takeoverEvent.length > 0 ? { events: [...req.events, ...takeoverEvent] } : {}),
@@ -1205,26 +1227,45 @@ export function requestRoutes(): Hono<AppEnv> {
     // later — and before ERR-2, forever.
     let outcome: BundleOutcome;
     try {
-      outcome = await runBundle(
-        realSteps(cfg),
-        JSON.stringify(bundleRequestPayload(req, projectId)),
-        `ccp: apply request ${req.id} (${req.operationId} on ${req.targetAddress})\n\nApproved in the portal (ADR-0016 bundle); plan gated + digest-pinned.\nRequested-by: ${req.requester}; bundle-run-by: ${account.id}`,
-      );
+      // ERR-12 — a landed-untriggered resume skips prepare/gate/commit and fires the
+      // trigger alone for the sha a PREVIOUS run already landed. `resumeSha` can only be
+      // set here if `req.bundle.state` really was 'landed-untriggered' a moment ago (see
+      // where it is captured, above) — the `undefined` arm is unreachable in practice and
+      // exists only so a future refactor cannot make this branch on an ambient string.
+      outcome = resumeSha !== undefined
+        ? await retriggerBundle(realSteps(cfg), resumeSha)
+        : await runBundle(
+            realSteps(cfg),
+            JSON.stringify(bundleRequestPayload(req, projectId)),
+            `ccp: apply request ${req.id} (${req.operationId} on ${req.targetAddress})\n\nApproved in the portal (ADR-0016 bundle); plan gated + digest-pinned.\nRequested-by: ${req.requester}; bundle-run-by: ${account.id}`,
+          );
     } catch (e) {
       outcome = {
         ok: false,
-        steps: [{ step: 'prepare', ok: false, detail: `the apply bundle threw before reporting an outcome: ${e instanceof Error ? e.message : String(e)}` }],
+        steps: [{ step: resumeSha !== undefined ? 'trigger' : 'prepare', ok: false, detail: `the apply bundle threw before reporting an outcome: ${e instanceof Error ? e.message : String(e)}` }],
+        ...(resumeSha !== undefined ? { sha: resumeSha } : {}),
       };
     }
 
     const done = nowIso();
-    const bundle = outcome.ok ? { state: 'triggered' as const, sha: outcome.sha, at: done } : { state: 'failed' as const, at: done };
+    // ERR-12 — a failed run that nonetheless has `outcome.sha` means commit succeeded and
+    // something after it (trigger, or a throw at/after that point) did not: the change IS
+    // on `main`. That is 'landed-untriggered', not 'failed' — the distinction a retry
+    // needs to skip straight back to the trigger step instead of re-attempting a commit
+    // that can now only fail (the change is already there).
+    const bundle = outcome.ok
+      ? { state: 'triggered' as const, sha: outcome.sha, at: done }
+      : outcome.sha !== undefined
+        ? { state: 'landed-untriggered' as const, sha: outcome.sha, at: done }
+        : { state: 'failed' as const, at: done };
     const outcomeEvent = {
       at: done,
-      type: outcome.ok ? 'bundle-triggered' : 'bundle-failed',
+      type: outcome.ok ? 'bundle-triggered' : bundle.state === 'landed-untriggered' ? 'bundle-landed-untriggered' : 'bundle-failed',
       label: outcome.ok
         ? `Apply bundle landed ${outcome.sha?.slice(0, 9)} and satisfied the deploy gate`
-        : `Apply bundle failed at ${outcome.steps.find((s) => !s.ok)?.step ?? '?'}`,
+        : bundle.state === 'landed-untriggered'
+          ? `Apply bundle landed ${outcome.sha?.slice(0, 9)} on main but the deploy-gate trigger failed — retry will resume from the trigger, not re-commit`
+          : `Apply bundle failed at ${outcome.steps.find((s) => !s.ok)?.step ?? '?'}`,
       actor: account.id,
     };
 
@@ -1416,6 +1457,22 @@ export function requestRoutes(): Hono<AppEnv> {
     req = await settleCooling(store, projectId, req);
     req = await settleWindow(store, projectId, req);
     if (!CANCELLABLE_STATUSES.has(req.status)) return apiError(c, 'STATE_CONFLICT');
+
+    // API-5 — `AWAITING_DEPLOY_APPROVAL` is cancellable, and the bundle claim (API-4)
+    // leaves `status` untouched, so a cancel issued while a bundle is mid-flight used to
+    // succeed unconditionally: the bundle would go on to land the commit and fire the CI
+    // apply trigger AFTER the request was already recorded CANCELLED. Refused, not merely
+    // confirmed — the finding's own two options — because a lead clicking cancel on a
+    // request that is actively, irreversibly landing a change on `main` needs the current
+    // truth ("this is applying right now"), not a chance to click through a confirmation
+    // dialog built from the same stale status this defect is about. Same claim-liveness
+    // rule the /apply route uses (ERR-2): an EXPIRED claim belongs to a run that crashed
+    // and never reported back, and refusing cancel on ITS behalf would wedge the request
+    // exactly the way a stuck claim already did before API-4/CONC-6 — so only a LIVE
+    // claim blocks the cancel; an expired one does not.
+    if (req.bundle?.state === 'running' && !bundleClaimExpired(req.bundle, nowMs())) {
+      return c.json({ code: 'BUNDLE_RUNNING', reason: 'The apply bundle for this request is in flight — it cannot be cancelled until it finishes.' }, 409);
+    }
 
     const isOwner = req.requester === account.id;
     const isSeniorOverride = roleFor(account, projectId) === 'lead' || account.isAdmin === true;

@@ -80,18 +80,22 @@ the stronger guarantee — but it did not make the worker better behaved.
 `fail()`, the same best-effort terminal-report attempt every other failure path in `runJob`
 already gets.
 
+### R-6 · The bundle's landed-but-untriggered half state
+*Recorded as residue on **ERR-2**, tracked by **ERR-12**.*
+
+If `commit` succeeds but `trigger` fails, the landed SHA survived only inside the audit
+`steps`, and a retry re-cloned and died at commit with a technically-true but actively
+misleading message. ERR-2's lease made the request appliable again; it did not make that
+retry smarter.
+
+**Resolved by ERR-12**: a `bundle.state:'landed-untriggered'` row now carries the landed
+`sha`, and a retry detects it and resumes from the trigger step alone — `retriggerBundle`
+in `domain/bundle.ts` — rather than re-cloning and re-attempting a commit that can now only
+fail, since the change is already on the branch.
+
 ---
 
 ## tracked — an open finding covers it
-
-### R-6 · The bundle's landed-but-untriggered half state
-*Residue on **ERR-2**.*
-**Tracked by: ERR-12.**
-
-If `commit` succeeds but `trigger` fails, the landed SHA survives only inside the audit
-`steps`, and a retry re-clones and dies at commit with a technically-true but actively
-misleading message. ERR-2's lease makes the request appliable again; it does not make that
-retry smarter.
 
 ---
 

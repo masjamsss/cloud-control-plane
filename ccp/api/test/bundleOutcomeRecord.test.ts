@@ -336,3 +336,90 @@ describe('CONC-6 — a fired deploy is recorded even when the request row refuse
     expect((entries[0]!.after as Record<string, unknown>).requestRowUpdated).toBeUndefined();
   });
 });
+
+/**
+ * ERR-12 — a landed commit with a failed trigger used to be indistinguishable from a run
+ * that never got anywhere: both wrote `bundle.state:'failed'` with no `sha`. A retry
+ * re-cloned, re-gated, and re-attempted `commit` — which failed, because the change was
+ * ALREADY on the branch — with the misleading detail "commit failed (gate left no
+ * change?)". These tests drive a REAL git remote (the same harness as CONC-6's tests
+ * above): the trigger command genuinely fails on the first call and genuinely succeeds on
+ * the second, so "did a second commit get pushed" is answered by reading the remote's own
+ * history, not by trusting the response body.
+ */
+describe('ERR-12 — a landed-but-untriggered bundle resumes from the trigger, not the top', () => {
+  it('trigger failure after a landed commit reports landed-untriggered with the sha, not failed', async () => {
+    arm();
+    process.env.CCP_BUNDLE_TRIGGER_CMD = 'false'; // commits fine, trigger always fails
+    const { store, app, id } = await seededApp();
+    const res = await post(app, await sessionCookieFor(store, 'lina'), id);
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.bundle.state, 'THE DEFECT: this used to be plain "failed", losing the landed commit').toBe('landed-untriggered');
+    expect(body.bundle.sha).toMatch(/^[0-9a-f]{40}$/);
+
+    const row = await readRow(store, id);
+    expect(row.bundle?.state).toBe('landed-untriggered');
+    expect(row.bundle?.sha).toBe(body.bundle.sha);
+  });
+
+  it('a retry resumes from the trigger alone — no second commit is pushed', async () => {
+    arm();
+    process.env.CCP_BUNDLE_TRIGGER_CMD = 'false';
+    const { store, app, id } = await seededApp();
+    const first = await post(app, await sessionCookieFor(store, 'lina'), id);
+    const landedSha = (await first.json()).bundle.sha as string;
+
+    // L-1 — the remote really does hold the landed commit, seed + this one, before the
+    // retry runs. If it did not, "no SECOND commit" below would be vacuous.
+    const beforeRetry = execFileSync('git', ['log', '--format=%H', 'refs/heads/main'], { cwd: process.env.CCP_GIT_REMOTE, encoding: 'utf8' })
+      .trim()
+      .split('\n');
+    expect(beforeRetry, 'the landed commit must already be on the remote').toContain(landedSha);
+    expect(beforeRetry).toHaveLength(2); // seed + the landed change
+
+    process.env.CCP_BUNDLE_TRIGGER_CMD = 'true'; // now the trigger would succeed
+    const second = await post(app, await sessionCookieFor(store, 'lina'), id);
+    expect(second.status).toBe(200);
+    const body = await second.json();
+    expect(body.bundle.state).toBe('triggered');
+    expect(body.bundle.sha, 'the SAME commit — nothing was re-committed').toBe(landedSha);
+    // Exactly one step ran: trigger. A re-run of the full pipeline would report
+    // prepare/gate/commit/trigger; a resume reports only the one step it actually did.
+    expect(body.steps).toEqual([{ step: 'trigger', ok: true, detail: expect.any(String) }]);
+
+    const afterRetry = execFileSync('git', ['log', '--format=%H', 'refs/heads/main'], { cwd: process.env.CCP_GIT_REMOTE, encoding: 'utf8' })
+      .trim()
+      .split('\n');
+    expect(afterRetry, 'THE POINT: no second commit landed for the same change').toEqual(beforeRetry);
+
+    const row = await readRow(store, id);
+    expect(row.bundle?.state).toBe('triggered');
+    expect(row.bundle?.sha).toBe(landedSha);
+  });
+
+  it('a crash mid-retrigger still leaves the sha recoverable — the claim carries it forward', async () => {
+    // Simulates the crash by writing the landed-untriggered row directly (no live claim
+    // to take over) and confirms a fresh apply call resumes from it correctly — the same
+    // property the previous test proves end-to-end, isolated from the first call's own
+    // commit step so this test is about the RESUME path specifically.
+    arm();
+    process.env.CCP_BUNDLE_TRIGGER_CMD = 'false';
+    const { store, app, id } = await seededApp();
+    const first = await post(app, await sessionCookieFor(store, 'lina'), id);
+    const landedSha = (await first.json()).bundle.sha as string;
+
+    // Simulate a crash: force the row's claim back to `running` with no outcome ever
+    // recorded, carrying the sha the way the real claim write does mid-resume, but dated
+    // in the past so ERR-2 treats it as expired and takes it over.
+    const stuck = await readRow(store, id);
+    await store.put({ ...stuck, bundle: { state: 'running', at: '2020-01-01T00:00:00.000Z', sha: landedSha } });
+
+    process.env.CCP_BUNDLE_TRIGGER_CMD = 'true';
+    const resumed = await post(app, await sessionCookieFor(store, 'lina'), id);
+    expect(resumed.status).toBe(200);
+    const body = await resumed.json();
+    expect(body.bundle.sha, 'resumed the SAME landed commit, not a fresh one').toBe(landedSha);
+    expect(body.steps).toEqual([{ step: 'trigger', ok: true, detail: expect.any(String) }]);
+  });
+});

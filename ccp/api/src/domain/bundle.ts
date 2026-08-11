@@ -306,6 +306,36 @@ export async function runBundle(
   }
 }
 
+/**
+ * ERR-12 — resume a bundle that already LANDED a commit but never fired its trigger.
+ *
+ * `commit succeeded, trigger failed` used to be indistinguishable, from the request row's
+ * point of view, from a run that never got anywhere: both wrote `bundle.state:'failed'`
+ * with no `sha`. A retry therefore re-cloned, re-ran the gate, and re-attempted `commit`
+ * — which failed, because the change was ALREADY on the branch from the first run — with
+ * the honest-but-misleading detail `"commit failed (gate left no change?)"`. The real
+ * remediation ("the change already landed as SHA X; fire the CI gate approval for it") was
+ * nowhere in the evidence the operator could see.
+ *
+ * This is deliberately the ONLY step it runs. Re-doing prepare/gate/commit for a change
+ * already on the branch would either re-clone pointlessly (the fast path this function
+ * exists for) or, worse, attempt a SECOND commit for the same logical change if the branch
+ * moved — the route detects `bundle.state:'landed-untriggered'` and calls this instead of
+ * {@link runBundle} for exactly that reason.
+ *
+ * `sha` is always returned, win or lose: a retrigger that fails again must leave the row
+ * resumable a second time, not fall back to the un-attributed `'failed'` state and lose
+ * the landed commit's identity.
+ */
+export async function retriggerBundle(steps: Pick<BundleSteps, 'trigger'>, sha: string): Promise<BundleOutcome> {
+  try {
+    const trig = await steps.trigger(sha);
+    return { ok: trig.ok, steps: [{ step: 'trigger', ok: trig.ok, detail: trig.detail }], sha };
+  } catch (e) {
+    return { ok: false, steps: [{ step: 'trigger', ok: false, detail: `trigger threw: ${errorText(e)}` }], sha };
+  }
+}
+
 /** Message text from an unknown throw, without assuming it is an `Error`. */
 function errorText(e: unknown): string {
   if (e instanceof Error) return e.message;

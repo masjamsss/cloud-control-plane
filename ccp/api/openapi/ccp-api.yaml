@@ -611,7 +611,10 @@ paths:
         from session ONLY: the requester or a Lead/admin (a plain approver who is neither is 403
         CANCEL_FORBIDDEN). Idempotent-safe: a second cancel (or a cooling window/maintenance window that already
         elapsed) cleanly conflicts, never double-applies. Settles cooling then window-expiry first, same as GET
-        /requests/{id}',
+        /requests/{id}. A request whose apply bundle (POST /requests/{id}/apply) has a LIVE claim (bundle.state
+        running, within its lease) is also refused, 409 BUNDLE_RUNNING (API-5): the bundle may already be committing
+        to `main`, and cancelling the request record while that is irreversibly in flight would let the durable
+        record contradict reality. An EXPIRED claim (a crashed run ERR-2 would take over) does not block cancel.',
       parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
       responses: { '200': { description: 'Cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/ChangeRequest' } } } },
         '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
