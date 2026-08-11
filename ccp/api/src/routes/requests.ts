@@ -30,7 +30,16 @@ import { canSignStep } from '../domain/eligibility';
 import { totpDevicesOf } from '../auth/totp';
 import { computeFeasibility } from '../domain/feasibility';
 import { currentRequirement } from '../domain/requirement';
-import { applyGate, isWindowInfeasible, needsWindowSettlement, REWINDOW_STALE_MS, settleWindow, validateSchedule } from '../domain/schedule';
+import {
+  applyGate,
+  isWindowInfeasible,
+  needsFrozenHoldSettlement,
+  needsWindowSettlement,
+  REWINDOW_STALE_MS,
+  settleFrozenHold,
+  settleWindow,
+  validateSchedule,
+} from '../domain/schedule';
 import { needsApplyClaimSettlement, settleApplyClaim } from '../domain/apply/scheduler';
 import { nowIso, nowMs } from '../clock';
 
@@ -622,15 +631,23 @@ export function requestRoutes(): Hono<AppEnv> {
     // screened rows still go through the FULL cooling→window chain, because
     // settling cooling can hand a row straight into a window that has expired.
     //
-    // The chain also carries the apply-claim lease (CONC-10): an `APPLYING` row whose
-    // worker died is released HERE too, not only by a scheduler tick, because the tick
-    // only runs when `CCP_SCHEDULER=1` and the row must not depend on that flag to stop
-    // being a dead end. It is last in the chain because nothing before it can produce an
-    // `APPLYING` row, and screened by its own guard like the other two.
+    // The chain also carries the freeze hold (API-8) and the apply-claim lease
+    // (CONC-10). The freeze hold is settled after the window settler because a row that
+    // just left APPROVED_COOLING for `kind:'now'` can be held by a freeze in the same
+    // touch; the claim lease is last because nothing before it can produce an `APPLYING`
+    // row. Each is screened by its own guard, so a row that needs nothing costs nothing.
     const settleNow = nowMs();
     const settle = async (x: RequestItem): Promise<RequestItem> =>
-      coolingElapsed(x, settleNow) || needsWindowSettlement(x, settleNow) || needsApplyClaimSettlement(x, settleNow)
-        ? settleApplyClaim(store, projectId, await settleWindow(store, projectId, await settleCooling(store, projectId, x)), settleNow)
+      coolingElapsed(x, settleNow) ||
+      needsWindowSettlement(x, settleNow) ||
+      needsFrozenHoldSettlement(x) ||
+      needsApplyClaimSettlement(x, settleNow)
+        ? settleApplyClaim(
+            store,
+            projectId,
+            await settleFrozenHold(store, projectId, await settleWindow(store, projectId, await settleCooling(store, projectId, x))),
+            settleNow,
+          )
         : x;
 
     const gsi = requestCollectionGsi(projectId);
@@ -680,6 +697,7 @@ export function requestRoutes(): Hono<AppEnv> {
     if (!item) return c.json({ code: 'NOT_FOUND', reason: 'No such request.' }, 404);
     item = await settleCooling(store, projectId, item); // lazy cooling-off settlement
     item = await settleWindow(store, projectId, item); // lazy window-expiry settlement
+    item = await settleFrozenHold(store, projectId, item); // lazy freeze-hold release (API-8)
     item = await settleApplyClaim(store, projectId, item, nowMs()); // lazy apply-claim lease (CONC-10)
     return c.json(toChangeRequest(item, projectId));
   });
@@ -696,6 +714,7 @@ export function requestRoutes(): Hono<AppEnv> {
     if (!req) return c.json({ code: 'NOT_FOUND', reason: 'No such request.' }, 404);
     req = await settleCooling(store, projectId, req);
     req = await settleWindow(store, projectId, req);
+    req = await settleFrozenHold(store, projectId, req);
     req = await settleApplyClaim(store, projectId, req, nowMs());
 
     const { ladder, required } = currentRequirement(req);
