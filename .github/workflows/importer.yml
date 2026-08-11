@@ -13,10 +13,16 @@ name: importer
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['importer/**', 'tools/schemadump/**', 'scripts/drift/**', 'ccp/app/scripts/**', '.github/workflows/importer.yml']
+    # IMP-8 — catalog/** and the selftest are included here, not just
+    # tools/schemadump/**: the whole point of the check below is to catch a
+    # committed catalog artifact that no longer matches the dump, including a
+    # direct hand-edit of catalog/*.json that never touches tools/schemadump/
+    # at all. A filter that only watched the generator would let exactly that
+    # defect land without CI ever running.
+    paths: ['importer/**', 'tools/schemadump/**', 'catalog/**', 'scripts/ci/generated-catalog-selftest.sh', 'scripts/drift/**', 'ccp/app/scripts/**', '.github/workflows/importer.yml']
   push:
     branches: [main]
-    paths: ['importer/**', 'tools/schemadump/**', 'scripts/drift/**', 'ccp/app/scripts/**', '.github/workflows/importer.yml']
+    paths: ['importer/**', 'tools/schemadump/**', 'catalog/**', 'scripts/ci/generated-catalog-selftest.sh', 'scripts/drift/**', 'ccp/app/scripts/**', '.github/workflows/importer.yml']
 permissions:
   contents: read
 
@@ -73,3 +79,17 @@ jobs:
         working-directory: tools/schemadump
       - run: go test ./...
         working-directory: tools/schemadump
+      # IMP-8 — the committed catalog artifacts (catalog/azure-capability-ledger*)
+      # are DERIVED from the committed schemadump, and until this step nothing in
+      # any workflow compared the two: a stale ledger, a hand-edit, or a
+      # regeneration from a different dump were all invisible to CI. The selftest
+      # runs first, on the principle that a staleness check that cannot fail is
+      # worth less than no check at all (L-1) — see scripts/gate.sh's gate_generated
+      # for the local mirror.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      - name: generated-catalog staleness selftest
+        run: bash scripts/ci/generated-catalog-selftest.sh
+      - name: azure capability ledger + summary reproduce from the schemadump
+        run: node tools/schemadump/gen-azure-ledger.mjs --check

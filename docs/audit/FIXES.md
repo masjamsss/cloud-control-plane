@@ -5149,3 +5149,88 @@ false-positive findings for id-divergent types (concrete: `aws_volume_attachment
 at full-type granularity while the AWS kit is family-coarse — is unchanged. This fix removes
 the *silent* consequence for a declared type; it does not make AWS coverage type-granular.
 See `R-52`.
+
+## IMP-8
+
+*Committed schemadump artifacts are not reproducible via the documented `gen.sh` pipeline;
+generated-catalog staleness detection is entirely manual.*
+
+- [x] **Defect reproduced first, in two parts.**
+  - `gen.sh` as documented did not reproduce the tree: `TYPES="${TYPES:-$TOOLDIR/types.txt}"`
+    treats an *empty* `TYPES` the same as an *unset* one, so there was no way through the
+    documented entry point to ask for the full-provider dump that is actually committed —
+    running `gen.sh` exactly as documented for either provider silently produced an artifact
+    scoped differently from the one in the tree (85 types for aws instead of the committed
+    1677; the 12-type spike for azurerm instead of the committed 1141). `types-azure.txt`'s own
+    header already said "regenerate with an empty `-types` filter" — an instruction the script
+    could not execute.
+  - Staleness detection was manual because no tool could tell you the artifacts were stale:
+    `gen-azure-ledger.mjs` had a single mode, unconditional write. Proven directly — staled
+    `catalog/azure-capability-ledger.json` (flipped one row's `family`), ran the **pre-fix**
+    script with `--check` (a flag it does not recognise): it silently regenerated, **overwrote
+    the staled row back to correct, exited 0, and reported nothing** — no error, no diff, no
+    indication a repair had even happened. Asking the old tool to verify does not fail loudly;
+    it fails by *fixing the evidence and calling it success*, which is worse than doing nothing.
+- [x] **Cause, not symptom.** Two independent gaps, same root: nothing about the pipeline was
+  a *checkable* claim. `gen.sh`'s `${TYPES:-file}` conflated "unset" with "explicitly empty"
+  so full-provider mode had no expressible spelling; `gen-azure-ledger.mjs` had no notion of
+  "compare instead of write" so there was no command that could answer "is the committed file
+  still what the dump produces" without a human diffing by hand.
+  - `gen.sh`: `TYPES="${TYPES-all}"` (unset default, not `:-`) — an explicitly empty `TYPES` and
+    the literal `all` both now mean "no `-types` filter", matching what the tool's own `-types
+    ""` contract already meant. An unreadable `TYPES` file is a hard error rather than a silent
+    fallback to full-provider — a typo'd path must not quietly produce a 1677-type artifact
+    where 85 were asked for (this finding, in reverse). `COMPRESS` defaults per provider to
+    match what is actually committed (`aws-*.json.gz`, `azurerm-*.json` uncompressed), and uses
+    `gzip -9 -n` — without `-n`, gzip embeds the source mtime/filename, so two runs over
+    byte-identical JSON produce different `.gz` bytes and reproducibility could never be
+    checked at all (the committed aws `.gz` was made without `-n`: its header carries a real
+    timestamp).
+  - `gen-azure-ledger.mjs --check`: regenerates in memory, diffs against the two committed
+    files, exits 1 on any difference. The shape guarded against is not a wrong verdict, it is a
+    **vacuous pass** — the same L-1 hazard IMP-4's own self-check nearly shipped with (a
+    `r.safe_op_classes`/`r.safeOpClasses` field-name typo produced a uniform zero that read as
+    an answer). So `--check` refuses on a MISSING artifact (the most stale an artifact can be,
+    never "skip"), an EMPTY one, a `expected` comparison list that is itself empty, and a
+    regenerated row count that does not match the dump's own type count — and a green run
+    prints what it actually compared (byte counts, row counts), so a reader never has to infer
+    "did this really run" from a bare checkmark. A `Generated: <now>` timestamp in the summary
+    header was itself part of the defect: it made every regeneration differ from the committed
+    file by construction, so a regenerate-and-compare check could never have been green twice
+    running. It is replaced by the dump's own provenance (provider, tag, commit, the dump's own
+    `generated_at`) — deterministic, and strictly more useful: it names the input, not the run.
+    A required provenance field that is absent refuses the write rather than interpolating the
+    literal string `"undefined"` into a committed artifact (the azurerm dump carries no
+    `source_provenance` block at all, unlike the aws one — the first draft of this header did
+    exactly that).
+- [x] **A check nobody calls is not a check (L-1, applied to CI wiring itself).** `--check` and
+  its selftest existed as code with no caller: `gate_generated()` was defined in `scripts/gate.sh`
+  but never reached from the `case "$MODE"` dispatch, and no GitHub workflow ran either script —
+  `importer.yml`'s `schemadump` job builds/vets/tests the Go source and stops; nothing anywhere
+  compares the committed catalog artifacts to what the dump produces. Fixed on both sides: `py`
+  and `all|full` modes now call `gate_generated`; `importer.yml`'s `schemadump` job runs the
+  selftest then `--check` after `go test`. The workflow's path filters are widened to `catalog/**`
+  and the new selftest script — the defect this check exists to catch (a *hand-edited* catalog
+  artifact) touches neither `importer/**` nor `tools/schemadump/**`, so the old filter would
+  never have triggered this job for exactly the case that matters.
+- [x] **Regression test — `scripts/ci/generated-catalog-selftest.sh`, five scenarios, written as
+  rules not a list (L-25):** a pristine tree passes AND reports a non-zero comparison count (a
+  silent pass is not evidence of a pass); an edited ledger row is caught; an edited summary line
+  is caught; a MISSING artifact fails rather than being treated as "nothing to compare"; an EMPTY
+  artifact fails. **Negative test confirmed directly against the pre-fix generator** (git-show'd
+  from `origin/main` into a scratch copy, run in place so its own path resolution is real): given
+  `--check` it does not recognise the flag, silently regenerates, and overwrites a staled row back
+  to correct with exit 0 and no diagnostic of any kind — proving the "manual only" claim in the
+  finding text rather than asserting it. `bash scripts/ci/generated-catalog-selftest.sh`: 5/5.
+- [x] **Assert the setup fired (L-1).** Scenario A does not just check exit 0 — it also asserts
+  the check's own stdout reports `N ledger rows compared` with `N != 0`, so a future rewrite that
+  accidentally compares two empty strings (the shape that bit the L-22/IMP-4 self-check) fails
+  loud instead of passing green.
+- [x] **Failure is loud.** `--check` exits non-zero and prints the first differing line with both
+  the committed and regenerated text side by side, plus the fix command — never a bare "stale",
+  never a partial write. `gen.sh`'s unreadable-`TYPES`-file case is a hard `exit 1`, not a silent
+  full-provider fallback.
+- [x] **Evidence in the status line.** `node tools/schemadump/gen-azure-ledger.mjs --check` — 2
+  artifacts, 1141 rows, PASS against the current committed tree. `bash
+  scripts/ci/generated-catalog-selftest.sh` — 5/5. `bash scripts/gate.sh py` — python suites (217
+  tests) + `gate_generated`, both green.

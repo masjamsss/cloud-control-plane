@@ -106,6 +106,22 @@ gate_py() {
   ); record "python: importer/kit + kit-azure + app scripts" $?
 }
 
+# IMP-8 — the committed catalog artifacts are DERIVED from the committed schemadump,
+# and until now nothing anywhere compared the two. A stale ledger, a hand-edit, or a
+# regeneration from a different dump were all invisible; IMP-4 is what that costs (662
+# wrongly-classified rows, valid JSON, consumed downstream, until an audit noticed).
+# The generator regenerates in memory and diffs. The selftest runs first, because a
+# staleness check that cannot fail is worth less than no check at all (L-1).
+gate_generated() {
+  section "generated catalog artifacts (derived from the schemadump)"
+  ( set -e
+    have node || { echo "node not found — required to verify the generated catalog"; exit 1; }
+    step "staleness-check selftest" && bash scripts/ci/generated-catalog-selftest.sh >/dev/null
+    step "azure capability ledger + summary reproduce" \
+      && node tools/schemadump/gen-azure-ledger.mjs --check >/dev/null
+  ); record "generated: azure capability ledger reproduces from the dump" $?
+}
+
 gate_smoke() {
   section "ccp install smoke (run-local.sh --smoke)"
   # Boots the REAL stack docker-free: SPA built in api-mode, api in production
@@ -178,10 +194,14 @@ case "$MODE" in
   go)  gate_go ;;
   api) gate_api ;;
   app) gate_app ;;
-  py)  gate_py ;;
+  # IMP-8 — gate_generated rides with py: it is the same "importer-adjacent, no
+  # single-language home" bucket, and until this line it was defined but called
+  # by NOTHING — a check nobody invokes is indistinguishable from no check at
+  # all (L-1), which is exactly the defect class this batch closes.
+  py)  gate_py; gate_generated ;;
   tf)  gate_tf ;;
   smoke) gate_smoke ;;
-  all|full) gate_go; gate_api; gate_app; gate_py; gate_tf; [ "$MODE" = "full" ] && gate_smoke ;;
+  all|full) gate_go; gate_api; gate_app; gate_py; gate_generated; gate_tf; [ "$MODE" = "full" ] && gate_smoke ;;
   *) echo "unknown mode: $MODE (use: all|full|go|api|app|tf|smoke)"; exit 2 ;;
 esac
 
