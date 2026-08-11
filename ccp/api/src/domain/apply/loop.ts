@@ -2,6 +2,7 @@ import { isAbsolute } from 'node:path';
 import type { ConfigStore } from '../../store/configStore';
 import { knownProjects } from '../../projects';
 import { nowMs } from '../../clock';
+import { RequestDueIndex } from './dueIndex';
 import { DryRunExecutor, type ApplyExecutor } from './executor';
 import { TerraformExecutor, TerraformExecutorError } from './terraformExecutor';
 import { ConsoleNotifier, type Notifier } from './notify';
@@ -102,6 +103,10 @@ export function maybeStartSchedulerLoop(store: ConfigStore, options: LoopOptions
   }
   const notifier = options.notifier ?? new ConsoleNotifier();
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
+  // PERF-14 — one candidate index for the life of the loop. It is per-process memory and
+  // seeds itself from the store on first use (and periodically after that), so a restart
+  // costs one scan and nothing has to be persisted or migrated.
+  const candidates = new RequestDueIndex();
 
   // Non-reentrancy guard (adversarial review Finding 1b): `setInterval` does NOT await
   // the callback, so a tick that outlasts the interval would otherwise overlap the next.
@@ -119,7 +124,7 @@ export function maybeStartSchedulerLoop(store: ConfigStore, options: LoopOptions
       const now = nowMs();
       for (const projectId of knownProjects()) {
         try {
-          const outcomes = await runDueApplies(store, projectId, now, executor, { notifier, frozen, revertOnFailure });
+          const outcomes = await runDueApplies(store, projectId, now, executor, { notifier, frozen, revertOnFailure, candidates });
           // ERR-6 — an `errored` outcome is the ONE result with no timeline event and no
           // audit entry behind it: `perRequest` caught something unexpected, so the row
           // was left untouched on purpose. The notifier has already been told; this line

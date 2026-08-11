@@ -9,6 +9,7 @@ import { isFrozen } from '../config';
 import { evaluateTime } from '../schedule';
 import { bundleClaimLive } from '../bundleClaim';
 import { digestOf, type ApplyExecutor, type ApplyResult } from './executor';
+import type { DueCandidateSource } from './dueIndex';
 import { nullNotifier, type NotificationKind, type Notifier } from './notify';
 
 /**
@@ -138,6 +139,19 @@ export interface RunOptions {
   frozen?: boolean;
   /** OPT-IN and OFF by default: on apply-failure-after-retry, call `executor.revert` (dry-run). */
   revertOnFailure?: boolean;
+  /**
+   * PERF-14 — where the tick's candidate rows come from. Omitted, this reads the
+   * project's whole request collection, which is what every existing caller does and what
+   * every test that does not care about cost still exercises. The loop passes a
+   * {@link ./dueIndex.RequestDueIndex}, whose per-tick cost tracks a project's OPEN work
+   * rather than its history.
+   *
+   * It is an INPUT, not a hidden singleton, for the same reason `now` is: the tick stays a
+   * deterministic function of what it is handed, and the indexed and unindexed paths can
+   * be run side by side against the same store and compared (they are, in
+   * `test/schedulerDueIndex.test.ts`).
+   */
+  candidates?: DueCandidateSource;
   /** Test seam: deterministic audit ulids. Omit in production. */
   idFn?: () => string;
 }
@@ -296,7 +310,13 @@ export async function runDueApplies(
   const nowIsoStr = new Date(now).toISOString();
   const notifier = opts.notifier ?? nullNotifier;
 
-  const all = (await store.queryGSI1(requestCollectionGsi(projectId))) as RequestItem[];
+  // The candidate rows for this tick. Both sources return a SUPERSET of what the two
+  // filters below can select — every `APPLYING` row and every claimable row — so the
+  // decisions are identical either way; only the cost differs (PERF-14).
+  const all =
+    opts.candidates !== undefined
+      ? await opts.candidates.candidates(store, projectId)
+      : ((await store.queryGSI1(requestCollectionGsi(projectId))) as RequestItem[]);
 
   // CLAIMED ROWS ARE SWEPT INDEPENDENTLY OF THE WINDOW (API-2). A worker that dies
   // mid-apply strands the row in `APPLYING`, and by the time anyone notices its window
