@@ -20,7 +20,7 @@ import { getOperation, validateParams } from '../manifests';
 import type { ManifestOperation } from '@/types';
 import { isSystemDriftOp } from '../domain/systemOps';
 import { disabledOps, isFrozen, loadPolicy, loadTeams, resolveRisk } from '../domain/config';
-import { checkSubmitRateLimit } from '../middleware/rateLimit';
+import { claimSubmitSlot } from '../middleware/rateLimit';
 import { recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
 import { bundleArmed, bundleClaimLive, bundleConfig, realSteps, runBundle } from '../domain/bundle';
 import { resolveLaneRemote, type LaneProject } from '../domain/laneRepo';
@@ -391,8 +391,6 @@ export function requestRoutes(): Hono<AppEnv> {
     if (!scheduleResult.ok) return apiError(c, scheduleResult.code);
     const schedule = scheduleResult.schedule;
 
-    if (!(await checkSubmitRateLimit(store, projectId, account.id)).ok) return apiError(c, 'RATE_LIMITED');
-
     // The COMBINED review requirement is the STRICTEST across all items (tighten-only,
     // ADR-0008): the strictest exposure→tier of any item, with forces-replace floored ON if
     // ANY item is a destroy+recreate. The set is never weaker than its strictest single
@@ -539,11 +537,21 @@ export function requestRoutes(): Hono<AppEnv> {
         : undefined;
     const hKey = chainHead(projectId);
     for (let attempt = 0; attempt < 2; attempt++) {
+      // CONC-12: the quota claim is derived INSIDE the loop and rides IN the batch below,
+      // so the caps are decided by the same all-or-nothing write that creates the request
+      // instead of by a count taken earlier against a store that then moved. A concurrent
+      // submit by this same requester either committed before the count (and is counted)
+      // or bumps the gate row and aborts this attempt, which re-counts on the retry. It
+      // is re-derived per attempt for that reason — a retry that reused attempt 0's claim
+      // would be the original check-then-insert with extra steps.
+      const slot = await claimSubmitSlot(store, projectId, account.id);
+      if (!slot.ok) return apiError(c, 'RATE_LIMITED');
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
       const { writes: auditWrites } = recordIn(projectId, head, entry);
       const domain: TransactWrite[] = [
         { kind: 'put', item, ifNotExists: true },
         ...(marker ? [{ kind: 'put' as const, item: marker, ifNotExists: true }] : []),
+        slot.write,
       ];
       try {
         await store.transact([...domain, ...auditWrites]);
@@ -559,7 +567,7 @@ export function requestRoutes(): Hono<AppEnv> {
               if (prior) return c.json(toChangeRequest(prior, projectId), 200);
             }
           }
-          if (attempt === 0) continue; // else it was chain contention → retry once
+          if (attempt === 0) continue; // else it was chain contention or the gate → retry once
           throw new ApiError('CHAIN_CONTENTION');
         }
         throw e;

@@ -5,7 +5,7 @@ import { MemoryStore } from '../src/store/memoryStore';
 import type { ConfigStore } from '../src/store/configStore';
 import type { AppEnv } from '../src/appEnv';
 import { seed, seedRequests, sessionCookieFor, setSetting, SAMPLE_PROJECT_ID } from './helpers/seed';
-import { checkSubmitRateLimit } from '../src/middleware/rateLimit';
+import { claimSubmitSlot } from '../src/middleware/rateLimit';
 
 /**
  * maxOpen quota vs the request-status lifecycle (coordinator scope addition to
@@ -98,19 +98,22 @@ describe('a zero cap admits nothing (fail-closed)', () => {
     const store = new MemoryStore();
     await seed(store);
     await setSetting(store, SAMPLE_PROJECT_ID, 'rate.limits', { submissionsPerHour: 0 });
-    expect(await checkSubmitRateLimit(store, SAMPLE_PROJECT_ID, 'sari')).toEqual({ ok: false });
+    expect(await claimSubmitSlot(store, SAMPLE_PROJECT_ID, 'sari')).toEqual({ ok: false });
   });
 
   it('blocks with maxOpen: 0 and no prior requests', async () => {
     const store = new MemoryStore();
     await seed(store);
     await setSetting(store, SAMPLE_PROJECT_ID, 'rate.limits', { maxOpen: 0 });
-    expect(await checkSubmitRateLimit(store, SAMPLE_PROJECT_ID, 'sari')).toEqual({ ok: false });
+    expect(await claimSubmitSlot(store, SAMPLE_PROJECT_ID, 'sari')).toEqual({ ok: false });
   });
 
   it('still admits a submission under a normal cap', async () => {
     const store = new MemoryStore();
     await seed(store);
-    expect(await checkSubmitRateLimit(store, SAMPLE_PROJECT_ID, 'sari')).toEqual({ ok: true });
+    // A claim, not a bare yes: the write it carries is what makes the answer survive to
+    // the transact (CONC-12).
+    const claim = await claimSubmitSlot(store, SAMPLE_PROJECT_ID, 'sari');
+    expect(claim.ok).toBe(true);
   });
 });

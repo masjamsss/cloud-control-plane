@@ -1,5 +1,5 @@
-import type { ConfigStore } from '../store/configStore';
-import type { RequestItem } from '../store/schema';
+import type { ConfigStore, TransactWrite } from '../store/configStore';
+import type { Key, RequestItem } from '../store/schema';
 import { requestCollectionGsi } from '../store/schema';
 import { rateLimits } from '../domain/config';
 import { nowMs } from '../clock';
@@ -37,11 +37,49 @@ import { occupiesQuotaSlot } from '@app-lib/requestStatus';
  * consuming requester quota.
  */
 
-export async function checkSubmitRateLimit(
+/**
+ * The per-(project, requester) SUBMIT GATE row. It holds one attribute, `seq`, and its
+ * only job is to be the thing a concurrent submit by the same requester collides on
+ * (CONC-12) — see {@link claimSubmitSlot}. Deliberately NOT in `store/schema.ts` and NOT
+ * on any GSI: it is a limiter implementation detail with no domain meaning, invisible to
+ * every collection query, and there is exactly one per account per project, so it cannot
+ * grow with traffic.
+ */
+export function submitGateKey(projectId: string, requester: string): Key {
+  return { PK: `P#${projectId}#SUBMITGATE#${requester}`, SK: 'META' };
+}
+
+/**
+ * Claim a submit slot for `requester`: the caps, plus the CAS write that makes the answer
+ * hold until the submit commits.
+ *
+ * CONC-12 — this used to be a bare count (`checkSubmitRateLimit`) with the request row
+ * inserted later, in a different transaction. N concurrent submits by one requester each
+ * counted a snapshot that did not include the others, so all N passed and both
+ * `submissionsPerHour` and `maxOpen` could be exceeded by the concurrency factor. The
+ * check was right about a store that had stopped changing.
+ *
+ * The fix is not a counter (nothing here can be decremented when a request closes, and
+ * `maxOpen` needs exactly that). It is to make the COUNT part of the transaction: `write`
+ * bumps `seq` on the gate row, guarded on the value read HERE, and the submit includes it
+ * in the same all-or-nothing batch as the request row. So a competing submit by the same
+ * requester either committed before this read — and is therefore counted — or commits
+ * after it and bumps `seq`, which aborts this whole batch and sends the caller back for a
+ * fresh count. There is no interleaving where two submits are both admitted on a count
+ * that saw neither.
+ *
+ * ORDER IS LOAD-BEARING: the gate is read BEFORE the request collection is walked. Read
+ * after, and a submit committing between the walk and the gate read would be in neither
+ * the count nor the guard.
+ *
+ * Requesters never contend with each other (the key carries the requester), so this
+ * serialises only what the caps are about — one account's own concurrent submits.
+ */
+export async function claimSubmitSlot(
   store: ConfigStore,
   projectId: string,
   requester: string,
-): Promise<{ ok: true } | { ok: false }> {
+): Promise<{ ok: true; write: TransactWrite } | { ok: false }> {
   const limits = await rateLimits(store, projectId);
 
   // A cap of zero admits NOTHING, and must be decided before the walk. `rate.limits`
@@ -50,6 +88,9 @@ export async function checkSubmitRateLimit(
   // for a requester who has no rows to walk. Deciding it here keeps a zero cap
   // fail-CLOSED instead of silently admitting the first submission.
   if (limits.submissionsPerHour <= 0 || limits.maxOpen <= 0) return { ok: false };
+
+  const gk = submitGateKey(projectId, requester);
+  const gate = (await store.get(gk.PK, gk.SK)) as { seq?: number } | null;
 
   const all = (await store.queryGSI1(requestCollectionGsi(projectId))) as RequestItem[];
 
@@ -66,7 +107,15 @@ export async function checkSubmitRateLimit(
     if (occupiesQuotaSlot(r.status) && ++open >= limits.maxOpen) return { ok: false };
   }
 
-  return { ok: true };
+  // First submit ever by this requester on this project: there is no row to guard, so
+  // the claim is the row's own creation. `ifEquals` cannot stand in — it is fail-closed
+  // against a missing item (store/memoryStore.ts), exactly so a guarded write can never
+  // resurrect a deleted row.
+  const write: TransactWrite =
+    gate === null
+      ? { kind: 'put', item: { ...gk, seq: 1 }, ifNotExists: true }
+      : { kind: 'update', pk: gk.PK, sk: gk.SK, set: { seq: (gate.seq ?? 0) + 1 }, ifEquals: { attr: 'seq', value: gate.seq } };
+  return { ok: true, write };
 }
 
 /* ── the upload lane's token bucket (DoS hardening, security review F3) ────── */

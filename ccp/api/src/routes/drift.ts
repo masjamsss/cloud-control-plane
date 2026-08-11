@@ -39,13 +39,13 @@ const DRIFT_IMPORT_DISARMED_REASON = 'Drift import is not armed on this deployme
  * `DRIFT_IMPORT_DISARMED_REASON` precedent: same code (`DRIFT_DISARMED`), a
  * distinct reason naming `CCP_DRIFT_RESTORE` specifically. */
 const DRIFT_RESTORE_DISARMED_REASON = 'Drift restore is not armed on this deployment (CCP_DRIFT_RESTORE unset).';
-import { checkSubmitRateLimit, checkUploadRateLimit } from '../middleware/rateLimit';
+import { claimSubmitSlot, checkUploadRateLimit } from '../middleware/rateLimit';
 import { PROJECT_ID_RE, isBoundToProject, roleFor } from '../projects';
 import { verifyPassword } from '../auth/credentials';
 import { toUser } from '../auth/account';
 import type { TransactWrite } from '../store/configStore';
 import { ConditionError } from '../store/configStore';
-import { recordIn, record, transactWithAudit } from '../domain/audit';
+import { DomainConditionError, recordIn, record, transactWithAudit } from '../domain/audit';
 import type { DriftFinding, DriftVerdict } from '../domain/drift';
 import {
   DriftEnvelope,
@@ -403,9 +403,11 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
           },
         );
       } catch (e) {
-        // A lost version race surfaces as chain contention — re-read the
-        // tail and try the next number.
-        if (e instanceof ApiError && e.code === 'CHAIN_CONTENTION' && attempt === 0) continue;
+        // A lost version race is the version row's OWN `ifNotExists` losing — since
+        // CONC-15 that is reported as such (`DomainConditionError`) rather than rounded
+        // up to chain contention. This loop wants a retry for both: re-read the tail
+        // (and the dedupe pointer) and try the next number.
+        if (e instanceof ApiError && (e instanceof DomainConditionError || e.code === 'CHAIN_CONTENTION') && attempt === 0) continue;
         throw e;
       }
       try {
@@ -779,12 +781,16 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
     // 9. THE NORMAL SUBMIT INTERNALS (§4.3) — same gates, same order as
     //    routes/requests.ts's POST /requests.
     if (await isFrozen(store, id)) return apiError(c, 'GLOBAL_FREEZE');
-    if (!(await checkSubmitRateLimit(store, id, account.id)).ok) return apiError(c, 'RATE_LIMITED');
 
     const scheduleResult = validateSchedule(scheduleInput, nowMs());
     if (!scheduleResult.ok) return apiError(c, scheduleResult.code);
     const schedule = scheduleResult.schedule;
 
+    // The submit quota is claimed IN the transact below (CONC-12), not counted here —
+    // see middleware/rateLimit.ts#claimSubmitSlot. That also puts RATE_LIMITED after the
+    // schedule codes, which is what the "same gates, same order as routes/requests.ts's
+    // POST /requests" claim above has always described and never matched: requests.ts
+    // validates the schedule first.
     const ladder = ladderFor(tier, false); // forcesReplace is structurally false for all four drift ops this route handles (§4.4/OOB spec §6/L29 §2.5)
     const approvalsRequired = ladder.length;
     const feasibility = await computeFeasibility(store, id, ladder, account.id);
@@ -879,10 +885,13 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
 
     const hKey = chainHead(id);
     for (let attempt = 0; attempt < 2; attempt++) {
+      // Re-derived per attempt, exactly as POST /requests does (CONC-12).
+      const slot = await claimSubmitSlot(store, id, account.id);
+      if (!slot.ok) return apiError(c, 'RATE_LIMITED');
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
       const { writes: auditWrites } = recordIn(id, head, entry);
       try {
-        await store.transact([...domainWrites, ...auditWrites]);
+        await store.transact([...domainWrites, slot.write, ...auditWrites]);
         break;
       } catch (e) {
         if (e instanceof ConditionError) {
@@ -1000,7 +1009,6 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
 
     // 9. THE NORMAL SUBMIT INTERNALS (§4.3) — same gates as the adopt/revert submit.
     if (await isFrozen(store, id)) return apiError(c, 'GLOBAL_FREEZE');
-    if (!(await checkSubmitRateLimit(store, id, account.id)).ok) return apiError(c, 'RATE_LIMITED');
 
     const scheduleResult = validateSchedule(scheduleInput, nowMs());
     if (!scheduleResult.ok) return apiError(c, scheduleResult.code);
@@ -1051,17 +1059,32 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
     };
 
     // The revert proposal row is deliberately NOT touched (stays 'open') —
-    // only the new request is written, under the standard audit-chain
-    // transact (no dedupe-condition on a proposal row to race here, unlike
-    // submit, since nothing about the proposal changes).
-    await transactWithAudit(store, id, [{ kind: 'put', item: reqItem as never, ifNotExists: true }], {
-      action: 'drift-legitimize-requested',
-      actor: account.id,
-      targetType: 'request',
-      targetId: reqId,
-      requestId: reqId,
-      after: { digest, status, approvalsRequired, risk, exposure: op.exposure, reviewTier: tier, ...feasibility },
-    });
+    // only the new request (plus the submit-quota claim, CONC-12) is written, under the
+    // standard audit-chain transact (no dedupe-condition on a proposal row to race here,
+    // unlike submit, since nothing about the proposal changes).
+    //
+    // The loop is what the quota claim costs: carrying a value-guarded write makes
+    // `transactWithAudit` refuse to REPLAY the batch on contention (CONC-2/CONC-9), so
+    // the one retry this path always had has to re-derive the claim and live out here.
+    for (let attempt = 0; ; attempt++) {
+      const slot = await claimSubmitSlot(store, id, account.id);
+      if (!slot.ok) return apiError(c, 'RATE_LIMITED');
+      try {
+        await transactWithAudit(store, id, [{ kind: 'put', item: reqItem as never, ifNotExists: true }, slot.write], {
+          action: 'drift-legitimize-requested',
+          actor: account.id,
+          targetType: 'request',
+          targetId: reqId,
+          requestId: reqId,
+          after: { digest, status, approvalsRequired, risk, exposure: op.exposure, reviewTier: tier, ...feasibility },
+        });
+        break;
+      } catch (e) {
+        const retryable = e instanceof ApiError && (e instanceof DomainConditionError || e.code === 'CHAIN_CONTENTION');
+        if (retryable && attempt === 0) continue;
+        throw e;
+      }
+    }
 
     return c.json(toChangeRequest(reqItem, id), 201);
   });
