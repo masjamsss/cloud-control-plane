@@ -75,8 +75,17 @@ export type HaltReason = 'NO_PINNED_PLAN' | 'QUORUM_LOST' | 'DRIFT' | 'APPLY_FAI
 
 export interface ApplyOutcome {
   requestId: string;
-  result: 'applied' | 'halted' | 'skipped-frozen' | 'skipped-moved' | 'held-no-plan';
+  /**
+   * Every way one request can end a tick. `replan-failed` and `errored` are ERR-6's:
+   * before them, a throwing `executor.replan` (or any other unexpected throw) escaped
+   * `processOne`, escaped `runDueApplies` — taking every LATER due request in the
+   * project with it — and was swallowed by `loop.ts`'s per-project `console.error`. A
+   * failure with no outcome to report is a failure nothing can act on.
+   */
+  result: 'applied' | 'halted' | 'skipped-frozen' | 'skipped-moved' | 'held-no-plan' | 'replan-failed' | 'errored';
   haltReason?: HaltReason;
+  /** The failure text for `replan-failed` / `errored`. Absent on every other result. */
+  detail?: string;
 }
 
 /**
@@ -303,7 +312,11 @@ export async function runDueApplies(
     // some, all, or none of the change, and re-running an apply over a half-applied
     // change is the one outcome worse than stopping. `HALTED_APPLY_FAILED` is now an
     // exit, not a dead end — cancel accepts it (routes/requests.ts).
-    outcomes.push(await halt(store, projectId, req, 'APPLY_LEASE_EXPIRED', APPLYING, nowIsoStr, opts));
+    outcomes.push(
+      await perRequest(req, projectId, nowIsoStr, notifier, () =>
+        halt(store, projectId, req, 'APPLY_LEASE_EXPIRED', APPLYING, nowIsoStr, opts),
+      ),
+    );
   }
 
   if (due.length === 0) return outcomes; // nothing due → no work, no audit (avoids per-tick spam)
@@ -337,10 +350,55 @@ export async function runDueApplies(
   // Sequential (not Promise.all): concurrent transacts against the SAME per-project
   // chain head would only self-contend — the exact reasoning `routes/requests.ts`'s
   // list-settle loop documents.
+  //
+  // ERR-6 — PER-REQUEST ISOLATION. Sequential must not mean "the first thrower ends
+  // the tick". `processOne` reaches an executor, a store and a hash chain, every one of
+  // which can throw; before this, one such throw aborted the whole loop, so a single
+  // permanently-failing request silently starved every LATER due request in the project
+  // of its maintenance window, every tick, with only a stdout line to say so.
   for (const req of due) {
-    outcomes.push(await processOne(store, projectId, now, req, executor, opts));
+    outcomes.push(
+      await perRequest(req, projectId, nowIsoStr, notifier, () => processOne(store, projectId, now, req, executor, opts)),
+    );
   }
   return outcomes;
+}
+
+/**
+ * Run one request's work so that its failure is ITS failure: an unexpected throw becomes
+ * an `errored` outcome for that request and the caller keeps going. Deliberately the
+ * outermost wrapper and deliberately catch-all — the modelled failures (a refusing
+ * executor, a lost claim, a re-plan that would not run) are handled inside `processOne`
+ * with their own outcomes and never reach here, so anything that does IS unexpected and
+ * the only safe thing to do with it is report it and move on.
+ *
+ * The notify is itself guarded: this is the error path, and a notifier that throws here
+ * would re-create the exact collateral damage the wrapper exists to prevent.
+ */
+async function perRequest(
+  req: RequestItem,
+  projectId: string,
+  nowIsoStr: string,
+  notifier: Notifier,
+  fn: () => Promise<ApplyOutcome>,
+): Promise<ApplyOutcome> {
+  try {
+    return await fn();
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    try {
+      await notifier.notify({
+        kind: 'tick-error',
+        projectId,
+        requestId: req.id,
+        message: `auto-apply tick failed for this request: ${detail}`,
+        at: nowIsoStr,
+      });
+    } catch {
+      /* a broken notifier must not take the tick down with it */
+    }
+    return { requestId: req.id, result: 'errored', detail };
+  }
 }
 
 async function processOne(
@@ -370,7 +428,12 @@ async function processOne(
   // RE-PLAN — compare to the approved plan by DIGEST. Only an exact match (the reviewed
   // change, nothing else) may proceed; any drift HALTS to a fresh plan/review. Re-plan is
   // read-only, so an overlapping worker doing it twice is wasteful but harmless.
-  const replan = await executor.replan(req);
+  //
+  // A re-plan that THREW is not drift and is not a verdict about the change at all: it
+  // is the executor saying "I could not look" (ERR-6). It gets its own modelled outcome
+  // — see {@link holdReplanFailed} for why that is a HOLD and not a halt.
+  const replan = await tryReplan(executor, req);
+  if (!replan.ok) return holdReplanFailed(store, projectId, req, replan.detail, nowIsoStr, opts);
   if (replan.digest !== req.planDigest) return halt(store, projectId, req, 'DRIFT', AWAITING, nowIsoStr, opts);
 
   // CLAIM — the atomic single-apply gate AND the start-of-apply marker (Finding 1). Flip
@@ -448,6 +511,93 @@ async function tryApply(executor: ApplyExecutor, req: RequestItem): Promise<Appl
   } catch (e) {
     return { ok: false, detail: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * Run the re-plan, normalizing a thrown error into a value — the same shape `tryApply`
+ * has always had. `executor.apply` was wrapped from the start and `executor.replan` was
+ * called bare (ERR-6), which is the whole defect: two calls to the same seam, one of
+ * them modelled and one of them not.
+ */
+async function tryReplan(
+  executor: ApplyExecutor,
+  req: RequestItem,
+): Promise<{ ok: true; digest: string } | { ok: false; detail: string }> {
+  try {
+    const { digest } = await executor.replan(req);
+    return { ok: true, digest };
+  } catch (e) {
+    return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** The timeline event a request carries while its re-plan cannot be run (ERR-6). */
+export const REPLAN_FAILED_EVENT = 'apply_replan_failed';
+
+/** How much of the executor's failure text reaches the timeline/audit. Bounded because
+ * a terraform error can be pages long and this text is stored on the request row. */
+const REPLAN_DETAIL_MAX = 300;
+
+/**
+ * HOLD on a re-plan that would not run (ERR-6) — the request stays exactly where it is,
+ * `AWAITING_DEPLOY_APPROVAL`, still cancellable, still re-windowable, still bundle-
+ * eligible, and the tick moves on to its siblings.
+ *
+ * WHY NOT HALT — the finding's own recommendation was "halt after N consecutive
+ * failures (a new REPLAN_FAILED halt spec)". That is rejected deliberately, and it is
+ * the same judgement API-3 already forced on this file (see {@link PinState}): a halt is
+ * exited ONLY by cancel, so halting means "throw this approved change away and send two
+ * humans back through the ladder". A re-plan failure is evidence about the EXECUTOR —
+ * an unreachable backend, a registry blip, ERR-5's cached init rejection — not about the
+ * change. Nothing has been applied, nothing is half-landed, and there is no damage to
+ * record. `L-11`'s corollary states the rule: where the safe answer is "not now", HOLD
+ * the row and say so in the timeline; save the terminal state for evidence of damage.
+ *
+ * AND THE RETRY IS ALREADY BOUNDED, which is the part the finding missed: a due request
+ * is due only while its window is OPEN ({@link isDue} → `windowOpen`), so the retries
+ * stop when the window closes and `domain/schedule.ts#settleWindow` stamps
+ * `WINDOW_EXPIRED` on the next read — a parked state with two exits (rewindow, which
+ * KEEPS the approvals, or cancel). A halt would replace that recoverable ending with an
+ * unrecoverable one for a fault the request had no part in.
+ *
+ * What was actually missing is evidence, and that is what this writes: ONE timeline
+ * event + audit entry + notification per failure EPISODE. The de-dup is "the last event
+ * on the row is already this one" rather than "this event type appears anywhere", so a
+ * failure that recurs after something else happened to the request (a rewindow, an
+ * approval) is recorded again instead of being swallowed by a marker from last week —
+ * while a re-plan that fails every tick for six hours still writes exactly once, and the
+ * per-project chain head is not appended to every 60 seconds forever.
+ */
+async function holdReplanFailed(
+  store: ConfigStore,
+  projectId: string,
+  req: RequestItem,
+  detail: string,
+  nowIsoStr: string,
+  opts: RunOptions,
+): Promise<ApplyOutcome> {
+  const short = detail.length > REPLAN_DETAIL_MAX ? `${detail.slice(0, REPLAN_DETAIL_MAX)}…` : detail;
+  if (req.events.at(-1)?.type === REPLAN_FAILED_EVENT) {
+    return { requestId: req.id, result: 'replan-failed', detail }; // episode already recorded — no write, no audit
+  }
+  const message = `Auto-apply could not re-plan this change — holding it (not applying, not halting): ${short}`;
+  const event = { at: nowIsoStr, type: REPLAN_FAILED_EVENT, label: message, actor: SCHEDULER_ACTOR };
+  const entry: AuditEntryInput = {
+    action: 'scheduler-replan-failed',
+    actor: SCHEDULER_ACTOR,
+    targetType: 'request',
+    targetId: req.id,
+    requestId: req.id,
+    before: { status: req.status },
+    after: { status: AWAITING, held: 'REPLAN_FAILED', detail: short },
+  };
+  // Same status in and out, guarded on the status this tick read — a concurrent
+  // cancel/rewindow/settle is never clobbered.
+  const { committed } = await writeStatusWithAudit(store, projectId, req, AWAITING, {}, event, entry, AWAITING, nowIsoStr, opts.idFn);
+  if (!committed) return { requestId: req.id, result: 'skipped-moved' };
+  const notifier = opts.notifier ?? nullNotifier;
+  await notifier.notify({ kind: 'replan-failed', projectId, requestId: req.id, message, at: nowIsoStr });
+  return { requestId: req.id, result: 'replan-failed', detail };
 }
 
 /** The one-time timeline event a held-for-no-pin request carries. */

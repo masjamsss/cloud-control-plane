@@ -119,7 +119,16 @@ export function maybeStartSchedulerLoop(store: ConfigStore, options: LoopOptions
       const now = nowMs();
       for (const projectId of knownProjects()) {
         try {
-          await runDueApplies(store, projectId, now, executor, { notifier, frozen, revertOnFailure });
+          const outcomes = await runDueApplies(store, projectId, now, executor, { notifier, frozen, revertOnFailure });
+          // ERR-6 — an `errored` outcome is the ONE result with no timeline event and no
+          // audit entry behind it: `perRequest` caught something unexpected, so the row
+          // was left untouched on purpose. The notifier has already been told; this line
+          // is the operator's copy. Every other result is already recorded on the request.
+          for (const o of outcomes) {
+            if (o.result !== 'errored') continue;
+            // eslint-disable-next-line no-console
+            console.error(`[ccp:scheduler] request ${projectId}/${o.requestId} errored this tick: ${o.detail ?? 'unknown'}`);
+          }
         } catch (e) {
           // A single project's failure must not kill the loop or leak into others.
           // eslint-disable-next-line no-console
