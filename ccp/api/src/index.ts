@@ -4,6 +4,7 @@ import type { ConfigStore } from './store/configStore';
 import type { AppEnv } from './appEnv';
 import { registerErrorHandler } from './errors';
 import { CLIENT_HEADER, withClientHeader, withPasswordGate, withProject, withSession, withSettlement } from './middleware/session';
+import { withRequestLog } from './middleware/requestLog';
 import { authRoutes } from './routes/auth';
 import { accountRoutes } from './routes/account';
 import { requestRoutes } from './routes/requests';
@@ -27,19 +28,25 @@ export type CreateAppOptions = {
 };
 
 /**
- * Assemble the app. Global middleware order: store context → withSettlement
- * (one-time legacy settlement, data-birth spec §9 — must precede session
- * resolution, see its own doc comment) → withSession (resolve cookie) →
- * withClientHeader (CSRF on non-GET business routes) → withProject (resolve
- * x-ccp-project, default the reserved `@control` scope) → withPasswordGate.
- * Route guards attach per sub-app. The same app object deploys to Lambda later.
+ * Assemble the app. Global middleware order: withRequestLog (OPS-7 — mints the
+ * per-request id and logs method/path/status/latency; FIRST so absolutely
+ * everything below, including a CORS rejection, has an id and gets logged) →
+ * CORS → store context → withSettlement (one-time legacy settlement, data-birth
+ * spec §9 — must precede session resolution, see its own doc comment) →
+ * withSession (resolve cookie) → withClientHeader (CSRF on non-GET business
+ * routes) → withProject (resolve x-ccp-project, default the reserved
+ * `@control` scope) → withPasswordGate. Route guards attach per sub-app. The
+ * same app object deploys to Lambda later.
  */
 export function createApp(store: ConfigStore, opts: CreateAppOptions = {}): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   registerErrorHandler(app);
 
-  // CORS FIRST so a preflight (OPTIONS) short-circuits before the CSRF/session gates,
-  // and every response to a browser at the SPA origin carries credentialed CORS headers.
+  app.use('*', withRequestLog);
+
+  // CORS FIRST (among the rest) so a preflight (OPTIONS) short-circuits before the
+  // CSRF/session gates, and every response to a browser at the SPA origin carries
+  // credentialed CORS headers.
   app.use('*', cors({
     origin: (origin) => (origin && corsOrigins().includes(origin) ? origin : null),
     credentials: true, // the session cookie is credentialed — the browser needs ACAC:true

@@ -596,3 +596,24 @@ lane, so the seam is described here rather than reached into.
 **State:** open, bounded and small. In practice the exposure is one scheduler tick's writes
 during a 15s drain, on a deployment that has explicitly set `CCP_SCHEDULER=1`; the store's own
 atomic-rename design means the outcome is a lost write, never a corrupt snapshot.
+
+### R-65 · The armed-overlay shell regression suite runs nowhere in CI
+*Residue on **OPS-6**.*
+
+`ccp/scripts/test/*.test.sh` already has a sibling compose check for the armed overlay, and
+grep-verified: no workflow, no gate script, no npm script references any file under
+`ccp/scripts/test/`. `OPS-6`'s own regression test (`ccp/api/test/armedOverlay.test.ts`)
+therefore lives in the api's vitest suite instead — which runs on every CI job that touches
+`ccp/` — precisely so the fix has a test that actually executes, rather than adding to a shell
+suite nothing runs (the exact `L-1`/can-it-fail shape this audit keeps finding).
+
+That is a workaround, not a fix for the underlying gap: the existing shell suite in
+`ccp/scripts/test/` is real coverage of other operator-script behaviour that ALSO runs nowhere,
+and wiring an entire shell-test runner into a GitHub Actions workflow is a `.github/workflows/`
+change — a different batch's files (this repo's own convention keeps CI wiring changes together
+so path-filter coverage stays reasoned about in one place, per `scripts/ci/check-path-filters.sh`'s
+header).
+
+**State:** open, not tracked by any other finding. The cheap version is a new job (or a step in
+an existing one) that runs `for f in ccp/scripts/test/*.test.sh; do bash "$f"; done`, gated the
+same way `ccp/scripts/publish-gate.sh` already is.

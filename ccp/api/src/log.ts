@@ -24,18 +24,23 @@ import { redactSecrets } from './redact';
  */
 
 /** One line of structured, greppable text. Pure, so a test can assert on it exactly. */
-export function formatServerError(err: unknown, req?: { method?: string; path?: string }): string {
+export function formatServerError(err: unknown, req?: { method?: string; path?: string; requestId?: string }): string {
   const where = req?.method !== undefined || req?.path !== undefined
     ? ` ${req.method ?? '?'} ${req.path ?? '?'}`
     : '';
+  // OPS-7 — threads withRequestLog's per-request id through, so a fault in the access
+  // log and a fault in this log are the SAME line an operator can grep for. Absent for
+  // the process-level handlers below (unhandledRejection/uncaughtException fire outside
+  // any one request's context and never had an id to thread).
+  const withId = req?.requestId !== undefined ? ` id=${req.requestId}` : '';
   if (err instanceof Error) {
     // The stack already begins with "Name: message", so printing both would duplicate it.
     const body = err.stack !== undefined && err.stack.length > 0 ? err.stack : `${err.name}: ${err.message}`;
-    return redactSecrets(`ccp-api ERROR${where} — ${body}`);
+    return redactSecrets(`ccp-api ERROR${where}${withId} — ${body}`);
   }
   // A non-Error throw (`throw 'nope'`, a rejected promise carrying an object) still has to
   // land somewhere legible — this is the case that most often produced silence.
-  return redactSecrets(`ccp-api ERROR${where} — non-Error thrown: ${safeInspect(err)}`);
+  return redactSecrets(`ccp-api ERROR${where}${withId} — non-Error thrown: ${safeInspect(err)}`);
 }
 
 function safeInspect(v: unknown): string {
@@ -48,7 +53,7 @@ function safeInspect(v: unknown): string {
 }
 
 /** Write a server-side error to stderr. The single choke point, so redaction cannot be skipped. */
-export function logServerError(err: unknown, req?: { method?: string; path?: string }): void {
+export function logServerError(err: unknown, req?: { method?: string; path?: string; requestId?: string }): void {
   // eslint-disable-next-line no-console
   console.error(formatServerError(err, req));
 }

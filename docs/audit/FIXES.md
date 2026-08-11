@@ -5171,3 +5171,152 @@ under [`ERR-8`](#err-8), which carries the reasoning, the measurements and the t
 adds one detail ERR-8 does not name and it is fixed there: the default 10s
 `stop_grace_period`, which is *below* the drain budget and would have had Docker SIGKILL the
 process part-way through the very shutdown this closes.
+
+## OPS-6
+
+*Plain `compose up` (including every self-update cycle) silently strips the armed overlay.*
+
+- [x] **Defect reproduced first.** The documented way to arm the bundle/drift lanes was a
+      ONE-SHOT command: `docker compose -f docker-compose.yml -f docker-compose.armed.yml up
+      -d`. Reproduced with `docker compose config` (what the next `up` would actually
+      create): that command resolves ARMED (socket mounted); a PLAIN `docker compose up`
+      immediately afterwards, in the same directory, resolves DISARMED. Every scripted
+      re-up this repo ships — `self-update.sh` nightly at 03:17, an `install.sh` re-run, the
+      `migrate-data.sh` cutover, and (found while writing this fix's own regression test —
+      see below) `intranet-setup.sh`'s re-runnable wizard — runs exactly that plain form,
+      recreating the api with no docker socket, no `/data/scratch` bind and no `TMPDIR`. The
+      armed lanes then fail with a docker-cannot-connect error nothing on the host explains.
+- [x] **Cause, not symptom.** Arming was a property of the COMMAND, not of the DEPLOYMENT —
+      nothing on disk recorded that this host wants the overlay, so any later compose
+      invocation that doesn't repeat the `-f -f` flags reverts to the base file.
+- [x] **The fix shape was contested (refuse / warn / sticky) — made sticky, with a refusal
+      as the backstop for hosts already armed the old way.** `COMPOSE_FILE` in `.env`
+      (`docker-compose.yml:docker-compose.armed.yml`) is Docker Compose's own built-in
+      mechanism for exactly this — this repo already uses the identical pattern for
+      `COMPOSE_PROFILES=runner` ("the sticky opt-in, which also lets self-update.sh rebuild
+      it on code updates"), so arming now follows a precedent this codebase already trusts
+      rather than inventing a second one. Warn-only was rejected: a warning an operator can
+      ignore is what already happened here (nothing warned at all), and "sticky" alone is
+      not enough for a host that is ALREADY armed the old, non-sticky way — that host needs
+      to be told before its next re-up strips it. `ccp/scripts/lib/armed.sh` is the shared
+      DETECTOR: `armed_in_running_api` (what a running container actually has, mirroring
+      doctor.sh's existing check) vs. `armed_in_config` (what `docker compose config` would
+      create next) — drift between the two means the next `up` disarms silently.
+      `install.sh`, `migrate-data.sh`, `self-update.sh` and `intranet-setup.sh` all now
+      **refuse** (not re-arm automatically) when they detect that drift, and `doctor.sh`
+      reports it. Refusing rather than silently re-applying the overlay is deliberate: doing
+      that automatically would be a script deciding, on its own, to grant a container the
+      docker socket — root-equivalence on the host — with no operator involved, in a product
+      whose entire subject is who may authorize what.
+- [x] **A real gap found by this fix's own regression test, not guessed at.** The test's
+      setup assertion (below) derives which scripts re-up the api from the scripts
+      themselves rather than a hand-typed list, and it found `intranet-setup.sh` — documented
+      as explicitly re-runnable/idempotent against an existing host, and genuinely re-upping
+      the api and app via `docker compose up` — with NO guard at all. Fixed alongside the
+      three the finding named.
+- [x] **Regression test — `ccp/api/test/armedOverlay.test.ts`** (12 tests, `describe.runIf`
+      guarding the 3 that need a real `docker compose config` resolution — everything else
+      runs unconditionally):
+  - the overlay genuinely arms, and a plain `up` genuinely does not (setup assertions —
+    L-1 — so the rest of the suite is not vacuous either way);
+  - `COMPOSE_FILE` in `.env` makes a plain `up` resolve armed;
+  - **the rule, not the list (L-25):** derives the SET of scripts that re-up the deployed
+    api by scanning every shipped script for an actual compose-up invocation (excluding
+    text a script only PRINTS — a diagnostic line or a "here's the command" suggestion is
+    not this script executing it), and asserts that set equals exactly the four that carry
+    the guard — so a fifth re-upping script added later fails this test automatically
+    rather than silently escaping the rule;
+  - each of the four sources the shared guard rather than restating it (L-8);
+  - the guard refuses rather than silently re-arming (asserted on the library's own
+    exported shape);
+  - `doctor.sh` reports non-sticky arming;
+  - `.env.example` documents `COMPOSE_FILE` as the way to arm, and `go-live.md` no longer
+    instructs the one-shot `-f -f` form that teaches the defect.
+- [x] **Negative test confirmed, twice — once for the false positives, once for the real
+      gap.** The detector regex first over-matched: `doctor.sh` (which now REPORTS
+      `` `docker compose up` `` in a diagnostic string) and `setup.sh` (whose next-steps
+      banner SUGGESTS the command inside a heredoc) both tripped it, because a naive
+      quote-stripping first draft of the "don't count printed text" filter used a
+      multi-line `'[^']*'`/`"[^"]*"` regex, and an apostrophe in an unrelated English prose
+      comment ("operator's", "doesn't") paired with a LATER, unrelated apostrophe and ate
+      real code between them — including genuine invocations this test exists to find.
+      Replaced with a same-line quote-parity scan, which cannot cross a newline by
+      construction. Separately, and this is the actual defect this whole entry is about:
+      stashing away just `intranet-setup.sh`'s guard (keeping the test) reproduced the real
+      gap directly — 11 pass, 1 fails naming `intranet-setup.sh`. Both restored; 12/12
+      green.
+- [x] **Assert the setup fired (L-1).** The "the overlay really does arm" test exists
+      specifically so every other assertion in the suite is not trivially true against a
+      broken or neutered overlay.
+- [x] **Residue** — `R-65` (the sibling shell-suite-in-CI gap this test's own header notes,
+      and the two scripts this batch did NOT need to touch: `nginx-vhost.sh` and
+      `run-local.sh`, both correctly excluded by the rule above rather than a hand check).
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/armedOverlay.test.ts`
+      (12 passed); `bash -n` on all five touched/new shell scripts (clean); full api suite
+      green (below, shared with OPS-7).
+
+## OPS-7
+
+*No HTTP request logging and no request IDs anywhere in the api.*
+
+- [x] **Defect reproduced first.** Grepped `ccp/api/src` for `hono/logger` and any
+      request-id mechanism: none. The only runtime log lines were boot messages,
+      scheduler/drift `console.error`s, the bootstrap password, and OPS-2's server-error
+      log. Confirmed live: hitting `/healthz` through `createApp` produced no stdout at all
+      before this fix.
+- [x] **The privacy decision this finding asks for, made explicit and enforced in code, not
+      just described here.** Logged: method, path (no query string), status, latency, and a
+      per-request id. NEVER logged: the request/response body, the query string, headers, or
+      cookies. IN A GOVERNANCE PRODUCT this is not generic hygiene — the bodies this api
+      accepts ARE the governed content (change-request `params`, `justification` text, drift
+      payloads, TOTP codes, the scanner's bearer key), so a body-logging access logger would
+      put exactly what the audit chain exists to control into a plain-text operator log
+      stream, on every request rather than the ones an operator chose to record. `path` is
+      passed through the SAME `redactSecrets` the OPS-2 error logger already uses, on the
+      same reasoning: a route segment could in principle carry something URL- or
+      token-shaped. The decision lives in `middleware/requestLog.ts`'s doc comment, next to
+      the code that enforces it — the same move this batch's parallel PERF-7 fix (audit
+      chain retention) uses for its own contested policy call.
+- [x] **Why a hand-written middleware and not `hono/logger` (the finding's own
+      suggestion).** Hono's built-in logs method+path+status only by default, so the SHAPE
+      is compatible — but the decision above needs to be visible and enforced in THIS
+      repo's code, not inherited silently from a dependency's default that could change.
+      ~15 lines, reusing `redactSecrets` already written for OPS-2, cost less than auditing
+      and pinning a dependency's behaviour would have.
+- [x] **The id is minted server-side, never trusted from the client.** An unauthenticated
+      caller choosing its own `X-Request-Id` could poison an operator's log search or spoof
+      correlation with an unrelated request. Pinned directly: a request sent WITH that
+      header gets back a different one.
+- [x] **Threaded into the fault path (the finding's "log the ID in the error handler"),
+      without a wire-contract change.** `registerErrorHandler` reads the id off context and
+      passes it to `logServerError`/`formatServerError` (now accepting an optional
+      `requestId`), so an operator can go from "user reports it failed, here's the
+      `X-Request-Id` header they saw" straight to the matching stack trace. The id is a
+      RESPONSE HEADER only, never added to the JSON error body — `{code, reason, details?}`
+      is untouched, so this needed no OpenAPI/wire-contract change (see `B-S4`).
+      `registerErrorHandler` is generic over any Hono `Env`, reused by non-`AppEnv` test
+      apps, so the id is read defensively off `c.var` rather than typed through `c.get`,
+      and is simply absent (not a type or runtime error) for an app that never mounted
+      `withRequestLog`.
+- [x] **Mounted FIRST**, before CORS, so a CORS rejection is logged and correlated too — see
+      `createApp`'s updated middleware-order doc comment.
+- [x] **Regression test — `ccp/api/test/requestLog.test.ts`** (6 tests, through the REAL
+      `createApp`, not a stub): the header is present and UUID-shaped; two requests get two
+      different ids; a client-supplied id is ignored; a request WITH a secret-shaped query
+      string produces a log line that names method/path/status/latency/id and — asserted
+      directly, not just by omission — never contains the secret value or `token=` anywhere
+      in anything logged; a non-2xx (an unauthenticated `GET /requests`) is logged with its
+      real status, the exact case this finding says was previously invisible; and a
+      synthetic 500 produces an access-log line and a fault-log line carrying the SAME id —
+      the correlation property this finding is actually about, not just "a log line exists".
+- [x] **Assert the setup fired (L-1).** The query-string test asserts the secret is absent
+      from the ENTIRE captured log output, not merely that the one expected line matches a
+      pattern — a broken redaction that leaked the secret into a DIFFERENT line would still
+      have failed the format-match assertion for an unrelated reason otherwise.
+- [x] **Negative test confirmed.** With `middleware/requestLog.ts` moved aside and its
+      wiring in `index.ts`/`errors.ts`/`log.ts`/`appEnv.ts` reverted, the suite fails to
+      even load (`Failed to load url ../src/middleware/requestLog` — the module the test
+      imports no longer exists), which is as unambiguous a failure as a suite can produce.
+      Restored; 6/6 green, and the full api suite unaffected (105 files / 1450 passed).
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json &&
+      npx vitest run` — 105 files, 1450 passed, 1 skipped (unrelated).
