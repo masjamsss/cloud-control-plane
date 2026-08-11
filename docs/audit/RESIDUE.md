@@ -84,6 +84,22 @@ already gets.
 
 ## tracked — an open finding covers it
 
+### R-87 · The submit quota still walks the whole request collection
+*Residue on **CONC-12**.*
+**Tracked by: PERF-10.**
+
+`claimSubmitSlot` fixed *when* the count is decided, not *how much it costs*: it still reads
+every request row in the project on every submit, exactly as `checkSubmitRateLimit` did. That
+cost is PERF-10's, and it is unchanged here.
+
+Recorded because the two interact, and the interaction is the trap. PERF-10's own triage note
+already says a maintained counter "must stay correct under the concurrency CONC-12 describes" —
+and the reason CONC-12 was **not** fixed with a counter is that `maxOpen` has no correct
+decrement point (see the fix entry). So whatever PERF-10 lands, the gate row is the
+serialisation point it has to keep: an index or counter that answers the caps faster still has
+to ride in the submit's own transaction, guarded on a value read before it, or the check
+becomes check-then-insert again with a faster check.
+
 ### R-6 · The bundle's landed-but-untriggered half state
 *Residue on **ERR-2**.*
 **Tracked by: ERR-12.**
@@ -99,6 +115,29 @@ retry smarter.
 
 **These are the ones that get lost.** Each needs a finding raised or an explicit decision to
 accept.
+
+### R-85 · Most `transactWithAudit` callers still return the generic `STATE_CONFLICT`
+*Residue on **CONC-15**, **API-14**.*
+
+The helper now says *which* condition failed, and four call sites map that to their own 409:
+enroll → `DUPLICATE_USERNAME`, team create → `DUPLICATE_TEAM`, instance PUT →
+`INSTANCE_STALE`, scan-job status → `STATE_CONFLICT`. Every other guard-carrying caller —
+project registration (which has a `DUPLICATE_PROJECT` code and a pre-check that returns it),
+the drift proposal-row races, the onboard-token and dual-control writes — takes the default.
+
+That default is honest where the old one was not: `STATE_CONFLICT` ("conflicting state,
+re-read") is true of every domain-condition failure, whereas `CHAIN_CONTENTION` ("the audit
+chain is busy; please retry") was a lie that invited a retry no retry could satisfy. So this is
+a smaller gap than the one that closed, not a new one — but it is the same gap in kind, and the
+same rule states the target: **the concurrent answer should be the sequential answer**, i.e. a
+racing client should see the code it would have seen had it simply been second.
+
+Not fixed here because each remaining site lives in another batch's files (`routes/projects.ts`,
+`routes/drift.ts`'s proposal lane, `domain/dualControl.ts`) and each needs its own race test to
+close honestly. Untracked: no open finding names it, and it wants either a finding or a
+deliberate "generic is good enough" decision — the audit's own habit of reading the smallest
+bucket applies, since the list of sites is short and enumerable from the `transactWithAudit`
+call sites that carry a condition.
 
 ### R-25 · `ENGINEER_REVIEW_REQUIRED` is defined and emitted by nothing
 *Residue on **DOC-4**, **DOC-2** — both now closed, which is how this became untracked.*
@@ -318,6 +357,73 @@ acceptable target — a floor nobody remembers the reason for is a floor that qu
 ceiling.
 
 ## accepted — deliberately permanent
+
+### R-86 · `transactWithAudit`'s diagnosis is a re-read after the fact, not a proof
+*Residue on **CONC-15**.*
+
+The store aborts the batch and reports one `ConditionError`; the helper then walks the caller's
+conditions against the store **as it stands a moment later**. State can move again in between,
+so the diagnosis is an inference, not a record of what the transaction actually evaluated.
+
+**Accepted**, because the imprecision only ever falls one way and that way is safe. A domain
+condition that failed but has since become true again (a delete, an ABA) is reported as chain
+contention — the *retryable* answer, which sends the caller back for a fresh read, which is what
+it needed anyway. The converse cannot happen: a condition that is false now was either false
+then or has just become false, and "re-read, something moved" is true in both readings. Nothing
+is replayed on the strength of the diagnosis — a value-guarded write is refused either way — so
+a wrong guess costs a round trip, never a lost update.
+
+Removing the imprecision needs the store seam to report *which* condition aborted a batch
+(DynamoDB's `TransactWriteItems` does, per-item, via `CancellationReasons`). That is a change to
+`ConfigStore` and to both implementations, for a strictly better error message on a path that is
+already correct — worth doing if the seam changes for another reason, not on its own.
+
+### R-88 · The submit gate row is unaudited, never swept, and monotonic
+*Residue on **CONC-12**.*
+
+`P#<project>#SUBMITGATE#<requester>` carries one attribute, `seq`, incremented by every
+successful submit. It is written inside the audited transaction but is not itself an audit
+subject; it is never deleted, including when the account it names is deleted; and `seq` only
+ever grows.
+
+**Accepted**, deliberately, for reasons that are properties rather than omissions:
+
+- **Unaudited on purpose.** The governance fact is the submission, and `request-submit` already
+  records it. A counter whose only meaning is "something collided here" is not evidence, and
+  auditing it would put a row on the chain for every submit that says nothing the submit entry
+  does not.
+- **Bounded by construction.** One row per (project, account) — the same cardinality as the
+  account directory, and unrelated to traffic. There is nothing for a sweep to reclaim that a
+  deleted account's own cleanup would not reclaim more honestly, so the alternative is a sweeper
+  with a race of its own.
+- **Monotonic is the point.** The value is never read for meaning, only compared; it exists to
+  be different after somebody else's write. A wrapping or resettable counter would weaken
+  exactly the property it is there for.
+
+The one thing this does mean: a store restored from a backup taken mid-flight can hold a `seq`
+lower than one an in-flight submit captured, which makes that submit's guard fail and its
+caller re-count. That is the correct outcome (re-count against restored data), and it is the
+same shape as every other version guard in the store after a restore.
+
+### R-89 · A settlement pass that loses to chain contention re-attempts on every request
+*Residue on **CONC-13**.*
+
+When a settlement pass fails open without the marker being present, it deliberately does **not**
+cache `confirmedSettled`, so the next request runs the whole pass again — a directory read plus
+a per-bare-row audited write attempt — until one pass completes and stamps the marker.
+
+**Accepted.** The alternative is the bug the fix exists to avoid: caching on the strength of the
+error alone marks a half-settled store settled for the life of the process, with no marker for a
+restart to notice and no request left that will re-attempt. Re-attempting is only "wasteful"
+while the store is genuinely unsettled, which is exactly when the work is owed, and it is
+first-boot-only — the marker short-circuit is the very first thing `runSettlement` does, so a
+settled store pays one `get`.
+
+The bound worth stating: the window is one cold instance's first requests against a legacy
+store, and each attempt is idempotent (retro-register is `ifNotExists`, materialization skips
+any row that already has `roles`). If a deployment were ever found sitting in that window for
+long, the cause would be sustained contention on the `@control` chain — a different problem,
+with a different fix, and one this ledger entry is meant to make legible rather than mask.
 
 ### R-7 · A fix landed inside another finding's commit
 *Residue on **CONC-14**.*
