@@ -5014,3 +5014,110 @@ leak."
 - [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/fileStore.test.ts
       test/snapshotWriteAtomic.test.ts` (14 passed); full suite `npx vitest run` (102 files, 1421
       passed); `npx tsc --noEmit` clean.
+
+## ARCH-6
+
+*The backend depends on frontend-package internals; the shared-contract layer is a path
+alias plus a hand-synced copy.*
+
+**This is ARCH-6's declared partial, taken deliberately, and the reasoning is the point of
+this entry.** The triage line reads "Until the package lands, an allowlist lint + a
+copy-parity test is the acceptable partial". What landed is the partial: the `@app-lib`
+seam is now checked instead of commented, and the `planSummary` copy is pinned to its
+canonical source. `ccp/shared` was **not** extracted — see the residue and the paragraph
+below for why that was the right call rather than the cheap one.
+
+**What the hazard actually is, measured rather than restated.** `ccp/api/tsconfig.json`
+maps `@app-lib/* -> ../app/src/lib/*`. tsc follows the alias, but a bare specifier inside
+one of those app files (`import { z } from 'zod'`) resolves **from that file's own
+directory** — `ccp/app/src/lib/`, walking up through `ccp/app/node_modules` — and never
+looks in `ccp/api/node_modules`. `ccp-api.yml` runs `npm ci` only in `ccp/api`, so in CI
+every one of those directories is empty. The api depends on zod itself, which is exactly
+what makes the mistake so easy: the import reads as obviously fine from the api's own
+`package.json`, and it works on any machine where `ccp/app/node_modules` happens to exist.
+
+Reproduced by moving `ccp/app/node_modules` aside and importing a zod value through the
+alias, with a deliberately nonsense property access on the inferred type:
+
+| | dev shape (app deps present) | CI shape (app deps absent) |
+| --- | --- | --- |
+| nonsense access `s.thisFieldDoesNotExist` | `TS2339 Property … does not exist on type '{…}'` | **no error at all** |
+| errors reported | 1, in the api's own file | 2, both in `../app/src/lib/planSummary.ts` |
+
+That is the finding's word "silently", confirmed: `z` is unresolved, so `z.object(...)` is
+`any`, so `z.infer<...>` is `any`, and **the api stops typechecking its own code against
+the contract entirely**. The build does go red today — but for the wrong reason, naming a
+file outside the api's `include` and outside its ownership. It goes red only because tsc
+still reports diagnostics in that imported file; anything that stops it doing so (a
+`@ts-nocheck`, an `exclude`, a `.d.ts` boundary under `skipLibCheck`) converts the red into
+a green that is checking nothing. The api-local copy of `planSummary` exists precisely
+because of this, and carried a "keep this edited in lockstep" comment and nothing else.
+
+**RULE A is stated as an invariant, not as "don't import zod" (L-25).** No file the api
+reaches through the alias may import a bare specifier *at all* — relative imports, other
+aliased app files and `resolveJsonModule` JSON all resolve without any `node_modules`. It
+is checked over the **transitive** closure, because the import that breaks the api need not
+be in the file the api names: `@app-lib/policy` is dependency-free itself and pulls in
+`lib/projectScope.ts`, which is where a stray dependency would actually sit. The closure is
+9 entry specifiers over 17 files today, with zero bare imports.
+
+**RULE B is the allowlist.** The finding's second impact — "the app's `lib/` cannot be
+refactored without auditing the api's import graph" — is true because that graph was
+written down nowhere. It is now nine reviewed entries in one place, and it fails in both
+directions: reaching an unlisted module fails, and an allowlist entry nobody imports any
+more also fails, because a list that over-states the coupling stops being read.
+
+**Why `ccp/shared` was not extracted here.** Not difficulty — blast radius, and a specific
+collision. The extraction moves `permissions`/`policy`/`redact`/`dependsOn`/`requestStatus`
+out of `ccp/app/src/lib/`, which is imported by ~55 feature components; it needs a new
+workspace package, two regenerated lockfiles, a changed `api/Dockerfile` vendoring step,
+and edits to the CI path filters, `verify:safety` and the publish-gate scan scopes — every
+one of which is a place where a mistake fails *silently* rather than loudly. `B-O13` is
+concurrently touching `ccp/app/src/lib/` in a different wave, so a file-moving refactor of
+that directory from this lane would collide with it directly. The design deserves a human
+review before it lands, and the partial removes the reason it was urgent: the two failure
+modes that made the seam dangerous (a silent typecheck collapse, a silently drifting copy)
+are now loud. Left un-extracted, deliberately, as **R-60**.
+
+- [x] **Defect reproduced first** — the two-column table above; both columns run against the
+      real tree with a probe file, `ccp/app/node_modules` moved aside to reproduce CI.
+- [x] **Cause, not symptom** — the cause is that the alias imposes a constraint
+      (dependency-free, transitively) that only comments stated. RULE A states it as a
+      checkable invariant over the closure. The `planSummary` copy is *kept* — it is the
+      correct answer for a zod schema at this seam — and pinned instead.
+- [x] **Regression tests** — `ccp/api/test/appLibBoundary.test.ts` (3) and
+      `ccp/api/test/planSummaryCopyParity.test.ts` (3). Both live in the api suite, which is
+      the job that breaks; `ccp-api.yml`'s path filter already includes `ccp/app/src/lib/**`,
+      so editing a shared file runs them.
+- [x] **Negative test** — five injections, each watched to fail:
+      **(1)** `import { z } from 'zod'` added to `lib/requestStatus.ts` (a closure file) →
+      RULE A fails with ``lib/requestStatus.ts imports 'zod'``. **The same injection left
+      `test/statusVocabulary.test.ts` — which imports that very file — green at 8 passed**,
+      which is the coverage this check adds.
+      **(2)** an api import of `@app-lib/datetime` → RULE B fails naming it (and RULE A fires
+      too, because `datetime.ts` reaches a package: the transitive rule earning its keep).
+      **(3)** `MAX_ATTR_CHANGES` 80→90 in the api copy only → parity fails.
+      **(4)** a field added to the canonical `PlanCountsSchema` only → parity fails.
+      **(5)** the canonical file's bidirectional drift guard removed → the exemption test
+      fails. In **all three** of (3)–(5) the pre-existing `test/planSummary.test.ts` stayed
+      green at 8 passed — it exercises behaviour and only ever loads one of the two files,
+      exactly as the finding says.
+- [x] **Assert the setup fired (L-1)** — every assertion here has the form "nothing bad in
+      this set", so each one passes vacuously on an empty scan. Pinned: the entry-point scan
+      finds >5 specifiers including a known one; the closure resolves every edge (an
+      unresolvable import is an *unchecked* edge, not an absent one) and exceeds 10 files;
+      the closure contains `lib/projectScope.ts`, which **no api file imports** — it is
+      reachable only transitively, so if that stops holding the walker has stopped walking
+      and RULE A is only checking the first hop, where the hazard already is not. For parity:
+      both files must yield >10 declarations, and the extractor must capture *bodies* — a
+      bracket-balancing bug truncating at the first line would still populate the map and
+      every schema would then compare equal as `const X = z.object({`.
+- [x] **Failure is loud** — each message names the offending file and specifier and says
+      what to do about it.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full api
+      suite 104 files / 1427 passed.
+
+**Residue:** the `ccp/shared` package does not exist; the api still depends on
+frontend-package internals through a path alias, and `planSummarySchema.ts` is still a copy
+(**R-60**). The redaction/toolchain helper duplication that triage parks on ARCH-6 (`R-11`)
+is unaddressed for the same reason (**R-60** covers it).

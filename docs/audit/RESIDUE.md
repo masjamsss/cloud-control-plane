@@ -317,6 +317,34 @@ Recorded here so the low floor reads as a measurement of a known gap rather than
 acceptable target — a floor nobody remembers the reason for is a floor that quietly becomes the
 ceiling.
 
+### R-60 · `ccp/shared` does not exist; the api still reaches into the app package
+*Residue on **ARCH-6**.*
+
+ARCH-6 asked for a real workspace package (permissions, policy, redact, dependsOn,
+planSummary, the shared types) installed by both CI jobs. What landed is the partial its own
+triage line blesses — an allowlist + a transitive dependency-free rule over the `@app-lib`
+closure, and a parity test pinning the `planSummary` copy. The alias and the copy remain.
+
+**Why it was not taken.** Not difficulty — blast radius, in a place where mistakes are quiet.
+The extraction moves files out of `ccp/app/src/lib/`, which ~55 feature components import; it
+needs a new package, two regenerated lockfiles, a changed `api/Dockerfile` vendoring step, and
+edits to the CI path filters, `verify:safety` and the publish-gate scan scopes. `B-O13` was
+concurrently working in `ccp/app/src/lib/`, so a file-moving refactor of that directory from
+the ARCH-6 lane would have collided with it head-on.
+
+**What the partial actually bought, so the deferral is judged on its merits.** The two failure
+modes that made the seam dangerous were both silent and are now loud: a package import
+anywhere in the api's transitive alias closure fails a test that names the file and the
+specifier (before, it collapsed the api's types to `any` while reporting errors only against a
+file in `ccp/app`), and any drift between the two `planSummary` copies fails (before, the only
+test loaded one of the two files and stayed green through every drift shape tried). The
+argument for extracting the package is now evolvability, not safety.
+
+**Not currently tracked by any finding id** — ARCH-6 is closed on its partial. A follow-up
+finding should be opened for the extraction, and it should also absorb **R-11** (the
+`requireToolchain.ts` duplication), which exists for the same reason: two packages, two
+`node_modules`, no shared home.
+
 ## accepted — deliberately permanent
 
 ### R-7 · A fix landed inside another finding's commit
