@@ -205,8 +205,16 @@ lost — or restored from a different backup generation than — the store JSON)
 ```json
 { "ready": false, "storeLoaded": true, "accounts": 0,
   "chains": [{ "projectId": "sample", "count": 0, "verified": true }],
+  "storeItemCount": 41,
   "reasons": ["store holds 0 accounts — an emptied/wiped store is not ready ..."] }
 ```
+
+`storeItemCount` (ARCH-9) is the total row count the store currently holds —
+informational telemetry, never a readiness gate. Nothing here compacts or
+archives: every account, session, request, and per-project audit/drift entry
+accretes forever, so this is the number to alert an operator on (an external
+threshold — this API does not itself flag "too big") before write latency
+starts to reflect it. See "Scaling & the single-process invariant" below.
 
 Both probes are unauthenticated (no session required).
 
@@ -227,3 +235,37 @@ npx tsx scripts/bench.ts --scale 8000 --store both --concurrency 32
 The bench boots the real app against a deterministically seeded store and reports
 p50/p95/p99 plus concurrent throughput per endpoint, for the MemoryStore and the
 FileStore. Run it before and after a change with `--json` to A/B a diff.
+
+## Scaling & the single-process invariant (ARCH-9)
+
+**Run exactly one `ccp-api` process against one data directory.** This is
+enforced TODAY for the store itself (below), but four other pieces of
+correctness-relevant state live only in this ONE process's memory, with no
+cross-process visibility at all — a second process, or the planned DynamoDB
+`ConfigStore` implementation (which is explicitly designed to allow more than
+one process, unlike `FileStore`), would silently diverge on every one of them,
+with no error anywhere:
+
+| In-process singleton | Where | What it does | What breaks with >1 process |
+| --- | --- | --- | --- |
+| The store's single-writer lock | `store/fileStore.ts`, `store/dataLock.ts` (CONC-7/DATA-9) | `FileStore` rewrites the ENTIRE snapshot from its private in-memory map on every mutation; a pid/host lock file REFUSES a second process from opening the same data file at all. | Nothing — this is the one singleton already structurally enforced. A `DynamoDB` store has no such lock (rows are independently writable), so this protection does **not** carry over automatically; the other four rows in this table are the reason it still needs to. |
+| Known-projects routing cache | `projects.ts` (`KNOWN`, `hydrated`) | Every request's `x-ccp-project` binding check and account-scope validation reads this in-process `Set`, hydrated lazily and refreshed only by the SAME process that handled a registry write (project completed, archived, deregistered). | A second process's cache never sees the first process's registry write. It keeps routing to (or refusing) a project by a stale ready/archived state — wrong-tenant access decisions with no error, since nothing about the check itself fails. |
+| Upload-lane rate-limit buckets | `middleware/rateLimit.ts` (`uploadBuckets`) | A per-tokenId token bucket that throttles `PUT /projects/:id/data` BEFORE the expensive argon2id verify — deliberately in-memory (the doc comment there is explicit: "the cost being defended is THIS process's argon2 work"). | Each process enforces its own independent quota — an attacker (or a misbehaving CI job) spread across N processes gets N× the intended burst capacity. Not a correctness bug (the design already accepts "a restart forgets counters"), but the throttle's real ceiling silently becomes N times looser than configured. |
+| Drift-check / drift-generation in-flight guards | `domain/driftCheck.ts` (`inFlightProjects`), `domain/driftProposals.ts` (its own `genState`-shaped guard) | A `Set<projectId>` refusing a second concurrent trigger for the same project — "one in flight per project", the same shape as the bundle/scheduler reentrancy guards. | Two processes can each believe they hold the ONLY in-flight run for a project and both trigger the operator's shell command concurrently — the guard's whole purpose (never double-fire an external workflow_dispatch/generation command) is defeated with zero indication either run knew about the other. |
+| Scheduler tick reentrancy flag | `domain/apply/loop.ts` (`inFlight`, inside `maybeStartSchedulerLoop`) | Skips a `setInterval` tick if the previous one is still running, so a slow `executor.apply` never overlaps itself. | Lower risk than the others: this flag is explicitly "defense-in-depth atop the scheduler's own claim-first single-apply guard" (a CAS on the request row itself, which IS safe across processes/DynamoDB). Two processes each ticking independently would duplicate WORK (both scan `knownProjects()` and attempt claims) but not duplicate an APPLY — the claim's `ifEquals` guard is what actually prevents that, not this flag. |
+
+**Before any of this changes** (a second replica, a load balancer fronting
+more than one `ccp-api`, or the DynamoDB `ConfigStore` implementation the
+seam already anticipates — `store/configStore.ts`'s own doc comment): every
+row above needs either a shared/coordinated replacement (the routing cache
+and the drift in-flight guards are the two that actually need one — a TTL,
+a pub/sub invalidation, or a store-level claim analogous to the scheduler's
+own row CAS) or a documented decision that per-process behavior is
+acceptable (plausible for the rate-limit buckets, whose design already
+tolerates a coarser, restart-losable quota).
+
+Audit-chain archival/compaction (so `storeItemCount` above stops growing
+unbounded — month-partitioned keys already anticipate this) is real design
+work belonging to whichever change actually introduces a second process or
+the DynamoDB backend, not to this note; recorded here as a known
+prerequisite, not implemented by it.

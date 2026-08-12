@@ -32,6 +32,11 @@ export type Readiness = {
    * scope. Zero is a valid, ready state (a founded, freshly-blank instance). */
   estates: number;
   chains: ChainReadiness[];
+  /** ARCH-9 — how many rows the store currently holds, or `null` when the backend
+   * cannot answer cheaply ({@link ConfigStore.approxItemCount}). Informational
+   * only: growth here is a trend to alert on externally, never a readiness gate
+   * (a large store is not itself a fault). */
+  storeItemCount: number | null;
   /** Human-readable reasons the probe is not ready (empty when ready). */
   reasons: string[];
 };
@@ -94,7 +99,12 @@ export async function readiness(store: ConfigStore, projectDataRoot: string = re
     const durability = store.durabilityFault?.() ?? null;
     if (durability !== null) reasons.push(durability);
 
-    return { ready: reasons.length === 0, storeLoaded: true, accounts, estates, chains, reasons };
+    // ARCH-9 — informational only (see the field's own doc comment): never added
+    // to `reasons`, a big store is not a fault, just a trend worth an operator's
+    // own external alert threshold.
+    const storeItemCount = store.approxItemCount?.() ?? null;
+
+    return { ready: reasons.length === 0, storeLoaded: true, accounts, estates, chains, storeItemCount, reasons };
   } catch (e) {
     // A throwing store (unreadable/corrupt beyond load) is the least-ready state of all.
     return {
@@ -103,6 +113,7 @@ export async function readiness(store: ConfigStore, projectDataRoot: string = re
       accounts: 0,
       estates: 0,
       chains: [],
+      storeItemCount: null,
       reasons: [`store read failed: ${(e as Error).message}`],
     };
   }

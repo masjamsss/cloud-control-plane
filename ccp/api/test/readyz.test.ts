@@ -192,3 +192,56 @@ describe('/readyz cross-checks dataActive / drift pointer rows against the disk 
     expect(body.reasons).toEqual([]);
   });
 });
+
+/* ── ARCH-9: store-size telemetry (informational, never a readiness gate) ──── */
+
+describe('/readyz reports storeItemCount (ARCH-9) — never a gate, just a number', () => {
+  it('MemoryStore.approxItemCount tracks puts and deletes exactly', async () => {
+    const store = new MemoryStore();
+    expect(store.approxItemCount()).toBe(0);
+    await store.put({ PK: 'T', SK: 'a' });
+    expect(store.approxItemCount()).toBe(1);
+    await store.put({ PK: 'T', SK: 'b' });
+    expect(store.approxItemCount()).toBe(2);
+    await store.put({ PK: 'T', SK: 'a' }); // overwrite, not a new row
+    expect(store.approxItemCount()).toBe(2);
+    await store.delete('T', 'a');
+    expect(store.approxItemCount()).toBe(1);
+  });
+
+  it('grows as the store grows, surfaced through /readyz', async () => {
+    const store = new MemoryStore();
+    await seed(store);
+    const app = createApp(store);
+    await app.request('/healthz'); // settle first, same pattern as the DATA-10 block above
+
+    const before = await (await app.request('/readyz')).json();
+    expect(typeof before.storeItemCount).toBe('number');
+    expect(before.storeItemCount).toBeGreaterThan(0);
+
+    for (let i = 0; i < 5; i++) {
+      await record(store, 'sample', { action: `growth-${i}`, actor: 'putra', targetType: 'session', targetId: 'putra' });
+    }
+    const after = await (await app.request('/readyz')).json();
+    // >= rather than a pinned exact delta: the FIRST audit entry for a project also
+    // creates its chain-head row (a second new item), so the exact delta depends on
+    // audit-internal bookkeeping this test has no business pinning — "it grew, by at
+    // least one new row per record()" is the property that actually matters here.
+    expect(after.storeItemCount).toBeGreaterThanOrEqual(before.storeItemCount + 5);
+  });
+
+  it('is null, never thrown or a fault, for a store that does not implement approxItemCount', async () => {
+    // The same optionality durabilityFault already relies on: a hypothetical
+    // DynamoDB-shaped store with no cheap count implements nothing, and readiness
+    // must not treat that as a reason to refuse.
+    const bareStore = new MemoryStore();
+    (bareStore as unknown as { approxItemCount?: unknown }).approxItemCount = undefined;
+    await seed(bareStore);
+    const app = createApp(bareStore);
+    const ready = await app.request('/readyz');
+    expect(ready.status).toBe(200);
+    const body = await ready.json();
+    expect(body.storeItemCount).toBeNull();
+    expect(body.reasons).toEqual([]);
+  });
+});
