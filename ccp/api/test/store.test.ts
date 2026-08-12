@@ -8,7 +8,10 @@ const ULID = '01J0000000000000000000000A';
 
 /* One valid fixture per §2.1 entity, keyed via the helpers, and the field to drop
  * to prove a required field is enforced. */
-const schemaCases: Array<{ name: string; schema: z.ZodTypeAny; valid: Item; drop: string }> = [
+/* Reused by test/storeValidate.test.ts (DATA-5) — one real valid row per entity, so the
+ * validator's classifier is tested against the SAME fixtures that prove each schema
+ * itself, rather than a second hand-typed set that could silently drift from these. */
+export const schemaCases: Array<{ name: string; schema: z.ZodTypeAny; valid: Item; drop: string }> = [
   {
     name: 'AccountItem',
     schema: S.AccountItem,

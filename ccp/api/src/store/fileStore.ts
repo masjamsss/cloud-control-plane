@@ -5,6 +5,8 @@ import { dirname, basename } from 'node:path';
 import { DurabilityError, type Item, type TransactWrite } from './configStore';
 import { DataLock } from './dataLock';
 import { MemoryStore } from './memoryStore';
+import { parseSnapshotItems, serializeSnapshot } from './snapshot';
+import { describeReport, validateMode, validateSnapshot } from './validate';
 
 /**
  * Durable, single-file `ConfigStore` for real deployments. It reuses MemoryStore's
@@ -141,7 +143,36 @@ export class FileStore extends MemoryStore {
         `ccp data file ${this.file} exists but is empty/whitespace — refusing to boot a silently-empty store (corrupt or half-restored snapshot). Remove the file to start fresh, or restore a valid snapshot.`,
       );
     }
-    this.importItems(JSON.parse(raw) as Item[]);
+    // DATA-5 / DATA-16 — one parser for the file format, shared with backup/restore
+    // (`snapshot.ts`), instead of a bare `JSON.parse(raw) as Item[]`. That cast is what
+    // made a non-array payload surface as an incidental `items.map is not a function`
+    // deep in the loader, and a `formatVersion` from a newer binary indistinguishable
+    // from no marker at all. `importItems` then enforces the key invariants per row.
+    const items = parseSnapshotItems(raw, `ccp data file ${this.file}`);
+    this.importItems(items);
+    this.reportValidation(items);
+  }
+
+  /**
+   * DATA-5 — run every loaded row through its entity schema and say so, loudly, when one
+   * does not match. `strict` refuses the boot instead; `off` skips the pass.
+   *
+   * Deliberately AFTER `importItems`: the structural check that decides whether the file
+   * can be indexed at all belongs to the index, and running the schema pass over rows we
+   * have already keyed means the report can name each one by its key.
+   */
+  private reportValidation(items: Item[]): void {
+    const mode = validateMode();
+    if (mode === 'off') return;
+    const report = validateSnapshot(items);
+    const lines = describeReport(report, `ccp data file ${this.file}`);
+    if (lines.length === 0) return;
+    if (mode === 'strict' && report.violations.length > 0) {
+      throw new Error(
+        `${lines.join('\n')}\n(CCP_STORE_VALIDATE=strict — refusing to boot on a store whose rows do not match their schemas.)`,
+      );
+    }
+    for (const line of lines) console.error(line);
   }
 
   override async put(
@@ -190,18 +221,32 @@ export class FileStore extends MemoryStore {
 
   /**
    * Write one snapshot covering every waiter registered so far. Claiming `waiters`
-   * and serializing happen in the SAME synchronous step, so no mutation can slip
+   * and taking the VIEW happen in the SAME synchronous step, so no mutation can slip
    * between "these callers are covered" and "this is the state we are writing" —
    * a mutation that lands during the await simply queues the next flush.
+   *
+   * CONC-8: the view is an array of the stored row objects in snapshot order — pointers,
+   * not copies, and taking it is O(rows) pointer work with no serialization at all. The
+   * expensive half (turning ~N MB of state into JSON) then happens in bounded pieces
+   * inside `writeAtomic`, which is what stops one durable write from occupying the event
+   * loop for as long as the database is big.
+   *
+   * That is only sound because a stored row is never mutated in place — every write
+   * REPLACES the object in the index (`MemoryStore.setItem`), and reads hand out clones.
+   * So this array keeps describing the store as it was at this instant however long the
+   * write takes, and a mutation landing mid-write is simply not in this snapshot, exactly
+   * as one landing mid-fsync was never in it. `test/fileStoreSnapshotYield.test.ts` pins
+   * that: it mutates the store DURING a flush and asserts the file matches the state at
+   * flush start, byte for byte.
    */
   private async flush(): Promise<void> {
     this.flushQueued = false;
     const covered = this.waiters;
     this.waiters = [];
     if (covered.length === 0) return;
-    const json = this.serializeItems();
+    const view = this.itemsInKeyOrder();
     try {
-      await this.writeAtomic(json);
+      await this.writeAtomic(view);
     } catch (e) {
       // DATA-3 — the batching makes this MORE important, not less: one failed snapshot
       // now covers every mutation that joined it, so a single failure can leave many
@@ -217,20 +262,31 @@ export class FileStore extends MemoryStore {
     for (const w of covered) w.resolve();
   }
 
-  private async writeAtomic(json: string): Promise<void> {
+  /**
+   * CONC-8: writes `items` in the bounded chunks `serializeSnapshot` yields, handing
+   * control back to the event loop between them, instead of handing the filesystem one
+   * `O(store)` string built by a single synchronous `JSON.stringify`. The chunk COUNT is
+   * what bounds the per-turn cost, not the store size — a 10-row store yields once, a
+   * 400k-row store yields ~1,600 times, and every other queued turn gets a slice of each
+   * of those gaps instead of waiting behind the whole write.
+   */
+  private async writeAtomic(items: Item[]): Promise<void> {
     const dir = dirname(this.file);
     await mkdir(dir, { recursive: true });
     const tmp = `${this.file}.tmp-${process.pid}-${randomBytes(6).toString('hex')}`;
     // ERR-10: the temp file used to leak on any failure after it was created. The cleanup
     // spans EVERY step from here to the rename, not just the write — a failing `rename`
     // (a directory sitting where the data file belongs, a cross-device target) leaks just
-    // as surely as a failing `writeFile`, and is the case a narrower catch misses. Under
+    // as surely as a failing write, and is the case a narrower catch misses. Under
     // sustained ENOSPC — the very condition that makes writes fail — one leaked file per
     // attempt fills the directory that recovery depends on.
     const fh = await fsOpen(tmp, 'w');
     try {
       try {
-        await fh.writeFile(json, 'utf8');
+        for (const chunk of serializeSnapshot(items)) {
+          await fh.write(chunk, null, 'utf8'); // current position — sequential, never a truncating re-open
+          await yieldToEventLoop();
+        }
         await fh.sync(); // flush file bytes to disk before we swap it in
       } finally {
         await fh.close();
@@ -248,6 +304,16 @@ export class FileStore extends MemoryStore {
     // worse than the narrow window it closes.
     await syncDir(dir);
   }
+}
+
+/**
+ * CONC-8 — hand control back to the event loop. `setImmediate` (not a zero-delay
+ * `setTimeout`, which the timer wheel can coalesce and delay under load) runs after I/O
+ * callbacks and before the next timer phase, so a chunked write actually interleaves with
+ * other pending work instead of just changing which microtask queue the whole write sits in.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 /**
