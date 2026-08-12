@@ -157,7 +157,7 @@ Failures that produce no signal — swallowed rejections, best-effort compensati
 - [x] ARCH-10 | medium | silent-failure | fixed:settlePendingExpiry writes a config-expire audit entry on every lazy expiry; test/dualControl.test.ts | 01-architecture.md | Unaudited governance transition: dual-control proposals expire silently
 - [ ] ARCH-9 | medium | silent-failure | open | 01-architecture.md | Single-process, single-file scaling ceiling with in-process singletons the planned DynamoDB path would silently break
 - [x] CI-9 | medium | silent-failure | fixed:scripts/ci/check-workflow-safety.sh (no job gated on vars.CI_RUNNER) | 13-ci-cd.md | The recurring data lane keeps the silent-skip gate its own sibling workflow documents as a trap
-- [ ] DATA-5 | medium | silent-failure | open | 03-data-integrity.md | Store rows are not validated against the schemas on load: corrupt-but-parseable state is accepted silently
+- [x] DATA-5 | medium | silent-failure | fixed:b385423 | 03-data-integrity.md | Store rows are not validated against the schemas on load: corrupt-but-parseable state is accepted silently
 - [ ] ERR-6 | medium | silent-failure | open | 09-error-handling.md | `executor.replan()` failures are an unmodeled halt: unbounded silent retry, and they abort the rest of the project's due list
 - [x] FE-8 | medium | silent-failure | fixed:loadAuditRows returns {rows, cursor}; AuditHistory adds a "Load older events" control + honest "N events loaded ... more available" caption | 05-frontend-flows.md | AuditHistory silently truncates to the first page (100 entries) — the cursor is fetched and thrown away
 - [ ] OPS-6 | medium | silent-failure | open | 10-reliability-operations.md | Plain `compose up` (including every self-update cycle) silently strips the armed overlay
@@ -238,10 +238,10 @@ Durability, rollback, schema validation on load, and store-seam fidelity against
 - [x] DATA-6 | medium | data-persistence | fixed:fileStore.ts's directory fsync (ERR-10) was already in place; extended the identical syncDir pattern to snapshot.ts's writeFileAtomic (deliberately duplicated, not imported — it stays standalone for the backup/restore scripts) and to the 3 disk writers the recommendation names: projectData.ts, drift.ts, driftProposals.ts | 03-data-integrity.md | `rename` durability is not guaranteed: no directory fsync after the atomic swap
 - [x] ERR-10 | medium | data-persistence | fixed:0d4c3a4 | 09-error-handling.md | FileStore persist failure leaves memory ahead of disk: the client gets a 500 for a write that took effect
 - [x] UI-8 | medium | data-persistence | fixed:toRows splits a change line on body.lastIndexOf(' -> ') instead of split(' -> '); the trim()-discards-indentation sub-claim did not reproduce against current code (indent is always captured before trim runs) and was left unfixed, noted honestly | 06-frontend-ui-robustness.md | DiffView corrupts `~` change lines whose old value contains " -> "
-- [ ] API-17 | low | data-persistence | open | 02-api-correctness.md | Store-seam divergences from the DynamoDB semantics it mirrors
-- [ ] DATA-14 | low | data-persistence | open | 03-data-integrity.md | Seam-fidelity gaps between MemoryStore and the promised DynamoDB semantics
-- [ ] DATA-15 | low | data-persistence | open | 03-data-integrity.md | Map key concatenation with a space separator is aliasable in principle; client-controlled bytes reach PKs unconstrained
-- [ ] DATA-16 | low | data-persistence | open | 03-data-integrity.md | No format/version marker in the snapshot file; migration rests entirely on convention
+- [x] API-17 | low | data-persistence | fixed:d0b9898 | 02-api-correctness.md | Store-seam divergences from the DynamoDB semantics it mirrors
+- [x] DATA-14 | low | data-persistence | fixed:d0b9898 | 03-data-integrity.md | Seam-fidelity gaps between MemoryStore and the promised DynamoDB semantics
+- [x] DATA-15 | low | data-persistence | fixed:d0b9898 | 03-data-integrity.md | Map key concatenation with a space separator is aliasable in principle; client-controlled bytes reach PKs unconstrained
+- [x] DATA-16 | low | data-persistence | fixed:b385423 | 03-data-integrity.md | No format/version marker in the snapshot file; migration rests entirely on convention
 - [x] REM-1 | medium | data-persistence | fixed:domain/versionStamp.ts marker-guarded boot one-shot; test/versionStamp.test.ts | 15-remediation.md | The optimistic-concurrency guards cannot bite on rows written before they existed
 
 ## duplication
@@ -301,7 +301,7 @@ Red suites, silent skips, fixtures that pin the wrong premise.
 - [x] OPS-3 | high | blocking-io | fixed:domain/exec.ts replaces spawnSync with an awaited spawn; test/execNonBlocking.test.ts | 10-reliability-operations.md | Armed-lane commands run `spawnSync` on the event loop: the whole API freezes for up to 15 minutes and health checks flap
 - [x] PERF-2 | high | blocking-io | fixed:domain/exec.ts replaces spawnSync with an awaited spawn; test/execNonBlocking.test.ts | 11-performance-scalability.md | `spawnSync` on the serving thread: the API freezes for up to 10-15 minutes during bundle/drift work
 - [ ] API-8 | medium | stuck-state | open | 02-api-correctness.md | Freeze-held `kind:'now'` requests dead-end in AWAITING_DEPLOY_APPROVAL after the freeze lifts
-- [ ] CONC-8 | medium | data-persistence | open | 04-concurrency.md | Every authenticated request triggers a full-store snapshot write; snapshot serialization is synchronous O(store) on the event loop
+- [x] CONC-8 | medium | data-persistence | fixed:b385423 | 04-concurrency.md | Every authenticated request triggers a full-store snapshot write; snapshot serialization is synchronous O(store) on the event loop
 - [ ] FE-6 | medium | duplication | open | 05-frontend-flows.md | Api-mode submit gates read the advisory localStorage settings, not the server's — the freeze preview is dead and a stale local freeze silently blocks valid submits
 - [ ] PERF-12 | medium | scale-and-paging | open | 11-performance-scalability.md | Upload ingest does 4+ full canonical-JSON passes over the 16 MiB bundle synchronously on the event loop
 

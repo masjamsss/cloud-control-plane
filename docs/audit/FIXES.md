@@ -5014,3 +5014,211 @@ leak."
 - [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/fileStore.test.ts
       test/snapshotWriteAtomic.test.ts` (14 passed); full suite `npx vitest run` (102 files, 1421
       passed); `npx tsc --noEmit` clean.
+
+## API-17
+
+*Store-seam divergences from the DynamoDB semantics it mirrors.*
+
+- [x] **Defect reproduced first.** The store seam promises byte-identical semantics with the
+      DynamoDB backend that lands behind it, so a passing local test is evidence about
+      production — four behaviors broke that promise silently. `ifEquals` compared with `!==`,
+      reference identity for objects/arrays: every item a caller holds is a CLONE, so the first
+      guard on a map or list (settlement's `roles`, a policy shape) would have been a condition
+      that could never pass, reported as a lost race that never actually raced. A transact batch
+      could contain two writes to one item (applied last-wins here, rejected by real
+      `TransactWriteItems`) or more than 100 actions, neither refused. Clearing an attribute was
+      spelled `set: { GSI1PK: undefined }` — DynamoDB's SET cannot assign an absent value at
+      all, and the idiom did not even survive being STORED (`JSON.stringify` drops an
+      undefined-valued key, so a value cleared this way came back from a restart with the clear
+      silently gone — project-unarchive and the account-shape migration were the two live
+      instances). A row with `GSI1PK` and no `GSI1SK` was served by `queryGSI1` (sorted by SK)
+      and would be absent from a composite-key GSI entirely.
+- [x] **Fixed at each seam behavior, matching DynamoDB's own semantics exactly.** `ifEquals` now
+      compares by value — element-wise/order-sensitive for lists, key-order-insensitive for
+      maps. A batch with a duplicate key or over 100 actions is refused up front, before any
+      condition evaluates, so it aborts whole. `remove: [...]` replaces the `undefined`-field
+      idiom and round-trips exactly (the seam now refuses the old spelling). A row with
+      `GSI1PK` and no `GSI1SK` is refused on write.
+- [x] **Regression tests — `test/storeSeamFidelity.test.ts` (new, 19 cases).**
+- [x] **Negative test confirmed.** With the enforcement neutered (symbols kept so the tests
+      still compile), 12 of 19 fail — the object guard fails as `ifEquals failed on
+      ACCOUNT#sari/META.roles`, the invalid writes resolve instead of rejecting. The 7 that stay
+      green are the control cases: fail-closed guards, `remove`, and the JSON round-trip fact.
+- [x] **Evidence in the status line.** `cd ccp/api && npx vitest run` — 106 files, 1522 passed;
+      `npx tsc --noEmit` clean.
+
+## DATA-14
+
+*Seam-fidelity gaps between MemoryStore and the promised DynamoDB semantics.*
+
+- [x] **Same defect as API-17, closed once.** DATA-14 and API-17 are the same list from two
+      different reports (object-identity `ifEquals`, duplicate/oversized batches, the
+      `undefined`-clearing idiom, and the half-indexed GSI row) — see API-17's entry above for
+      the full account. Batched here per the runbook's own instruction ("fix once, close both").
+- [x] **The half-indexed-GSI half is additionally surfaced at runtime, not just refused on
+      write.** `store/validate.ts`'s `validateSnapshot` (DATA-5, below) flags any row carrying
+      `GSI1PK` with no `GSI1SK` as `halfIndexed` in its own report line — so a row that reached
+      disk before this fix landed (or via any future write path this seam does not cover) is
+      still named at boot, not just silently mis-served forever.
+- [x] **Evidence in the status line.** Same run as API-17 — `cd ccp/api && npx vitest run`, 106
+      files, 1522 passed.
+
+## DATA-15
+
+*Map key concatenation with a space separator is aliasable in principle; client-controlled
+bytes reach PKs unconstrained.*
+
+- [x] **Defect reproduced first.** The composite key `PK + NUL + SK` was unambiguous only
+      because "no key contains NUL" was a comment, not an enforced invariant. `idempotencyKey`
+      puts up to 200 client-chosen bytes into a PK (`requestIdempotencyKey`), so without an
+      enforced charset, actor `sari` + key `budi#x` builds the identical partition key to actor
+      `sari#budi` + key `x` — two different (requester, key) pairs aliasing to one marker row.
+- [x] **Fixed as an invariant enforced on every write, not a client-side validation
+      alone.** The NUL-separator invariant is now asserted structurally at the store seam
+      (`store/validate.ts`'s classifier and the seam-fidelity write guards from API-17 share the
+      same enforcement surface); the idempotency key itself is constrained to a charset that
+      keeps `IDEMPOTENCY#<actor>#<key>` injective, closing the aliasing pair described above.
+- [x] **Regression tests — `test/storeSeamFidelity.test.ts`** (the aliasing pair is one of the
+      19 cases; see API-17's entry for the shared negative-test evidence).
+- [x] **Evidence in the status line.** Same run as API-17/DATA-14 — 106 files, 1522 passed.
+
+## DATA-5
+
+*Store rows are not validated against the schemas on load: corrupt-but-parseable state is
+accepted silently.*
+
+- [x] **Defect reproduced first.** `FileStore.load` failed closed on an empty file and a JSON
+      syntax error, and on nothing else — a hand-edit, a half-restored backup, a partial write
+      by another tool, or a row from a version whose invariants this one predates all loaded and
+      flowed through unchecked `as XItem` casts straight into auth and domain logic. The failure
+      surfaced downstream as `NaN` lockout math or an `undefined` role deep inside a handler, not
+      as a refused boot naming the offending row.
+- [x] **The WARNING in the triage line is the actual design constraint, and it drove the
+      shape.** Tightening a schema against data that already exists fails a BOOT, not a test —
+      this shim was deferred once already (R-41: "the wrong shim fails a boot, not a test").
+      `store/validate.ts`'s `classifyRow` maps a stored `(PK, SK)` to the entity schema that
+      governs it as a RULE per key FAMILY (the exact key helpers already in `schema.ts`), not an
+      enumerated key list — a new row type is recognised the moment it starts using its own
+      helper, and a hand-keyed row with no helper (the adversarial/corrupt case) falls out as
+      `unknown` rather than quietly validating against a neighbour's schema by accident.
+- [x] **Reports loudly by default; refuses to boot only on request.** `CCP_STORE_VALIDATE` is
+      `warn` (default, boots and logs every violation naming the row/shape/failing fields),
+      `strict` (refuses to boot — an explicit operator choice), or `off`. An unrecognized value
+      falls to `warn`, not `off` — a typo in an ops variable must not silently disable the check
+      (L-1), and must not brick a boot either.
+- [x] **An unrecognized row is NOT a violation — the legacy passthrough, explicitly.** A store
+      written by a newer binary, or a row type retired before this one shipped, must still load;
+      `unknown` is counted and named in its own report line, distinct from `violations`, so "the
+      validator saw nothing" and "the validator understood nothing" can never look alike (L-1).
+- [x] **Regression tests — `test/storeValidate.test.ts` (new, 65 cases).** `classifyRow`'s
+      routing table tested exhaustively over every key family (26 cases, `it.each`, real
+      key-helper output — not hand-typed strings) plus two adversarial unrecognized shapes;
+      `validateSnapshot` reused against `test/store.test.ts`'s own `schemaCases` (exported for
+      this purpose, so the two files' fixtures cannot drift apart) rather than a second
+      hand-typed set; `validateMode`/`describeReport` unit tests; a `FileStore` integration
+      suite proving `strict`/`warn`/`off` each actually change boot behavior (spying on
+      `console.error`, not just reading the return value).
+- [x] **Negative test confirmed, on the wiring specifically (the part most likely to silently
+      break).** Removed `FileStore.load`'s call to `reportValidation(items)`: the strict-mode
+      test fails because `FileStore.open` no longer throws at all; the warn-mode test fails
+      because its `console.error` spy sees nothing. Restored; both green.
+- [x] **Test-suite hygiene, not a design change.** `test/setup.ts` now sets
+      `CCP_STORE_VALIDATE=off` globally — most of this suite's fixtures are deliberately
+      minimal (correct for what they test), which would otherwise make every `FileStore` restart
+      in the suite log a wall of violations under the new `warn` default.
+      `test/storeValidate.test.ts` sets the mode itself, per test, against fixtures built for
+      exactly that.
+- [x] **Evidence in the status line.** `cd ccp/api && npx tsc --noEmit -p tsconfig.json && npx
+      vitest run` — clean, 106 files / 1522 passed (up from 102/1421 pre-batch).
+
+## DATA-16
+
+*No format/version marker in the snapshot file; migration rests entirely on convention.*
+
+- [x] **Defect reproduced first.** The snapshot file was a bare JSON array with no marker at
+      all. The additive-optional-field migration story is real, but it has no way to say "this
+      file's invariants are newer than you" — an older binary reading a newer file would read it
+      blind, and because every write rewrites the whole store, would rewrite it in its own image
+      on the very next persist, silently losing whatever the newer format carried.
+- [x] **Fixed with one integer, in the direction that cannot self-heal.**
+      `snapshot.ts#SNAPSHOT_FORMAT_VERSION` is the format this binary WRITES and the highest it
+      can READ. `parseSnapshotItems` refuses a `formatVersion` newer than
+      `SNAPSHOT_FORMAT_VERSION`, naming the source file so an operator at 3am with a store that
+      will not boot knows which one. Bump this ONLY for a change an older binary must not
+      silently accept — an additive-optional field is explicitly not one of those, that is what
+      the additive discipline is already for.
+- [x] **The legacy bare array is read forever, unconditionally — not an error, version
+      0.** Every file written before this change still loads; `parseSnapshotItems` tries the
+      array shape first and only falls to the envelope parse for a non-array payload.
+- [x] **Regression tests — `test/snapshotFormat.test.ts` (new, 14 cases).** Legacy bare-array
+      read (including empty `[]`); the enveloped format at the current version; a
+      newer-than-this-binary `formatVersion` refused, naming the source; `formatVersion`
+      0/negative/non-integer/non-numeric all refused; a malformed envelope (`items` missing or
+      not an array) refused; a payload that is neither array nor object refused;
+      empty/whitespace refused (unchanged from pre-DATA-16 behavior); `serializeSnapshot`
+      round-trips byte-identically through `parseSnapshotItems` at every chunk size tried
+      (1/2/5/37/1000 for a 37-item store — the chunk boundary never lands mid-item); special
+      characters (newlines, quotes, backslashes, JSON-shaped string values) survive a
+      one-item-per-chunk split.
+- [x] **Two pre-existing tests broke reading the new envelope directly — fixed, not worked
+      around.** `test/backupRestore.test.ts` and `test/storeDurabilityFault.test.ts` both read
+      the on-disk snapshot file via a bare `JSON.parse(...) as Array<...>` to tamper/inspect
+      specific rows. Both now use `parseSnapshotItems` — the same parser `backup.ts`/`restore.ts`
+      already used before this fix, which reads either format — rather than hand-rolling a
+      second (now-stale) assumption about the file's shape.
+- [x] **Evidence in the status line.** `cd ccp/api && npx vitest run test/snapshotFormat.test.ts
+      test/backupRestore.test.ts test/storeDurabilityFault.test.ts` — 20+ passed; full suite 106
+      files / 1522 passed; `npx tsc --noEmit` clean.
+
+## CONC-8
+
+*Every authenticated request triggers a full-store snapshot write; snapshot serialization is
+synchronous O(store) on the event loop.*
+
+- [x] **Scope, stated honestly.** A prior fix (PR #6, referenced in the finding) already
+      coalesced concurrent WRITES — a burst of mutations shares one flush instead of one each.
+      What remained, and what this closes, is the SERIALIZE step itself: `flush()` called
+      `this.serializeItems()`, one synchronous `JSON.stringify` over the whole store, on every
+      single durable write regardless of how many mutations it covered. `R-32` (pre-existing,
+      not this finding's job) already tracks that sequential write LATENCY is still O(store
+      size); this fix is specifically about the event-loop-BLOCKING half.
+- [x] **Fixed by chunking the serialize step and yielding between chunks, not by changing WHEN
+      a write happens.** `snapshot.ts#serializeSnapshot` is a generator emitting bounded pieces
+      (256 items/chunk by default) of the SAME enveloped format DATA-16 defines.
+      `FileStore.writeAtomic` now iterates it with `await fh.write(chunk, ...)` +
+      `await yieldToEventLoop()` (a `setImmediate`, not a zero-delay `setTimeout` the timer
+      wheel can coalesce under load) between each piece, instead of handing the filesystem one
+      pre-built multi-MB string. The per-turn cost is now bounded by the chunk, not by how big
+      the database has grown.
+- [x] **Sound specifically because of an invariant `flush()` already had, stated explicitly in
+      its own doc comment now.** Claiming `waiters` and taking the point-in-time VIEW
+      (`itemsInKeyOrder()`, live references — never cloned, since a stored row is never mutated
+      in place, only replaced) happen in the SAME synchronous step, before any await. A mutation
+      landing anywhere in the now-much-longer write window is simply not in this snapshot — it
+      queues the NEXT flush, exactly as one landing mid-fsync always was.
+- [x] **Regression tests — `test/fileStoreSnapshotYield.test.ts` (new, 3 cases).** (1) The
+      point-in-time-view invariant, proven mechanically rather than by racing real timers: a
+      mutation is injected via a one-shot spy on the protected `itemsInKeyOrder`, running at the
+      EXACT synchronous instant the real view is taken — the completed flush's on-disk file is
+      asserted to exclude it even though it is already visible to a live in-memory read, and the
+      injected mutation's own (later) flush is then awaited and confirmed to land. (2) A 600-row
+      store (comfortably over one chunk) round-trips with none dropped and none duplicated
+      across a chunk boundary. (3) `writeAtomic` is proven to actually route through the shared
+      `serializeSnapshot` — call-count and argument assertions via a spy on the live module
+      binding — rather than a second, inline serializer that could silently drift from it (the
+      exact two-copies defect class this whole audit keeps finding).
+- [x] **Two negative-test designs were tried and discarded before landing on the one that
+      actually discriminates — documented because the discard is the useful part.** Counting
+      interleaved `Promise` microtask ticks around the write: discriminates nothing, because
+      Node's microtask queue always drains completely between any two real-I/O callbacks,
+      chunked or not. Counting interleaved `setImmediate` macrotask ticks: also discriminates
+      nothing at realistic row counts, because `writeAtomic`'s own non-chunking-related steps
+      (`mkdir`/`open`/`sync`/`close`/`rename`/directory-`sync`) are each already a separate real
+      async operation, giving a 20-deep timer chain enough turns to fully drain regardless of
+      chunking. The call-count spy on `serializeSnapshot` itself is what actually catches a
+      regression: reverting `writeAtomic` to `[...serializeSnapshot(items)].join('')` + one
+      `fh.write` — still byte-identical output, still passes tests (1) and (2) above — fails
+      test (3) with `expected "serializeSnapshot" to be called 2 times, but got 0 times`.
+- [x] **Evidence in the status line.** `cd ccp/api && npx vitest run
+      test/fileStoreSnapshotYield.test.ts` — 3 passed; full suite 106 files / 1522 passed; `npx
+      tsc --noEmit` clean.
