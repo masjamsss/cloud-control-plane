@@ -126,12 +126,13 @@ the Python test environment — both the workflow and `gate.sh` read the pin fro
 
 ### R-27 · The two literal-object token-walkers are still duplicated
 *Residue on **CTL-1**.*
-**Tracked by: CTL-10.**
 
-`internal/edit` and `internal/driftpropose` carry near-identical HCL object walkers. CTL-1's
-defect was fixed in **both** — the drift-adopt path would otherwise have stayed broken and
-looked maintained (L-8) — but the duplication itself is untouched, so the next divergence
-has nothing stopping it.
+**Resolved by CTL-10**: both walkers now live once in `internal/hclobj`
+(`ParseObject`/`BuildObject`/`KeyTokens`/`ValueToCty`). The duplication had, in fact, already
+produced a second divergence beyond CTL-1's by the time CTL-10 closed it — a mid-value comment
+survived a rebuild unmoved in `driftpropose`'s copy but was hoisted out of place in `edit`'s —
+confirming this residue's own prediction that "the next divergence has nothing stopping it."
+The next one now has something stopping it.
 
 ### R-28 · The path-filter check covers four named edges, not the import graph
 *Residue on **CI-3**.*
