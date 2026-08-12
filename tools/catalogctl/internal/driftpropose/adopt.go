@@ -2,17 +2,16 @@ package driftpropose
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 
 	"github.com/hashicorp/hcl/v2"
-	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/zclconf/go-cty/cty"
 
+	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/hclobj"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/hclops"
 )
 
@@ -254,80 +253,39 @@ func setNestedSingleBlock(block *hclwrite.Block, blockType, leaf string, val any
 
 // jsonToCty converts a decoded JSON value (string/float64/bool/nil/[]any/
 // map[string]any — encoding/json's own decode shapes) into the cty.Value
-// hclwrite.TokensForValue renders. Mirrors internal/edit/setattr.go's anyToCty
-// (unexported there, so re-implemented rather than imported) including its
-// int-vs-float distinction: a whole-numbered JSON float renders as "80", never the
-// surprising "80.0".
+// hclwrite.TokensForValue renders, via the CTL-10 shared walk (hclobj.ValueToCty)
+// — including its int-vs-float distinction: a whole-numbered JSON float renders
+// as "80", never the surprising "80.0". AllowNull: liveJson's nil genuinely means
+// "this attribute went to null" (F3/addendum A5), at any recursion depth.
+// AllowInt is deliberately left false: encoding/json never produces a native Go
+// int/int64, so seeing one (here or nested inside a list/map) means a caller
+// routed the wrong kind of value in — refusing it is a real bug-catcher, not
+// just a stricter type union for its own sake.
 func jsonToCty(v any) (cty.Value, error) {
-	switch n := v.(type) {
-	case nil:
-		return cty.NullVal(cty.DynamicPseudoType), nil
-	case string:
-		return cty.StringVal(n), nil
-	case bool:
-		return cty.BoolVal(n), nil
-	case float64:
-		if n == float64(int64(n)) {
-			return cty.NumberIntVal(int64(n)), nil
+	ctyVal, err := hclobj.ValueToCty(v, hclobj.ValueOptions{AllowNull: true})
+	if err != nil {
+		var ut hclobj.ErrUnsupportedType
+		if errors.As(err, &ut) {
+			return cty.NilVal, fmt.Errorf("unsupported liveJson value type %T", ut.Value)
 		}
-		return cty.NumberFloatVal(n), nil
-	case []any:
-		if len(n) == 0 {
-			return cty.EmptyTupleVal, nil
-		}
-		vals := make([]cty.Value, len(n))
-		for i, e := range n {
-			ev, err := jsonToCty(e)
-			if err != nil {
-				return cty.NilVal, err
-			}
-			vals[i] = ev
-		}
-		return cty.TupleVal(vals), nil
-	case map[string]any:
-		if len(n) == 0 {
-			return cty.EmptyObjectVal, nil
-		}
-		m := make(map[string]cty.Value, len(n))
-		for k, e := range n {
-			ev, err := jsonToCty(e)
-			if err != nil {
-				return cty.NilVal, err
-			}
-			m[k] = ev
-		}
-		return cty.ObjectVal(m), nil
-	default:
-		return cty.NilVal, fmt.Errorf("unsupported liveJson value type %T", v)
+		return cty.NilVal, err
 	}
+	return ctyVal, nil
 }
 
 // --- literal-object token surgery -----------------------------------------------
 //
-// A scoped sibling of internal/edit/setattr.go's parseObject/buildObject/mergeMap:
-// that function is unexported and shaped around a manifests.Op (azure tag
-// case-collision, ensure-create, resourceType) — none of which apply to a raw
-// {address, path, liveJson} triple from a drift verdict on this AWS-only estate
-// (docs/runbooks/drift-detection.md's scope is environments/prod only). The
-// token-walking algorithm itself — preserve every byte except the one changed
-// entry's value, including a key's trailing line comment — is reused faithfully
-// because it is what keeps an adopt diff to the single line the runbook's PR-#18
-// pattern promises; re-rendering the whole map through cty would reformat and
-// silently drop comments on every UNRELATED key.
-
-// objEntry is one parsed `key = value # comment` row of a literal object.
-type objEntry struct {
-	key string
-	// lead is trivia that sat on its own line(s) ABOVE this entry — full-line
-	// comments. Carried separately so it can never leak into keyToks (CTL-1) and
-	// re-emitted before the key so the bytes round-trip. This walker is a COPY of
-	// internal/edit's (CTL-10); the defect and the fix are the same in both, and
-	// fixing only one would have left this half broken and looking maintained (L-8).
-	lead    hclwrite.Tokens
-	keyToks hclwrite.Tokens
-	valToks hclwrite.Tokens
-	comment hclwrite.Tokens
-}
+// CTL-10: this used to be a from-scratch second copy of internal/edit/setattr.go's
+// parseObject/buildObject token walker — unexported there, shaped around a
+// manifests.Op (azure tag case-collision, ensure-create, resourceType) that a raw
+// {address, path, liveJson} drift verdict has no use for, so it was re-implemented
+// rather than imported. The two copies had already diverged (a mid-value comment
+// survived a rebuild here but was hoisted out of place there) by the time this
+// audit found them; both now live once in internal/hclobj, which standardizes on
+// THIS package's more careful mid-value-comment handling (see hclobj.ParseObject's
+// doc comment) for both callers. mergeSingleKey/removeSingleKey below keep
+// everything actually specific to drift-propose: the MAP_ATTR_MISSING/NOT_LITERAL
+// refusal wording, and never writing `key = null` (F3/addendum A5).
 
 // mergeSingleKey upserts exactly one key into the EXISTING literal-object attribute
 // named attrName on block. MAP_ATTR_MISSING/NOT_LITERAL are per-verdict refusals
@@ -337,23 +295,23 @@ func mergeSingleKey(block *hclwrite.Block, attrName, key string, val cty.Value) 
 	if a == nil {
 		return "MAP_ATTR_MISSING", fmt.Sprintf("attribute %q is not present — drift-propose v1 only merges into an existing map, it never fabricates one", attrName)
 	}
-	entries, ok := parseObjectLiteral(a.Expr().BuildTokens(nil))
+	entries, ok := hclobj.ParseObject(a.Expr().BuildTokens(nil))
 	if !ok {
 		return "NOT_LITERAL", fmt.Sprintf("attribute %q is not a literal object", attrName)
 	}
 	newToks := hclwrite.TokensForValue(val)
 	found := false
 	for i := range entries {
-		if entries[i].key == key {
-			entries[i].valToks = newToks
+		if entries[i].Key == key {
+			entries[i].ValToks = newToks
 			found = true
 			break
 		}
 	}
 	if !found {
-		entries = append(entries, objEntry{key: key, keyToks: keyTokensFor(key), valToks: newToks})
+		entries = append(entries, hclobj.Entry{Key: key, KeyToks: hclobj.KeyTokens(key), ValToks: newToks})
 	}
-	block.Body().SetAttributeRaw(attrName, buildObjectLiteral(entries))
+	block.Body().SetAttributeRaw(attrName, hclobj.BuildObject(entries))
 	return "", ""
 }
 
@@ -372,166 +330,16 @@ func removeSingleKey(block *hclwrite.Block, attrName, key string) (string, strin
 	if a == nil {
 		return "MAP_ATTR_MISSING", fmt.Sprintf("attribute %q is not present — drift-propose v1 only merges into an existing map, it never fabricates one", attrName)
 	}
-	entries, ok := parseObjectLiteral(a.Expr().BuildTokens(nil))
+	entries, ok := hclobj.ParseObject(a.Expr().BuildTokens(nil))
 	if !ok {
 		return "NOT_LITERAL", fmt.Sprintf("attribute %q is not a literal object", attrName)
 	}
-	out := make([]objEntry, 0, len(entries))
+	out := make([]hclobj.Entry, 0, len(entries))
 	for _, e := range entries {
-		if e.key != key {
+		if e.Key != key {
 			out = append(out, e)
 		}
 	}
-	block.Body().SetAttributeRaw(attrName, buildObjectLiteral(out))
+	block.Body().SetAttributeRaw(attrName, hclobj.BuildObject(out))
 	return "", ""
-}
-
-// parseObjectLiteral splits a `{ … }` literal object's token stream into ordered
-// entries. ok=false when the expression is not a literal object (a reference,
-// function call, or anything else this engine must never blindly overwrite).
-func parseObjectLiteral(toks hclwrite.Tokens) ([]objEntry, bool) {
-	i := 0
-	for i < len(toks) && (toks[i].Type == hclsyntax.TokenComment || toks[i].Type == hclsyntax.TokenNewline) {
-		i++
-	}
-	if i >= len(toks) || toks[i].Type != hclsyntax.TokenOBrace {
-		return nil, false
-	}
-	i++
-	var entries []objEntry
-	for i < len(toks) {
-		// Leading trivia. A single-line comment token CARRIES its terminating newline
-		// ("# note\n" is ONE token), so a full-line comment above an entry is not a
-		// TokenNewline and the key loop below would append it to keyToks — yielding a
-		// key like "# owner of record\nOwner" that matches nothing. Every consumer then
-		// mis-identified the entry AT EXIT 0.
-		var lead hclwrite.Tokens
-		for i < len(toks) {
-			switch toks[i].Type {
-			case hclsyntax.TokenNewline, hclsyntax.TokenComma:
-				i++
-				continue
-			case hclsyntax.TokenComment:
-				lead = append(lead, toks[i])
-				i++
-				continue
-			}
-			break
-		}
-		if i >= len(toks) {
-			return nil, false
-		}
-		if toks[i].Type == hclsyntax.TokenCBrace {
-			if len(lead) > 0 {
-				// A dangling comment after the last entry has no entry to attach to;
-				// re-emitting it would move or drop it. Refuse rather than guess —
-				// NOT_LITERAL is loud and leaves the tree untouched.
-				return nil, false
-			}
-			return entries, true
-		}
-		var keyToks hclwrite.Tokens
-		for i < len(toks) && toks[i].Type != hclsyntax.TokenEqual {
-			if toks[i].Type == hclsyntax.TokenNewline || toks[i].Type == hclsyntax.TokenCBrace {
-				return nil, false
-			}
-			keyToks = append(keyToks, toks[i])
-			i++
-		}
-		if i >= len(toks) || toks[i].Type != hclsyntax.TokenEqual {
-			return nil, false
-		}
-		i++ // skip '='
-		var valToks, comment hclwrite.Tokens
-		depth := 0
-		for i < len(toks) {
-			t := toks[i]
-			if depth == 0 && (t.Type == hclsyntax.TokenNewline || t.Type == hclsyntax.TokenComma || t.Type == hclsyntax.TokenCBrace) {
-				break
-			}
-			if t.Type == hclsyntax.TokenComment {
-				// A single-line comment token carries its terminating newline
-				// ("# note\n" is one token), so at depth 0 it ends the entry —
-				// otherwise the next entry's tokens get swallowed into this one.
-				// That TRAILING comment is the only one buildObjectLiteral may
-				// re-emit after the value.
-				if depth == 0 && strings.HasSuffix(string(t.Bytes), "\n") {
-					comment = append(comment, t)
-					i++
-					break
-				}
-				// Any other comment sits INSIDE the value (`x = /* mid */ "v"`).
-				// Hoisting it out moved it after the value on re-emit, rewriting
-				// an entry the merge never touched and adding a second
-				// added/removed line pair to what must be a one-line diff. Keep
-				// it in place instead.
-				valToks = append(valToks, t)
-				i++
-				continue
-			}
-			switch t.Type {
-			case hclsyntax.TokenOBrace, hclsyntax.TokenOBrack, hclsyntax.TokenOParen:
-				depth++
-			case hclsyntax.TokenCBrace, hclsyntax.TokenCBrack, hclsyntax.TokenCParen:
-				depth--
-			}
-			valToks = append(valToks, t)
-			i++
-		}
-		entries = append(entries, objEntry{key: keyLiteral(keyToks), lead: lead, keyToks: keyToks, valToks: valToks, comment: comment})
-	}
-	return nil, false
-}
-
-// keyLiteral strips surrounding quotes (if any) from a parsed key's token bytes,
-// yielding the bare key string ("Owner", not `"Owner"`).
-func keyLiteral(toks hclwrite.Tokens) string {
-	var sb strings.Builder
-	for _, t := range toks {
-		switch t.Type {
-		case hclsyntax.TokenOQuote, hclsyntax.TokenCQuote:
-			// drop the quotes; keep the literal
-		default:
-			sb.Write(t.Bytes)
-		}
-	}
-	return sb.String()
-}
-
-var hclIdentRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*$`)
-
-// keyTokensFor renders a NEW key: a bare identifier when it looks like one,
-// otherwise a fully-escaped string literal via the same safe seam values use
-// (TokensForValue) — never raw bytes, which would let a crafted key break out of
-// the map at format time.
-func keyTokensFor(k string) hclwrite.Tokens {
-	if hclIdentRe.MatchString(k) {
-		return hclwrite.Tokens{{Type: hclsyntax.TokenIdent, Bytes: []byte(k)}}
-	}
-	return hclwrite.TokensForValue(cty.StringVal(k))
-}
-
-// buildObjectLiteral re-emits entries as a multi-line `{ k = v\n … }` object;
-// hclwrite.Format (called on the whole block afterward) re-aligns it to canonical form.
-func buildObjectLiteral(entries []objEntry) hclwrite.Tokens {
-	toks := hclwrite.Tokens{
-		{Type: hclsyntax.TokenOBrace, Bytes: []byte("{")},
-		{Type: hclsyntax.TokenNewline, Bytes: []byte("\n")},
-	}
-	for _, e := range entries {
-		// Leading full-line comments come back out above their entry; each already
-		// carries its own newline (see parseObjectLiteral), so no separator is added.
-		toks = append(toks, e.lead...)
-		toks = append(toks, e.keyToks...)
-		toks = append(toks, &hclwrite.Token{Type: hclsyntax.TokenEqual, Bytes: []byte("=")})
-		toks = append(toks, e.valToks...)
-		toks = append(toks, e.comment...)
-		// A trailing line comment already carries the entry's newline (see
-		// parseObjectLiteral) — appending another would leave a blank line mid-map.
-		if n := len(e.comment); n > 0 && strings.HasSuffix(string(e.comment[n-1].Bytes), "\n") {
-			continue
-		}
-		toks = append(toks, &hclwrite.Token{Type: hclsyntax.TokenNewline, Bytes: []byte("\n")})
-	}
-	return append(toks, &hclwrite.Token{Type: hclsyntax.TokenCBrace, Bytes: []byte("}")})
 }

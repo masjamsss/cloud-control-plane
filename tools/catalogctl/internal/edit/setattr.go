@@ -3,7 +3,6 @@ package edit
 import (
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/zclconf/go-cty/cty"
 
+	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/hclobj"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/hclops"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/manifests"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/request"
@@ -176,11 +176,6 @@ func valueParam(op manifests.Op) *manifests.Param {
 	return nil
 }
 
-// hclIdentRe validates a bare map-key identifier (keyTokens). The retired paren-attr
-// regex that used to sit beside it now lives once in manifests.ProseAttrToken, shared
-// by the executor, the plancheck verifier, and the demotion lint.
-var hclIdentRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*$`)
-
 // attrName resolves the scalar attribute a flat set_attribute op writes.
 //
 // AUTHORITATIVE PATH: an explicit op.Target.Attr is
@@ -241,17 +236,6 @@ func currentNumber(blockBytes []byte, attr string) (float64, bool) {
 	return f64, true
 }
 
-type objEntry struct {
-	key string
-	// lead is trivia that sat on its own line(s) ABOVE this entry — full-line
-	// comments. It is carried separately so it can never leak into keyToks
-	// (CTL-1) and is re-emitted before the key so the bytes round-trip.
-	lead    hclwrite.Tokens
-	keyToks hclwrite.Tokens
-	valToks hclwrite.Tokens
-	comment hclwrite.Tokens
-}
-
 // mergeMap merges reqMap into the literal object attribute (spec): existing
 // keys keep position (requested ones get value-token replacement), new keys append
 // (sorted for determinism), and hclwrite re-aligns. Non-literal object → NOT_LITERAL.
@@ -272,7 +256,7 @@ type objEntry struct {
 // the prefix, so AWS's genuinely case-sensitive tag keys are byte-identical.
 func mergeMap(block *hclwrite.Block, attr string, reqMap map[string]any, ensure bool, resourceType string) (string, string, error) {
 	a := block.Body().GetAttribute(attr)
-	var entries []objEntry
+	var entries []hclobj.Entry
 	if a == nil {
 		// ensureAttr: create the absent object and merge every reqMap key
 		// into it (each is a "new key" appended below). Without ensure an absent
@@ -282,7 +266,7 @@ func mergeMap(block *hclwrite.Block, attr string, reqMap map[string]any, ensure 
 		}
 	} else {
 		var ok bool
-		entries, ok = parseObject(a.Expr().BuildTokens(nil))
+		entries, ok = hclobj.ParseObject(a.Expr().BuildTokens(nil))
 		if !ok {
 			return "NOT_LITERAL", fmt.Sprintf("%s is not a literal object", attr), nil
 		}
@@ -294,13 +278,13 @@ func mergeMap(block *hclwrite.Block, attr string, reqMap map[string]any, ensure 
 	}
 	used := map[string]bool{}
 	for i := range entries {
-		if nv, ok := reqMap[entries[i].key]; ok {
+		if nv, ok := reqMap[entries[i].Key]; ok {
 			v, err := anyToCty(nv)
 			if err != nil {
 				return "", "", err
 			}
-			entries[i].valToks = hclwrite.TokensForValue(v)
-			used[entries[i].key] = true
+			entries[i].ValToks = hclwrite.TokensForValue(v)
+			used[entries[i].Key] = true
 		}
 	}
 	var newKeys []string
@@ -315,9 +299,9 @@ func mergeMap(block *hclwrite.Block, attr string, reqMap map[string]any, ensure 
 		if err != nil {
 			return "", "", err
 		}
-		entries = append(entries, objEntry{key: k, keyToks: keyTokens(k), valToks: hclwrite.TokensForValue(v)})
+		entries = append(entries, hclobj.Entry{Key: k, KeyToks: hclobj.KeyTokens(k), ValToks: hclwrite.TokensForValue(v)})
 	}
-	block.Body().SetAttributeRaw(attr, buildObject(entries))
+	block.Body().SetAttributeRaw(attr, hclobj.BuildObject(entries))
 	return "", "", nil
 }
 
@@ -328,7 +312,7 @@ func mergeMap(block *hclwrite.Block, attr string, reqMap map[string]any, ensure 
 // overwrite, handled by the caller's normal merge loop). reqMap iteration order is not
 // stable in Go, so incoming keys are walked sorted for a deterministic first-collision
 // report across runs.
-func azureTagKeyCaseCollision(entries []objEntry, reqMap map[string]any) (string, string) {
+func azureTagKeyCaseCollision(entries []hclobj.Entry, reqMap map[string]any) (string, string) {
 	// Fold every key — existing AND already-seen incoming — so a collision is caught
 	// whether the incoming key case-folds to an EXISTING entry ("owner" vs a stored
 	// "Owner") OR to an EARLIER key in the SAME request (both "Owner" and "owner"
@@ -336,7 +320,7 @@ func azureTagKeyCaseCollision(entries []objEntry, reqMap map[string]any) (string
 	// one request would both append and diverge from the single tag Azure actually stores.
 	byFold := make(map[string]string, len(entries)+len(reqMap))
 	for _, e := range entries {
-		byFold[strings.ToLower(e.key)] = e.key
+		byFold[strings.ToLower(e.Key)] = e.Key
 	}
 	incoming := make([]string, 0, len(reqMap))
 	for k := range reqMap {
@@ -356,201 +340,22 @@ func azureTagKeyCaseCollision(entries []objEntry, reqMap map[string]any) (string
 	return "", ""
 }
 
-// parseObject splits a literal object token stream into ordered entries. Returns
-// ok=false when the expression is not a `{ … }` literal.
-func parseObject(toks hclwrite.Tokens) ([]objEntry, bool) {
-	i := 0
-	for i < len(toks) && (toks[i].Type == hclsyntax.TokenComment || toks[i].Type == hclsyntax.TokenNewline) {
-		i++
-	}
-	if i >= len(toks) || toks[i].Type != hclsyntax.TokenOBrace {
-		return nil, false
-	}
-	i++
-	var entries []objEntry
-	for i < len(toks) {
-		// Leading trivia. A single-line comment token CARRIES its terminating
-		// newline ("# note\n" is ONE token), so a full-line comment above an entry
-		// is not a TokenNewline and the key loop below would happily append it to
-		// keyToks — yielding a key like "# owner of record\nPIC" that matches
-		// nothing. Every consumer then mis-identified the entry AT EXIT 0: mergeMap
-		// and appendForeachEntry appended a DUPLICATE key (defeating the
-		// KEY_CONFLICT guard, and last-one-wins silently changed the protected
-		// value), removeForeachEntry found nothing and removed nothing. This is the
-		// key-loop half of the lesson the value loop already learned below; the
-		// trivia is kept on the entry so buildObject round-trips the bytes rather
-		// than dropping a comment the operator wrote.
-		var lead hclwrite.Tokens
-		for i < len(toks) {
-			switch toks[i].Type {
-			case hclsyntax.TokenNewline, hclsyntax.TokenComma:
-				i++
-				continue
-			case hclsyntax.TokenComment:
-				lead = append(lead, toks[i])
-				i++
-				continue
-			}
-			break
-		}
-		if i >= len(toks) {
-			return nil, false
-		}
-		if toks[i].Type == hclsyntax.TokenCBrace {
-			if len(lead) > 0 {
-				// A dangling comment after the last entry has no entry to attach
-				// to; re-emitting it would move or drop it. Refuse rather than
-				// guess — NOT_LITERAL is loud and leaves the tree untouched.
-				return nil, false
-			}
-			return entries, true
-		}
-		var keyToks hclwrite.Tokens
-		for i < len(toks) && toks[i].Type != hclsyntax.TokenEqual {
-			if toks[i].Type == hclsyntax.TokenNewline || toks[i].Type == hclsyntax.TokenCBrace {
-				return nil, false
-			}
-			keyToks = append(keyToks, toks[i])
-			i++
-		}
-		if i >= len(toks) || toks[i].Type != hclsyntax.TokenEqual {
-			return nil, false
-		}
-		i++ // skip '='
-		var valToks, comment hclwrite.Tokens
-		depth := 0
-		for i < len(toks) {
-			t := toks[i]
-			if depth == 0 && (t.Type == hclsyntax.TokenNewline || t.Type == hclsyntax.TokenComma || t.Type == hclsyntax.TokenCBrace) {
-				break
-			}
-			if t.Type == hclsyntax.TokenComment {
-				comment = append(comment, t)
-				i++
-				// A single-line comment token CARRIES its terminating newline
-				// ("# note\n" is one token), so at depth 0 it also ends the ENTRY.
-				// Without this, the tokens of the NEXT entry are swallowed into
-				// this entry's valToks and buildObject glues two entries onto one
-				// line at exit 0 — measured corrupting ec2-add-instance-tag on a
-				// tags map with a mid-map trailing comment (exit-0 mis-edit
-				// class), and defeating the foreach KEY_CONFLICT guard for the
-				// swallowed key (a silent duplicate-key add).
-				if depth == 0 && strings.HasSuffix(string(t.Bytes), "\n") {
-					break
-				}
-				continue
-			}
-			switch t.Type {
-			case hclsyntax.TokenOBrace, hclsyntax.TokenOBrack, hclsyntax.TokenOParen:
-				depth++
-			case hclsyntax.TokenCBrace, hclsyntax.TokenCBrack, hclsyntax.TokenCParen:
-				depth--
-			}
-			valToks = append(valToks, t)
-			i++
-		}
-		entries = append(entries, objEntry{key: keyString(keyToks), lead: lead, keyToks: keyToks, valToks: valToks, comment: comment})
-	}
-	return nil, false
-}
+// parseObject, buildObject, keyString, keyTokens, and anyToCty used to live here
+// as unexported functions — CTL-10 found them re-implemented a second time,
+// already diverging, in internal/driftpropose/adopt.go. Both copies now live
+// once in internal/hclobj; anyToCty stays as a one-line wrapper below so every
+// existing call site (and its existing "unsupported value type %T" wording) is
+// unchanged.
 
-func keyString(toks hclwrite.Tokens) string {
-	var sb strings.Builder
-	for _, t := range toks {
-		switch t.Type {
-		case hclsyntax.TokenOQuote, hclsyntax.TokenCQuote:
-			// drop the quotes; keep the literal
-		default:
-			sb.Write(t.Bytes)
-		}
-	}
-	return sb.String()
-}
-
-func keyTokens(k string) hclwrite.Tokens {
-	if hclIdentRe.MatchString(k) {
-		return hclwrite.Tokens{{Type: hclsyntax.TokenIdent, Bytes: []byte(k)}}
-	}
-	// SECURITY: a non-identifier map key must be emitted as a
-	// fully-escaped string literal, NOT its raw bytes. Raw bytes let a crafted key
-	// containing `"`/newline/`{`/`}` break out of the map — hclwrite.Format then
-	// re-lexes the debris into REAL top-level structure at exit 0 (confirmed:
-	// s3-update-tags injecting `force_destroy = true`). TokensForValue is the same
-	// seam values already use safely; it escapes `"`→\", newline→\n, etc., so the
-	// key can only ever render as one literal. Identifier keys stay bare above, so
-	// no golden churn.
-	return hclwrite.TokensForValue(cty.StringVal(k))
-}
-
-func buildObject(entries []objEntry) hclwrite.Tokens {
-	toks := hclwrite.Tokens{
-		{Type: hclsyntax.TokenOBrace, Bytes: []byte("{")},
-		{Type: hclsyntax.TokenNewline, Bytes: []byte("\n")},
-	}
-	for _, e := range entries {
-		// Leading full-line comments come back out above their entry; each already
-		// carries its own newline (see parseObject), so no separator is added.
-		toks = append(toks, e.lead...)
-		toks = append(toks, e.keyToks...)
-		toks = append(toks, &hclwrite.Token{Type: hclsyntax.TokenEqual, Bytes: []byte("=")})
-		toks = append(toks, e.valToks...)
-		toks = append(toks, e.comment...)
-		// A trailing line comment already carries the entry's newline (see
-		// parseObject) — appending another would leave a blank line mid-map.
-		if n := len(e.comment); n > 0 && strings.HasSuffix(string(e.comment[n-1].Bytes), "\n") {
-			continue
-		}
-		toks = append(toks, &hclwrite.Token{Type: hclsyntax.TokenNewline, Bytes: []byte("\n")})
-	}
-	return append(toks, &hclwrite.Token{Type: hclsyntax.TokenCBrace, Bytes: []byte("}")})
-}
-
+// anyToCty converts a decoded request-param value (a YAML/JSON-decoded
+// string/bool/int/int64/float64/[]any/map[string]any) to the cty.Value
+// hclwrite.TokensForValue renders. A nil value is always a caller bug here —
+// unlike driftpropose's jsonToCty, no edit call site ever legitimately means
+// "write null" — so AllowNull stays false; ErrUnsupportedType.Error() already
+// reads "unsupported value type %T", matching this package's existing wording,
+// so no re-wrap is needed.
 func anyToCty(v any) (cty.Value, error) {
-	switch n := v.(type) {
-	case string:
-		return cty.StringVal(n), nil
-	case bool:
-		return cty.BoolVal(n), nil
-	case int:
-		return cty.NumberIntVal(int64(n)), nil
-	case int64:
-		return cty.NumberIntVal(n), nil
-	case float64:
-		if n == float64(int64(n)) {
-			return cty.NumberIntVal(int64(n)), nil
-		}
-		return cty.NumberFloatVal(n), nil
-	case []any:
-		// a YAML sequence / JSON array → a tuple literal (heterogeneous
-		// element types are allowed; TokensForValue renders `[a, b, …]`).
-		if len(n) == 0 {
-			return cty.EmptyTupleVal, nil
-		}
-		vals := make([]cty.Value, len(n))
-		for i, e := range n {
-			ev, err := anyToCty(e)
-			if err != nil {
-				return cty.NilVal, err
-			}
-			vals[i] = ev
-		}
-		return cty.TupleVal(vals), nil
-	case map[string]any:
-		// a YAML/JSON object → an object literal (`{ k = v, … }`).
-		if len(n) == 0 {
-			return cty.EmptyObjectVal, nil
-		}
-		m := make(map[string]cty.Value, len(n))
-		for k, e := range n {
-			ev, err := anyToCty(e)
-			if err != nil {
-				return cty.NilVal, err
-			}
-			m[k] = ev
-		}
-		return cty.ObjectVal(m), nil
-	}
-	return cty.NilVal, fmt.Errorf("unsupported value type %T", v)
+	return hclobj.ValueToCty(v, hclobj.ValueOptions{AllowInt: true})
 }
 
 func toStringMap(v any) (map[string]any, bool) {

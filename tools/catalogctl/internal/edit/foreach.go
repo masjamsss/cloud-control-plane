@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/hcl/v2/hclwrite"
 
+	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/hclobj"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/hclops"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/manifests"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/request"
@@ -56,7 +57,7 @@ func appendForeachEntry(op manifests.Op, req *request.Request, loc *hclops.Locat
 	newVal := hclwrite.TokensForValue(valCty)
 
 	a := target.Body().GetAttribute(attrName)
-	var entries []objEntry
+	var entries []hclobj.Entry
 	if a == nil {
 		// ensureAttr: create-on-absent — start from an empty literal map and
 		// add the key below (the attribute-level analog of ensurePath's block
@@ -68,21 +69,21 @@ func appendForeachEntry(op manifests.Op, req *request.Request, loc *hclops.Locat
 		}
 	} else {
 		var ok bool
-		entries, ok = parseObject(a.Expr().BuildTokens(nil))
+		entries, ok = hclobj.ParseObject(a.Expr().BuildTokens(nil))
 		if !ok {
 			return nil, "NOT_LITERAL", fmt.Sprintf("%s is not a literal map", attrName), nil
 		}
 	}
 	for _, e := range entries {
-		if e.key == key {
-			if tokensString(e.valToks) == tokensString(newVal) {
+		if e.Key == key {
+			if tokensString(e.ValToks) == tokensString(newVal) {
 				return origBlock(loc), "", "", nil // idempotent add → no-op
 			}
 			return nil, "KEY_CONFLICT", fmt.Sprintf("key %q already set to a different value", key), nil
 		}
 	}
-	entries = append(entries, objEntry{key: key, keyToks: keyTokens(key), valToks: newVal})
-	target.Body().SetAttributeRaw(attrName, buildObject(entries))
+	entries = append(entries, hclobj.Entry{Key: key, KeyToks: hclobj.KeyTokens(key), ValToks: newVal})
+	target.Body().SetAttributeRaw(attrName, hclobj.BuildObject(entries))
 	return hclwrite.Format(f.Bytes()), "", "", nil
 }
 
@@ -124,14 +125,14 @@ func removeForeachEntry(op manifests.Op, req *request.Request, loc *hclops.Locat
 		// robustness mirroring the missing-key no-op below.
 		return origBlock(loc), "", "", nil
 	}
-	entries, ok := parseObject(a.Expr().BuildTokens(nil))
+	entries, ok := hclobj.ParseObject(a.Expr().BuildTokens(nil))
 	if !ok {
 		return nil, "NOT_LITERAL", fmt.Sprintf("%s is not a literal map", attrName), nil
 	}
-	kept := make([]objEntry, 0, len(entries))
+	kept := make([]hclobj.Entry, 0, len(entries))
 	found := false
 	for _, e := range entries {
-		if e.key == key {
+		if e.Key == key {
 			found = true
 			continue
 		}
@@ -140,7 +141,7 @@ func removeForeachEntry(op manifests.Op, req *request.Request, loc *hclops.Locat
 	if !found {
 		return origBlock(loc), "", "", nil // missing key → no-op
 	}
-	target.Body().SetAttributeRaw(attrName, buildObject(kept))
+	target.Body().SetAttributeRaw(attrName, hclobj.BuildObject(kept))
 	return hclwrite.Format(f.Bytes()), "", "", nil
 }
 

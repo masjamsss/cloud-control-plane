@@ -11,6 +11,8 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/zclconf/go-cty/cty"
+
+	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/hclobj"
 )
 
 // covadopt_cov_test.go closes the coverage holes in adopt.go (the adopt-side
@@ -987,7 +989,7 @@ func TestCovadoptParseObjectLiteral(t *testing.T) {
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
-				entries, ok := parseObjectLiteral(covadoptExprTokens(t, tc.expr))
+				entries, ok := hclobj.ParseObject(covadoptExprTokens(t, tc.expr))
 				if ok != tc.wantOK {
 					t.Fatalf("ok = %v, want %v (entries=%d)", ok, tc.wantOK, len(entries))
 				}
@@ -999,7 +1001,7 @@ func TestCovadoptParseObjectLiteral(t *testing.T) {
 				}
 				var keys []string
 				for _, e := range entries {
-					keys = append(keys, e.key)
+					keys = append(keys, e.Key)
 				}
 				if strings.Join(keys, ",") != strings.Join(tc.wantKeys, ",") {
 					t.Fatalf("keys = %v, want %v", keys, tc.wantKeys)
@@ -1063,13 +1065,13 @@ func TestCovadoptParseObjectLiteral(t *testing.T) {
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
-				entries, ok := parseObjectLiteral(tc.toks)
+				entries, ok := hclobj.ParseObject(tc.toks)
 				if ok != tc.wantOK {
 					t.Fatalf("ok = %v, want %v (entries=%+v)", ok, tc.wantOK, entries)
 				}
 				var keys []string
 				for _, e := range entries {
-					keys = append(keys, e.key)
+					keys = append(keys, e.Key)
 				}
 				if strings.Join(keys, ",") != strings.Join(tc.wantKeys, ",") {
 					t.Fatalf("keys = %v, want %v", keys, tc.wantKeys)
@@ -1097,8 +1099,8 @@ func TestCovadoptKeyTokensFor(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := string(keyTokensFor(tc.key).Bytes()); got != tc.want {
-				t.Fatalf("keyTokensFor(%q) = %q, want %q", tc.key, got, tc.want)
+			if got := string(hclobj.KeyTokens(tc.key).Bytes()); got != tc.want {
+				t.Fatalf("hclobj.KeyTokens(%q) = %q, want %q", tc.key, got, tc.want)
 			}
 		})
 	}

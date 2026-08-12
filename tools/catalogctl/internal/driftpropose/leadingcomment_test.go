@@ -7,19 +7,22 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/zclconf/go-cty/cty"
+
+	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/hclobj"
 )
 
-// leadingcomment_test.go — CTL-1, second copy (audit 07-catalogctl.md; CTL-10
-// explains why there IS a second copy).
-//
-// parseObjectLiteral is a hand-ported sibling of internal/edit's parseObject and
-// carries the identical key-loop defect: a full-line comment above a map entry is
-// a TokenComment carrying its own newline, so it is appended into keyToks and the
-// entry's key becomes "# owner of record\nOwner". mergeSingleKey then appends a
-// DUPLICATE key and removeSingleKey removes nothing — and unlike the edit lane,
-// drift-adopt writes straight into the bundle checkout.
-//
-// Both tests FAIL against the unfixed key loop.
+// leadingcomment_test.go — CTL-1, drift-adopt's own regression pin (audit
+// 07-catalogctl.md). Before bd7275b this package carried its own from-scratch
+// copy of the key-loop defect: a full-line comment above a map entry is a
+// TokenComment carrying its own newline, so a naive key loop appends it into
+// the key and the entry's key becomes "# owner of record\nOwner". mergeSingleKey
+// would then append a DUPLICATE key and removeSingleKey would remove nothing —
+// and unlike the edit lane, drift-adopt writes straight into the bundle
+// checkout. CTL-10 later extracted the (by-then independently patched, already
+// diverging) token walker both packages had into internal/hclobj, so this file
+// now exercises hclobj.ParseObject through mergeSingleKey/removeSingleKey —
+// still worth pinning here, since a regression in the shared walker would show
+// up as THIS package's write path breaking, not just edit's.
 
 const commentedDriftBlock = "resource \"aws_instance\" \"sample01\" {\n" +
 	"  tags = {\n" +
@@ -97,14 +100,14 @@ func TestRemoveSingleKeyLeadingCommentActuallyRemoves(t *testing.T) {
 // TestParseObjectLiteralLeadingCommentKeepsKeyClean pins the root cause directly.
 func TestParseObjectLiteralLeadingCommentKeepsKeyClean(t *testing.T) {
 	block := driftBlock(t)
-	entries, ok := parseObjectLiteral(block.Body().GetAttribute("tags").Expr().BuildTokens(nil))
+	entries, ok := hclobj.ParseObject(block.Body().GetAttribute("tags").Expr().BuildTokens(nil))
 	if !ok {
 		t.Fatal("parseObjectLiteral not ok on a literal map with a full-line comment")
 	}
 	if len(entries) != 2 {
 		t.Fatalf("parsed %d entries, want 2", len(entries))
 	}
-	if entries[0].key != "Owner" || entries[1].key != "Env" {
-		t.Fatalf("keys = %q,%q — want Owner,Env", entries[0].key, entries[1].key)
+	if entries[0].Key != "Owner" || entries[1].Key != "Env" {
+		t.Fatalf("keys = %q,%q — want Owner,Env", entries[0].Key, entries[1].Key)
 	}
 }
