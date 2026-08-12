@@ -142,41 +142,65 @@ redeploy never reseeds a fresh admin over the live audit chain. Drop
 
 ## Backup & restore (disk/host recovery)
 
-The durable store is a single JSON snapshot file (accounts, sessions, the per-project
-hash-chained audit log, policy). The audit chain is the **evidence-of-record**, so
-backups are verified copies and restore refuses to install an unverifiable one.
+The durable state spans **two** stores, and both matter (DATA-10): the JSON snapshot
+file (accounts, sessions, the per-project hash-chained audit log, policy) AND the
+on-disk project-data/drift root the snapshot's rows point into (`ProjectItem.dataActive`,
+`DriftPointerItem` — served inventory, manifests, block chunks, drift reports, drift
+proposal bodies). `backup`/`restore` capture and install **both together, from the same
+moment**, so a restore never reconstructs rows that reference files a different backup
+generation left behind. The audit chain is the **evidence-of-record**, so the snapshot
+half is a verified copy and restore refuses to install an unverifiable one.
 
 ```bash
-# Snapshot the live data file (atomic copy; verifies + reports the audit chain).
+# Snapshot the live data file + project-data root (atomic copies; verifies + reports the audit chain).
 npm run backup -- --out /backups/ccp-$(date +%F).json
 
-# Recover after a disk/host loss (atomic write; refuses a corrupt backup).
+# Recover after a disk/host loss (atomic writes; refuses a corrupt backup).
 npm run restore -- --from /backups/ccp-2026-07-12.json
 ```
 
 - `backup` reads the data file (`--data`, default = the resolved `CCP_DATA_*`
   path), validates it, prints `accounts` + per-project `audit … verified=…`, and
   writes a byte-for-byte atomic copy to `--out` (default `<data>.backup-<timestamp>.json`).
-  A damaged source is still captured (for forensics) with a loud warning.
+  A damaged source is still captured (for forensics) with a loud warning. It then also
+  copies the project-data root (`--project-data`, default = the resolved
+  `<CCP_DATA_DIR>/projects`) into a companion `<out-without-.json>.projects/` directory
+  alongside it — atomically, and skipped only if the root does not exist yet (a fresh
+  install with no projects onboarded) or `--skip-project-data` is passed.
 - `restore` reads `--from`, re-verifies every audit chain, and only then atomically
   replaces the data file (`--data`, default = resolved path). If a chain does **not**
   verify it refuses (exit 1) — pass `--force` for a deliberate disaster restore. The
   write is temp-file + fsync + rename, so an interrupted restore leaves the old file intact.
+  It then looks for that backup's companion `.projects/` directory (by convention next
+  to `--from`, or `--project-data` to point elsewhere) and, if found, **replaces the
+  project-data root wholesale** (`--project-data`, default = resolved path) — never
+  merged, so the result is exactly what the one backup captured. A backup made before
+  this feature (or with `--skip-project-data`) has no companion directory: restore still
+  installs the store and **warns loudly** rather than either refusing or silently leaving
+  served files that may now be inconsistent with the restored rows — `/readyz`'s
+  presence cross-check (below) is the safety net for exactly that gap. `--skip-project-data`
+  on restore leaves the current project-data root untouched even when a companion backup
+  exists.
 
 Restore into a **stopped** API (the running process holds state in memory and
-re-snapshots on the next mutation, which would overwrite a hot restore). Start the API
-after restoring; it load-verifies the file on boot and `/readyz` re-confirms the chain.
+re-snapshots on the next mutation, which would overwrite a hot restore; it also
+actively reads/writes the project-data root). Start the API after restoring; it
+load-verifies the file on boot and `/readyz` re-confirms both the audit chain AND
+(DATA-10) that every project's active served-data version and drift report actually
+have files on disk.
 
 ## Health & readiness probes
 
 | Endpoint | Meaning | Wire to |
 | --- | --- | --- |
 | `GET /healthz` | **Liveness** — the process is up and serving. Deliberately shallow: `200 {"ok":true}` even with an empty store. | container/liveness probe (restart-on-fail) |
-| `GET /readyz` | **Readiness** — store loaded + `accounts` count + every project's audit chain verifies. `200` only when all hold; `503` with `reasons` otherwise. | load-balancer/readiness probe (take out of rotation) |
+| `GET /readyz` | **Readiness** — store loaded + `accounts` count + every project's audit chain verifies + (DATA-10) every project's ACTIVE served-data version and drift report actually have files on disk. `200` only when all hold; `503` with `reasons` otherwise. | load-balancer/readiness probe (take out of rotation) |
 
 `/readyz` exists because `/healthz` cannot tell a healthy store from an emptied or
-corrupted one. A wiped store (0 accounts) or a broken audit chain returns **503** with
-a machine-readable body, e.g.:
+corrupted one. A wiped store (0 accounts), a broken audit chain, or a `dataActive`/drift
+pointer whose files are missing from the project-data root (a disk-death restore that
+lost — or restored from a different backup generation than — the store JSON) returns
+**503** with a machine-readable body, e.g.:
 
 ```json
 { "ready": false, "storeLoaded": true, "accounts": 0,
