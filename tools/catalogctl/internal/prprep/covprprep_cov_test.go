@@ -106,13 +106,22 @@ func covprprepQuote(s string) string {
 	return "\"" + strings.ReplaceAll(s, "\"", "\\\"") + "\""
 }
 
-// covprprepApproval renders one approvals[] entry.
+// covprprepApproval renders one approve-decision approvals[] entry.
 func covprprepApproval(approver, digest string) string {
-	return "  - approver: " + approver + "\n" +
+	return covprprepApprovalDecision(approver, digest, "approve")
+}
+
+// covprprepApprovalDecision renders one approvals[] entry with an explicit decision —
+// for CTL-9 cases exercising a non-approve (or blank) vote.
+func covprprepApprovalDecision(approver, digest, decision string) string {
+	s := "  - approver: " + approver + "\n" +
 		"    approved_at: \"2026-07-15T10:00:00Z\"\n" +
 		"    policy_version: v1\n" +
-		"    digest: " + covprprepQuote(digest) + "\n" +
-		"    decision: approve\n"
+		"    digest: " + covprprepQuote(digest) + "\n"
+	if decision != "" {
+		s += "    decision: " + decision + "\n"
+	}
+	return s
 }
 
 // covprprepResizeParams is a valid ec2-resize param set (the allowlist is enforced by
@@ -353,10 +362,54 @@ func TestCovprprepRefusals(t *testing.T) {
 		{
 			name:   "unapproved request never becomes a PR",
 			code:   "UNAPPROVED",
-			reason: "carries no approvals",
+			reason: "carries no approve decisions",
 			opts: covprprepReqOpts{
 				item:   "ec2-resize",
 				params: covprprepResizeParams("c6i.2xlarge"),
+			},
+			current: "r6i.large",
+		},
+		{
+			// CTL-9: an approvals list is not a raw headcount — a blank Decision
+			// (no vote recorded, e.g. every approvals entry predating this field)
+			// does not count toward quorum, so this is UNAPPROVED, not accepted.
+			name:   "an approvals entry with no recorded decision does not count toward quorum",
+			code:   "UNAPPROVED",
+			reason: "carries no approve decisions",
+			opts: covprprepReqOpts{
+				item:      "ec2-resize",
+				params:    covprprepResizeParams("c6i.2xlarge"),
+				approvals: []string{covprprepApprovalDecision("ops-lead", "abc123", "")},
+			},
+			current: "r6i.large",
+		},
+		{
+			// CTL-9: the gate is decision-aware, not len(Approvals) — a request
+			// whose only approval carries an explicit reject must never be bundled
+			// into a PR.
+			name:   "an explicit reject refuses outright",
+			code:   "REJECTED",
+			reason: "explicit non-approve decision",
+			opts: covprprepReqOpts{
+				item:      "ec2-resize",
+				params:    covprprepResizeParams("c6i.2xlarge"),
+				approvals: []string{covprprepApprovalDecision("ops-lead", "abc123", "reject")},
+			},
+			current: "r6i.large",
+		},
+		{
+			// CTL-9: a single dissent refuses even when OTHER approvers meet
+			// quorum — a reject is never silently outvoted.
+			name:   "one explicit reject refuses even alongside a quorum of real approvals",
+			code:   "REJECTED",
+			reason: "explicit non-approve decision",
+			opts: covprprepReqOpts{
+				item:   "ec2-resize",
+				params: covprprepResizeParams("c6i.2xlarge"),
+				approvals: []string{
+					covprprepApproval("ops-lead", "abc123"),
+					covprprepApprovalDecision("sre-oncall", "abc123", "changes_requested"),
+				},
 			},
 			current: "r6i.large",
 		},

@@ -91,13 +91,49 @@ type Window struct {
 	TZ    string `yaml:"tz"`
 }
 
-// ApprovedDigest returns the single plan digest the quorum bound to, or "" if no
-// approval carries one. It refuses ("", false) when two approvals name DIFFERENT
-// non-empty digests — a split-brain quorum (approvers signed off on different plans)
-// that must never be turned into one PR. All-empty (pre-plan approvals) returns
-// ("", true): nothing to bind yet, not a disagreement.
-func (r *Request) ApprovedDigest() (digest string, ok bool) {
+// DecisionApprove is the only Approval.Decision value that counts toward quorum or
+// plan-digest binding (CTL-9). A blank Decision (an entry with no vote recorded)
+// counts toward neither, but is not itself an explicit rejection — see
+// HasExplicitRejection, which fires only on a literal non-approve value.
+const DecisionApprove = "approve"
+
+// ApprovedEntries returns the subset of r.Approvals whose Decision is the approve
+// value — the only entries ApprovedDigest and the pr-prepare quorum gate may count.
+// A rejection's (or an unrecorded) entry never contributes a digest to the
+// "quorum agrees" computation, and never counts toward "is this approved".
+func (r *Request) ApprovedEntries() []Approval {
+	var out []Approval
 	for _, a := range r.Approvals {
+		if a.Decision == DecisionApprove {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// HasExplicitRejection reports whether any approval entry carries a non-blank
+// Decision that is not the approve value — an explicit "reject" or
+// "changes_requested" vote, distinct from an entry that simply has not recorded one.
+// pr-prepare refuses outright on this rather than merely excluding the entry from
+// quorum, so a single dissent can never be silently outvoted by other approvers.
+func (r *Request) HasExplicitRejection() bool {
+	for _, a := range r.Approvals {
+		if a.Decision != "" && a.Decision != DecisionApprove {
+			return true
+		}
+	}
+	return false
+}
+
+// ApprovedDigest returns the single plan digest the quorum bound to, or "" if no
+// approve-decision entry carries one. It refuses ("", false) when two such entries
+// name DIFFERENT non-empty digests — a split-brain quorum (approvers signed off on
+// different plans) that must never be turned into one PR. All-empty (pre-plan
+// approvals) returns ("", true): nothing to bind yet, not a disagreement. Entries
+// that are not an approve decision (CTL-9) never reach this loop, so a rejection's
+// digest can never participate in — or poison — the agreement check.
+func (r *Request) ApprovedDigest() (digest string, ok bool) {
+	for _, a := range r.ApprovedEntries() {
 		if a.Digest == "" {
 			continue
 		}
