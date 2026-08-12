@@ -89,6 +89,7 @@ import { computeFeasibility } from '../domain/feasibility';
 import { validateSchedule } from '../domain/schedule';
 import { ScheduleSchema, toChangeRequest } from './requests';
 import { nowIso, nowMs } from '../clock';
+import { occupiesQuotaSlot } from '@app-lib/requestStatus';
 
 /** B1/B2 (spec addendum A7): the two operator-role gates share this
  * predicate — lead or admin, the apply-route precedent
@@ -962,6 +963,22 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
     const row = (await store.get(primaryKey.PK, primaryKey.SK)) as DriftProposalItem | null;
     if (!row || row.flavor !== 'revert') return c.json({ code: 'NOT_FOUND', reason: 'No such drift proposal.' }, 404);
 
+    // 4b. API-18 — a prior legitimize for THIS digest that is still open
+    //     surfaces instead of minting a duplicate engineer-tier request.
+    //     `row.status` staying 'open' (never consumed, unlike submit) is by
+    //     design — see the route's own header comment — so it cannot double
+    //     as "already legitimized"; `legitimizeRequestId` is the row's own
+    //     memory of that, checked against the POINTED-TO request's own
+    //     status (`occupiesQuotaSlot`, the same fail-closed "not terminal"
+    //     vocabulary the rate limiter uses) rather than trusted blindly, so
+    //     a rejected/cancelled/withdrawn prior attempt does not permanently
+    //     block converging the drift a second time.
+    if (row.legitimizeRequestId !== undefined) {
+      const priorKey = requestKey(id, row.legitimizeRequestId);
+      const prior = (await store.get(priorKey.PK, priorKey.SK)) as RequestItem | null;
+      if (prior && occupiesQuotaSlot(prior.status)) return c.json(toChangeRequest(prior, id), 200);
+    }
+
     // 5. Body.
     const parsedBody = LegitimizeBody.safeParse(await c.req.json().catch(() => null));
     if (!parsedBody.success) return apiError(c, 'VALIDATION_FAILED');
@@ -1050,18 +1067,48 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
       GSI1SK: reqId,
     };
 
-    // The revert proposal row is deliberately NOT touched (stays 'open') —
-    // only the new request is written, under the standard audit-chain
-    // transact (no dedupe-condition on a proposal row to race here, unlike
-    // submit, since nothing about the proposal changes).
-    await transactWithAudit(store, id, [{ kind: 'put', item: reqItem as never, ifNotExists: true }], {
-      action: 'drift-legitimize-requested',
-      actor: account.id,
-      targetType: 'request',
-      targetId: reqId,
-      requestId: reqId,
-      after: { digest, status, approvalsRequired, risk, exposure: op.exposure, reviewTier: tier, ...feasibility },
-    });
+    // The revert proposal row's `status` is deliberately NOT touched (stays
+    // 'open' — legitimize never consumes it, spec addendum A6) — but
+    // `legitimizeRequestId` IS stamped, atomically with the new request, so
+    // a repeat call finds it instead of minting another (API-18). CAS-guarded
+    // on the exact value step 4b just read: if a concurrent legitimize won
+    // the race, this fails closed (STATE_CONFLICT) rather than silently
+    // creating a second request, and the catch below resolves to whichever
+    // request actually won.
+    try {
+      await transactWithAudit(
+        store,
+        id,
+        [
+          { kind: 'put', item: reqItem as never, ifNotExists: true },
+          {
+            kind: 'update',
+            pk: primaryKey.PK,
+            sk: primaryKey.SK,
+            set: { legitimizeRequestId: reqId },
+            ifEquals: { attr: 'legitimizeRequestId', value: row.legitimizeRequestId },
+          },
+        ],
+        {
+          action: 'drift-legitimize-requested',
+          actor: account.id,
+          targetType: 'request',
+          targetId: reqId,
+          requestId: reqId,
+          after: { digest, status, approvalsRequired, risk, exposure: op.exposure, reviewTier: tier, ...feasibility },
+        },
+      );
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'STATE_CONFLICT') {
+        const raced = (await store.get(primaryKey.PK, primaryKey.SK)) as DriftProposalItem | null;
+        if (raced?.legitimizeRequestId !== undefined) {
+          const winnerKey = requestKey(id, raced.legitimizeRequestId);
+          const winner = (await store.get(winnerKey.PK, winnerKey.SK)) as RequestItem | null;
+          if (winner) return c.json(toChangeRequest(winner, id), 200);
+        }
+      }
+      throw e;
+    }
 
     return c.json(toChangeRequest(reqItem, id), 201);
   });

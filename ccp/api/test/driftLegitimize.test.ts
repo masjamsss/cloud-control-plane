@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store/memoryStore';
 import type { ConfigStore } from '../src/store/configStore';
-import type { AuditItem, DriftProposalItem } from '../src/store/schema';
-import { driftProposalKey } from '../src/store/schema';
+import type { AuditItem, DriftProposalItem, RequestItem } from '../src/store/schema';
+import { driftProposalKey, requestCollectionGsi, requestKey } from '../src/store/schema';
 import { __resetUploadRateLimitForTests } from '../src/middleware/rateLimit';
 import { __resetKnownProjectsForTests } from '../src/projects';
 import { __setNow } from '../src/clock';
@@ -443,6 +443,85 @@ describe('POST /projects/:id/drift/security/:digest/legitimize (C2)', () => {
     });
     expect(revertRes.status).toBe(201);
     expect(((await revertRes.json()) as { operationId: string }).operationId).toBe('system-drift-revert');
+  });
+
+  /**
+   * API-18 — nothing deduplicated repeat legitimize calls on the same digest:
+   * each one minted a fresh NEEDS_ENGINEER request, only slowed by the
+   * submit rate limit. Reproduced directly (no rate-limit dance needed) by
+   * calling the route twice and counting what landed.
+   */
+  describe('a repeat legitimize on the SAME digest does not mint a duplicate request', () => {
+    async function seeded(s: Setup, label: string): Promise<string> {
+      const { token } = await mintToken(s);
+      expect((await putDrift(s, token)).status).toBe(201);
+      const digest = digestFor(label);
+      await seedRevertProposal(s.store, s.dataRoot, {
+        digest,
+        address: 'aws_security_group.sg1',
+        path: 'ingress[0].cidr_blocks',
+        liveJson: ['0.0.0.0/0'],
+        codeJson: ['10.0.0.0/16'],
+        reportVersion: 1,
+      });
+      return digest;
+    }
+
+    it('a second call while the first request is still open returns the SAME request (200), not a new one', async () => {
+      const s = await setup();
+      await driveToTrusted(s);
+      const digest = await seeded(s, 'repeat-open');
+
+      const first = await legitimize(s, s.wati, digest, { justification: JUSTIFICATION, schedule: { kind: 'now' } });
+      expect(first.status).toBe(201);
+      const firstBody = (await first.json()) as { id: string };
+
+      const second = await legitimize(s, s.wati, digest, { justification: JUSTIFICATION, schedule: { kind: 'now' } });
+      expect(second.status).toBe(200); // resolves, does not re-create
+      const secondBody = (await second.json()) as { id: string };
+      expect(secondBody.id).toBe(firstBody.id);
+
+      // The proposal row remembers it, but stays 'open' — legitimize still
+      // never consumes it (the invariant the "both paths stay open" test above pins).
+      const pk = driftProposalKey('acme', digest);
+      const row = (await s.store.get(pk.PK, pk.SK)) as DriftProposalItem;
+      expect(row.legitimizeRequestId).toBe(firstBody.id);
+      expect(row.status).toBe('open');
+
+      // Exactly ONE request row exists for this digest, not two — read the
+      // store directly rather than through a list endpoint's own projection.
+      const all = (await s.store.queryGSI1(requestCollectionGsi('acme'))) as RequestItem[];
+      const forThisDigest = all.filter((r) => (r.params as { proposalDigest?: string } | undefined)?.proposalDigest === digest);
+      expect(forThisDigest).toHaveLength(1);
+    });
+
+    it('once the prior request reaches a TERMINAL status, a fresh legitimize is allowed again', async () => {
+      const s = await setup();
+      await driveToTrusted(s);
+      const digest = await seeded(s, 'repeat-after-terminal');
+
+      const first = await legitimize(s, s.wati, digest, { justification: JUSTIFICATION, schedule: { kind: 'now' } });
+      expect(first.status).toBe(201);
+      const firstBody = (await first.json()) as { id: string };
+
+      // The outcome under test does not depend on HOW a request reaches a
+      // terminal status (cancel/reject/withdraw all count) — it depends only
+      // on `occupiesQuotaSlot` reading it as terminal, so the state is built
+      // directly rather than driving one particular route to get there.
+      const rk = requestKey('acme', firstBody.id);
+      const stored = (await s.store.get(rk.PK, rk.SK)) as RequestItem;
+      expect(stored.status).not.toBe('CANCELLED'); // L-1: not already terminal by construction
+      await s.store.put({ ...stored, status: 'CANCELLED' });
+
+      const second = await legitimize(s, s.wati, digest, { justification: JUSTIFICATION, schedule: { kind: 'now' } });
+      expect(second.status).toBe(201); // a FRESH request, not the cancelled one resurfaced
+      const secondBody = (await second.json()) as { id: string };
+      expect(secondBody.id).not.toBe(firstBody.id);
+
+      const pk = driftProposalKey('acme', digest);
+      const row = (await s.store.get(pk.PK, pk.SK)) as DriftProposalItem;
+      expect(row.legitimizeRequestId).toBe(secondBody.id); // repointed to the new one
+    });
   });
 });
 

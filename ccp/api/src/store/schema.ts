@@ -1278,6 +1278,16 @@ export const DriftProposalItem = z.object({
   /** OOB provisioning-import spec §5.4 — additive, import-only, paired with
    * `arn` above. Absent on every adopt/revert row. */
   tfType: z.string().optional(),
+  /** API-18 — revert-flavor only, additive: the engineer-tier request the
+   * `/legitimize` route minted from this proposal, so a repeat call can find
+   * it instead of minting another. Deliberately NOT a status change on this
+   * row — legitimize never consumes the proposal (`row.status` stays
+   * `'open'`; both legitimize and revert remain visible, spec addendum A6) —
+   * and NOT cleared when the request finishes: `routes/drift.ts` re-checks
+   * the pointed-to request's OWN status (`occupiesQuotaSlot`) to decide
+   * whether a fresh legitimize is allowed again, so a rejected/cancelled
+   * attempt at converging the drift does not permanently block a retry. */
+  legitimizeRequestId: z.string().optional(),
 });
 export type DriftProposalItem = z.infer<typeof DriftProposalItem>;
 
