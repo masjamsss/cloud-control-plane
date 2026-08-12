@@ -314,6 +314,12 @@ export function requestRoutes(): Hono<AppEnv> {
         const rk = requestKey(projectId, String(marker.requestId));
         const prior = (await store.get(rk.PK, rk.SK)) as RequestItem | null;
         if (prior) return c.json(toChangeRequest(prior, projectId), 200);
+        // API-15: the marker exists but the request it names does not (partial
+        // deletion, manual surgery, or any future request-delete feature) — a
+        // DANGLING marker. Falling through here (not returning) is deliberate:
+        // this submit proceeds as an ordinary fresh one, and the write path
+        // below re-checks and REPAIRS the same marker atomically with it,
+        // rather than this read racing that repair.
       }
     }
 
@@ -528,7 +534,7 @@ export function requestRoutes(): Hono<AppEnv> {
     };
     // Persist the request (+ the idempotency marker, if a key was supplied) and its audit entry
     // as ONE atomic batch. A fresh-ULID request put never collides, so the ONLY domain
-    // condition that can fail besides the chain head is the marker `ifNotExists` — a collision
+    // condition that can fail besides the chain head is the marker write — a collision on it
     // means a concurrent/duplicate submit already created THIS set, so we return that existing
     // request (idempotent) rather than a second copy. This is why submit hand-rolls the loop
     // instead of `transactWithAudit`: it must tell a marker duplicate apart from chain
@@ -539,27 +545,42 @@ export function requestRoutes(): Hono<AppEnv> {
         : undefined;
     const hKey = chainHead(projectId);
     for (let attempt = 0; attempt < 2; attempt++) {
+      // API-15: the marker's write MODE is re-derived from a FRESH read every
+      // attempt, never trusted from a prior attempt or the pre-check above — a
+      // marker seen dangling a moment ago could have been repaired, or reused
+      // by a concurrent writer, since. Three outcomes:
+      //  - no marker at this key yet → `ifNotExists` (the ordinary first submit);
+      //  - marker exists and its request is real → this IS a duplicate submit,
+      //    short-circuit with the existing request, no write attempted;
+      //  - marker exists but its request is gone (dangling — partial deletion,
+      //    manual surgery, or a future request-delete feature) → CAS-repair it
+      //    atomically with this submit, guarded on the exact stale value so a
+      //    concurrent repair can't be silently clobbered.
+      let markerWrite: TransactWrite | undefined;
+      if (marker) {
+        const current = (await store.get(marker.PK, marker.SK)) as { requestId?: unknown } | null;
+        if (!current) {
+          markerWrite = { kind: 'put', item: marker, ifNotExists: true };
+        } else {
+          const rk = requestKey(projectId, String(current.requestId));
+          const prior = (await store.get(rk.PK, rk.SK)) as RequestItem | null;
+          if (prior) return c.json(toChangeRequest(prior, projectId), 200);
+          markerWrite = { kind: 'put', item: marker, ifEquals: { attr: 'requestId', value: current.requestId } };
+        }
+      }
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
       const { writes: auditWrites } = recordIn(projectId, head, entry);
-      const domain: TransactWrite[] = [
-        { kind: 'put', item, ifNotExists: true },
-        ...(marker ? [{ kind: 'put' as const, item: marker, ifNotExists: true }] : []),
-      ];
+      const domain: TransactWrite[] = [{ kind: 'put', item, ifNotExists: true }, ...(markerWrite ? [markerWrite] : [])];
       try {
         await store.transact([...domain, ...auditWrites]);
         return c.json(toChangeRequest(item, projectId), 201);
       } catch (e) {
         if (e instanceof ConditionError) {
-          // A duplicate submit (same key already committed) → return the existing request.
-          if (marker) {
-            const dup = (await store.get(marker.PK, marker.SK)) as { requestId?: unknown } | null;
-            if (dup) {
-              const rk = requestKey(projectId, String(dup.requestId));
-              const prior = (await store.get(rk.PK, rk.SK)) as RequestItem | null;
-              if (prior) return c.json(toChangeRequest(prior, projectId), 200);
-            }
-          }
-          if (attempt === 0) continue; // else it was chain contention → retry once
+          // A marker write raced (a concurrent submit landed between the fresh
+          // read above and this transact) or it was chain contention — either
+          // way, attempt 1 re-derives everything fresh, including resolving a
+          // now-real duplicate to its request rather than retrying blind.
+          if (attempt === 0) continue;
           throw new ApiError('CHAIN_CONTENTION');
         }
         throw e;
