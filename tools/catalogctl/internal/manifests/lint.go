@@ -53,6 +53,22 @@ const (
 	// zero; two is an ambiguous positional bind. Exactly one is the contract.
 	RuleTargetArity = "target-arity"
 
+	// RuleForeachLocalTarget — an append_foreach_entry / remove_foreach_entry
+	// op with no target.block declared. foreachMapAttr then derives the map
+	// attribute from the REQUEST's resolved inventory address at run time —
+	// which only ever resolves for a `local.<name>` address (any other
+	// address always errors: "cannot resolve foreach map attribute"). But
+	// even a genuine local.-target op is a guaranteed pipeline dead end
+	// (CTL-4): editing a for_each source map changes the CONSUMING
+	// resources' planned instances, and plan-check R1's address-subset rule
+	// has no way to allow that — a local is never itself a planned resource
+	// change, so R1's allow set for a local target is functionally empty,
+	// and ANY real downstream consumer trips address-subset. The op authors
+	// cleanly and is only discovered dead after approval + CI plan.
+	// Declaring target.block makes the map attribute explicit and the
+	// target a real, plan-checkable resource address instead.
+	RuleForeachLocalTarget = "foreach-local-target"
+
 	// RuleMultiValueProvider — a set_attribute op with MORE THAN ONE
 	// value-provider param. set_attribute writes exactly one attribute:
 	// edit.valueParam takes the FIRST provider and the rest are silently
@@ -159,6 +175,15 @@ func lintOp(op Op) []Finding {
 	if op.CodemodOp == "append_foreach_entry" {
 		if countParam(op, isNonInventoryValue) < 2 {
 			add(RuleForeachArity, "append_foreach_entry needs a key param then a value param (two non-inventory params, read positionally)")
+		}
+	}
+
+	// CTL-4: a foreach op with no target.block only ever resolves for a
+	// local.<name> target, and plan-check R1 can never pass a local.-targeted
+	// foreach op — see RuleForeachLocalTarget's doc comment.
+	if op.CodemodOp == "append_foreach_entry" || op.CodemodOp == "remove_foreach_entry" {
+		if op.Target.Block == "" {
+			add(RuleForeachLocalTarget, "no target.block declared — the map attribute would be derived from the request's resolved address, which only resolves for a local.<name> target, and plan-check R1 can never pass a local.-targeted foreach op (a local is never itself a planned resource change); declare target.block")
 		}
 	}
 

@@ -1,0 +1,17 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "aws_cloudwatch_metric_alarm.host[\"api01\"]",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "alarm_name": "api01-cpu-high"
+        }
+      }
+    }
+  ]
+}
