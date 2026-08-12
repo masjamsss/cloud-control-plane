@@ -7,7 +7,7 @@ import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store/memoryStore';
 import type { ConfigStore } from '../src/store/configStore';
 import type { AuditItem, ProjectUploadTokenItem } from '../src/store/schema';
-import { uploadTokenKey } from '../src/store/schema';
+import { projectDataVersionKey, uploadTokenKey } from '../src/store/schema';
 import { canonicalJson, verifyChain } from '../src/domain/audit';
 import { readAuditChronological, toAuditEntry } from '../src/domain/auditQuery';
 import { UPLOAD_RATE_CAPACITY, __resetUploadRateLimitForTests } from '../src/middleware/rateLimit';
@@ -737,6 +737,91 @@ describe('POST /projects/:id/data/:version/activate — 2-admin envelope', () =>
 });
 
 /* ═══ first activation = go-live (trusted → ready rides the 2-admin ack) ══ */
+
+describe('DATA-12 — the version ROW is a claim; the FILES are the fact', () => {
+  /**
+   * The upload lane allocates row-first (winning the metadata row's
+   * `ifNotExists` put IS the version-number claim) and writes files second,
+   * deleting the row only if the write THROWS. A process crash in that window —
+   * or between the throw and the compensating delete — leaves a durable, listed
+   * version row with no files, and its audit entry claims a successful upload.
+   *
+   * Activation used to verify only that the row existed, so two admins could take
+   * such a version live through the whole two-admin ceremony and the `dataActive`
+   * pointer would then serve 404s for everything.
+   *
+   * The crash is reproduced by its OUTCOME rather than by killing a process: a
+   * completed upload whose version directory is then removed is byte-identical,
+   * as durable state, to the crash the finding describes — a row with no files.
+   */
+  async function stagedThenOrphaned(s: Setup): Promise<number> {
+    await driveToTrusted(s);
+    const { token } = await mintToken(s);
+    const res = await upload(s, token);
+    expect(res.status).toBe(201);
+    const { version } = (await res.json()) as { version: number };
+
+    // L-1 — the row and the files BOTH landed first, so the removal below is
+    // what creates the orphan rather than the upload having quietly failed.
+    const vKey = projectDataVersionKey('acme', version);
+    expect(await s.store.get(vKey.PK, vKey.SK)).not.toBeNull();
+    const dir = join(s.dataRoot, 'acme', `v${version}`);
+    expect(existsSync(dir)).toBe(true);
+
+    rmSync(dir, { recursive: true, force: true }); // ← the crash's durable outcome
+    expect(existsSync(dir)).toBe(false);
+    expect(await s.store.get(vKey.PK, vKey.SK)).not.toBeNull(); // the row survives
+    return version;
+  }
+
+  it('refuses to activate a version whose files never landed', async () => {
+    const s = await setup();
+    const version = await stagedThenOrphaned(s);
+
+    const propose = await s.app.request(`/projects/acme/data/${version}/activate`, {
+      method: 'POST',
+      headers: hdrs(s.putra, { json: true }),
+    });
+    expect(propose.status).toBe(409);
+    expect((await propose.json()).code).toBe('DATA_VERSION_INCOMPLETE');
+
+    // Refused at PROPOSE, so the orphan never consumes a dual-control envelope
+    // and no second admin is ever asked to ack a version that cannot serve.
+    const acme = (await (await s.app.request('/projects', { headers: hdrs(s.putra) })).json() as Array<Record<string, unknown>>).find((p) => p.id === 'acme')!;
+    expect(acme.dataActive).toBeUndefined();
+    expect(acme.status).toBe('trusted'); // NOT taken live
+  });
+
+  it('a partially removed version directory is refused too (the file, not just the dir)', async () => {
+    // The dir is created by an atomic rename of a fully-written temp dir, so its
+    // presence normally means the write completed. Checking `inventory.json` —
+    // the one file every bundle has — catches a dir damaged by something outside
+    // this lane, which is the same unservable state by a different route.
+    const s = await setup();
+    await driveToTrusted(s);
+    const { token } = await mintToken(s);
+    expect((await upload(s, token)).status).toBe(201);
+    const inventory = join(s.dataRoot, 'acme', 'v1', 'inventory.json');
+    expect(existsSync(inventory)).toBe(true);
+    rmSync(inventory);
+
+    const propose = await s.app.request('/projects/acme/data/1/activate', { method: 'POST', headers: hdrs(s.putra, { json: true }) });
+    expect(propose.status).toBe(409);
+    expect((await propose.json()).code).toBe('DATA_VERSION_INCOMPLETE');
+  });
+
+  it('a complete version still activates — the guard checks landedness, not existence of trouble', async () => {
+    // The control. Without it a guard that refused everything would pass the two
+    // assertions above and break the product.
+    const s = await setup();
+    await driveToTrusted(s);
+    const { token } = await mintToken(s);
+    expect((await upload(s, token)).status).toBe(201);
+    await activateViaTwoAdmins(s, 1);
+    const acme = (await (await s.app.request('/projects', { headers: hdrs(s.putra) })).json() as Array<Record<string, unknown>>).find((p) => p.id === 'acme')!;
+    expect((acme.dataActive as { version: number }).version).toBe(1);
+  });
+});
 
 describe('the FIRST activation is the go-live: ready + routability arrive with the ack', () => {
   it('acked first activation → ready: artifacts = the version’s SERVER digests, the id becomes routable/bindable, data serves; NOTHING moves before the ack', async () => {

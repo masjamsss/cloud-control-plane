@@ -163,6 +163,15 @@ export const ERRORS = {
     reason:
       "This drift proposal is stale — superseded by a newer report, already submitted, or not from the latest snapshot.",
   },
+  // DATA-12 — a staged version ROW exists but its files do not (a crash between
+  // the row-first allocation and the file write). The row is a claim; the files
+  // are the fact. 409 rather than 404: the version is real and listed, it is just
+  // not servable, and the remedy is a fresh upload rather than a different id.
+  DATA_VERSION_INCOMPLETE: {
+    status: 409,
+    reason:
+      "That data version's files are missing — the upload did not complete. Re-upload it before activating.",
+  },
   // ADR-0023 — the instance-identity row changed between your read and this
   // write (another admin renamed it concurrently); re-read and retry.
   INSTANCE_STALE: {

@@ -360,6 +360,32 @@ async function syncDir(dir: string): Promise<void> {
   }
 }
 
+/**
+ * DATA-12 — did this version's FILES actually land?
+ *
+ * The upload lane allocates row-first (winning the metadata row's `ifNotExists`
+ * put IS the version-number claim) and writes the files second, deleting the row
+ * if the write throws. A process crash between the two — or between the throw and
+ * the compensating delete — leaves a durable, listed version row with no files,
+ * and the audit entry says the upload succeeded either way.
+ *
+ * So a version ROW is a claim and the files are the fact, and anything that
+ * promotes a version has to check the fact. `writeProjectDataVersion` renames a
+ * fully-written temp dir into place atomically, so the directory's existence
+ * means the write completed; `inventory.json` is checked too because it is the
+ * one file every bundle has, which catches a dir left half-deleted by something
+ * outside this lane.
+ *
+ * Cheap on purpose (two stats): this sits on the activate path, not the hot read
+ * path, and the alternative — a "files landed" flag written after the file write
+ * — is a second write that can crash in the same window, i.e. a proxy for the
+ * fact rather than the fact.
+ */
+export function projectDataVersionLanded(root: string, projectId: string, version: number): boolean {
+  const dir = versionDir(root, projectId, version);
+  return existsSync(dir) && existsSync(join(dir, 'inventory.json'));
+}
+
 /** Best-effort removal of one staged version's files (upload row-write failed). */
 export function removeProjectDataVersion(root: string, projectId: string, version: number): void {
   rmSync(versionDir(root, projectId, version), { recursive: true, force: true });
