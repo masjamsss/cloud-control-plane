@@ -1,6 +1,7 @@
 package hclops
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -27,7 +28,32 @@ func AtomicWrite(path string, data []byte) error {
 	mode := os.FileMode(0o644)
 	if info, err := os.Stat(path); err == nil {
 		mode = info.Mode().Perm()
+		if info.Mode().IsRegular() {
+			// path resolves (directly, or by following a symlink) to an existing
+			// regular file: confirm it is actually writable before touching
+			// anything. The os.Rename below only requires write permission on
+			// path's own CONTAINING DIRECTORY — never on the file it replaces —
+			// so without this explicit probe a read-only file would be silently
+			// swapped out from under its own permission bits instead of
+			// refusing the write the way this function's direct os.WriteFile
+			// predecessor did. Caught by CI (which runs this repo's tests as a
+			// non-root user); invisible to a root-run local `go test`, since
+			// root bypasses the permission check being probed here — see
+			// TestCovadoptApplyAdoptSurfacesWriteFailure's own t.Skip guard.
+			probe, err := os.OpenFile(path, os.O_WRONLY, 0)
+			if err != nil {
+				return fmt.Errorf("%s: refusing to overwrite (not writable): %w", path, err)
+			}
+			probe.Close()
+		}
 	}
+	// A path that resolves to NOTHING (the os.Stat above failed) — nothing
+	// there yet, or a dangling symlink pointing into a directory that doesn't
+	// exist — skips the writability probe entirely and falls through to the
+	// rename-replaces behavior CTL-5 added on purpose: the temp file below
+	// gets renamed over whatever sits at path (file or symlink) rather than
+	// traversing it. See
+	// TestCovdriftedDriftEditImportThroughDanglingSymlinkSucceeds.
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".catalogctl-*.tmp")
 	if err != nil {
