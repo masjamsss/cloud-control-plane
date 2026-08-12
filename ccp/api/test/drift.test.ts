@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -951,6 +951,65 @@ describe('PUT /projects/:id/drift — F10 concurrent-upload dedupe race', () => 
 
     const rows = await s.store.query('PROJECT#acme', 'DRIFT#v');
     expect(rows.map((r) => (r as DriftReportItem).version)).toEqual([1, 2]);
+  });
+
+  /** A store whose `delete` throws once armed — reproduces the ACTUAL ERR-14
+   * defect. Under the OLD row-first ordering, a write failure's compensation
+   * (`store.delete` the version row, then restore/delete the pointer) was two
+   * separate unguarded calls; if the FIRST one itself fails, compensation is
+   * interrupted and the row + pointer are left committed with no file behind
+   * them — the exact "ghost row" the finding describes. Under the fix, the
+   * file write happens BEFORE anything commits, so this flow never calls
+   * `delete` at all — arming it should have no effect once the fix lands. */
+  class CompensationFaultStore extends MemoryStore {
+    armed = false;
+    override async delete(pk: string, sk: string): Promise<void> {
+      if (this.armed) throw new Error('simulated store fault during compensation');
+      return super.delete(pk, sk);
+    }
+  }
+
+  it('ERR-14: a report-write failure leaves NEITHER row NOR pointer, even when the OLD compensation path would itself have faulted', async () => {
+    const faultStore = new CompensationFaultStore();
+    const s = await setup(faultStore);
+    await driveToTrusted(s);
+    const { token } = await mintToken(s);
+
+    // Force writeDriftReport's mkdir to fail: plant a plain FILE at the
+    // exact path the write needs to create as a directory.
+    mkdirSync(join(s.dataRoot, 'acme'), { recursive: true });
+    writeFileSync(join(s.dataRoot, 'acme', 'drift'), 'occupying the directory path');
+
+    faultStore.armed = true; // only this upload's own (would-be) compensation is affected
+    const res = await putDrift(s, token, envelope());
+    expect(res.status).toBe(500); // an unexpected fault, not a taxonomy refusal
+
+    // The file write happens BEFORE the row transacts (ERR-14) — a failure
+    // here throws with nothing yet staged in the store, so there is nothing
+    // left over to leak: no version row, no pointer.
+    expect(await s.store.query('PROJECT#acme', 'DRIFT#v')).toHaveLength(0);
+    const pk = driftPointerKey('acme');
+    expect(await s.store.get(pk.PK, pk.SK)).toBeNull();
+  });
+
+  it("ERR-14: a CHAIN_CONTENTION retry's already-written file does not survive as a permanent orphan", async () => {
+    const raceStore = new ConcurrentUploadStore();
+    const s = await setup(raceStore);
+    await driveToTrusted(s);
+    const { token } = await mintToken(s);
+
+    raceStore.armed = true;
+    raceStore.landConcurrentWrite = () => landPhantomVersion(raceStore, 'acme', envelope({ runId: 'concurrent-run' }));
+
+    const res = await putDrift(s, token, envelope({ runId: 'our-run' }));
+    expect(res.status).toBe(201);
+    expect(await res.json()).toEqual({ version: 2 });
+
+    // Attempt 0 wrote v1.json before losing the race for the version-1 row
+    // (the phantom claimed it in the store, never on disk) — that file must
+    // be cleaned up on the retry, not left behind referencing no row.
+    expect(existsSync(join(s.dataRoot, 'acme', 'drift', 'v1.json'))).toBe(false);
+    expect(existsSync(join(s.dataRoot, 'acme', 'drift', 'v2.json'))).toBe(true);
   });
 });
 
