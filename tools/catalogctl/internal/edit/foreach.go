@@ -34,7 +34,16 @@ func appendForeachEntry(op manifests.Op, req *request.Request, loc *hclops.Locat
 	}
 	nonInv := nonInvParams(op)
 	if len(nonInv) < 2 {
-		return nil, "", "", fmt.Errorf("append_foreach_entry needs key and value params")
+		// CTL-3: a mis-shaped manifest (the op declares codemodOp
+		// "append_foreach_entry" without a key-then-value non-inventory param pair)
+		// is bad DATA, not an internal fault — manifest_lint's RuleForeachArity
+		// catches this at build time for the shipped catalog; this is the same
+		// defect surfacing at request time (e.g. a hand-authored fixture the lint
+		// never saw), and gets the same REFUSE (exit 2) treatment as every other
+		// manifest-shape gap in this file (UNSUPPORTED_PATH, SELECTOR_AMBIGUOUS,
+		// ...), not the internal-fault exit 1 an operator would misread as
+		// catalogctl itself malfunctioning.
+		return nil, "FOREACH_ARITY", "append_foreach_entry needs key and value params (two non-inventory params, read positionally) — the op's manifest shape is wrong", nil
 	}
 	key, ok := req.Params[nonInv[0].Name].(string)
 	if !ok {
@@ -99,7 +108,9 @@ func removeForeachEntry(op manifests.Op, req *request.Request, loc *hclops.Locat
 	}
 	nonInv := nonInvParams(op)
 	if len(nonInv) < 1 {
-		return nil, "", "", fmt.Errorf("remove_foreach_entry needs a key param")
+		// CTL-3: same manifest-shape-not-internal-fault reasoning as
+		// appendForeachEntry's arity check above — REFUSE, not exit 1.
+		return nil, "FOREACH_ARITY", "remove_foreach_entry needs a key param (one non-inventory param) — the op's manifest shape is wrong", nil
 	}
 	key, ok := req.Params[nonInv[0].Name].(string)
 	if !ok {

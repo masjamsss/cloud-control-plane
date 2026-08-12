@@ -83,7 +83,10 @@ var arityBaseline = map[string]bool{
 	"target-arity\ts3-set-transition-date":                                       true,
 	"target-arity\tsecurity-groups-add-egress-rule-to-security-group":            true,
 	"target-arity\tsecurity-groups-add-ingress-rule-from-security-group":         true,
-	"foreach-arity\twaf-add-ip-set-entry":                                        true,
+	// waf-add-ip-set-entry's foreach-arity finding (CTL-3) was fixed, not
+	// grandfathered: the op now carries codemodOp "append_list_entry" (the
+	// implementation goldens already proved, testdata/golden/u5-append-list-entry),
+	// so it no longer trips this rule at all — removed, not left stale.
 	// multi-value-provider (surfaced, not fixed): a set_attribute op writes ONE
 	// attribute, so every value provider after the first is silently dropped at
 	// exit 0 with a diff that looks complete. These five are PRE-EXISTING and
