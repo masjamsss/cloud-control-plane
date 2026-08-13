@@ -250,7 +250,7 @@ export function projectDataRoutes(dataRoot: string): Hono<AppEnv> {
     // 5. DIGEST BINDING: recompute sha256 over the canonical JSON of each part
     //    and compare with the uploader's claim. Fail closed on the first mismatch.
     const claimed = parsed.data.digests;
-    const computed = digestsOf(parsed.data);
+    const computed = await digestsOf(parsed.data);
     if ((parsed.data.manifests !== undefined) !== (claimed.manifestsSha256 !== undefined)) {
       return apiError(c, 'DATA_DIGEST_MISMATCH', { part: 'manifests', problem: 'manifests and manifestsSha256 must be present together' });
     }
@@ -261,10 +261,18 @@ export function projectDataRoutes(dataRoot: string): Hono<AppEnv> {
     }
 
     // 6. REDACTION RE-RUN — the server stores its own redaction output.
-    const redaction = rerunRedaction(parsed.data);
+    const redaction = await rerunRedaction(parsed.data);
     if (redaction.problem) return apiError(c, 'VALIDATION_FAILED', redaction.problem);
     const stored = redaction.bundle;
-    const storedDigests = digestsOf(stored);
+    // The stored digests are the digests OF THE STORED BUNDLE — always. But when
+    // the re-run masked nothing, the stored bundle is structurally identical to
+    // the uploaded one, so those digests are the ones step 5 already computed and
+    // a second full canonical pass over the whole estate buys nothing. That is the
+    // ordinary case (CI redacts before uploading, and every redactor is
+    // idempotent), and at 20k resources it was 372 ms of the ~1.1 s freeze.
+    // `projectDataIngest.test.ts` pins the equivalence this leans on rather than
+    // asserting it here in prose.
+    const storedDigests = redaction.changed ? await digestsOf(stored) : computed;
 
     // 7. STAGE as the next version. ROW-FIRST allocation: winning the metadata
     //    row's `ifNotExists` put IS the version-number claim (one retry on a

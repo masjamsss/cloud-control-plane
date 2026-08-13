@@ -12,6 +12,13 @@
 # minimum that proved the reflection mechanism on a second provider (F1c's three
 # verdicts, all still present in the full dump). It is no longer the committed
 # scope; regenerate the full dump with an empty -types filter, not this list.
+#
+# IMP-8: that instruction was previously unexecutable — gen.sh's `TYPES="${TYPES:-…}"`
+# treated an empty TYPES as unset and fell back to this very file, so there was no way
+# to ask for the full provider through the documented entry point. gen.sh now defaults
+# to TYPES=all for both providers and accepts an explicitly empty TYPES as the same
+# thing. To regenerate the 12-type spike deliberately:
+#   TYPES=tools/schemadump/types-azure.txt PROVIDER=azurerm tools/schemadump/gen.sh
 # The AWS side keeps its curated types.txt union rule because its dump is scoped
 # to relevant types; the Azure dump is deliberately complete instead.
 azurerm_resource_group

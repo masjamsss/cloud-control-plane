@@ -156,6 +156,26 @@ compose config 2>/dev/null | grep -q '/data/ccp/store' || { err "compose config 
 # Post-migration invariant: the store bind must already hold real data — the
 # bind-side twin of the old volume check above.
 [ -s /data/ccp/store/ccp.json ] || { err "/data/ccp/store/ccp.json is missing or empty — this host has not completed the /data migration. Run scripts/migrate-data.sh first (see docs/go-live.md → \"Migrating an existing install to /data\")"; exit 1; }
+# OPS-6: this script's `compose up -d --build` below resolves docker-compose.yml ALONE
+# unless COMPOSE_FILE says otherwise. On a host armed with the one-shot
+# `-f … -f docker-compose.armed.yml up` that used to be the documented procedure, the
+# rebuild silently recreates the api WITHOUT the socket, the /data/scratch bind or
+# TMPDIR — so the armed lanes break every night at 03:17 and nothing says why.
+#
+# Refusing, rather than re-arming automatically: re-applying the overlay would be this
+# script deciding on its own to grant a container root-equivalence on the host. The
+# refusal leaves the deployment exactly as it is — armed and serving, just not updated —
+# and names the one line that makes arming survive every future up. It is also the same
+# posture as the /data/ccp/store guard directly above: the resolved config lacks a
+# property this deployment needs, so stop and name the migration. NOT a hold file: this
+# must retry (and re-notify) nightly rather than going quiet.
+# shellcheck source=lib/armed.sh
+. "$CCP_DIR/scripts/lib/armed.sh"
+if armed_drift_detected; then
+  err "the RUNNING api is armed (docker socket mounted) but the resolved compose config is NOT — a rebuild here would silently DISARM the bundle/drift lanes. Arming is not sticky on this host: $(armed_fix_hint)"
+  notify failure "refusing to update: arming would be stripped (set COMPOSE_FILE in .env)"
+  exit 1
+fi
 
 exec 9>"$STATE/lock"
 flock -n 9 || { warn "another update is already running — skipping"; exit 0; }

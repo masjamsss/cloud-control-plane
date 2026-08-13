@@ -390,4 +390,109 @@ describe("the claim hands the worker exactly the access it needs", () => {
       await s.store.query(projectKey("acme").PK, "ONBOARDTOKEN#"),
     ).toHaveLength(0);
   });
+
+  describe("ERR-9: a GitHub blip is not the same as a broken App install", () => {
+    it("retries once on a transient (5xx) failure and succeeds on the second try", async () => {
+      armScanner();
+      process.env.CCP_GITHUB_APP_ID = "123456";
+      process.env.CCP_GITHUB_APP_KEY = privateKey;
+      let calls = 0;
+      __setGithubAppFetchForTests(async (url) => {
+        calls++;
+        if (calls === 1) return { status: 503, json: async () => ({}) }; // GitHub blip
+        if (url.endsWith("/installation"))
+          return { status: 200, json: async () => ({ id: 42 }) };
+        return { status: 201, json: async () => ({ token: "ghs_retried" }) };
+      });
+
+      const s = await setup();
+      await plantProject(s.store);
+      await queueJob(s);
+      const body = (await (await claim(s)).json()) as { cloneAuthHeader: string };
+      expect(body.cloneAuthHeader).toBe(
+        `Basic ${Buffer.from("x-access-token:ghs_retried").toString("base64")}`,
+      );
+      expect(calls).toBeGreaterThan(1); // the first, failed attempt really happened
+    });
+
+    it("retries once on a raw network throw and succeeds on the second try", async () => {
+      armScanner();
+      process.env.CCP_GITHUB_APP_ID = "123456";
+      process.env.CCP_GITHUB_APP_KEY = privateKey;
+      let calls = 0;
+      __setGithubAppFetchForTests(async (url) => {
+        calls++;
+        if (calls === 1) throw new Error("fetch failed: ECONNRESET");
+        if (url.endsWith("/installation"))
+          return { status: 200, json: async () => ({ id: 42 }) };
+        return { status: 201, json: async () => ({ token: "ghs_retried2" }) };
+      });
+
+      const s = await setup();
+      await plantProject(s.store);
+      await queueJob(s);
+      const body = (await (await claim(s)).json()) as { cloneAuthHeader: string };
+      expect(body.cloneAuthHeader).toBe(
+        `Basic ${Buffer.from("x-access-token:ghs_retried2").toString("base64")}`,
+      );
+    });
+
+    it("releases the claim back to the queue — never terminally fails the job — when a transient failure survives the retry", async () => {
+      armScanner();
+      process.env.CCP_GITHUB_APP_ID = "123456";
+      process.env.CCP_GITHUB_APP_KEY = privateKey;
+      __setGithubAppFetchForTests(async () => ({
+        status: 503,
+        json: async () => ({}),
+      }));
+
+      const s = await setup();
+      await plantProject(s.store);
+      const jobId = await queueJob(s);
+      expect((await claim(s)).status).toBe(204); // nothing handed out this poll
+
+      const k = scanJobKey("acme", jobId);
+      const row = (await s.store.get(k.PK, k.SK)) as ProjectScanJobItem;
+      // Back to exactly the state a freshly queued job is in — not "failed".
+      expect(row.status).toBe("queued");
+      expect(row.finishedAt).toBeUndefined();
+      expect(row.error).toBeUndefined();
+      expect(await s.store.queryGSI1("SCANJOB#QUEUED")).toHaveLength(1);
+
+      // And it really is claimable again once the outage clears.
+      __setGithubAppFetchForTests(async (url) => {
+        if (url.endsWith("/installation"))
+          return { status: 200, json: async () => ({ id: 42 }) };
+        return { status: 201, json: async () => ({ token: "ghs_recovered" }) };
+      });
+      const recovered = (await (await claim(s)).json()) as {
+        cloneAuthHeader: string;
+      };
+      expect(recovered.cloneAuthHeader).toBe(
+        `Basic ${Buffer.from("x-access-token:ghs_recovered").toString("base64")}`,
+      );
+    });
+
+    it("a permanent failure (404 not installed) is never retried and still fails the job", async () => {
+      armScanner();
+      process.env.CCP_GITHUB_APP_ID = "123456";
+      process.env.CCP_GITHUB_APP_KEY = privateKey;
+      let calls = 0;
+      __setGithubAppFetchForTests(async () => {
+        calls++;
+        return { status: 404, json: async () => ({}) };
+      });
+
+      const s = await setup();
+      await plantProject(s.store);
+      const jobId = await queueJob(s);
+      expect((await claim(s)).status).toBe(204);
+      expect(calls).toBe(1); // no retry wasted on a refusal a second try can't fix
+
+      const k = scanJobKey("acme", jobId);
+      const row = (await s.store.get(k.PK, k.SK)) as ProjectScanJobItem;
+      expect(row.status).toBe("failed");
+      expect(row.error).toMatch(/not installed/i);
+    });
+  });
 });
