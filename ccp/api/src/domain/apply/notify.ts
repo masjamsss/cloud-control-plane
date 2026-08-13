@@ -26,6 +26,18 @@ export type NotificationKind =
   | 'apply-failed'
   /** An `APPLYING` claim outlived its lease: the worker that took it never came back (API-2). */
   | 'apply-lease-expired'
+  /**
+   * `executor.replan` would not run, so the scheduler cannot tell whether the reviewed
+   * change still holds. The request is HELD where it is, not halted (ERR-6) — the fault
+   * is the executor's, not the change's.
+   */
+  | 'replan-failed'
+  /**
+   * An UNEXPECTED throw while processing one request. Distinct from every other kind
+   * here, which names a decision the scheduler made; this one means the scheduler could
+   * not make a decision at all, and the request was skipped so its siblings could run.
+   */
+  | 'tick-error'
   | 'reverted'
   | 'frozen';
 

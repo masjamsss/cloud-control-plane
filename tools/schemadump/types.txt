@@ -1,7 +1,19 @@
 # Relevant AWS resource types for the Cloud Control Plane catalog (0013d G0 scope).
 # Union of: (a) every operations[].target.resourceType in ccp/app/src/data/manifests/*.json (70)
 #           (b) every resources[].resourceType in ccp/app/src/data/inventory.json (62)
-# = 85 types. Widen by adding lines; the tool takes this file via -types.
+# = 85 types. Widen by adding lines.
+#
+# NOT THE COMMITTED SCOPE (IMP-8) — the same honest supersession note types-azure.txt
+# already carries. The committed aws-v6.53.0-schema.json.gz is the FULL provider
+# reflection: its own metadata says summary.requested = 1677, not 85. This file was
+# never what produced it, even though gen.sh passed it unconditionally and this header
+# used to say "the tool takes this file via -types" as though it did — running the
+# documented pipeline therefore produced a differently-scoped artifact than the one in
+# the tree. gen.sh now defaults to TYPES=all for both providers.
+#
+# This list is retained as the CATALOG-RELEVANT scope, for a deliberately narrow
+# regeneration when the full provider is more than you want:
+#   TYPES=tools/schemadump/types.txt PROVIDER=aws tools/schemadump/gen.sh
 # Regenerate this list: see README.md 'Regenerating the type list'.
 aws_acm_certificate
 aws_autoscaling_group

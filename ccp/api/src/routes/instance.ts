@@ -4,11 +4,11 @@ import type { AppEnv } from '../appEnv';
 import type { InstanceItem } from '../store/schema';
 import { instanceKey } from '../store/schema';
 import type { TransactWrite } from '../store/configStore';
-import { apiError, ApiError } from '../errors';
+import { apiError } from '../errors';
 import { requireSession } from '../middleware/session';
 import { requireAdmin } from '../middleware/authz';
 import { CONTROL_SCOPE } from '../projects';
-import { transactWithAudit } from '../domain/audit';
+import { DomainConditionError, transactWithAudit } from '../domain/audit';
 import { nowIso } from '../clock';
 
 /**
@@ -121,14 +121,15 @@ export function instanceAdminRoutes(): Hono<AppEnv> {
         after,
       });
     } catch (e) {
-      // transactWithAudit retries a lost condition ONCE (assuming chain-head
-      // contention) then throws CHAIN_CONTENTION — since it never rebuilds
-      // OUR domain write, a genuinely lost version guard (another admin
-      // renamed between our read and this write) surfaces the same way.
-      // Report the domain-accurate conflict instead of the generic chain
-      // code; anything else (a real bug) still surfaces as an unhandled 500.
-      if (e instanceof ApiError && e.code === 'CHAIN_CONTENTION')
-        return apiError(c, 'INSTANCE_STALE');
+      // ADR-0023's own code for this row moving under us: another admin renamed the
+      // instance (the `version` guard lost) or created it first (the `ifNotExists`
+      // lost). Both are "re-read and try again", and both are now reported as the
+      // caller's own condition failing rather than as chain contention (CONC-15) —
+      // this handler used to work around that conflation by re-mapping
+      // CHAIN_CONTENTION, which silently stopped mapping anything once CONC-9 made a
+      // value-guarded refusal STATE_CONFLICT instead. Genuine chain contention now
+      // keeps its own retryable code, and anything else still surfaces as a 500.
+      if (e instanceof DomainConditionError) return apiError(c, 'INSTANCE_STALE');
       throw e;
     }
 

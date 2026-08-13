@@ -2,7 +2,8 @@ import type { ConfigStore } from '../store/configStore';
 import type { AccountItem, ProjectItem, RoleBinding } from '../store/schema';
 import { accountsGsi, chainHead, projectCollectionGsi, projectKey, requestCollectionGsi, settlementKey, teamCollectionGsi } from '../store/schema';
 import { ConditionError } from '../store/configStore';
-import { transactWithAudit } from './audit';
+import { DomainConditionError, transactWithAudit } from './audit';
+import { ApiError } from '../errors';
 import { CONTROL_SCOPE } from '../projects';
 import { legacyProjectId, type Env } from '../deploy';
 import { nowIso } from '../clock';
@@ -179,6 +180,31 @@ async function materializeBareAccountRows(store: ConfigStore, legacyId: string |
   return touched;
 }
 
+/**
+ * Did this settlement pass lose to a CONCURRENT one (CONC-13)? Three shapes, all meaning
+ * "another caller is doing, or has done, this exact work":
+ *
+ *  - `ConditionError` — the marker's own `ifNotExists`, written outside the audited
+ *    helper. The winner stamped it.
+ *  - `DomainConditionError` — one of settlement's own writes was refused because the
+ *    winner already made it: the retro-registered project row now exists, or the account
+ *    row's `roles` guard (captured as `undefined`) no longer holds because the winner
+ *    materialized it.
+ *  - `CHAIN_CONTENTION` — the `@control` chain head moved under the audited write. Whether
+ *    the winner's write was settlement's or any other control-plane action, this pass
+ *    committed nothing.
+ *
+ * NOT included, deliberately: {@link SettlementConfigError}. It is a loud refusal about
+ * CONFIGURATION, never a race, and must reach the caller.
+ */
+function lostToConcurrentSettlement(e: unknown): boolean {
+  return (
+    e instanceof ConditionError ||
+    e instanceof DomainConditionError ||
+    (e instanceof ApiError && e.code === 'CHAIN_CONTENTION')
+  );
+}
+
 /** Run the settlement now on THIS store (idempotent via its on-disk `SETTLEMENT`
  * marker, written last so a crash mid-settlement re-attempts on the next boot
  * rather than falsely marking completion) — always re-checks the marker, so this
@@ -205,14 +231,25 @@ export async function runSettlement(store: ConfigStore, env: Env = process.env):
     accountsMaterialized = await materializeBareAccountRows(store, legacyId);
     await store.put({ ...marker, settledAt: nowIso(), settledBy: 'migration' }, { ifNotExists: true });
   } catch (e) {
-    // A ConditionError here means a CONCURRENT caller raced this exact settlement
-    // (two requests both saw "no marker" and both started) — not a real failure.
-    // Fail open: trust the other caller finished (or will), and don't retry-storm
-    // every subsequent request against this store. A genuinely half-settled store
-    // (process crash mid-way) is caught on the NEXT process boot, which re-checks
-    // the marker (absent) and re-attempts from scratch — retro-register/materialize
-    // are both `ifNotExists`/no-op-if-canonical, so a re-attempt is harmless.
-    if (!(e instanceof ConditionError)) throw e;
+    // A CONCURRENT caller raced this exact settlement (two requests both saw "no
+    // marker" and both started) — not a real failure. Fail open.
+    //
+    // CONC-13: this used to test only for `ConditionError`, which is what the LAST
+    // write in the pass (the marker's own `ifNotExists`) throws. The two writes BEFORE
+    // it go through `transactWithAudit`, which converts a refusal into an `ApiError` —
+    // so the loser of the race the comment above describes escaped the very catch
+    // written to tolerate it and 500'd an early request. The race is now recognised
+    // wherever in the pass it is lost, not only at the last step.
+    if (!lostToConcurrentSettlement(e)) throw e;
+    // …but do NOT take the loss as proof the store is settled. Only the MARKER proves
+    // the pass completed, so re-read it: the winner has usually stamped it microseconds
+    // ago, and if it has not, this returns WITHOUT caching so the next request
+    // re-attempts. (Caching here on the strength of the error alone — which is what
+    // simply widening the catch would do — strands a genuinely half-settled store:
+    // `ensureSettlement` short-circuits on the cache, so no later request in this
+    // process would ever finish the pass, and there is no marker for a restart to
+    // notice either.)
+    if (!(await store.get(marker.PK, marker.SK))) return { retroRegistered, accountsMaterialized };
   }
   confirmedSettled.set(store, true);
   return { retroRegistered, accountsMaterialized };

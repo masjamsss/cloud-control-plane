@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { mkdir, rename, writeFile, open as fsOpen } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { z } from 'zod';
@@ -616,4 +616,16 @@ export function readDriftReport(root: string, projectId: string, version: number
 /** Best-effort removal of one pruned version's file (retention, §3.1). */
 export function removeDriftReport(root: string, projectId: string, version: number): void {
   rmSync(driftReportPath(root, projectId, version), { force: true });
+}
+
+/**
+ * DATA-10 — cheap on-disk presence check for one report version: a single
+ * `existsSync` stat, never a content read or digest recompute. Mirrors
+ * projectData.ts's `projectDataVersionExists` exactly, for the same reason:
+ * used by readiness's cross-check so a `DriftPointerItem` left referencing a
+ * version whose file a disk-death restore lost reads as NOT ready instead of
+ * silently serving `report:null` behind a green probe.
+ */
+export function driftReportExists(root: string, projectId: string, version: number): boolean {
+  return existsSync(driftReportPath(root, projectId, version));
 }

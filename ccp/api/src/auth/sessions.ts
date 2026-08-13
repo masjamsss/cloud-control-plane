@@ -5,6 +5,7 @@ import type { AccountItem, SessionItem } from '../store/schema';
 import { accountKey, sessionKey, sessionUserGsi } from '../store/schema';
 import { nowMs } from '../clock';
 import type { SessionFail } from '../appEnv';
+import { sweepUserSessions } from '../domain/retention';
 
 /** Session TTLs mirror the SPA exactly (auth.ts:14-15): 12h absolute, 30m idle. */
 export const ABSOLUTE_MS = 12 * 60 * 60 * 1000;
@@ -69,6 +70,17 @@ export async function mintSession(
     ...(opts?.enrollSecretEnc ? { enrollSecretEnc: opts.enrollSecretEnc } : {}),
   };
   await store.put(item);
+  // PERF-7 — retention, opportunistically and only for THIS user. A session row
+  // carries a `ttl` that nothing enforced, so every closed tab left one behind
+  // forever. Minting is the natural moment: the user is provably present, their
+  // partition is already the one being written, and the sweep costs their own
+  // session count rather than a scan. Deliberately AFTER the put and deliberately
+  // not awaited into the result — a retention failure must never fail a login.
+  try {
+    await sweepUserSessions(store, userId, now);
+  } catch {
+    /* retention is best-effort; the new session is what this call promised */
+  }
   return token;
 }
 
@@ -198,10 +210,15 @@ export async function putSessionFieldGuarded(
   guardAttr: string,
   guardValue: unknown,
   set: Record<string, unknown>,
+  /** Attributes to CLEAR (DynamoDB `REMOVE`). Clearing used to be spelled
+   *  `set: { x: undefined }`, which DynamoDB's `SET` cannot express at all —
+   *  DATA-14 (3); the seam now refuses it rather than let a local pass predict a
+   *  deployed ValidationException. */
+  remove?: string[],
 ): Promise<{ ok: true } | { ok: false; current: SessionItem | null }> {
   try {
     await store.transact([
-      { kind: 'update', pk: sKey.PK, sk: sKey.SK, set, ifEquals: { attr: guardAttr, value: guardValue } },
+      { kind: 'update', pk: sKey.PK, sk: sKey.SK, set, remove, ifEquals: { attr: guardAttr, value: guardValue } },
     ]);
     return { ok: true };
   } catch (e) {

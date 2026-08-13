@@ -15,6 +15,74 @@ import { describe, expect, it } from 'vitest';
  * ccp-api — never to a model endpoint. Widen NETWORK_ALLOWLIST then.
  */
 
+/**
+ * TEST-7 — WHY THIS REPO HAS NO jsdom/RTL, AND WHAT THAT COSTS (a decision, not
+ * an oversight — this is the canonical place it is stated, since the exact
+ * `devDependencies` this file would need to change live one test below).
+ *
+ * The testing strategy today is deliberately two-layer: pure logic (interpreter,
+ * catalog derivation, quorum, permissions, …) is unit-tested directly; component
+ * OUTPUT is pinned via `react-dom/server`'s `renderToStaticMarkup` — real JSX,
+ * real props, real conditional rendering, asserted against the actual rendered
+ * HTML (see bulkForm.test.ts, advisoryGate.test.ts, uiRobustnessFocus.test.ts,
+ * provisionTileCompleteness.test.ts's ServiceCard cases, among many others).
+ * That covers everything a component computes from its PROPS. It does not, and
+ * structurally cannot, cover two things: `useEffect` (SSR never runs effects —
+ * a component that fetches its own data via effect renders its pre-fetch state
+ * forever, no matter what is asserted against it) or actual DOM EVENTS (no
+ * click fires, no synthetic keyboard/focus behavior exists, because there is no
+ * DOM). For the handful of top-level route components that fetch their own
+ * data internally (ServiceConsole, ServiceCatalog, RequestForm's data load,
+ * …) and the few genuinely event-driven interaction sequences (a step
+ * transition's focus move, a typed-confirmation gate's live enable/disable),
+ * that gap is real — ~15-20 test files fall back to reading a component's own
+ * SOURCE TEXT for exactly those cases (grep this file's own dependency
+ * assertion below, or `git grep -l readFileSync -- 'ccp/app/src/test/*.tsx'
+ * 'ccp/app/src/test/*.ts'`), which is a materially weaker guarantee: it fails
+ * on a harmless rename and passes on a behavioral bug that leaves the string
+ * intact (TEST-7's own finding, verified in this session by deliberately
+ * breaking ServiceCard's op-less wiring while leaving its source strings
+ * untouched — the old-style check would have passed vacuously; the
+ * rendered-output replacement failed correctly).
+ *
+ * THE DECISION: not to introduce jsdom + @testing-library/react in this
+ * pass. Three reasons, together, not any one alone:
+ *
+ *   1. It is a stated, repeated, DELIBERATE choice already recorded in the
+ *      code itself — not just here. `azureCatalogFlow.test.ts`, `routeConfig.tsx`'s
+ *      own doc comment, and multiple `*.test.tsx` files all independently say
+ *      "this repo has no jsdom/RTL" as an established fact this suite's authors
+ *      built around, most visibly the exact `dependencies` allowlist this file
+ *      pins two tests below — silently reversing a decision stated that many
+ *      times, from inside an unrelated audit-fix batch, is not this batch's
+ *      call to make.
+ *   2. A real jsdom+RTL lane is infrastructure, not a test: a new environment
+ *      config (today's single `vitest.config.ts` has none), fetch mocking for
+ *      every effect-driven component under test, an `afterEach` cleanup
+ *      discipline, and — per `standalone.test.ts`'s own no-network rule above —
+ *      a decision about how a mocked `fetch` interacts with that ban. Doing
+ *      that well is exactly the "real architectural change" TRIAGE.md's own
+ *      note on this finding calls it, and deserves its own reviewed, scoped
+ *      change rather than riding in as one line item of an 8-finding batch.
+ *   3. The gap it would close is real but narrow, and partially mitigated
+ *      instead: `provisionTileCompleteness.test.ts`'s ServiceCard cases (this
+ *      session) converted the finding's own cited example from source-text
+ *      matching to real rendered-output assertions — the template for
+ *      retiring the remaining ~15-20 files one at a time, per the finding's
+ *      own recommended fallback ("assert rendered output rather than source
+ *      text" where a jsdom lane is not taken). Every remaining source-pinned
+ *      test in this suite is required to say, in its own comment, WHY it
+ *      cannot be converted without either jsdom or a component-splitting
+ *      refactor (see ServiceConsole's case in provisionTileCompleteness.test.ts
+ *      for the model) — a source-pinned test with no such comment is a bug in
+ *      this decision's own follow-through, not an acceptable default.
+ *
+ * NOT a claim that the gap doesn't matter: TEST-5's function-coverage floor
+ * (fullCoverage's successor) stays low BECAUSE of this gap (see FIXES.md R-51),
+ * and raising it for real means doing item 2 above eventually. This is the
+ * record of why "eventually" and not "in this batch".
+ */
+
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
 // The ONE documented exception (ADR-0007 + admin-and-multiproject §1.1): network
 // may appear ONLY behind the ApiClient seam — `lib/api.ts` (the selector) and

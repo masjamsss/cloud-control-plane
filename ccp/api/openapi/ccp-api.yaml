@@ -90,7 +90,7 @@ components:
           description: "the change set: an ordered list of operations enacted as ONE reviewed change. length 1 is normalized to single-op. Every item is validated atomically (unknown op → VALIDATION_FAILED; disabled → OP_DISABLED; out-of-team → TEAM_SCOPE; bounds → PARAM_OUT_OF_BOUNDS; forces-replace without a matching confirmation → REPLACE_CONFIRMATION_REQUIRED) and the whole set is rejected on the FIRST failure — nothing is stored"},
         justification: {type: string, minLength: 10},
         schedule: {type: object, description: "{kind:'now'} | {kind:'window', at, endAt?} — validated server-side (0024 §2.1 V1-V6): at must be RFC3339, >= now+30min, <= now+90d; endAt, if sent, must be > at and span <= 24h (else defaults to at+4h). Rejected with SCHEDULE_INVALID/SCHEDULE_TOO_SOON/SCHEDULE_TOO_FAR (422)"},
-        idempotencyKey: {type: string, description: dedupe key; replays return the original request } }
+        idempotencyKey: {type: string, maxLength: 200, pattern: '^[A-Za-z0-9._:@~-]{1,200}$', description: "dedupe key; replays return the original request. Constrained charset (DATA-15) — it is concatenated into the marker row's partition key, and '#' or a control character there would make that key ambiguous; a violating key is VALIDATION_FAILED (400)"} }
     SubmitItem:   # one operation inside a change set — client supplies ONLY intent; service/macd/exposure/tier server-computed per item
       type: object
       required: [operationId, targetAddress, params]
@@ -158,7 +158,7 @@ components:
             at: {type: string, format: date-time} } }
         steps: { type: array, description: 'step log in execution order (sequential, stop-on-red)',
           items: { type: object, required: [step, ok, detail],
-            properties: { step: {type: string, enum: [prepare, gate, commit, trigger]}, ok: {type: boolean},
+            properties: { step: {type: string, enum: [prepare, gate, plan-digest, commit, trigger]}, ok: {type: boolean},
               detail: {type: string, description: 'captured stdout/stderr tail or the refusal reason — audit evidence'} } } }
     AuditExport:   # DOC-2 — GET /admin/audit/export, domain/auditQuery.ts#AuditExport
       type: object
@@ -569,7 +569,11 @@ paths:
         '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' } } }
     post: { summary: Submit. Server derives requester+teamId from session, enforces canRequest, re-validates params against
         the manifest, rejects disabled ops and global freeze, computes approvalsRequired via approvalsFor(effectiveRisk, macd, serverPolicy) and stamps policyVersion.
-        Also computes + persists quorum feasibility (0021 G5) — never a submit gate (ADR-0008/0009), purely informational,
+        Also computes + persists quorum feasibility (0021 G5) — never a submit gate (ADR-0008/0009), purely informational.
+        ARCH-5 — each item is also checked against the project's ACTIVE served catalog (what the SPA rendered the form
+        from), when the estate serves one: a divergence from the image-bundled catalog (always authoritative for
+        enforcement) refuses 422 CATALOG_SKEW naming the operation and the diverging fields, checked before the
+        param-bounds/replace-confirmation gates so the refusal names the real cause,
       parameters: [{ $ref: '#/components/parameters/client' }],
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SubmitDraft' } } } },
       responses: { '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/ChangeRequest' } } } },
@@ -611,7 +615,10 @@ paths:
         from session ONLY: the requester or a Lead/admin (a plain approver who is neither is 403
         CANCEL_FORBIDDEN). Idempotent-safe: a second cancel (or a cooling window/maintenance window that already
         elapsed) cleanly conflicts, never double-applies. Settles cooling then window-expiry first, same as GET
-        /requests/{id}',
+        /requests/{id}. A request whose apply bundle (POST /requests/{id}/apply) has a LIVE claim (bundle.state
+        running, within its lease) is also refused, 409 BUNDLE_RUNNING (API-5): the bundle may already be committing
+        to `main`, and cancelling the request record while that is irreversibly in flight would let the durable
+        record contradict reality. An EXPIRED claim (a crashed run ERR-2 would take over) does not block cancel.',
       parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
       responses: { '200': { description: 'Cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/ChangeRequest' } } } },
         '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
@@ -690,9 +697,13 @@ paths:
         satisfies; anyone else gets 403 APPLY_FORBIDDEN. Eligible statuses: AWAITING_CODE_REVIEW,
         AWAITING_DEPLOY_APPROVAL — a pre-quorum, cooling, terminal, or already-applied request is refused
         409 STATE_CONFLICT. A cooling window and an elapsed maintenance window are settled first.
-        Concurrency: the run is CLAIMED by a compare-and-swap on the observed status, so a lost race is
-        reported (409 STATE_CONFLICT) rather than double-run; an in-flight bundle answers 409 BUNDLE_RUNNING.
-        Audited as request-bundle, one chained entry carrying the full per-step evidence.'
+        Concurrency: the run is CLAIMED by a compare-and-swap on `eventSeq`, the attribute the claim itself
+        advances (ERR-11/API-4), so a lost race is reported (409 STATE_CONFLICT) rather than double-run; an
+        in-flight bundle answers 409 BUNDLE_RUNNING while its claim is LIVE (ERR-2 leases the claim, so a
+        crashed run is taken over rather than wedging the request forever).
+        Audited as request-bundle, one chained entry carrying the full per-step evidence. That entry is written
+        even when the request row refuses the outcome (CONC-6): a fired deploy is a fact, not a state
+        transition, and the caller is told so with 409 BUNDLE_OUTCOME_CONTENDED rather than CHAIN_CONTENTION.'
       parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }]
       responses:
         '200': { description: 'Bundle ran green — the commit landed and the CI apply gate was satisfied',
@@ -703,7 +714,9 @@ paths:
         '404': { description: Not found }
         '409': { description: 'BUNDLE_DISARMED (the bundle is not armed on this deployment) | BUNDLE_RUNNING
             (a bundle for this request is already in flight) | STATE_CONFLICT (status not bundle-eligible,
-            already triggered, or the claim lost its race) | CHAIN_CONTENTION',
+            already triggered, or the claim lost its race) | BUNDLE_OUTCOME_CONTENDED (the bundle RAN and its
+            outcome is in the audit chain, but the request row moved so its bundle state was not updated —
+            never retry blindly on this code) | CHAIN_CONTENTION',
           content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } }
         '423': { description: 'GLOBAL_FREEZE — the estate is frozen', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } }
         '502': { description: 'A step failed — SAME body as 200 with ok:false; `steps` names the failing step',

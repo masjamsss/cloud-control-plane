@@ -132,6 +132,30 @@ export interface DriftImportPayload {
 }
 
 /**
+ * The import FLAVOR's own PROPOSAL-level payload (out-of-band provisioning
+ * spec's import-payload generation work item, catalogctl's
+ * `ImportProposalPayload`; api: `DriftImportProposalPayloadSchema`,
+ * domain/driftProposals.ts) — served on {@link DriftProposal.importPayload}.
+ * DOC-7: deliberately DISTINCT from {@link DriftImportPayload} above (the
+ * finding's own nested 4-field shape, no identity) — this one carries the
+ * reviewed live-resource IDENTITY (`arn`/`tfType`/`liveId`, feeding the
+ * proposal digest formula and the api's `findCurrentFinding`
+ * re-derivation) alongside the same `importBlock`/`skeletonHcl` bytes.
+ * `address` is NOT repeated here — it is already `DriftProposal.addresses[0]`
+ * (the address the import would create) — reading `importPayload.address`
+ * off this type is a type error by design, the exact class of bug DOC-7
+ * exists to prevent.
+ */
+export interface DriftImportProposalPayload {
+  arn: string | null;
+  tfType: string;
+  liveId: string;
+  targetFile: string;
+  importBlock: string;
+  skeletonHcl: string;
+}
+
+/**
  * One unmanaged-resource finding (out-of-band provisioning spec, the
  * finding-row shape — mirrors the api's `domain/drift.ts` `DriftFinding`
  * zod shape and the Go generator's `driftpropose.Finding` struct field for
@@ -315,17 +339,19 @@ export interface DriftProposal {
    * anything). */
   diff: string | null;
   attrs: DriftProposalAttr[];
-  /** Import flavor only, additive — the finding identity this proposal
-   * pins, so the SPA can match a generated import proposal back to its
-   * originating finding without a Terraform address to key on up front
-   * (a finding has none; `addresses[0]` only exists once import-payload
-   * generation named one). `undefined` for adopt/revert. */
-  arn?: string | null;
-  tfType?: string;
   /** Import flavor only — the pinned artifact this proposal would write
-   * verbatim. `undefined`/`null` for adopt/revert (no import artifact
-   * applies to either). */
-  importPayload?: DriftImportPayload | null;
+   * verbatim, keyed by the api's own PROPOSAL-level shape (DOC-7): see
+   * {@link DriftImportProposalPayload}'s own doc for why this is NOT the
+   * same shape as a finding's `importPayload`. `undefined`/`null` for
+   * adopt/revert (no import artifact applies to either). Matching a
+   * proposal back to its originating finding runs on this payload's own
+   * `arn`/`tfType`/`liveId` identity (`lib/driftEligibility.ts`'s
+   * `findCurrentFinding`) — this type never carried a top-level
+   * `arn`/`tfType` pair of its own; an earlier version of this type did,
+   * documented as "so the SPA can match a generated import proposal back
+   * to its originating finding", but the real api never served it (only
+   * the mock did) — DOC-7. */
+  importPayload?: DriftImportProposalPayload | null;
 }
 
 /**

@@ -82,7 +82,11 @@ export function ImportDrawer({
         <header className="drift-drawer__head">
           <div>
             <p className="drift-drawer__eyebrow">Import — unmanaged resource</p>
-            <code className="drift-drawer__addr">{payload?.address ?? finding.name}</code>
+            {/* DOC-7: the proposal-level import payload carries no `address`
+             * field (it is already `proposal.addresses[0]` — the address
+             * the import would create); reading `payload.address` was a
+             * type error the app's own types masked. */}
+            <code className="drift-drawer__addr">{proposal.addresses[0] ?? finding.name}</code>
           </div>
           <button
             type="button"

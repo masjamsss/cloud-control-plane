@@ -110,6 +110,17 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
       else
         bad "armed (docker.sock mounted) but /data/scratch is NOT bound — path identity broken for armed-lane checkouts"
       fi
+      # OPS-6 — arming the CONTAINER is not the same as arming the DEPLOYMENT. A host
+      # armed with the one-shot `-f … -f docker-compose.armed.yml up` passes every check
+      # above and still loses the overlay on the next plain `up`, which self-update.sh
+      # runs nightly. doctor.sh is the one command an operator runs to ask "is this
+      # deployment healthy", so this is where "healthy right now, disarmed tomorrow"
+      # has to be visible.
+      if ( cd "$CCP_DIR" && docker compose config 2>/dev/null ) | grep -q '/var/run/docker.sock'; then
+        ok "armed: arming is STICKY (the resolved compose config carries the overlay) — it survives a plain \`docker compose up\`"
+      else
+        bad "armed NOW, but arming is NOT sticky: the resolved compose config does not carry docker-compose.armed.yml, so the next \`docker compose up\` (self-update.sh runs one nightly) recreates the api DISARMED. Add to $CCP_DIR/.env:  COMPOSE_FILE=docker-compose.yml:docker-compose.armed.yml"
+      fi
     fi
   fi
 else

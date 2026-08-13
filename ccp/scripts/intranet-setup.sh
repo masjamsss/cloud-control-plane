@@ -663,6 +663,19 @@ env_set "$REAL_ENV" CCP_INSTANCE_TAGLINE "$INSTANCE_TAGLINE"
 chmod 600 "$REAL_ENV" 2>/dev/null || true
 ok "$REAL_ENV: instance=\"$INSTANCE_NAME\", VITE_API_BASE=$API_BASE, ${TOPOLOGY}-origin, SameSite=$COOKIE_SAMESITE, Secure=${SECURE_COOKIES_VAL:-<empty>}, ports app=$APP_PORT api=$API_PORT"
 
+# OPS-6 — this wizard is explicitly RE-RUNNABLE against an existing host (see the
+# file header: "on a re-run it pre-fills from the existing..."), and the two `up`s
+# below are exactly the re-up class that used to silently strip an armed overlay: a
+# host armed with the old one-shot `-f … -f docker-compose.armed.yml up` loses the
+# docker socket, the /data/scratch bind and TMPDIR the moment this recreates the api.
+# Same guard, same reasoning and same one-line fix as self-update.sh/install.sh/
+# migrate-data.sh; sourced rather than restated (L-8).
+# shellcheck source=lib/armed.sh
+. "$CCP_DIR/scripts/lib/armed.sh"
+if armed_drift_detected; then
+  die "the RUNNING api is armed (docker socket mounted) but the resolved compose config is NOT — this wizard's rebuild would silently DISARM the bundle/drift lanes. $(armed_fix_hint)"
+fi
+
 say "5/6  app: rebuild (bakes in VITE_API_BASE) · api: refresh (picks up ports/topology/cookies)"
 ( cd "$CCP_DIR" && docker compose up -d --build app ) || die "docker compose up failed (app)"
 

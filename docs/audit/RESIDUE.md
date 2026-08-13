@@ -26,6 +26,33 @@ here. The last rule is the point: it makes "left behind and forgotten" a build f
 
 ## resolved — closed by later work
 
+### R-87 · The submit quota still walks the whole request collection
+*Recorded as residue on **CONC-12**, tracked by **PERF-10**.*
+
+`claimSubmitSlot` fixed *when* the count is decided, not *how much it costs*: as CONC-12's
+own branch was authored, it still read every request row in the project on every submit,
+exactly as the pre-PERF-10 `checkSubmitRateLimit` did — the two findings' fixes were built
+in parallel against the same function, each solving one half.
+
+**Resolved by merging the two fixes together** (this ledger entry's own landing): the merge
+that reconciled CONC-12's branch against PERF-10's already-merged index rewrite combined
+them into one `checkSubmitRateLimit` — the bounded per-requester index (PERF-10) decides the
+count, and a gate row bumped in the SAME transact (CONC-12) makes that decision atomic. See
+`middleware/rateLimit.ts#checkSubmitRateLimit`'s doc comment for the combined contract.
+
+### R-10 · `transactWithAudit` cannot tell which condition failed
+*Recorded as residue on **CONC-2**.*
+
+A `ConditionError` from the domain write and one from audit-chain contention were
+indistinguishable to the caller. L-6 was the lesson this produced; the seam itself stayed
+unchanged for a long time.
+
+**Resolved by CONC-15**: `transactWithAudit` now re-reads the caller's own conditions after
+a refusal and reports a `DomainConditionError` (carrying the specific failed write) when one
+of them lost, reserving `CHAIN_CONTENTION` for a genuinely moved chain head — see
+`domain/audit.ts#failedDomainCondition`'s doc comment for exactly what it can and cannot
+prove (R-86 records the one remaining imprecision, accepted).
+
 ### R-1 · The legacy-row concurrency window
 *Recorded as residue on **CONC-1**, again on **CONC-2**, and a third time on **CONC-3**,
 which noted "it still has no finding".*
@@ -80,18 +107,22 @@ the stronger guarantee — but it did not make the worker better behaved.
 `fail()`, the same best-effort terminal-report attempt every other failure path in `runJob`
 already gets.
 
+### R-6 · The bundle's landed-but-untriggered half state
+*Recorded as residue on **ERR-2**, tracked by **ERR-12**.*
+
+If `commit` succeeds but `trigger` fails, the landed SHA survived only inside the audit
+`steps`, and a retry re-cloned and died at commit with a technically-true but actively
+misleading message. ERR-2's lease made the request appliable again; it did not make that
+retry smarter.
+
+**Resolved by ERR-12**: a `bundle.state:'landed-untriggered'` row now carries the landed
+`sha`, and a retry detects it and resumes from the trigger step alone — `retriggerBundle`
+in `domain/bundle.ts` — rather than re-cloning and re-attempting a commit that can now only
+fail, since the change is already on the branch.
+
 ---
 
 ## tracked — an open finding covers it
-
-### R-6 · The bundle's landed-but-untriggered half state
-*Residue on **ERR-2**.*
-**Tracked by: ERR-12.**
-
-If `commit` succeeds but `trigger` fails, the landed SHA survives only inside the audit
-`steps`, and a retry re-clones and dies at commit with a technically-true but actively
-misleading message. ERR-2's lease makes the request appliable again; it does not make that
-retry smarter.
 
 ---
 
@@ -99,6 +130,48 @@ retry smarter.
 
 **These are the ones that get lost.** Each needs a finding raised or an explicit decision to
 accept.
+
+### R-85 · Most `transactWithAudit` callers still return the generic `STATE_CONFLICT`
+*Residue on **CONC-15**, **API-14**.*
+
+The helper now says *which* condition failed, and four call sites map that to their own 409:
+enroll → `DUPLICATE_USERNAME`, team create → `DUPLICATE_TEAM`, instance PUT →
+`INSTANCE_STALE`, scan-job status → `STATE_CONFLICT`. Every other guard-carrying caller —
+project registration (which has a `DUPLICATE_PROJECT` code and a pre-check that returns it),
+the drift proposal-row races, the onboard-token and dual-control writes — takes the default.
+
+That default is honest where the old one was not: `STATE_CONFLICT` ("conflicting state,
+re-read") is true of every domain-condition failure, whereas `CHAIN_CONTENTION` ("the audit
+chain is busy; please retry") was a lie that invited a retry no retry could satisfy. So this is
+a smaller gap than the one that closed, not a new one — but it is the same gap in kind, and the
+same rule states the target: **the concurrent answer should be the sequential answer**, i.e. a
+racing client should see the code it would have seen had it simply been second.
+
+Not fixed here because each remaining site lives in another batch's files (`routes/projects.ts`,
+`routes/drift.ts`'s proposal lane, `domain/dualControl.ts`) and each needs its own race test to
+close honestly. Untracked: no open finding names it, and it wants either a finding or a
+deliberate "generic is good enough" decision — the audit's own habit of reading the smallest
+bucket applies, since the list of sites is short and enumerable from the `transactWithAudit`
+call sites that carry a condition.
+
+### R-82 · The local store's `after` still walks the partition keys
+*Residue on **PERF-14**.*
+
+PERF-14's due-set makes the steady-state tick read only the rows a project has OPEN, and the
+measurement bears that out (46 ms → 1.8 ms at 10k rows). What remains is that the
+incremental read — `queryGSI1(gsi, { after: cursor })` — is O(partition) *comparisons* in
+`MemoryStore`, because the implementation walks the partition's sorted keys and skips
+everything at or below the cursor. It clones nothing, which is where the cost was, so the
+residual is small: at 40k rows the indexed tick is 14 ms against 182 ms. But it is still a
+cost that grows with history, and it is why the improvement is 26x at 10k rows and 13x at
+40k rather than flat.
+
+**Not fixed here because the fix is in someone else's file.** A binary search over the
+cached sorted keys would make `after` O(log n), and `store/*` belongs to `B-O3`. It is also
+a LOCAL-ONLY cost: DynamoDB's `ExclusiveStartKey` starts the read at the key and never reads
+what precedes it, so the deployed shape does not have this residual at all. Recorded rather
+than folded in, because a seam whose local cost model differs from production is exactly
+what `API-17`/`DATA-14` exist to enumerate.
 
 ### R-25 · `ENGINEER_REVIEW_REQUIRED` is defined and emitted by nothing
 *Residue on **DOC-4**, **DOC-2** — both now closed, which is how this became untracked.*
@@ -213,13 +286,6 @@ ceremony. `DATA_ROOT`/`LEGACY_UPDATE_DIR` are now parameterised (the seam `insta
 already has) so an end-to-end walk *could* be written against a throwaway tree. It has not
 been.
 
-### R-10 · `transactWithAudit` cannot tell which condition failed
-*Residue on **CONC-2**.*
-
-A `ConditionError` from the domain write and one from audit-chain contention are
-indistinguishable to the caller. L-6 is the lesson this produced; the seam itself is
-unchanged.
-
 ### R-11 · The redaction/toolchain helpers are duplicated across packages
 *Residue on **TEST-4**.*
 
@@ -306,19 +372,328 @@ wrongly, and this one is *narrow* wrongly, for the same underlying reason — a 
 answers "did the inputs change", and neither the calendar nor a runner image is an input.
 
 ### R-51 · The app's function coverage is recorded, not fixed
-*Residue on **TEST-5**. **Tracked by: TEST-7.***
+*Residue on **TEST-5**. Previously "Tracked by: TEST-7" — updated below; TEST-7 has since
+closed without moving this.*
 
 Measuring put a number on the SPA's testing gap — **54.62% of functions** — and a floor stops
 it eroding, but neither moves it. The cause is TEST-7's: ~25 app test files assert on component
 source strings rather than rendering, so the functions they "cover" are never executed. Raising
-this floor means writing DOM/interaction tests, which is TEST-7's body of work and is still
-open.
+this floor means writing DOM/interaction tests — a real jsdom+RTL lane, which TEST-7's own fix
+explicitly decided NOT to introduce in that pass (see standalone.test.ts's recorded decision).
+TEST-7 closing there — a written decision plus converting the one file it could reach without
+that lane — does not move this floor; the finding that was going to cover it closed for
+reasons that do not include "the gap is gone", which is exactly the disappearing-residue
+failure mode this ledger exists to catch. **Genuinely untracked now — no open finding covers
+raising this floor.**
 
 Recorded here so the low floor reads as a measurement of a known gap rather than as an
 acceptable target — a floor nobody remembers the reason for is a floor that quietly becomes the
 ceiling.
 
+### R-77 · `ccp/shared` does not exist; the api still reaches into the app package
+*Residue on **ARCH-6**.*
+
+ARCH-6 asked for a real workspace package (permissions, policy, redact, dependsOn,
+planSummary, the shared types) installed by both CI jobs. What landed is the partial its own
+triage line blesses — an allowlist + a transitive dependency-free rule over the `@app-lib`
+closure, and a parity test pinning the `planSummary` copy. The alias and the copy remain.
+
+**Why it was not taken.** Not difficulty — blast radius, in a place where mistakes are quiet.
+The extraction moves files out of `ccp/app/src/lib/`, which ~55 feature components import; it
+needs a new package, two regenerated lockfiles, a changed `api/Dockerfile` vendoring step, and
+edits to the CI path filters, `verify:safety` and the publish-gate scan scopes. `B-O13` was
+concurrently working in `ccp/app/src/lib/`, so a file-moving refactor of that directory from
+the ARCH-6 lane would have collided with it head-on.
+
+**What the partial actually bought, so the deferral is judged on its merits.** The two failure
+modes that made the seam dangerous were both silent and are now loud: a package import
+anywhere in the api's transitive alias closure fails a test that names the file and the
+specifier (before, it collapsed the api's types to `any` while reporting errors only against a
+file in `ccp/app`), and any drift between the two `planSummary` copies fails (before, the only
+test loaded one of the two files and stayed green through every drift shape tried). The
+argument for extracting the package is now evolvability, not safety.
+
+**Not currently tracked by any finding id** — ARCH-6 is closed on its partial. A follow-up
+finding should be opened for the extraction, and it should also absorb **R-11** (the
+`requireToolchain.ts` duplication), which exists for the same reason: two packages, two
+`node_modules`, no shared home.
+
+### R-76 · The admin-editable approval policy no longer sizes anything
+*Residue on **ARCH-8**.*
+
+ARCH-8 asked for the mock's WHO rule to stop being a hand-mirrored copy (done: the api's
+`domain/eligibility.ts#canSignStep` now imports `lib/approvalLadder.ts#canSignApprovalStep`
+through the `@app-lib` seam, RULE B-allowlisted, same pattern as `permissions.ts`) and for the
+mock-vs-api behavioral gaps to be written down in one place (`ccp/README.md`'s "Mock mode vs.
+api mode" table). Writing that table surfaced a THIRD thing worth naming on its own: the
+approval-COUNT model has silently forked, not just been re-implemented.
+
+`ccp-api` still serves `GET`/`PUT /admin/policy` — a real deployment's Lead can still edit
+per-risk-tier approval counts (`low`/`medium`/`high`, plus a delete floor), the value is
+stored, versioned, and the version is stamped onto every request row (`policyVersion`). But
+`routes/requests.ts` computes `approvalsRequired` from `domain/exposure.ts#ladderFor(reviewTier,
+forcesReplace)` alone — a fixed two-level ladder keyed on exposure — and says so in its own
+comment: *"risk is display-only now — it no longer varies the count."* The mock's
+`lib/policy.ts`/`ApprovalPolicyAdmin.tsx` still implement and expose the OLD model, live, in
+both modes' UI — including against a real `ccp-api`, where the screen an admin uses to "raise
+the bar for high-risk changes" edits a number nothing downstream reads.
+
+**Why this was not fixed here.** Three defensible outcomes exist — remove the admin screen and
+endpoint (accept `policyVersion` becomes dead too), re-wire `ladderFor` to widen with `policy`
+(a real behavior change to what gates a request, needing its own review), or keep it as
+deliberate audit/versioning-only metadata and say so on the screen itself (the smallest change,
+but still a product decision about what the UI should tell an admin who edits it expecting an
+effect). None of those is "shrink the mock's surface" or "write a table" — ARCH-8's own two
+asks — so this is named rather than picked for them.
+
+**Not currently tracked by any finding id.** A follow-up finding should decide which of the
+three outcomes above, then update `ccp-api/src/routes/admin.ts`'s policy handler (or the ladder,
+or `ApprovalPolicyAdmin.tsx`'s copy) and this table's row accordingly.
+### R-57 · The chain-write retry policy is named in one place but spent in sixteen
+*Residue on **PERF-11** and **PERF-8**.*
+
+Two related leftovers, both bounded, both recorded rather than guessed at.
+
+**The retry budget reaches the sites PERF-11 names, and no further.** `CHAIN_WRITE_ATTEMPTS`
+and `chainBackoff` live in `domain/audit.ts`, and the loops PERF-11 lists — `record`,
+`transactWithAudit`, `routes/requests.ts`, `domain/cooling.ts`, `domain/schedule.ts`,
+`domain/apply/scheduler.ts` — now spend that budget. Six further hand-rolled
+`for (attempt < 2)` loops still exist with the old two-attempt budget:
+`domain/dualControl.ts` (×2), `domain/scanJobLease.ts`, `routes/drift.ts` (×2) and
+`routes/projectData.ts`. None is named by PERF-11, each sits in another batch's files
+(B-S7, B-O7/B-O11, B-O13), and converting them is a two-line change per site now that the
+policy is a named import — so this is a lane boundary, not a design gap. Anyone opening those
+files should take the import with them.
+
+The deeper version is worth stating because the next person will meet it: the reason there
+are sixteen loops at all is that each caller needs to tell its OWN condition failure apart
+from chain contention, which the store cannot currently report (R-10, and CONC-15/API-14 are
+the finding-shaped version). Once that separation exists, all sixteen collapse into one
+helper and this residue disappears with them.
+
+**A page walk that finds no more entries runs to the month ceiling.** `readAuditPage` used
+`seen >= total` to stop once it had read the whole chain. With a cursor, the entries above it
+are filtered out at the store, so `seen` no longer counts the chain and that bound cannot
+apply — the walk instead terminates on `monthsBackward`'s own `MAX_MONTHS_WALKED` ceiling
+(1200). This costs nothing on the store that ships: an absent partition is one map lookup
+returning an empty array, and the walk only reaches the ceiling on the FINAL page of a paging
+session, since any earlier page fills and breaks out. Measured at well under a millisecond;
+the whole 13-test file runs in 68 ms.
+
+On a real DynamoDB it would be up to 1200 queries on that last page, which is not acceptable
+and is why this is recorded rather than accepted. The fix is to give the walk a floor it can
+know: the chain head would have to carry the genesis month (or the oldest partition would
+have to be discoverable in O(1)), which is an additive change to `ChainHeadItem` that every
+existing chain would need backfilled. That is a store-schema decision, so it belongs with
+B-O3's `DATA-16` (the snapshot format/version marker) rather than being smuggled in here.
+### R-56 · AWS coverage is still family-coarse; only declared shadows are type-granular
+*Residue on **IMP-15**.*
+
+IMP-15 removed the *silent* half of the family-granularity limit: a type whose lister cannot
+enumerate it now declares a `shadow` in `services.json`, and `discover.py` names the resources
+the sweep saw but discovery never accounted for. What it did **not** do is make AWS coverage
+type-granular the way `kit-azure/discover.py` already is — the AWS sweep still buckets by ARN
+service family, and a type that has no `shadow` declared still contributes its resources to a
+family that reads as covered.
+
+That is the deliberate half of the trade the kit README has always stated, and it is still the
+right default: parsing every ARN's resource-type token means many fragile, service-specific
+rules where AWS's delimiters are inconsistent and sometimes absent. The residue is that the
+*declaration* is now the only thing standing between a new undiscoverable type and the old
+silent behaviour, and nothing enumerates which types ought to carry one — the finding names
+`aws_kms_key` and gestures at "any ec2-family type not among the 16 ec2-backed entries" without
+resolving it.
+
+Closing it properly is a sweep of all 43 types asking "can this lister reach every instance?",
+which is estate-informed judgement per type rather than a code change, so it is recorded rather
+than guessed at. The parity gap with the Azure kit's full-type classification is the same item
+seen from the other side.
+### R-52 · Api-mode local-store submit gates survive outside FE-6's three fixed components
+*Residue on **FE-6**.*
+
+`ResourceDetail`'s top-level ops-list filter and `ServiceConsole`'s action pickers still call
+`isOpDisabled()` against the advisory local `lib/settings.ts` store even in api mode (the same
+class of defect FE-6 fixed for the three cited submit gates), and `lib/beyondCatalog.ts`'s
+freeze pre-check does too — but as a plain async function rather than a component, it cannot
+use FE-6's `useEffectiveSettings()` hook without its own, differently-shaped fix. None of the
+three is a submit gate in the sense FE-6 was scoped to (the first two are display filters that
+hide/show a picker option; a submit past them still hits the server's real enforcement), so the
+stakes are lower than the fixed cases, but the underlying wrongness — reading a store the
+server never writes to, in the one mode where that store is not the truth — is identical.
+
+**Genuinely untracked** — no open finding currently names these three call sites.
+
+### R-53 · DATA-10's readiness cross-check is existence-only, never a digest comparison
+*Residue on **DATA-10**.*
+
+`/readyz`'s new presence check (`projectDataVersionExists`/`driftReportExists`) proves a
+`dataActive`/drift-pointer's referenced file EXISTS on disk, never that its BYTES match what
+the row recorded. A restore from a different backup generation than the store JSON — the file
+is present, just stale or from a different point in time — passes this check silently. A full
+digest recompute on every poll was deliberately rejected (the same steady per-probe CPU tax
+ARCH-9 flags for the audit-chain re-verification this same endpoint already does), but nothing
+cheaper (a stored content hash compared without re-reading the whole file, say) was designed
+either.
+
+**Genuinely untracked** — no open finding covers closing this narrower gap.
+
+### R-54 · Audit-chain archival/compaction is a named prerequisite, not a plan
+*Residue on **ARCH-9**.*
+
+The store has no compaction or archival — `storeItemCount` (ARCH-9's own new telemetry) can
+only ever go up. The finding's recommendation named archival design as a prerequisite for the
+DynamoDB migration the store seam anticipates; ARCH-9's fix records that it IS a prerequisite,
+in the README, but does not design it — real work (what gets archived, where, how a restore
+reaches into archived history, how the month-partitioned keys the store already uses factor
+in) that belongs to whichever change actually introduces a second process or the DynamoDB
+backend.
+
+**Genuinely untracked** — no open finding covers designing archival.
+
+### R-55 · Most of TEST-7's cited source-pinned test files are still source-pinned
+*Residue on **TEST-7**.*
+
+TEST-7's fix converted exactly one file's worth of source-pinning to rendered-output
+assertions (`provisionTileCompleteness.test.ts`'s `ServiceCard` cases — the finding's own
+cited example) and established a standing requirement that every REMAINING source-pinned test
+name, in its own comment, why it cannot be converted without jsdom or a component-splitting
+refactor. Of the ~25 originally-cited files, roughly 19 are untouched by this pass: neither
+converted nor yet carrying the new justification comment. The template exists
+(`ServiceConsole`'s sibling case in the same file, and `uiRobustnessFocus.test.ts`'s
+pre-existing `RequestForm` case, are the two worked examples) but has not been applied
+file-by-file.
+
+**Genuinely untracked** — no open finding covers the remaining conversions.
+
 ## accepted — deliberately permanent
+
+### R-86 · `transactWithAudit`'s diagnosis is a re-read after the fact, not a proof
+*Residue on **CONC-15**.*
+
+The store aborts the batch and reports one `ConditionError`; the helper then walks the caller's
+conditions against the store **as it stands a moment later**. State can move again in between,
+so the diagnosis is an inference, not a record of what the transaction actually evaluated.
+
+**Accepted**, because the imprecision only ever falls one way and that way is safe. A domain
+condition that failed but has since become true again (a delete, an ABA) is reported as chain
+contention — the *retryable* answer, which sends the caller back for a fresh read, which is what
+it needed anyway. The converse cannot happen: a condition that is false now was either false
+then or has just become false, and "re-read, something moved" is true in both readings. Nothing
+is replayed on the strength of the diagnosis — a value-guarded write is refused either way — so
+a wrong guess costs a round trip, never a lost update.
+
+Removing the imprecision needs the store seam to report *which* condition aborted a batch
+(DynamoDB's `TransactWriteItems` does, per-item, via `CancellationReasons`). That is a change to
+`ConfigStore` and to both implementations, for a strictly better error message on a path that is
+already correct — worth doing if the seam changes for another reason, not on its own.
+
+### R-88 · The submit gate row is unaudited, never swept, and monotonic
+*Residue on **CONC-12**.*
+
+`P#<project>#SUBMITGATE#<requester>` carries one attribute, `seq`, incremented by every
+successful submit. It is written inside the audited transaction but is not itself an audit
+subject; it is never deleted, including when the account it names is deleted; and `seq` only
+ever grows.
+
+**Accepted**, deliberately, for reasons that are properties rather than omissions:
+
+- **Unaudited on purpose.** The governance fact is the submission, and `request-submit` already
+  records it. A counter whose only meaning is "something collided here" is not evidence, and
+  auditing it would put a row on the chain for every submit that says nothing the submit entry
+  does not.
+- **Bounded by construction.** One row per (project, account) — the same cardinality as the
+  account directory, and unrelated to traffic. There is nothing for a sweep to reclaim that a
+  deleted account's own cleanup would not reclaim more honestly, so the alternative is a sweeper
+  with a race of its own.
+- **Monotonic is the point.** The value is never read for meaning, only compared; it exists to
+  be different after somebody else's write. A wrapping or resettable counter would weaken
+  exactly the property it is there for.
+
+The one thing this does mean: a store restored from a backup taken mid-flight can hold a `seq`
+lower than one an in-flight submit captured, which makes that submit's guard fail and its
+caller re-count. That is the correct outcome (re-count against restored data), and it is the
+same shape as every other version guard in the store after a restore.
+
+### R-89 · A settlement pass that loses to chain contention re-attempts on every request
+*Residue on **CONC-13**.*
+
+When a settlement pass fails open without the marker being present, it deliberately does **not**
+cache `confirmedSettled`, so the next request runs the whole pass again — a directory read plus
+a per-bare-row audited write attempt — until one pass completes and stamps the marker.
+
+**Accepted.** The alternative is the bug the fix exists to avoid: caching on the strength of the
+error alone marks a half-settled store settled for the life of the process, with no marker for a
+restart to notice and no request left that will re-attempt. Re-attempting is only "wasteful"
+while the store is genuinely unsettled, which is exactly when the work is owed, and it is
+first-boot-only — the marker short-circuit is the very first thing `runSettlement` does, so a
+settled store pays one `get`.
+
+The bound worth stating: the window is one cold instance's first requests against a legacy
+store, and each attempt is idempotent (retro-register is `ifNotExists`, materialization skips
+any row that already has `roles`). If a deployment were ever found sitting in that window for
+long, the cause would be sustained contention on the `@control` chain — a different problem,
+with a different fix, and one this ledger entry is meant to make legible rather than mask.
+
+### R-80 · A read can release a claim an apply that outlives its lease still holds
+*Residue on **CONC-10**.*
+
+`settleApplyClaim` releases an `APPLYING` row on read once `APPLY_LEASE_MS` (one hour) has
+passed. The tick's own sweep could never rob a live worker — `loop.ts` refuses to overlap
+ticks, so in a single process no sweep runs while an apply is in flight. A READ has no such
+ordering, so an apply that genuinely runs for more than an hour can now be halted underneath
+itself.
+
+**Accepted, for three reasons.** The lease is deliberately far longer than any single apply
+(the terraform executor's own per-invocation timeout is 10 minutes and the bundle's longest
+step is 15); the outcome write is guarded on `ifEquals status = APPLYING`, so a worker that
+does come back cannot overwrite the halt and reports `skipped-moved` instead of corrupting
+the row; and `HALTED_APPLY_FAILED`'s message is already "the worker never reported back — a
+human must confirm what landed", which is the honest description of an apply that has been
+running for over an hour. The alternative — a second, longer lease for the read path — would
+put two numbers in the codebase for one question, and the sweep and the settle would answer
+it differently.
+
+### R-81 · `POST /cancel` alone does not release an expired claim
+*Residue on **CONC-10**.*
+
+Cancel settles cooling and window expiry before its state check, but deliberately does NOT
+settle the apply claim, so a direct `POST /requests/:id/cancel` against a lease-expired
+`APPLYING` row still answers `STATE_CONFLICT` until something reads the row.
+
+**Accepted, because the halt is the point.** `HALTED_APPLY_FAILED` says a human must confirm
+what landed; a cancel that released the claim in the same call would stamp `CANCELLED` on a
+request whose change may have half-applied, without the halt ever having been seen — the
+API-5 shape, one lane over. Any read releases it (the SPA reads the row before it offers the
+verb, and the list read releases it too), so the cost is one GET for a script that posts
+blind, not a wedge.
+
+### R-83 · A re-plan failure is recorded once per episode, not once per message
+*Residue on **ERR-6**.*
+
+The hold writes one timeline event + audit entry per failure EPISODE, de-duped on "the row's
+LAST event is already this one". A failure whose *text* changes between ticks — a backend
+error that becomes a lock error, say — is therefore not re-recorded while the episode
+continues; only the first message is kept, truncated to 300 characters.
+
+**Accepted.** The alternative, re-recording whenever the message differs, is unbounded by
+construction: an error text carrying a timestamp, a request id or a duration would append to
+the request row and the per-project audit chain every 60 seconds for as long as the window
+is open. The episode boundary is the right granularity — the fact worth recording is "the
+scheduler cannot re-plan this", not each phrasing of it — and any other write to the row
+(a rewindow, an approval, a settle) ends the episode so a later recurrence is recorded again.
+
+### R-84 · A freeze-held request in a project nobody reads stays held
+*Residue on **API-8**.*
+
+`settleFrozenHold` is write-on-read, like every other settler here. A `kind:'now'` row held
+by a freeze that has since lifted keeps its `AWAITING_DEPLOY_APPROVAL` status until someone
+reads it (a list read is enough), and its `applied` event is dated from that read rather
+than from the moment the freeze lifted.
+
+**Accepted — this is the same trade `R-19` records for scan-job leases**, and the reason is
+the same: an unobserved hold blocks nothing, and a background timer to date the transition
+more precisely would be the first one in this codebase. The audit entry names its actor
+`system:freeze-lifted`, so the record does not pretend a human acted at that moment.
 
 ### R-7 · A fix landed inside another finding's commit
 *Residue on **CONC-14**.*
@@ -557,3 +932,89 @@ and CI-2 had left it scanning nothing in CI. With `PUBLISH_GATE_REQUIRE_ALL=1` m
 gitleaks a red gate, the backstop is present wherever it is claimed to be — which is the
 condition under which "the heuristic is deliberately approximate" is an honest statement rather
 than the whole story.
+
+### R-75 · The bundle-outcome write still gives up under sustained contention
+*Residue on **CONC-6**.*
+
+`routes/requests.ts`'s outcome-attach loop re-reads the request row and the chain head fresh
+on every attempt and CASes on the seq it just read — a single competing writer between the read
+and the transact is exactly what that CAS is for, and the loop simply goes round again with a
+fresh read. What it does not do is retry unboundedly: `OUTCOME_ATTEMPTS = 3`. Under SUSTAINED
+contention on the row or the chain head — several writers landing inside the same handful of
+iterations, not one lost race — the budget can still be exhausted, and the handler falls into
+the audit-only path: the entry lands (marked `requestRowUpdated:false`), but the claim this run
+still holds is released with an unaudited row write (the fact was already recorded a moment
+earlier, so this write carries nothing new).
+
+That fallback is a deliberate, bounded degradation, not a silent one — the caller gets
+`BUNDLE_OUTCOME_CONTENDED` with the full outcome in `details`, never a lost record. What is not
+covered is the CONSTANT: is 3 attempts enough for this system's actual concurrency? The
+regression test (`test/bundleOutcomeRecord.test.ts`) pins the behavioural CONTRACT — the audit
+entry lands, the code is specific, the claim is released or explicitly left to the lease — not
+the retry count against a measured contention rate the way `L-30` (PERF-11, a parallel batch)
+argues a retry budget should be derived.
+
+**State:** open, bounded. The pattern PERF-11 established (a NAMED constant + full jitter
+back-off, derived from expected concurrency rather than an arbitrary number) is the shape to
+apply here too, once `domain/audit.ts`'s `CHAIN_WRITE_ATTEMPTS`/`chainBackoff` (PERF-11, a
+parallel batch's file) are available to reuse rather than duplicating a second retry policy.
+### R-60 · Nothing drives `docker stop` against the built image
+*Residue on **ERR-8 / OPS-8**.*
+
+The PID 1 defect existed *because* the shipped artifact's behaviour was never exercised: the
+handler had a passing unit test and had never run in a container. The fix is now guarded by a
+static rule over the Dockerfile `CMD` (any process-manager head, and the shell form, are
+refused) and by CI's existing `docker-build.yml` step, which builds the api image, boots it and
+waits for `/readyz=200` — so a CMD that cannot start the process is caught. What is *not*
+covered is the stop half: no test sends `docker stop` to the built image and asserts it exits
+0 within the grace period with the writer lock released.
+
+**Not done here on purpose, twice over.** That step belongs in `.github/workflows/docker-build.yml`,
+which is `B-O8`'s lane, and widening into it is exactly what the runbook says not to do. And it
+cannot be written honestly from this environment: the docker CLI is present but there is no
+daemon, so the image was never built here — the container-shape claims in this batch rest on the
+static rules, the process-level probes against the real entrypoint, and review.
+
+**State:** accepted, bounded. No open finding owns the workflow addition, so this entry is its
+only record — deliberately, rather than claiming a tracker that does not exist. The cheap
+version is three lines in the existing job that already has the container running:
+`docker stop --timeout 30`, assert the exit code, and grep the logs for `shutdown complete`.
+
+### R-61 · The drain does not await store writes no connection is holding open
+*Residue on **ERR-8 / OPS-8**.*
+
+ERR-8's recommendation says the SIGTERM handler should "await the FileStore write chain". The
+drain awaits `server.close()`, which covers request-driven durability *transitively and
+completely*: a request that awaits `persist()` has not answered yet, so its connection is still
+open and the drain is still waiting on it. The gap is writes with no connection behind them —
+the auto-apply scheduler's tick being the real instance. `scheduler.stop()` prevents a *new*
+tick, but a tick already in flight can still be cut at the deadline.
+
+Closing it properly needs `FileStore` to expose "the write chain is idle" — `flush()` is
+private and there is no public equivalent. That is `ccp/api/src/store/*`, which is `B-O3`'s
+lane, so the seam is described here rather than reached into.
+
+**State:** open, bounded and small. In practice the exposure is one scheduler tick's writes
+during a 15s drain, on a deployment that has explicitly set `CCP_SCHEDULER=1`; the store's own
+atomic-rename design means the outcome is a lost write, never a corrupt snapshot.
+
+### R-65 · The armed-overlay shell regression suite runs nowhere in CI
+*Residue on **OPS-6**.*
+
+`ccp/scripts/test/*.test.sh` already has a sibling compose check for the armed overlay, and
+grep-verified: no workflow, no gate script, no npm script references any file under
+`ccp/scripts/test/`. `OPS-6`'s own regression test (`ccp/api/test/armedOverlay.test.ts`)
+therefore lives in the api's vitest suite instead — which runs on every CI job that touches
+`ccp/` — precisely so the fix has a test that actually executes, rather than adding to a shell
+suite nothing runs (the exact `L-1`/can-it-fail shape this audit keeps finding).
+
+That is a workaround, not a fix for the underlying gap: the existing shell suite in
+`ccp/scripts/test/` is real coverage of other operator-script behaviour that ALSO runs nowhere,
+and wiring an entire shell-test runner into a GitHub Actions workflow is a `.github/workflows/`
+change — a different batch's files (this repo's own convention keeps CI wiring changes together
+so path-filter coverage stays reasoned about in one place, per `scripts/ci/check-path-filters.sh`'s
+header).
+
+**State:** open, not tracked by any other finding. The cheap version is a new job (or a step in
+an existing one) that runs `for f in ccp/scripts/test/*.test.sh; do bash "$f"; done`, gated the
+same way `ccp/scripts/publish-gate.sh` already is.

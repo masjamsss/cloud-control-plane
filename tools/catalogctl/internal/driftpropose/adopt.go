@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/hashicorp/hcl/v2"
@@ -143,7 +142,10 @@ func ApplyAdopt(v Verdict, envDir string) (wrote bool, ungenReason string, err e
 	if bytes.Equal(loc.Bytes, newFile) {
 		return false, "", nil // verified no-op — success, nothing to write
 	}
-	if err := os.WriteFile(loc.File, newFile, 0o644); err != nil {
+	// CTL-5: hclops.AtomicWrite (temp + rename), not a bare os.WriteFile — a
+	// crash/ENOSPC mid-write must never leave a truncated .tf in the bundle
+	// checkout, exactly the guarantee edit's own writes already have.
+	if err := hclops.AtomicWrite(loc.File, newFile); err != nil {
 		return false, "", fmt.Errorf("adopt %s: write %s: %w", v.Address, loc.File, err)
 	}
 	return true, "", nil

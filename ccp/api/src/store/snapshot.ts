@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { open as fsOpen, mkdir, rename, rm } from 'node:fs/promises';
+import { cp, open as fsOpen, mkdir, rename, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Item } from './configStore';
 import { verifyChain, type ChainEntry, type VerifyResult } from '../domain/audit';
@@ -18,17 +18,87 @@ const AUDIT_MONTH = /^P#(.+)#AUDIT#\d{6}$/;
 const AUDIT_HEAD = /^P#(.+)#AUDIT$/;
 
 /**
- * Parse a snapshot file's contents. Fail closed — matching FileStore.load — on
- * empty/whitespace (a corrupt or half-written snapshot) or a non-array payload,
- * so a restore never silently installs a broken store.
+ * The format version this binary WRITES, and the highest it can read (DATA-16).
+ *
+ * The snapshot used to be a bare JSON array with no marker at all. The migration story —
+ * additive-optional fields plus read-time shims — is real, but it has no way to say
+ * "this file's invariants are newer than you": an older binary read a newer file blind
+ * and, because every write rewrites the whole store, rewrote it in its own image. One
+ * integer fixes the direction that cannot be recovered from.
+ *
+ * Bump this ONLY for a change an older binary must not silently accept. Adding an
+ * optional field is not one of those — that is what the additive discipline is for.
  */
-export function parseSnapshotItems(raw: string): Item[] {
+export const SNAPSHOT_FORMAT_VERSION = 1;
+
+/** The enveloped on-disk shape. The legacy bare array is still READ (see below). */
+export type SnapshotEnvelope = { formatVersion: number; items: Item[] };
+
+/**
+ * Parse a snapshot file's contents. Fail closed — matching FileStore.load — on
+ * empty/whitespace (a corrupt or half-written snapshot), on a payload that is neither
+ * envelope nor array, and on a `formatVersion` this binary predates, so a restore never
+ * silently installs a broken store nor a store it cannot correctly interpret.
+ *
+ * BOTH shapes load, forever: `{ formatVersion, items }` and the bare `[...]` array every
+ * file written before DATA-16 carries. A legacy file is not an error and never will be —
+ * treating "no marker" as version 0 is exactly what the marker exists to let us do.
+ *
+ * `source` names the file in the error. A snapshot that refuses to load is read by an
+ * operator at 3am with a store that will not boot; "which file" is the first thing they
+ * need and the hardest to reconstruct from a stack trace.
+ */
+export function parseSnapshotItems(raw: string, source = 'snapshot'): Item[] {
   if (raw.trim().length === 0) {
-    throw new Error('snapshot is empty/whitespace — refusing to treat it as a valid store snapshot (corrupt or truncated file).');
+    throw new Error(`${source} is empty/whitespace — refusing to treat it as a valid store snapshot (corrupt or truncated file).`);
   }
   const parsed: unknown = JSON.parse(raw);
-  if (!Array.isArray(parsed)) throw new Error('snapshot is not a JSON array of items.');
-  return parsed as Item[];
+  if (Array.isArray(parsed)) return parsed as Item[]; // legacy: pre-DATA-16 bare array
+  if (parsed === null || typeof parsed !== 'object') {
+    throw new Error(`${source} is not a store snapshot: expected {formatVersion, items} or a JSON array of items, got ${parsed === null ? 'null' : typeof parsed}.`);
+  }
+  const env = parsed as Partial<SnapshotEnvelope>;
+  const version = env.formatVersion;
+  if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
+    throw new Error(`${source} has formatVersion=${JSON.stringify(version)} — expected a positive integer (or a legacy bare array).`);
+  }
+  if (version > SNAPSHOT_FORMAT_VERSION) {
+    throw new Error(
+      `${source} was written in format version ${version}; this build reads at most ${SNAPSHOT_FORMAT_VERSION}. Refusing to load it — every write rewrites the WHOLE snapshot, so booting an unreadable file would rewrite it in an older format and lose whatever the newer one carried. Upgrade the binary, or restore a snapshot this version wrote.`,
+    );
+  }
+  if (!Array.isArray(env.items)) {
+    throw new Error(`${source} has formatVersion=${version} but its \`items\` is ${env.items === undefined ? 'missing' : 'not an array'}.`);
+  }
+  return env.items;
+}
+
+/**
+ * Serialize a snapshot in bounded pieces — the exact bytes `FileStore` writes.
+ *
+ * CONC-8: the whole store used to be turned into one string by a single synchronous
+ * `JSON.stringify`, which is O(store) work on the event loop for EVERY durable write.
+ * Emitting it in chunks lets the writer hand a piece to the filesystem and yield, so the
+ * per-turn cost is bounded by the chunk rather than by the size of the database.
+ *
+ * `items` MUST be a point-in-time view whose element objects are never mutated in place
+ * (which is exactly what MemoryStore's index gives: a write REPLACES a row's object, it
+ * never edits one). That is what makes it sound to finish serializing across an await —
+ * the bytes describe the store as it was when the view was taken, so a mutation landing
+ * mid-write is simply not in this snapshot, the same as one landing mid-fsync.
+ */
+export function* serializeSnapshot(items: readonly Item[], itemsPerChunk = 256): Generator<string> {
+  yield `{"formatVersion":${SNAPSHOT_FORMAT_VERSION},"items":[`;
+  const parts: string[] = [];
+  for (let i = 0; i < items.length; i++) {
+    parts.push(i === 0 ? JSON.stringify(items[i]) : `,${JSON.stringify(items[i])}`);
+    if (parts.length >= itemsPerChunk) {
+      yield parts.join('');
+      parts.length = 0;
+    }
+  }
+  if (parts.length > 0) yield parts.join('');
+  yield ']}';
 }
 
 export type SnapshotChain = {
@@ -137,4 +207,38 @@ async function syncDir(dir: string): Promise<void> {
   } finally {
     await dh?.close().catch(() => undefined);
   }
+}
+
+/**
+ * DATA-10 — {@link writeFileAtomic}'s temp+rename discipline, extended to a whole
+ * directory TREE: copy `src` into a temp sibling of `dest`, then swap it in with one
+ * rename, so a killed backup/restore never leaves a half-copied `dest` where a later
+ * read could find it. `dest`, if it already exists, is replaced wholesale (never
+ * merged) — the point is that the result is byte-for-byte `src`, not `src` layered
+ * over whatever `dest` happened to hold. Shared by scripts/backup.ts (root → the
+ * backup's companion `.projects` dir) and scripts/restore.ts (that dir → the live
+ * project-data root) so the one atomic-tree-copy implementation is exercised both
+ * directions rather than duplicated per script. Returns the number of entries
+ * (files + directories) copied, for the caller's own log line.
+ */
+export async function copyTreeAtomic(src: string, dest: string): Promise<number> {
+  const tmp = `${dest}.tmp-${process.pid}-${randomBytes(6).toString('hex')}`;
+  await rm(tmp, { recursive: true, force: true });
+  let count = 0;
+  await cp(src, tmp, {
+    recursive: true,
+    filter: () => {
+      count += 1;
+      return true;
+    },
+  });
+  try {
+    await rm(dest, { recursive: true, force: true });
+    await rename(tmp, dest);
+  } catch (e) {
+    await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
+    throw e;
+  }
+  await syncDir(dirname(dest));
+  return count;
 }

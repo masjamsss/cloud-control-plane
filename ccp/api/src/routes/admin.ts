@@ -63,9 +63,10 @@ import {
   publicPendingChange,
   settlePendingExpiry,
   type Classification,
+  type CommitInput,
 } from "../domain/dualControl";
 import { afterProjectConfigApply } from "../domain/projectsLifecycle";
-import { transactWithAudit } from "../domain/audit";
+import { DomainConditionError, transactWithAudit } from "../domain/audit";
 import {
   exportAuditChain,
   readAuditPage,
@@ -730,7 +731,7 @@ export function adminRoutes(
       item: item as unknown as Record<string, unknown>,
       ifNotExists: true,
     };
-    const res = await commitOrPropose(store, projectId, actor, {
+    const commit: CommitInput = {
       classification,
       kind: "role-grant-senior",
       targetKey: `ACCOUNT#${username}`,
@@ -746,7 +747,20 @@ export function adminRoutes(
         targetId: username,
         after: { ...publicAccount(item, bindProject), projectId: bindProject },
       },
-    });
+    };
+    // API-14: the account row's `ifNotExists` is the REAL duplicate check — the read at
+    // the top of this handler is only the fast path, and two admins enrolling the SAME
+    // username concurrently both pass it. The loser used to be told CHAIN_CONTENTION
+    // ("the audit chain is busy; please retry") about a duplicate that no retry can
+    // resolve. It now gets the same DUPLICATE_USERNAME the sequential path returns: the
+    // concurrent answer is the sequential answer.
+    let res;
+    try {
+      res = await commitOrPropose(store, projectId, actor, commit);
+    } catch (e) {
+      if (lostIfNotExistsOn(e, k)) return apiError(c, "DUPLICATE_USERNAME");
+      throw e;
+    }
     if (res.status === 200) return c.json(publicAccount(item, projectId), 201);
     return c.json(publicPendingChange(res.pending), 202);
   });
@@ -930,13 +944,18 @@ export function adminRoutes(
     const sessionBump = gainsSeniorCapacity || isAdminChanged;
 
     const set: Record<string, unknown> = {};
+    const remove: string[] = [];
     if (verbPresent) {
       // Write the canonical `roles` map and materialize away the legacy trio (this IS the
       // one-time per-row migration: the first admin write rewrites the account to the new shape).
+      //
+      // DATA-14 (3) — the legacy trio is REMOVEd, not set to `undefined`. That idiom did
+      // not survive being STORED: this apply is stashed verbatim on a pending proposal for
+      // the loosening path, `JSON.stringify` drops an undefined-valued key, and an ack
+      // after a restart therefore wrote the new `roles` map while leaving the legacy trio
+      // in place — a half-migrated row, from a proposal that looked identical on disk.
       set.roles = nextRoles;
-      set.role = undefined;
-      set.teamId = undefined;
-      set.projects = undefined;
+      remove.push("role", "teamId", "projects");
     }
     if (body.status) set.status = body.status;
     if (body.isAdmin !== undefined) set.isAdmin = body.isAdmin;
@@ -962,6 +981,7 @@ export function adminRoutes(
       pk: k.PK,
       sk: k.SK,
       set,
+      ...(remove.length > 0 ? { remove } : {}),
       guardAttr: "accountVersion",
       guardValue: acc.accountVersion,
     };
@@ -1280,16 +1300,28 @@ export function adminRoutes(
       GSI1PK: teamCollectionGsi(projectId),
       GSI1SK: id,
     };
+    const teamK = teamKey(projectId, id);
     writes.push({ kind: "put", item: team, ifNotExists: true });
 
-    await transactWithAudit(store, projectId, writes, {
-      action: "team-create",
-      actor,
-      targetType: "team",
-      targetId: id,
-      after: { name, serviceSlugs: [...wanted] },
-      ...(steals.length ? { before: { stolenFrom: steals } } : {}),
-    });
+    try {
+      await transactWithAudit(store, projectId, writes, {
+        action: "team-create",
+        actor,
+        targetType: "team",
+        targetId: id,
+        after: { name, serviceSlugs: [...wanted] },
+        ...(steals.length ? { before: { stolenFrom: steals } } : {}),
+      });
+    } catch (e) {
+      // API-14, same shape as enroll: the duplicate-name read above and the id
+      // de-collision loop both run against a snapshot, so two concurrent creates of the
+      // same name derive the SAME id and one loses the row's `ifNotExists`. Keyed on
+      // THAT write specifically — `stripFromOthers` contributes version-guarded writes
+      // to the same batch, and one of those losing means a concurrent service move, not
+      // a duplicate team.
+      if (lostIfNotExistsOn(e, teamK)) return apiError(c, "DUPLICATE_TEAM");
+      throw e;
+    }
     return c.json({ id, name, serviceSlugs: [...wanted] }, 201);
   });
 
@@ -1513,6 +1545,18 @@ export function adminRoutes(
  * the audit before/after). No caller hand-concatenates keys — each team item
  * already carries its PK/SK.
  */
+/**
+ * Did `e` report that the caller's OWN `ifNotExists` on exactly `key` is what refused the
+ * audited transaction (API-14)? A batch can carry several conditional writes, so the key
+ * matters: mapping any domain-condition failure to "duplicate" would mislabel a concurrent
+ * service move as a duplicate team name.
+ */
+function lostIfNotExistsOn(e: unknown, key: { PK: string; SK: string }): boolean {
+  if (!(e instanceof DomainConditionError)) return false;
+  const w = e.failed;
+  return w.kind === "put" && w.ifNotExists === true && w.item.PK === key.PK && w.item.SK === key.SK;
+}
+
 function stripFromOthers(
   teams: TeamItem[],
   wanted: Set<string>,

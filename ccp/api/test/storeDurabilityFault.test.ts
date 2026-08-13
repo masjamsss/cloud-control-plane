@@ -8,6 +8,7 @@ import { readiness } from '../src/domain/readiness';
 import { MemoryStore } from '../src/store/memoryStore';
 import type { Item } from '../src/store/configStore';
 import { accountKey, accountsGsi } from '../src/store/schema';
+import { parseSnapshotItems } from '../src/store/snapshot';
 
 /**
  * DATA-3 / ERR-10 — a failed disk persist left memory ahead of disk.
@@ -111,7 +112,8 @@ describe('a store that cannot persist stops claiming to be authoritative', () =>
     // 'FAILED' to disk with it. Now the store refuses, so nothing re-snapshots it.
     await expect(store.put(row('c'))).rejects.toThrow(DurabilityError);
 
-    const onDisk = JSON.parse(readFileSync(file, 'utf8')) as Array<{ SK: string }>;
+    // DATA-16: the on-disk file is the (possibly enveloped) snapshot format.
+    const onDisk = parseSnapshotItems(readFileSync(file, 'utf8')) as Array<{ SK: string }>;
     expect(onDisk.map((i) => i.SK)).toEqual(['a']);
   });
 

@@ -12,5 +12,8 @@ export type AppEnv = {
     account?: AccountItem;
     session?: SessionItem;
     sessionFail?: SessionFail;
+    /** OPS-7 — set by `withRequestLog`, first in the chain, so every later
+     *  middleware/route/error handler can correlate its own log lines. */
+    requestId: string;
   };
 };

@@ -10,6 +10,14 @@ import { SAMPLE_PROJECT_ID } from './helpers/seed';
 // restart-survival flows) inherit it harmlessly — they boot blank stores.
 process.env.CCP_LEGACY_PROJECT_ID = SAMPLE_PROJECT_ID;
 
+// DATA-5 — the validator is a real feature, not test noise. Most of this suite's
+// fixtures are deliberately minimal (a handful of fields, not a byte-real row), which is
+// correct for what THEY test but would make every `FileStore` restart in the suite log a
+// wall of "row does not match its schema" warnings under the default `warn` mode. Off
+// globally; `test/storeValidate.test.ts` sets `CCP_STORE_VALIDATE` itself, per test, to
+// exercise `warn`/`strict`/`off` against fixtures built for exactly that.
+process.env.CCP_STORE_VALIDATE = 'off';
+
 /**
  * Global test setup (vitest.config.ts `test.setupFiles`). Resets the in-process
  * KNOWN-projects cache (projects.ts) to the cold-boot state before EVERY test, so

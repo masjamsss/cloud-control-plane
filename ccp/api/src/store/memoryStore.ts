@@ -1,5 +1,11 @@
-import type { ConfigStore, Item, QueryOptions, TransactWrite } from './configStore';
-import { ConditionError } from './configStore';
+import type { ConfigStore, Item, QueryOptions, TransactWrite, WriteGuard } from './configStore';
+import {
+  ConditionError,
+  KEY_SEPARATOR,
+  MAX_TRANSACT_WRITES,
+  SeamViolationError,
+  assertStorableKey,
+} from './configStore';
 import { cloneValue } from './clone';
 
 /**
@@ -10,10 +16,91 @@ import { cloneValue } from './clone';
  * literal control byte in the source: a raw NUL makes this file `data` rather than
  * text to git/grep/editors, and one well-meaning "strip the weird character" edit
  * would reintroduce exactly that collision.
+ *
+ * DATA-15: "cannot appear in a PK or SK" is now ENFORCED at every write
+ * ({@link assertStorableKey}), not merely asserted here. It was a comment while
+ * `idempotencyKey` was putting up to 200 client-chosen bytes into a PK — and an
+ * invariant a client can violate is not an invariant. The character itself is defined
+ * in `configStore.ts` beside the rule, so the encoding and its guard cannot drift.
  */
 const SEP = '\u0000';
 const keyOf = (pk: string, sk: string): string => `${pk}${SEP}${sk}`;
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * Structural equality for a stored attribute value — the seam's `ifEquals` comparison
+ * (API-17 (a)).
+ *
+ * Store items are JSON values by contract (`clone.ts`), and every item a caller holds is
+ * a CLONE of the stored one, so `!==` — reference identity for objects and arrays — made
+ * an object-valued guard a condition that could never pass, whatever the data said.
+ * DynamoDB's `=` compares the VALUE, and so does this: element-wise and order-sensitive
+ * for lists (DynamoDB `L` is ordered), key-order-insensitive for maps (`M` is not).
+ */
+function attributeEquals(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, i) => attributeEquals(v, b[i]));
+  }
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
+  const ak = Object.keys(ao);
+  if (ak.length !== Object.keys(bo).length) return false;
+  return ak.every((k) => Object.prototype.hasOwnProperty.call(bo, k) && attributeEquals(ao[k], bo[k]));
+}
+
+/**
+ * Reject an item DynamoDB would key or index differently than this store does. Called on
+ * every write BEFORE anything is applied — in `transact` that means during the condition
+ * phase, so a violating batch aborts whole instead of half-landing.
+ */
+function assertStorableItem(item: Item, where: string): void {
+  assertStorableKey(item.PK, item.SK, where);
+  const gsiPk = item.GSI1PK;
+  const gsiSk = item.GSI1SK;
+  // Membership in GSI1 is decided by GSI1PK alone: a row without it is not in the index
+  // here and not in the index there, whatever GSI1SK says. (Dual-control's de-index
+  // REMOVEs only GSI1PK and leaves the sort key behind — harmless in both worlds, and
+  // the row is correctly re-indexed on that key if it ever rejoins.) The asymmetry is
+  // deliberate: only the other direction diverges.
+  if (gsiPk === undefined || gsiPk === null) return;
+  const at = `${item.PK}/${item.SK}`;
+  if (typeof gsiPk !== 'string') {
+    throw new SeamViolationError(`${where}: ${at} GSI1PK must be a string, got ${typeof gsiPk}`);
+  }
+  if (gsiPk.length === 0) {
+    throw new SeamViolationError(`${where}: ${at} GSI1PK must not be empty (DynamoDB rejects an empty key value)`);
+  }
+  // GSI1 is a COMPOSITE-key index: DynamoDB projects an item only when BOTH key
+  // attributes are present. A row with GSI1PK and no GSI1SK is one this store serves
+  // (sorted by its SK as a fallback) and the real table omits entirely — the exact shape
+  // that makes a passing local test a false claim about production.
+  if (typeof gsiSk !== 'string' || gsiSk.length === 0) {
+    throw new SeamViolationError(
+      `${where}: ${at} sets GSI1PK=${JSON.stringify(gsiPk)} with ${gsiSk === undefined ? 'no GSI1SK' : `GSI1SK=${JSON.stringify(gsiSk)}`} — GSI1 is a composite-key index, so DynamoDB would not project this row at all. Set a non-empty GSI1SK, or drop GSI1PK to leave the index.`,
+    );
+  }
+}
+
+/** The row an `update` write produces, so its shape can be checked before it lands. */
+function applyUpdate(cur: Item, set: Record<string, unknown>, remove?: readonly string[]): Item {
+  const next: Record<string, unknown> = { ...cur, ...set };
+  for (const attr of remove ?? []) delete next[attr];
+  return next as Item;
+}
+
+/** Refuse `set: { x: undefined }` — DynamoDB `SET` cannot assign nothing; use `remove`. */
+function assertSettable(set: Record<string, unknown>, at: string, where: string): void {
+  for (const [k, v] of Object.entries(set)) {
+    if (v === undefined) {
+      throw new SeamViolationError(
+        `${where}: ${at} set.${k} is undefined — DynamoDB SET cannot assign an absent value. Use remove: ['${k}'] to delete the attribute (that is how a row leaves GSI1).`,
+      );
+    }
+  }
+}
 
 /**
  * One PK partition (or one GSI1PK partition): the rows plus a lazily-rebuilt sort
@@ -49,7 +136,16 @@ function partitionKeys<K>(p: Partition<K>, order: (a: K, b: K) => number): K[] {
   return p.sorted;
 }
 
-/** The GSI1 sort key: `GSI1SK`, falling back to the item's own `SK` (seam contract). */
+/**
+ * The GSI1 sort key.
+ *
+ * Every WRITE now carries both GSI1 key attributes or neither ({@link assertStorableItem}),
+ * so the `SK` fallback is reachable only for a row that was already on disk when that rule
+ * arrived — a hand-edited or pre-rule snapshot. It is kept for exactly that case: a
+ * loaded row is served in SK order rather than vanishing out of the index mid-boot, and
+ * the snapshot validator (`validateSnapshot`) reports it by key so the divergence is
+ * loud instead of silent. Nothing this code writes can produce one (DATA-14 (4)).
+ */
 const gsiSortKey = (it: Item): string => (typeof it.GSI1SK === 'string' ? it.GSI1SK : it.SK);
 
 /**
@@ -153,6 +249,14 @@ export class MemoryStore implements ConfigStore {
     return this.itemsInKeyOrder().map((it) => cloneValue(it));
   }
 
+  /** ARCH-9 — the private row counter every put/delete already maintains, exposed
+   * read-only. O(1): no traversal, no clone — cheap enough to read on every
+   * `/readyz` probe, unlike `exportItems()`. FileStore inherits this unchanged
+   * (it IS a MemoryStore plus a snapshot-on-write). */
+  approxItemCount(): number {
+    return this.count;
+  }
+
   /**
    * The snapshot as JSON, key-sorted — byte-identical to
    * `JSON.stringify(exportItems())` but WITHOUT the intermediate deep copy.
@@ -163,8 +267,37 @@ export class MemoryStore implements ConfigStore {
     return JSON.stringify(this.itemsInKeyOrder());
   }
 
-  /** Replace the whole store from a snapshot (load-on-boot). */
+  /**
+   * Replace the whole store from a snapshot (load-on-boot).
+   *
+   * DATA-5: the KEYS are checked here and nowhere else can they be. This used to trust
+   * whatever the file said, so a row with no `PK`/`SK` keyed itself under the literal
+   * composite `"undefined<sep>undefined"` — one slot shared by every such row, last one
+   * winning, and every read for the real key missing. Refusing names the row INDEX,
+   * because a row that has no key cannot be named by its key.
+   *
+   * Only the structural invariants the index itself depends on are enforced here. Whether
+   * a row satisfies its own entity schema is a separate, tunable question — see
+   * `validateSnapshot` — precisely because getting THAT wrong fails a boot rather than a
+   * test, and a store that refuses to open is worse than one that says loudly what is
+   * wrong with it.
+   */
   importItems(items: Item[]): void {
+    const seen = new Set<string>();
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i]!;
+      if (it === null || typeof it !== 'object' || Array.isArray(it)) {
+        throw new SeamViolationError(`snapshot row ${i} is ${Array.isArray(it) ? 'an array' : String(it)}, not an item object`);
+      }
+      assertStorableKey(it.PK, it.SK, `snapshot row ${i}`);
+      const k = keyOf(it.PK, it.SK);
+      if (seen.has(k)) {
+        throw new SeamViolationError(
+          `snapshot row ${i} repeats the key ${it.PK}/${it.SK} — a store cannot hold two rows with one key, and loading it would silently keep whichever came last`,
+        );
+      }
+      seen.add(k);
+    }
     this.primary = new Map();
     this.gsi1 = new Map();
     this.exportOrder = null;
@@ -186,12 +319,21 @@ export class MemoryStore implements ConfigStore {
     const limit = opts?.limit;
     if (limit !== undefined && limit <= 0) return [];
     const descending = opts?.forward === false;
+    const after = opts?.after;
     const out: Item[] = [];
     // Walk the sorted keys from whichever end the caller asked for and stop at the
     // limit, so a descending page read costs the page and not the partition.
     for (let i = 0; i < keys.length; i++) {
       const sk = keys[descending ? keys.length - 1 - i : i]!;
       if (skPrefix !== undefined && !sk.startsWith(skPrefix)) continue;
+      // `after` is EXCLUSIVE and direction-aware, exactly as in `queryGSI1` below.
+      // It was declared on the SEAM (`QueryOptions.after`, "the one component that
+      // varies within a partition") and honoured only on the GSI — so a primary-index
+      // caller that passed it got every row from the top of the partition and no
+      // error, which is the worst of the three possible behaviours: a resume that
+      // silently replays. A seam option the seam ignores is a lie about what the
+      // real table would do, and the audit reader is the caller that needs it.
+      if (after !== undefined && (descending ? sk >= after : sk <= after)) continue;
       const it = part.rows.get(sk);
       if (!it) continue;
       out.push(cloneValue(it));
@@ -229,12 +371,33 @@ export class MemoryStore implements ConfigStore {
     return out;
   }
 
+  /**
+   * Fold one GSI1 partition without cloning (PERF-10 — see the seam's doc).
+   * Partition order is the same order `queryGSI1` would return, so a fold and a
+   * query see the same rows in the same sequence; the only difference is that
+   * nothing is copied and nothing escapes but the accumulator.
+   */
+  async foldGSI1<T>(gsi1pk: string, initial: T, visit: (acc: T, item: Readonly<Item>) => T): Promise<T> {
+    const part = this.gsi1.get(gsi1pk);
+    if (!part) return initial;
+    const rows = part.rows;
+    const keys = partitionKeys(part, (a, b) => {
+      const ia = rows.get(a);
+      const ib = rows.get(b);
+      return cmp(ia ? gsiSortKey(ia) : a, ib ? gsiSortKey(ib) : b);
+    });
+    let acc = initial;
+    for (const k of keys) {
+      const it = rows.get(k);
+      if (it) acc = visit(acc, it);
+    }
+    return acc;
+  }
+
   /* ── writes ────────────────────────────────────────────────────────────── */
 
-  async put(
-    item: Item,
-    opts?: { ifNotExists?: boolean; ifEquals?: { attr: string; value: unknown } },
-  ): Promise<void> {
+  async put(item: Item, opts?: { ifNotExists?: boolean; ifEquals?: WriteGuard }): Promise<void> {
+    assertStorableItem(item, 'put');
     if (opts?.ifNotExists && this.lookup(item.PK, item.SK) !== undefined) {
       throw new ConditionError(`Item ${item.PK}/${item.SK} already exists`);
     }
@@ -245,7 +408,7 @@ export class MemoryStore implements ConfigStore {
       if (!cur) {
         throw new ConditionError(`ifEquals failed on ${item.PK}/${item.SK}.${opts.ifEquals.attr} (item missing)`);
       }
-      if (cur[opts.ifEquals.attr] !== opts.ifEquals.value) {
+      if (!attributeEquals(cur[opts.ifEquals.attr], opts.ifEquals.value)) {
         throw new ConditionError(`ifEquals failed on ${item.PK}/${item.SK}.${opts.ifEquals.attr}`);
       }
     }
@@ -257,6 +420,29 @@ export class MemoryStore implements ConfigStore {
   }
 
   async transact(writes: TransactWrite[]): Promise<void> {
+    // Phase 0: reject a batch DynamoDB would reject outright, before any condition is
+    // evaluated — these are programming errors, not lost races (API-17 (b), DATA-14 (1)).
+    if (writes.length > MAX_TRANSACT_WRITES) {
+      throw new SeamViolationError(
+        `transact: ${writes.length} writes exceeds the ${MAX_TRANSACT_WRITES}-action limit of a DynamoDB TransactWriteItems call`,
+      );
+    }
+    const seen = new Set<string>();
+    for (const w of writes) {
+      const pk = w.kind === 'put' ? w.item.PK : w.pk;
+      const sk = w.kind === 'put' ? w.item.SK : w.sk;
+      const where = `transact[${w.kind}]`;
+      if (w.kind === 'put') assertStorableItem(w.item, where);
+      else assertStorableKey(pk, sk, where);
+      if (w.kind === 'update') assertSettable(w.set, `${pk}/${sk}`, where);
+      const k = keyOf(pk, sk);
+      if (seen.has(k)) {
+        throw new SeamViolationError(
+          `transact: two writes target ${pk}/${sk} — DynamoDB rejects a transaction with more than one action on the same item. Merge them into one write.`,
+        );
+      }
+      seen.add(k);
+    }
     // Phase 1: validate ALL conditions against the pre-transaction snapshot.
     for (const w of writes) {
       if (w.kind === 'put') {
@@ -272,7 +458,7 @@ export class MemoryStore implements ConfigStore {
               `ifEquals failed on ${w.item.PK}/${w.item.SK}.${w.ifEquals.attr} (item missing)`,
             );
           }
-          if (cur[w.ifEquals.attr] !== w.ifEquals.value) {
+          if (!attributeEquals(cur[w.ifEquals.attr], w.ifEquals.value)) {
             throw new ConditionError(`ifEquals failed on ${w.item.PK}/${w.item.SK}.${w.ifEquals.attr}`);
           }
         }
@@ -283,11 +469,18 @@ export class MemoryStore implements ConfigStore {
         // row that predates the guarded attribute, e.g. `accountVersion`) would "pass"
         // against a deleted row and the update would resurrect a ghost item.
         if (!cur) throw new ConditionError(`ifEquals failed on ${w.pk}/${w.sk}.${w.ifEquals.attr} (item missing)`);
-        const actual = cur[w.ifEquals.attr];
-        if (actual !== w.ifEquals.value) {
+        if (!attributeEquals(cur[w.ifEquals.attr], w.ifEquals.value)) {
           throw new ConditionError(`ifEquals failed on ${w.pk}/${w.sk}.${w.ifEquals.attr}`);
         }
       }
+    }
+    // Phase 1b: the ROWS the updates produce must be storable too — checked here, before
+    // phase 2, because a throw once writes have started applying would leave the batch
+    // half-landed and this store's one hard promise is that it never does.
+    for (const w of writes) {
+      if (w.kind !== 'update') continue;
+      const cur = this.lookup(w.pk, w.sk) ?? ({ PK: w.pk, SK: w.sk } as Item);
+      assertStorableItem(applyUpdate(cur, w.set, w.remove), 'transact[update]');
     }
     // Phase 2: all conditions passed → apply atomically.
     for (const w of writes) {
@@ -297,7 +490,7 @@ export class MemoryStore implements ConfigStore {
         this.deleteItem(w.pk, w.sk);
       } else {
         const cur = this.lookup(w.pk, w.sk) ?? ({ PK: w.pk, SK: w.sk } as Item);
-        this.setItem(cloneValue({ ...cur, ...w.set }));
+        this.setItem(cloneValue(applyUpdate(cur, w.set, w.remove)));
       }
     }
   }

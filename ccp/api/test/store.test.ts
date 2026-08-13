@@ -8,7 +8,10 @@ const ULID = '01J0000000000000000000000A';
 
 /* One valid fixture per §2.1 entity, keyed via the helpers, and the field to drop
  * to prove a required field is enforced. */
-const schemaCases: Array<{ name: string; schema: z.ZodTypeAny; valid: Item; drop: string }> = [
+/* Reused by test/storeValidate.test.ts (DATA-5) — one real valid row per entity, so the
+ * validator's classifier is tested against the SAME fixtures that prove each schema
+ * itself, rather than a second hand-typed set that could silently drift from these. */
+export const schemaCases: Array<{ name: string; schema: z.ZodTypeAny; valid: Item; drop: string }> = [
   {
     name: 'AccountItem',
     schema: S.AccountItem,
@@ -312,7 +315,10 @@ describe('GSI1 membership follows GSI1PK', () => {
   it('drops it via a transact update too, not just a put', async () => {
     const store = new MemoryStore();
     await store.put(row('a', 'OPEN'));
-    await store.transact([{ kind: 'update', pk: 'THING#a', sk: 'META', set: { status: 'APPLIED', GSI1PK: undefined } }]);
+    // DATA-14 (3): spelled `remove`, not `set: { GSI1PK: undefined }`. DynamoDB's SET
+    // cannot assign an absent value, and the old spelling did not survive being stored
+    // (JSON drops an undefined-valued key) — see test/storeSeamFidelity.test.ts.
+    await store.transact([{ kind: 'update', pk: 'THING#a', sk: 'META', set: { status: 'APPLIED' }, remove: ['GSI1PK'] }]);
     expect(await store.queryGSI1('OPEN')).toEqual([]);
     expect((await store.get('THING#a', 'META'))?.status).toBe('APPLIED');
   });

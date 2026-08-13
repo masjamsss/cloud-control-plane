@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyDrift,
+  findCurrentFinding,
   normalizeSegments,
   pathExpressible,
   type ClassifiableVerdict,
 } from '@/lib/driftEligibility';
+import type { DriftFinding } from '@/types/drift';
 
 /**
  * Direct unit coverage for the two pieces of the drift-audit fix program
@@ -295,5 +297,110 @@ describe('classifyDrift — restore (drift restore tranche, L29, oob_deletion)',
       expect(reason, reason).not.toMatch(sectionSign);
       expect(reason, reason).not.toMatch(proposalRef);
     }
+  });
+});
+
+/**
+ * DOC-7 — `findCurrentFinding` (the app's port of the api's own
+ * `findCurrentFinding`/`findingIdentityKey`, domain/driftProposals.ts):
+ * `arn` wins the identity match when non-empty; falls back to
+ * `tfType`+`liveId` only when `arn` is absent/empty on BOTH sides (never a
+ * partial match — an absent arn on one side and present on the other is
+ * still a miss, since the fallback keys are only comparable to each
+ * other). Regression coverage for the bug this closes: before this
+ * function existed, `DriftPage.tsx` matched a proposal back to its
+ * finding via a top-level `DriftProposal.arn` field the real api never
+ * served (only the mock did) — see `types/drift.ts`'s `DriftProposal` doc.
+ */
+describe('findCurrentFinding — DOC-7 identity match', () => {
+  const bastion: DriftFinding = {
+    class: 'unmanaged_resource',
+    tfType: 'aws_instance',
+    name: 'bastion-2',
+    arn: 'arn:aws:ec2:us-east-1:123456789012:instance/i-0abc123def456789a',
+    liveId: 'i-0abc123def456789a',
+    importPayload: null,
+    payloadWithheldReason: null,
+  };
+  const unarned: DriftFinding = {
+    class: 'unmanaged_resource',
+    tfType: 'aws_db_instance',
+    name: 'reporting-db',
+    arn: null,
+    liveId: 'db-oob-01',
+    importPayload: null,
+    payloadWithheldReason: null,
+  };
+
+  it('matches by arn when the identity carries one', () => {
+    const found = findCurrentFinding([unarned, bastion], {
+      arn: bastion.arn!,
+      tfType: 'aws_instance', // deliberately not read when arn matches
+      liveId: 'ignored',
+    });
+    expect(found).toBe(bastion);
+  });
+
+  it('falls back to tfType+liveId when arn is null on both sides', () => {
+    const found = findCurrentFinding([bastion, unarned], {
+      arn: null,
+      tfType: unarned.tfType,
+      liveId: unarned.liveId!,
+    });
+    expect(found).toBe(unarned);
+  });
+
+  it('returns undefined when no current finding matches (resolved, re-swept away, or never existed)', () => {
+    const found = findCurrentFinding([bastion, unarned], {
+      arn: 'arn:aws:ec2:us-east-1:123456789012:instance/i-0gone000000000000',
+      tfType: 'aws_instance',
+      liveId: 'i-0gone000000000000',
+    });
+    expect(found).toBeUndefined();
+  });
+
+  it('never cross-matches an arn-bearing finding against a fallback tfType+liveId identity, or vice versa', () => {
+    // bastion has an arn; querying by its OWN tfType+liveId (as if arn were
+    // absent) must NOT match it — the two findings key differently
+    // (`arn:...` vs `type:...#id:...`), by design (see findingIdentityKey).
+    const found = findCurrentFinding([bastion], {
+      arn: null,
+      tfType: bastion.tfType,
+      liveId: bastion.liveId!,
+    });
+    expect(found).toBeUndefined();
+  });
+
+  it('two DIFFERENT arn-less findings are still told apart by tfType+liveId — the fallback is a real key, not a shared bucket', () => {
+    // Both findings lack an arn; a broken fallback that collapses every
+    // arn-less finding to the SAME key (e.g. always keying on arn alone,
+    // present or not) would make `.find()` silently return whichever one
+    // happens to come first, regardless of which liveId was actually
+    // asked for. This proves the fallback carries tfType+liveId, not just
+    // "arn is absent."
+    const otherUnarned: DriftFinding = {
+      class: 'unmanaged_resource',
+      tfType: 'aws_db_instance',
+      name: 'other-db',
+      arn: null,
+      liveId: 'db-oob-99',
+      importPayload: null,
+      payloadWithheldReason: null,
+    };
+    const found = findCurrentFinding([unarned, otherUnarned], {
+      arn: null,
+      tfType: otherUnarned.tfType,
+      liveId: otherUnarned.liveId!,
+    });
+    expect(found).toBe(otherUnarned);
+    expect(found).not.toBe(unarned);
+  });
+
+  it('THE REGRESSION: a proposal whose pinned identity matches a finding by arn is found — this is what DriftPage.tsx and the mock submit path both rely on to resolve an open import drawer / re-verify a submit against the real API, where no top-level DriftProposal.arn field is ever served', () => {
+    const proposals = [bastion];
+    // Simulates DriftProposal.importPayload — the ONLY place this identity
+    // now lives on the wire.
+    const importPayload = { arn: bastion.arn ?? null, tfType: bastion.tfType, liveId: bastion.liveId! };
+    expect(findCurrentFinding(proposals, importPayload)).toBe(bastion);
   });
 });
