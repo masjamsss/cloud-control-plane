@@ -525,6 +525,23 @@ export function removeProjectDataVersion(root: string, projectId: string, versio
   rmSync(versionDir(root, projectId, version), { recursive: true, force: true });
 }
 
+/**
+ * DATA-10 — cheap on-disk presence check for one version: a single `existsSync`
+ * stat on the one file every version unconditionally writes
+ * ({@link writeProjectDataVersion}), never a content read or digest recompute.
+ * Used by readiness's cross-check so a `dataActive` pointer left referencing a
+ * version a disk-death restore lost (or restored from a different backup
+ * generation than the store JSON) reads as NOT ready instead of silently
+ * serving 404s behind a green probe. Deliberately NOT a digest comparison:
+ * `/readyz` runs on a tight timer, and re-hashing a project's whole served
+ * bundle on every poll would be exactly the steady per-probe CPU tax this
+ * codebase already flags for the audit-chain re-verification this same probe
+ * does (see domain/readiness.ts) — existence is the cheap, honest signal.
+ */
+export function projectDataVersionExists(root: string, projectId: string, version: number): boolean {
+  return existsSync(join(versionDir(root, projectId, version), 'inventory.json'));
+}
+
 /** Best-effort removal of EVERYTHING stored for a project (deregister-ack). */
 export function removeProjectData(root: string, projectId: string): void {
   rmSync(join(root, projectId), { recursive: true, force: true });

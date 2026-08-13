@@ -5,7 +5,6 @@ import type { Inventory, ManifestOperation, Schedule, ServiceManifest } from '@/
 import { api } from '@/lib/api';
 import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
-import { isChangeFrozen, isOpDisabled, useSettings } from '@/lib/settings';
 import { getOperation, validateParams } from '@/lib/interpreter';
 import { stripInactiveParams } from '@/lib/dependsOn';
 import { deriveFormPlan } from '@/lib/catalog';
@@ -23,6 +22,7 @@ import { AccessBadge } from '@/components/ui/AccessBadge';
 import { resolveRisk } from '@/lib/riskOverrides';
 import { LoadError } from '@/components/LoadError';
 import { submitChangeSetVia } from './submitFlow';
+import { useEffectiveSettings } from './effectiveSettingsFlow';
 import './request.css';
 
 const MIN_JUSTIFICATION = 10;
@@ -57,7 +57,9 @@ export function BulkRequestFormView({
 }: BulkRequestFormViewProps): JSX.Element {
   const navigate = useNavigate();
   const meta = getServiceMeta(serviceSlug);
-  const settings = useSettings();
+  // FE-6: the server's settings in api mode, never the advisory local store
+  // there — see effectiveSettingsFlow.ts.
+  const settings = useEffectiveSettings();
 
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
@@ -119,11 +121,11 @@ export function BulkRequestFormView({
       setTouched(all);
       return;
     }
-    if (isChangeFrozen()) {
+    if (settings.changeFreeze) {
       setBlocked('Change requests are frozen by an administrator right now. Try again once the freeze is lifted.');
       return;
     }
-    if (isOpDisabled(op.id)) {
+    if (settings.disabledOps.includes(op.id)) {
       setBlocked('This operation has been disabled by an administrator.');
       return;
     }

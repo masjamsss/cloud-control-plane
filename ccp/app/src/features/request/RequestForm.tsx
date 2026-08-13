@@ -10,7 +10,6 @@ import type {
 } from '@/types';
 import { api } from '@/lib/api';
 import { useActiveProjectId } from '@/lib/ProjectContext';
-import { isChangeFrozen, isOpDisabled, useSettings } from '@/lib/settings';
 import { buildRequestDraft, getOperation, validateParams } from '@/lib/interpreter';
 import { reusableParams } from '@/lib/requestAgain';
 import { deriveFormPlan } from '@/lib/catalog';
@@ -22,6 +21,7 @@ import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { LoadError } from '@/components/LoadError';
 import { submitRequestVia } from './submitFlow';
 import { activeRefusal, draftKey, type DraftRefusal } from './refusalFlow';
+import { useEffectiveSettings } from './effectiveSettingsFlow';
 import { Button } from '@/components/ui/Button';
 import { RiskBadge } from '@/components/ui/RiskBadge';
 import { resolveRisk } from '@/lib/riskOverrides';
@@ -139,7 +139,9 @@ export function RequestForm(): JSX.Element {
   // (the refusal above only ever gets set AFTER a failed attempt). The
   // submit-time re-check in onSubmit below is unchanged and stays the
   // actual authority — this is a proactive, honest preview of that same gate.
-  const settings = useSettings();
+  // FE-6: sourced from the SERVER's settings in api mode (never the advisory
+  // local store there) — see effectiveSettingsFlow.ts.
+  const settings = useEffectiveSettings();
 
   const errorRef = useRef<HTMLDivElement>(null);
   // UI-12: the target for the focus move on a step transition — each is only
@@ -344,8 +346,10 @@ export function RequestForm(): JSX.Element {
   const refuse = (reason: string): DraftRefusal => ({ reason, forKey: currentDraftKey });
 
   const onSubmit = (): void => {
-    // Admin gates re-checked at submit. A real backend re-enforces both.
-    if (isChangeFrozen()) {
+    // Admin gates re-checked at submit, from the SAME effective (FE-6:
+    // server-in-api-mode) settings the live preview below reads. A real
+    // backend re-enforces both regardless of what this pre-check decides.
+    if (settings.changeFreeze) {
       setRefusal(
         refuse(
           'Change requests are frozen by an administrator right now. Try again once the freeze is lifted.',
@@ -353,7 +357,7 @@ export function RequestForm(): JSX.Element {
       );
       return;
     }
-    if (isOpDisabled(op.id)) {
+    if (settings.disabledOps.includes(op.id)) {
       setRefusal(refuse('This operation has been disabled by an administrator.'));
       return;
     }
@@ -383,9 +387,12 @@ export function RequestForm(): JSX.Element {
     (revealErrors || touched['justification']) && justificationTooShort;
 
   // The live (proactive) half of the same gate onSubmit re-checks at the
-  // moment of the actual attempt — settings.changeFreeze/disabledOps
-  // come from the one shared, subscribed snapshot, so this
-  // reflects an admin action in another tab too, without navigation.
+  // moment of the actual attempt. In mock mode settings.changeFreeze/disabledOps
+  // come from the one shared, subscribed local snapshot, so this reflects an
+  // admin action in another tab too, without navigation; in api mode (FE-6)
+  // they come from the server, fetched once per mount — an admin action in a
+  // DIFFERENT session between mount and submit is still caught by the
+  // server's own submit-time enforcement, same as always.
   const liveBlockedReason = settings.changeFreeze
     ? 'Change requests are frozen by an administrator right now. Try again once the freeze is lifted.'
     : settings.disabledOps.includes(op.id)
