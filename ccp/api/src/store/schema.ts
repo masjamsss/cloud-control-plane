@@ -523,6 +523,17 @@ export const ApplySpec = z.object({
   sk: z.string(),
   item: z.record(z.unknown()).optional(), // op:put
   set: z.record(z.unknown()).optional(), // op:update
+  /**
+   * Attributes the ack should DELETE (op:update, DynamoDB `REMOVE`) — DATA-14 (3).
+   *
+   * ADDITIVE + OPTIONAL. Clearing an attribute used to be spelled
+   * `set: { attr: undefined }`, which is not merely a seam divergence: `undefined`
+   * does not survive `JSON.stringify`, so a proposal stored across a process restart
+   * came back with the key simply GONE and its ack silently applied nothing for that
+   * attribute (project-unarchive was the live instance — the ack recorded an
+   * unarchive and left `archived` set). A list of names round-trips exactly.
+   */
+  remove: z.array(z.string()).optional(),
   ifNotExists: z.boolean().optional(),
   guardAttr: z.string().optional(), // drift guard (ifEquals)
   guardValue: z.unknown().optional(),
@@ -1432,6 +1443,23 @@ export function requestKey(projectId: string, ulid: string): Key {
   return { PK: `${P(projectId)}REQ#${ulid}`, SK: "META" };
 }
 /**
+ * The grammar a CLIENT-SUPPLIED idempotency key must satisfy (DATA-15).
+ *
+ * This is the only place in the system where caller-chosen bytes become part of a
+ * partition key, and that PK is a `#`-joined tuple: `…IDEMPOTENCY#<actor>#<key>`. With
+ * an unconstrained key the join is not injective — actor `sari` + key `budi#x` builds
+ * exactly the PK that actor `sari#budi` + key `x` builds, so one account could aim a
+ * write at another account's idempotency slot (and read back the request id it holds).
+ * Excluding `#` from the key restores injectivity from the right regardless of what a
+ * username may contain, and excluding control characters keeps the store's composite-key
+ * separator out of a PK by construction rather than by hope.
+ *
+ * Deliberately a positive charset, not a blocklist: a key is an opaque client-chosen
+ * token (a ULID, a UUID, a request hash), and every real client already fits.
+ */
+export const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9._:@~-]{1,200}$/;
+
+/**
  * One requester's submit-quota INDEX partition (PERF-10). Each of their submits
  * writes a tiny pointer row here — SK is the request's ulid, so the partition is
  * SK-ordered by submission time exactly like the request collection is.
@@ -1477,12 +1505,22 @@ export function submitQuotaPk(projectId: string, requester: string): string {
 }
 /** Idempotency marker for a submit — scoped to (project, requester, client key), so a resubmit
  * carrying the same key resolves the FIRST request instead of creating a duplicate, and a key
- * can never collide across accounts or projects. Value: `{ requestId }`. */
+ * can never collide across accounts or projects. Value: `{ requestId }`.
+ *
+ * REFUSES a key outside {@link IDEMPOTENCY_KEY_RE}. The route schema rejects those with a
+ * 400 long before this throws — the check is here as well because the invariant belongs to
+ * the KEY, not to one handler, and the next caller of this builder (a script, a second
+ * route) would otherwise inherit the ambiguity silently. */
 export function requestIdempotencyKey(
   projectId: string,
   actor: string,
   key: string,
 ): Key {
+  if (!IDEMPOTENCY_KEY_RE.test(key)) {
+    throw new Error(
+      `idempotency key ${JSON.stringify(key)} is not a safe key component (must match ${IDEMPOTENCY_KEY_RE}) — it would make the composite PK ambiguous`,
+    );
+  }
   return { PK: `${P(projectId)}IDEMPOTENCY#${actor}#${key}`, SK: "META" };
 }
 export function approvalKey(

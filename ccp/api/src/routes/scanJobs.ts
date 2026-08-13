@@ -217,8 +217,10 @@ async function releaseClaimed(
         set: {
           status: "queued",
           GSI1PK: scanJobQueueGsi(),
-          startedAt: undefined,
         },
+        // DATA-14 (3) — REMOVE clears the attribute; `set: { startedAt: undefined }`
+        // is a DynamoDB ValidationException this seam now refuses to accept.
+        remove: ["startedAt"],
         ifEquals: { attr: "status", value: "claimed" },
       },
     ],

@@ -210,10 +210,15 @@ export async function putSessionFieldGuarded(
   guardAttr: string,
   guardValue: unknown,
   set: Record<string, unknown>,
+  /** Attributes to CLEAR (DynamoDB `REMOVE`). Clearing used to be spelled
+   *  `set: { x: undefined }`, which DynamoDB's `SET` cannot express at all —
+   *  DATA-14 (3); the seam now refuses it rather than let a local pass predict a
+   *  deployed ValidationException. */
+  remove?: string[],
 ): Promise<{ ok: true } | { ok: false; current: SessionItem | null }> {
   try {
     await store.transact([
-      { kind: 'update', pk: sKey.PK, sk: sKey.SK, set, ifEquals: { attr: guardAttr, value: guardValue } },
+      { kind: 'update', pk: sKey.PK, sk: sKey.SK, set, remove, ifEquals: { attr: guardAttr, value: guardValue } },
     ]);
     return { ok: true };
   } catch (e) {

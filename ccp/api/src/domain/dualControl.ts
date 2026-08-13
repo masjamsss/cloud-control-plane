@@ -139,7 +139,7 @@ export function applyToWrite(apply: ApplySpec): TransactWrite {
   const guard = apply.guardAttr !== undefined ? { attr: apply.guardAttr, value: apply.guardValue } : undefined;
   if (apply.op === 'put') return { kind: 'put', item: apply.item as never, ifNotExists: apply.ifNotExists };
   if (apply.op === 'delete') return { kind: 'delete', pk: apply.pk, sk: apply.sk, ifEquals: guard };
-  return { kind: 'update', pk: apply.pk, sk: apply.sk, set: apply.set ?? {}, ifEquals: guard };
+  return { kind: 'update', pk: apply.pk, sk: apply.sk, set: apply.set ?? {}, remove: apply.remove, ifEquals: guard };
 }
 
 export type CommitInput = {
@@ -283,7 +283,11 @@ export async function ackPending(
       kind: 'update',
       pk: k.PK,
       sk: k.SK,
-      set: { status: 'APPLIED', ackBy: ackerId, ackAt: now, GSI1PK: undefined },
+      set: { status: 'APPLIED', ackBy: ackerId, ackAt: now },
+      // DATA-14 (3) — REMOVE, not SET-to-undefined: dropping `GSI1PK` is what takes the
+      // resolved proposal out of the open-proposals partition, and DynamoDB spells that
+      // `REMOVE GSI1PK`. `SET GSI1PK = undefined` is not a thing it can be asked to do.
+      remove: ['GSI1PK'],
       // CONC-9 / DATA-8 — guard the PENDING row's own status, not just the apply
       // target's. `status === 'PENDING'` was checked on the read snapshot and then
       // written unconditionally, and this transact retries on chain contention. A reject
@@ -377,7 +381,8 @@ export async function rejectPending(
         kind: 'update',
         pk: k.PK,
         sk: k.SK,
-        set: { status: 'REJECTED', ackBy: actorId, ackAt: now, GSI1PK: undefined },
+        set: { status: 'REJECTED', ackBy: actorId, ackAt: now },
+        remove: ['GSI1PK'], // DATA-14 (3) — leave the open-proposals partition, DynamoDB-style
         // CONC-9 / DATA-8, the mirror of ack's guard: a reject that read PENDING and
         // wrote unconditionally would overwrite a concurrent ack's APPLIED, recording a
         // change that DID apply as refused. Carrying an `ifEquals` also makes
@@ -450,7 +455,8 @@ export async function settlePendingExpiry(
         kind: 'update',
         pk: k.PK,
         sk: k.SK,
-        set: { status: 'EXPIRED', GSI1PK: undefined },
+        set: { status: 'EXPIRED' },
+        remove: ['GSI1PK'], // DATA-14 (3) — leave the open-proposals partition, DynamoDB-style
         // DATA-8's guard, unchanged: a blind whole-row put here was the original
         // defect this function replaces — an ack/reject landing between the sweep's
         // read and its write was overwritten with EXPIRED, recording a timeout for a

@@ -179,7 +179,8 @@ export function accountRoutes(): Hono<AppEnv> {
       { PK: session.PK, SK: session.SK },
       'enrollSecretEnc',
       session.enrollSecretEnc,
-      { enrollSecretEnc: undefined, enrollOfferedAt: undefined },
+      {},
+      ['enrollSecretEnc', 'enrollOfferedAt'],
     );
 
     await record(store, projectId, {
