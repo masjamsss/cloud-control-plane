@@ -791,7 +791,11 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
     // 9. THE NORMAL SUBMIT INTERNALS (§4.3) — same gates, same order as
     //    routes/requests.ts's POST /requests.
     if (await isFrozen(store, id)) return apiError(c, 'GLOBAL_FREEZE');
-    if (!(await checkSubmitRateLimit(store, id, account.id)).ok) return apiError(c, 'RATE_LIMITED');
+    // PERF-10: minted here so the submit-quota pointer can name it and ride the
+    // same transact as the request row.
+    const reqId = ulid();
+    const admission = await checkSubmitRateLimit(store, id, account.id, reqId);
+    if (!admission.ok) return apiError(c, 'RATE_LIMITED');
 
     const scheduleResult = validateSchedule(scheduleInput, nowMs());
     if (!scheduleResult.ok) return apiError(c, scheduleResult.code);
@@ -803,7 +807,6 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
     const { risk, version: riskOverrideVersion } = await resolveRisk(store, id, op);
     const { version: policyVersion } = await loadPolicy(store, id);
 
-    const reqId = ulid();
     const now = nowIso();
     // isSet is only ever true for adopt, import, or restore (revert never
     // batches, step 5/6 above) — `primary.flavor` names the right verb
@@ -871,6 +874,8 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
           ifEquals: { attr: 'status', value: 'open' },
         }),
       ),
+      // PERF-10 — the quota-index pointer, atomically with the request row.
+      ...admission.writes,
     ];
     const entry = {
       action: 'request-submit',
@@ -1012,7 +1017,11 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
 
     // 9. THE NORMAL SUBMIT INTERNALS (§4.3) — same gates as the adopt/revert submit.
     if (await isFrozen(store, id)) return apiError(c, 'GLOBAL_FREEZE');
-    if (!(await checkSubmitRateLimit(store, id, account.id)).ok) return apiError(c, 'RATE_LIMITED');
+    // PERF-10: see the adopt/revert submit above — the id is minted before the
+    // limiter so the quota pointer and the request row land together.
+    const reqId = ulid();
+    const admission = await checkSubmitRateLimit(store, id, account.id, reqId);
+    if (!admission.ok) return apiError(c, 'RATE_LIMITED');
 
     const scheduleResult = validateSchedule(scheduleInput, nowMs());
     if (!scheduleResult.ok) return apiError(c, scheduleResult.code);
@@ -1024,7 +1033,6 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
     const { risk, version: riskOverrideVersion } = await resolveRisk(store, id, op);
     const { version: policyVersion } = await loadPolicy(store, id);
 
-    const reqId = ulid();
     const now = nowIso();
     const targetAddress = body.requestSkeleton.items[0]!.targetAddress;
     const status = initialStatusFor(tier); // NEEDS_ENGINEER — engineer tier always routes here
@@ -1066,7 +1074,7 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
     // only the new request is written, under the standard audit-chain
     // transact (no dedupe-condition on a proposal row to race here, unlike
     // submit, since nothing about the proposal changes).
-    await transactWithAudit(store, id, [{ kind: 'put', item: reqItem as never, ifNotExists: true }], {
+    await transactWithAudit(store, id, [{ kind: 'put', item: reqItem as never, ifNotExists: true }, ...admission.writes], {
       action: 'drift-legitimize-requested',
       actor: account.id,
       targetType: 'request',

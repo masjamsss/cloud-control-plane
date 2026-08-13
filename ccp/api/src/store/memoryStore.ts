@@ -246,6 +246,29 @@ export class MemoryStore implements ConfigStore {
     return out;
   }
 
+  /**
+   * Fold one GSI1 partition without cloning (PERF-10 — see the seam's doc).
+   * Partition order is the same order `queryGSI1` would return, so a fold and a
+   * query see the same rows in the same sequence; the only difference is that
+   * nothing is copied and nothing escapes but the accumulator.
+   */
+  async foldGSI1<T>(gsi1pk: string, initial: T, visit: (acc: T, item: Readonly<Item>) => T): Promise<T> {
+    const part = this.gsi1.get(gsi1pk);
+    if (!part) return initial;
+    const rows = part.rows;
+    const keys = partitionKeys(part, (a, b) => {
+      const ia = rows.get(a);
+      const ib = rows.get(b);
+      return cmp(ia ? gsiSortKey(ia) : a, ib ? gsiSortKey(ib) : b);
+    });
+    let acc = initial;
+    for (const k of keys) {
+      const it = rows.get(k);
+      if (it) acc = visit(acc, it);
+    }
+    return acc;
+  }
+
   /* ── writes ────────────────────────────────────────────────────────────── */
 
   async put(
