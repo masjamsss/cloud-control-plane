@@ -5148,7 +5148,7 @@ false-positive findings for id-divergent types (concrete: `aws_volume_attachment
 **Residue:** the parity gap the finding names in passing — the Azure kit classifies coverage
 at full-type granularity while the AWS kit is family-coarse — is unchanged. This fix removes
 the *silent* consequence for a declared type; it does not make AWS coverage type-granular.
-See `R-52`.
+See `R-56`.
 
 ## IMP-8
 
@@ -5234,3 +5234,363 @@ generated-catalog staleness detection is entirely manual.*
   artifacts, 1141 rows, PASS against the current committed tree. `bash
   scripts/ci/generated-catalog-selftest.sh` — 5/5. `bash scripts/gate.sh py` — python suites (217
   tests) + `gate_generated`, both green.
+## CTL-5
+
+*`drift-edit` writes are neither atomic nor transactional: a mid-batch refusal leaves
+earlier edits in the checkout.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `runDriftEditAdopt`/
+      `runDriftEditImport` interleaved a data-driven gate check with the actual write for EACH
+      item in a batch, so item 2's digest mismatch (say) refused the request AFTER item 1's
+      `ApplyAdopt`/`appendImportBlock` had already written to disk — a real, non-atomic
+      side effect from a request the server ultimately reported as refused. Separately,
+      `ApplyAdopt`/`appendImportBlock` wrote via a bare `os.WriteFile`, not the temp-file+
+      rename discipline `internal/edit`'s `atomicWrite` already used elsewhere in this same
+      tool — a second, independently-reimplemented copy, the exact CTL-10-class defect this
+      audit already found and fixed once this session for a different utility.
+- [x] **Cause, not symptom** — two fixes, not one:
+      (1) `internal/edit`'s unexported `atomicWrite` moved to a new exported
+      `hclops.AtomicWrite`, with `edit.atomicWrite` reduced to a one-line delegating wrapper;
+      `driftpropose.ApplyAdopt`/`appendImportBlock` now call it directly instead of
+      `os.WriteFile`.
+      (2) `runDriftEditAdopt`/`runDriftEditImport` restructured into two phases: phase 1
+      runs every data-driven refusal check (digest cross-check, re-derived eligibility,
+      watchlist screen, payload prescan) across the WHOLE batch first, writing nothing; only
+      once every item clears every phase-1 gate does phase 2 apply the writes. The one class
+      of check that stays in phase 2 is genuinely checkout-state-dependent (does an address
+      still resolve, is a map missing, does an address already exist) — `ApplyAdopt`/
+      `appendImportBlock` deliberately re-read disk fresh per item so two items touching the
+      SAME file in one batch compose correctly, and moving that check earlier would break
+      that composition; documented in code rather than silently left unstated.
+- [x] **Regression test** — two new cross-item tests in `covdrifted_cov_test.go`
+      (`TestCovdriftedDriftEditImportGatesWholeBatchBeforeAnyWrite`,
+      `TestCovdriftedDriftEditAdoptGatesWholeBatchBeforeAnyWrite`): a 2-item batch, item 0
+      fully valid (would write on its own), item 1 with a deliberately wrong
+      `ProposalDigest`, asserting exit 2 AND that item 0's write never happened.
+      **Negative test confirmed** — backed up the fixed source files, reverted the three
+      tracked source files to pre-fix `HEAD` while keeping the new test file changes, ran the
+      new tests and watched both fail exactly as expected (item 0's file existed with the
+      write applied), then restored the fix and re-verified green. Also discovered and
+      pinned a real, understood, net-safer behavior change: `os.Rename` REPLACES whatever
+      sits at the destination path — a regular file OR a dangling symlink — rather than
+      following the symlink into a possibly-broken target the way the old `os.WriteFile`
+      did; the old dangling-symlink-into-a-missing-directory failure test no longer applies
+      (removed) and a new `TestCovdriftedDriftEditImportThroughDanglingSymlinkSucceeds`
+      documents the new behavior instead of silently dropping coverage.
+- [x] **Failure is loud** — the phase-1 refusal names the exact item and digest mismatch;
+      the atomic-write failure path is unchanged (still surfaces the underlying OS error).
+- [x] **Evidence in the status line** — `cd tools/catalogctl && go build ./... && go vet
+      ./... && gofmt -l .` clean; `go test ./...` all 17 packages green.
+
+## ERR-9
+
+*GitHub App credential fetches have no timeout, and any failure terminally fails the scan
+job with no retry.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `realAppFetch` (routes/scanJobs.ts)
+      called `fetch()` with no `AbortSignal`, so a hung GitHub API response could hang the
+      claim handler (and the worker polling it) indefinitely. `mintInstallationToken`
+      (domain/forgeCredentials.ts) classified every failure identically — a passing 503, a
+      dropped connection, and a genuine 404 (App not installed) all became the same bare
+      `ForgeCredentialError`, and the claim handler's `failClaimed` terminally failed the
+      job for all of them alike, with no retry and no way to tell "GitHub blipped" from
+      "an operator must fix this."
+- [x] **Cause, not symptom** — `ForgeCredentialError` gains a `transient: boolean` field
+      (default `false`, so every pre-existing call site keeps its permanent meaning
+      unchanged); `mintInstallationToken` classifies a thrown network error and any 5xx
+      response as transient, 404/other 4xx as permanent, exact messages unchanged.
+      `realAppFetch`'s real `fetch()` call gains `AbortSignal.timeout(20_000)` — the
+      `FetchLike` interface itself is untouched, so test-injected fakes are unaffected.
+      `resolveCloneAuth`'s mint call goes through a new
+      `mintInstallationTokenWithRetry`: on a transient failure, wait a fixed 500ms and retry
+      the whole two-call sequence exactly once; a permanent failure is never retried. A new
+      `releaseClaimed` mirrors `failClaimed`'s CAS shape but reverses it (`claimed` ->
+      `queued`, restores the queue GSI, drops `startedAt`) for a transient failure that
+      survives the retry, so the job gets a fresh attempt on the next poll instead of being
+      terminally failed over an outage that may already be over. New
+      `safeFailClaimed`/`safeReleaseClaimed` wrappers catch and log a secondary failure from
+      `failClaimed`/`releaseClaimed` themselves (chain contention) instead of letting it
+      escape the route as a bare 500 and strand the job in `claimed` forever; all three call
+      sites in the claim handler go through one of these wrappers, with the
+      `resolveCloneAuth` catch branching on `e.transient` between the two.
+- [x] **Regression test** — new transient/permanent classification cases in
+      `forgeCredentials.test.ts` (5xx, 404/4xx, a raw network throw) and new end-to-end
+      cases in `forgeCredentialRoutes.test.ts`: the retry succeeding on the second attempt
+      (both for a 5xx and a thrown network error), the claim being released back to
+      `queued` — not failed — when the transient failure survives the retry (and is
+      genuinely re-claimable afterward), and a permanent 404 still never retried and still
+      failing the job. **Negative test confirmed** — all six new
+      `forgeCredentials.test.ts`/`forgeCredentialRoutes.test.ts` cases verified failing
+      against the pre-fix source, then passing against the fix.
+- [x] **Failure is loud** — a permanent failure's reason (e.g. "App not installed") is
+      unchanged and still recorded on the job; a transient release logs nothing new
+      user-visible (by design — the job just re-queues) but the compensating-write wrappers
+      `console.error`-log any secondary failure rather than swallowing it silently.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1447 passed, up from 1430 before this fix).
+
+## ERR-14
+
+*Drift-upload compensation is non-transactional best-effort.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `PUT /projects/:id/drift` wrote the
+      version row + pointer FIRST (one audited transact), then the report body to disk; on a
+      body-write failure it compensated with two separate, unguarded store calls (delete the
+      version row, restore-or-delete the pointer). Reproduced with a store double whose
+      `delete` itself throws once armed: the row and pointer were left committed with no file
+      behind them — a permanently pointer-claimed "ghost" version, `GET` failing closed to
+      `report:null` forever, and the next upload dedup-checking against a digest an honest
+      upload can never reproduce.
+- [x] **Cause, not symptom** — the report body now writes to disk FIRST; the version-row +
+      pointer transact is the actual commit point (the same ordering `reconcileProposals`
+      already uses for proposal bodies, driftProposals.ts). A body-write failure now throws
+      before anything is staged in the store, so there is nothing to compensate. The
+      existing CHAIN_CONTENTION retry (a concurrent upload wins the version-row race) cleans
+      up its own just-written, now-orphaned file on a best-effort basis before trying the
+      next version number — every reader (listDriftVersions, the pointer-driven GET,
+      pruneDriftVersions) keys off the stored rows, never a directory scan, so a leftover
+      orphan was always inert; the cleanup just avoids the small, bounded disk waste.
+- [x] **Regression test** — two new cases in `drift.test.ts`'s F10 describe block. The
+      first reproduces the actual defect with the delete-throws store double described
+      above. The second pins the CHAIN_CONTENTION retry's orphan-file cleanup.
+      **Negative test confirmed** — the first case verified failing against the pre-fix code
+      (row + pointer left committed, no compensation completes); the second verified failing
+      when just the one cleanup line is removed; both pass against the fix.
+- [x] **Failure is loud** — n/a for the fix itself (the write-ordering change has no new
+      caller-visible error path); the CHAIN_CONTENTION retry path is unchanged apart from the
+      added best-effort cleanup, which never throws.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1458 passed).
+
+## FE-6
+
+*Api-mode submit gates read the advisory localStorage settings, not the server's — the
+freeze preview is dead and a stale local freeze silently blocks valid submits.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `RequestForm`/`BulkRequestForm`/
+      `ResourceDetail`'s freeze/disabled-op submit gates (both the pre-submit check and the
+      "live" preview banner) called `isChangeFrozen()`/`isOpDisabled()`/`useSettings()`
+      directly against `lib/settings.ts`'s project-scoped localStorage store, unconditionally
+      — in api mode that store is never written to by the server, so a server freeze never
+      shows in the live preview (the requester only learns at submit, via the server's own
+      FROZEN rejection) and a stale local flag (leftover from mock use on the same origin)
+      silently blocks a submit the server would have allowed, without ever asking it.
+- [x] **Cause, not symptom** — a new shared hook, `features/request/effectiveSettingsFlow.ts`'s
+      `useEffectiveSettings()`, applies `settingsFlow.ts`'s existing authoritative/advisory
+      split (already proven in `SettingsAdmin.tsx`) to the READ side of these three gates.
+      When this deployment serves `settings` (`can('settings')`), the local store is never
+      consulted — server settings are fetched once per mount (the same one-shot shape
+      `SettingsAdmin`'s own `refresh()` already uses) and default to "nothing blocked" while
+      that fetch is in flight, never fail-closed-frozen (this is a UX pre-check only; the
+      server re-enforces the real rule at submit regardless). Otherwise (mock mode) behavior
+      is byte-identical to before. The source-of-truth decision is pulled into a pure
+      `deriveEffectiveSettings()` function (the same split `useServerInfo`/
+      `serverInfoToState` already use) so it is unit-testable without jsdom.
+- [x] **Regression test** — new `effectiveSettingsFlow.test.ts` exercises
+      `deriveEffectiveSettings()` directly: not authoritative (local wins, server ignored),
+      authoritative+unresolved ("nothing blocked"), authoritative+resolved-clean (a stale
+      local freeze/disabled-op fully ignored — the over-block direction), and
+      authoritative+resolved-frozen (the server's freeze surfaces even though the local
+      store is clean — the under-warn/dead-preview direction). **Negative test confirmed** —
+      3 of 6 cases verified failing against a stubbed "always return local" pre-fix
+      behavior, confirming they catch both directions of the actual bug.
+- [x] **Failure is loud** — n/a; this is a client-side UX pre-check, and the server's own
+      FROZEN/OP_DISABLED rejection (unchanged) remains the actual authority either way.
+- [x] **Evidence in the status line** — `cd ccp/app && npx tsc --noEmit -p .` clean;
+      `npx eslint . --ext .ts,.tsx` clean, no new warnings; full suite `npx vitest run`
+      (161 files, 2829 passed).
+
+**Residue:** the same class of issue survives, deliberately out of scope (not cited by the
+finding, lower stakes — a display filter, not a submit gate): `ResourceDetail`'s top-level
+ops-list filter and `ServiceConsole`'s action pickers still read the local store directly
+for `isOpDisabled`, as does `lib/beyondCatalog.ts`'s freeze pre-check (a plain async
+function, not a component, so it cannot use `useEffectiveSettings()` as-is). **R-52.**
+
+## ARCH-11
+
+*Arming-flag sprawl with no whole-config validation.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `deployProblems`/`assertDeployable`
+      validated only store/cookies/CORS/TOTP; nothing reasoned about a sub-flag armed for a
+      lane whose own gate stays off. Verified three concrete, evidence-backed dead
+      combinations by reading the one call site that ever consults each sub-flag: (1)
+      `CCP_DRIFT_PROPOSALS`/`CCP_DRIFT_IMPORT`/`CCP_DRIFT_RESTORE=1` without `CCP_DRIFT=1` —
+      each is consulted only from the report-upload route, which refuses `DRIFT_DISARMED`
+      before any of them are checked; (2) `CCP_EXECUTOR=terraform` without
+      `CCP_SCHEDULER=1` — `CCP_EXECUTOR` is read in exactly one place, the scheduler
+      loop's executor selection, which never starts without the scheduler armed; (3) a
+      GitHub App configured without the scanner armed — `githubAppConfig()` has exactly one
+      call site, inside the scanner worker's claim route, unreachable while the scanner is
+      disarmed. Also found, by reading `domain/bundle.ts#bundleArmed`, that
+      `CCP_BUNDLE=1` with either command var missing leaves the bundle lane silently, fully
+      disarmed rather than partially live — correct runtime behavior, but an easy typo to
+      never notice.
+- [x] **Cause, not symptom** — new `deployWarnings(env)` in `deploy.ts`, covering all four
+      combinations above, wired into `server.ts` right after the production preflight and
+      printed via `console.warn` in every `NODE_ENV` (not just production — a dev
+      misconfiguring the same flags deserves the same nudge). Deliberately advisory, not
+      folded into `deployProblems`/`assertDeployable`: a dead sub-flag is inert, not
+      insecure, so failing the whole boot over a low-severity paper cut would be
+      disproportionate. Deliberately NOT warned about: `CCP_FORGE_SEAL_KEY` set ahead of
+      arming the scanner — its own PUT route isn't gated on `CCP_SCANNER` at all, so storing
+      a token before arming the scanner is a legitimate prepare-now-arm-later workflow.
+- [x] **Regression test** — full pure-function coverage of `deployWarnings` in
+      `deployConfig.test.ts` (each dead-flag case, its clearing condition, a
+      blank/coherent env warning about nothing, every `NODE_ENV`, never throwing), plus two
+      new spawned-process cases proving the `server.ts` wiring itself (a dead sub-flag
+      prints "config warning" on stderr AND the server still comes up; a coherent config
+      prints nothing). **Negative test confirmed** — all 16 new assertions verified failing
+      against the pre-fix code. Fixing that verification run also surfaced and fixed a real
+      test-harness bug: `PORT=0` does not pick a random port in this app (`Number(env.PORT)
+      || 8801` treats `0` as falsy), so two spawned test servers reusing it raced for the
+      same port; the harness now gives each spawn its own explicit port.
+- [x] **Failure is loud** — each warning names the exact flag(s) involved and the fix
+      (set the missing flag, or unset the dead one).
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1461 passed).
+
+## DATA-10
+
+*Backup/restore covers only the store JSON; the on-disk project-data/drift root it
+references is out of scope, with no consistency check.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `backup.ts`/`restore.ts` only ever
+      touched the FileStore JSON snapshot; the project-data/drift directory tree the
+      snapshot's rows (`ProjectItem.dataActive`, `DriftPointerItem`) point into was never
+      captured or restored. Nothing at boot or in `/readyz` cross-checked that an active
+      version's files actually exist — serves fail closed to 404/`report:null`, so this
+      degrades rather than corrupts, but silently, behind a green readiness probe.
+- [x] **Cause, not symptom** — `backup.ts` now also copies the project-data root into a
+      companion `<out>.projects/` directory alongside the JSON snapshot, atomically (new
+      `copyTreeAtomic` in `store/snapshot.ts`, the same temp+fsync+rename discipline as the
+      existing `writeFileAtomic`, extended to a directory tree — shared by both scripts
+      rather than duplicated). `restore.ts` finds that directory by convention and REPLACES
+      the live project-data root wholesale (never merged), under the SAME DATA-9 writer
+      lock the JSON restore already takes. A backup with no companion directory (predates
+      this feature, or `--skip-project-data`) still installs the store and WARNS loudly
+      rather than refusing outright or silently leaving now-possibly-inconsistent served
+      files. `/readyz` gains a cheap, stat-only presence cross-check (new
+      `projectDataVersionExists`/`driftReportExists`): for every known project, a
+      `dataActive`/drift pointer whose referenced file is missing on disk is NOT ready, with
+      a specific reason — deliberately a stat, never a digest recompute, since this probe
+      runs on a tight timer.
+- [x] **Regression test** — `backupRestore.test.ts` gets 6 new cases (the round-trip
+      restoring both stores from one backup, wholesale-replace semantics, the
+      no-companion-directory warn-don't-fail path at both backup and restore time,
+      `--skip-project-data` on both ends, an empty-but-present root still getting copied);
+      `readyz.test.ts` gets 5 new cases covering both cross-checks, missing and present.
+      **Negative test confirmed** — the 7 assertions that could actually distinguish old
+      from new behavior verified failing against the pre-fix code.
+- [x] **Failure is loud** — a missing companion backup at restore time is a `console.error`
+      WARNING naming the exact path checked; a missing active file at readiness time is a
+      specific, per-project `/readyz` reason.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1458 passed).
+
+**Residue:** the readiness cross-check is deliberately existence-only, never a digest
+comparison — re-hashing every active project's whole served bundle on every `/readyz` poll
+would reintroduce the same steady per-probe CPU tax ARCH-9 already flags for the
+audit-chain re-verification this same probe does. A digest-level check (catching a
+file that exists but is byte-different from what the row recorded — e.g. restored from a
+different backup generation than the store JSON) is a real, narrower gap left
+deliberately unclosed. **R-53.**
+
+## ARCH-9
+
+*Single-process, single-file scaling ceiling with in-process singletons the planned
+DynamoDB path would silently break.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `FileStore`'s own single-writer
+      lock (CONC-7/DATA-9) already structurally refuses a second process against the same
+      data file today, but four OTHER in-process singletons have no such protection and
+      never appeared in one place a deployer would see: the known-projects routing cache
+      (`projects.ts`), the upload-lane rate-limit buckets (`middleware/rateLimit.ts`), the
+      drift-check/drift-generation in-flight guards (`domain/driftCheck.ts`,
+      `domain/driftProposals.ts`'s `genState`), and the scheduler tick reentrancy flag
+      (`domain/apply/loop.ts`). The store seam's own doc comment says a DynamoDB
+      implementation is planned behind the SAME `ConfigStore` interface, and DynamoDB is
+      explicitly multi-writer-safe at the row level — so it would not carry the FileStore
+      lock's protection over automatically, and nothing said what would then start silently
+      diverging.
+- [x] **Cause, not symptom** — a new "Scaling & the single-process invariant" section in
+      `ccp/api/README.md` names each of the five (the lock included, for contrast), cites
+      exactly where it lives, states what breaks under a second process today (nothing, for
+      the lock; everything, for the other four, once anything besides the lock is what's
+      preventing a second process) and what each would need before that's safe.
+      Audit-chain archival — the finding's OTHER recommendation — is recorded as a
+      documented prerequisite for that future migration, not implemented here (see Residue).
+      `/readyz` gains `storeItemCount` — the total row count the store holds, via a new
+      optional `ConfigStore.approxItemCount()` (O(1) in `MemoryStore`, inherited by
+      `FileStore`; optional exactly like the existing `durabilityFault()`, so a future
+      DynamoDB store can leave it unimplemented and answer from CloudWatch metrics
+      instead) — purely informational, never folded into `reasons`/`ready`.
+- [x] **Regression test** — new describe block in `readyz.test.ts`:
+      `approxItemCount` tracks puts/deletes exactly (including a same-key overwrite NOT
+      counting as a new row), `storeItemCount` grows as the store grows via a real `/readyz`
+      round-trip, and is `null` (never thrown, never a fault) for a store that doesn't
+      implement it. **Negative test confirmed** — all 3 new assertions verified failing
+      against the pre-fix code.
+- [x] **Failure is loud** — n/a; `storeItemCount` is informational telemetry by design,
+      never a readiness reason.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1461 passed).
+
+**Residue:** audit-chain archival/compaction (so `storeItemCount` stops growing unbounded —
+month-partitioned keys already anticipate this) is real design work belonging to whichever
+change actually introduces a second process or the DynamoDB backend, recorded as a known
+prerequisite rather than guessed at here. **R-54.**
+
+## TEST-7
+
+*The SPA has no DOM/interaction testing; ~25 test files pin UI by source-string
+inspection.*
+
+- [x] **Defect reproduced first** — confirmed the finding's own cited example
+      (`fullCoverage.test.ts:141-153`, since renamed to
+      `provisionTileCompleteness.test.ts` by TEST-5): two tests asserting
+      `expect(src).toContain('provisionPathFor(primaryType)')`-style source-text matches
+      against `ServiceCard.tsx`. Demonstrated the weakness directly: deliberately broke
+      `ServiceCard`'s op-less wiring (always resolving to the resource-console path) while
+      leaving both matched strings intact elsewhere in the file — the old-style check would
+      have passed vacuously against a real regression.
+- [x] **Cause, not symptom, on the recorded-decision half** — the recommendation offers two
+      paths (introduce jsdom+RTL, or a written decision plus converting what can be
+      converted); introducing jsdom silently, mid-batch, would reverse a decision already
+      stated repeatedly elsewhere in the code (`azureCatalogFlow.test.ts`, `routeConfig.tsx`'s
+      own doc comment, several `*.test.tsx` files) without the scoped review
+      TRIAGE.md's own note says it needs. `standalone.test.ts` — the file R-22/TEST-7
+      already cite as this repo's testing-philosophy anchor — gets a full written record:
+      the two-layer strategy already in place, exactly what `renderToStaticMarkup` cannot
+      reach and why, the three reasons against introducing jsdom+RTL in this pass, and a
+      standing requirement that every remaining source-pinned test name, in its own
+      comment, why it can't be converted without either jsdom or a component-splitting
+      refactor.
+- [x] **Cause, not symptom, on the conversion half** — `ServiceCard`'s two source-pinning
+      tests in `provisionTileCompleteness.test.ts` converted to real `renderToStaticMarkup`
+      assertions against the actual rendered `<a href>`/CTA text (plus a third new case, a
+      with-ops control, the old test never had). `ServiceConsole`'s sibling test in the same
+      file stays source-pinned — genuinely unreachable via SSR, since its op-less branch
+      sits behind its own `useEffect`-driven fetch and there is no pure prop-driven view to
+      render instead — now carrying the file-specific "why this one can't move" comment the
+      new standing requirement asks for, as the worked example for future conversions.
+- [x] **Regression test** — `provisionTileCompleteness.test.ts`'s 3 new `ServiceCard`
+      cases ARE the regression test for this fix. **Negative test confirmed** — verified
+      above (the deliberately-broken `ServiceCard` reproduction): the new tests failed
+      correctly against the injected bug; restored and re-verified green.
+- [x] **Failure is loud** — n/a; this is a testing-infrastructure finding, not a runtime
+      behavior change.
+- [x] **Evidence in the status line** — `cd ccp/app && npx tsc --noEmit -p .` clean;
+      `npx eslint . --ext .ts,.tsx` clean, no new warnings; full suite `npx vitest run`
+      (161 files, 2831 passed).
+
+**Residue:** ~19 of the ~25 originally-cited source-pinned test files remain unconverted,
+and most predate the new standing "say why" requirement so do not yet carry the
+per-file justification comment it asks for — only the one file touched this session
+(`provisionTileCompleteness.test.ts`) does. Retiring the rest file-by-file, and
+back-filling the justification comment on the files staying source-pinned for a real
+structural reason, is real ongoing work this fix starts but does not finish. Separately,
+R-51 (TEST-5's function-coverage-floor residue, previously "Tracked by: TEST-7") is now
+**untracked**, not resolved — TEST-7 closing here is a documented decision plus a partial
+conversion, not the DOM/interaction-testing lane that would actually move the coverage
+floor; RESIDUE.md's R-51 entry is updated in the same commit to say so, rather than left
+pointing at a closed finding. **R-55.**

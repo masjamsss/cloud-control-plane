@@ -305,19 +305,25 @@ wrongly, and this one is *narrow* wrongly, for the same underlying reason — a 
 answers "did the inputs change", and neither the calendar nor a runner image is an input.
 
 ### R-51 · The app's function coverage is recorded, not fixed
-*Residue on **TEST-5**. **Tracked by: TEST-7.***
+*Residue on **TEST-5**. Previously "Tracked by: TEST-7" — updated below; TEST-7 has since
+closed without moving this.*
 
 Measuring put a number on the SPA's testing gap — **54.62% of functions** — and a floor stops
 it eroding, but neither moves it. The cause is TEST-7's: ~25 app test files assert on component
 source strings rather than rendering, so the functions they "cover" are never executed. Raising
-this floor means writing DOM/interaction tests, which is TEST-7's body of work and is still
-open.
+this floor means writing DOM/interaction tests — a real jsdom+RTL lane, which TEST-7's own fix
+explicitly decided NOT to introduce in that pass (see standalone.test.ts's recorded decision).
+TEST-7 closing there — a written decision plus converting the one file it could reach without
+that lane — does not move this floor; the finding that was going to cover it closed for
+reasons that do not include "the gap is gone", which is exactly the disappearing-residue
+failure mode this ledger exists to catch. **Genuinely untracked now — no open finding covers
+raising this floor.**
 
 Recorded here so the low floor reads as a measurement of a known gap rather than as an
 acceptable target — a floor nobody remembers the reason for is a floor that quietly becomes the
 ceiling.
 
-### R-52 · AWS coverage is still family-coarse; only declared shadows are type-granular
+### R-56 · AWS coverage is still family-coarse; only declared shadows are type-granular
 *Residue on **IMP-15**.*
 
 IMP-15 removed the *silent* half of the family-granularity limit: a type whose lister cannot
@@ -339,6 +345,62 @@ Closing it properly is a sweep of all 43 types asking "can this lister reach eve
 which is estate-informed judgement per type rather than a code change, so it is recorded rather
 than guessed at. The parity gap with the Azure kit's full-type classification is the same item
 seen from the other side.
+### R-52 · Api-mode local-store submit gates survive outside FE-6's three fixed components
+*Residue on **FE-6**.*
+
+`ResourceDetail`'s top-level ops-list filter and `ServiceConsole`'s action pickers still call
+`isOpDisabled()` against the advisory local `lib/settings.ts` store even in api mode (the same
+class of defect FE-6 fixed for the three cited submit gates), and `lib/beyondCatalog.ts`'s
+freeze pre-check does too — but as a plain async function rather than a component, it cannot
+use FE-6's `useEffectiveSettings()` hook without its own, differently-shaped fix. None of the
+three is a submit gate in the sense FE-6 was scoped to (the first two are display filters that
+hide/show a picker option; a submit past them still hits the server's real enforcement), so the
+stakes are lower than the fixed cases, but the underlying wrongness — reading a store the
+server never writes to, in the one mode where that store is not the truth — is identical.
+
+**Genuinely untracked** — no open finding currently names these three call sites.
+
+### R-53 · DATA-10's readiness cross-check is existence-only, never a digest comparison
+*Residue on **DATA-10**.*
+
+`/readyz`'s new presence check (`projectDataVersionExists`/`driftReportExists`) proves a
+`dataActive`/drift-pointer's referenced file EXISTS on disk, never that its BYTES match what
+the row recorded. A restore from a different backup generation than the store JSON — the file
+is present, just stale or from a different point in time — passes this check silently. A full
+digest recompute on every poll was deliberately rejected (the same steady per-probe CPU tax
+ARCH-9 flags for the audit-chain re-verification this same endpoint already does), but nothing
+cheaper (a stored content hash compared without re-reading the whole file, say) was designed
+either.
+
+**Genuinely untracked** — no open finding covers closing this narrower gap.
+
+### R-54 · Audit-chain archival/compaction is a named prerequisite, not a plan
+*Residue on **ARCH-9**.*
+
+The store has no compaction or archival — `storeItemCount` (ARCH-9's own new telemetry) can
+only ever go up. The finding's recommendation named archival design as a prerequisite for the
+DynamoDB migration the store seam anticipates; ARCH-9's fix records that it IS a prerequisite,
+in the README, but does not design it — real work (what gets archived, where, how a restore
+reaches into archived history, how the month-partitioned keys the store already uses factor
+in) that belongs to whichever change actually introduces a second process or the DynamoDB
+backend.
+
+**Genuinely untracked** — no open finding covers designing archival.
+
+### R-55 · Most of TEST-7's cited source-pinned test files are still source-pinned
+*Residue on **TEST-7**.*
+
+TEST-7's fix converted exactly one file's worth of source-pinning to rendered-output
+assertions (`provisionTileCompleteness.test.ts`'s `ServiceCard` cases — the finding's own
+cited example) and established a standing requirement that every REMAINING source-pinned test
+name, in its own comment, why it cannot be converted without jsdom or a component-splitting
+refactor. Of the ~25 originally-cited files, roughly 19 are untouched by this pass: neither
+converted nor yet carrying the new justification comment. The template exists
+(`ServiceConsole`'s sibling case in the same file, and `uiRobustnessFocus.test.ts`'s
+pre-existing `RequestForm` case, are the two worked examples) but has not been applied
+file-by-file.
+
+**Genuinely untracked** — no open finding covers the remaining conversions.
 
 ## accepted — deliberately permanent
 

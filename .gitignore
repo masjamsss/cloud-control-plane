@@ -35,9 +35,13 @@ Thumbs.db
 .vscode/
 
 # AI-assistant instruction files — local working notes for LLM sessions, never published.
+# AGENTS.md is the deliberate exception and IS tracked: it is a reviewed contributor doc
+# (session protocol, task-specific reading map, validation contract, and hard rules),
+# reachable from docs/FUNDAMENTALS.md and in scope for publish-gate.sh like every other
+# published file.
+# Per-session scratch notes stay local, below.
 CLAUDE.md
 CLAUDE.local.md
-AGENTS.md
 .claude/
 
 # Python bytecode
