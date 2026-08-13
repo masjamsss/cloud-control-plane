@@ -96,5 +96,27 @@ EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8787)+'/readyz').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"
 
-# npm run start === tsx src/server.ts (preflight → open store → [bootstrap] → serve).
-CMD ["npm", "run", "start"]
+# ERR-8 / OPS-8 — PID 1 IS THE NODE THAT RUNS server.ts. Nothing between it and Docker.
+#
+# This was `CMD ["npm", "run", "start"]`, which is four processes deep — measured, not
+# assumed: `npm → sh → tsx → node`. Docker signals PID 1 and PID 1 only, so `docker stop`
+# killed npm (rc=143) and the node running server.ts never saw SIGTERM at all. The
+# observable consequences, from a probe against this exact chain: the writer lock
+# (ccp.json.lock) survived the stop, and the orphaned listener was still serving. CONC-7's
+# SIGTERM lock handback and the drain in src/shutdown.ts are both unreachable behind it.
+#
+# The finding's own recommendation was `CMD ["node_modules/.bin/tsx", "src/server.ts"]`.
+# That is better but not right: the tsx CLI itself spawns a child node and stays as a
+# supervisor, so PID 1 is still a process that is not ours — signal delivery depends on
+# tsx forwarding it, and the container's exit code is tsx's translation of node's. The
+# same probe measured all three:
+#
+#   npm run start              4 processes   SIGTERM handler did NOT run, rc=143
+#   tsx src/server.ts          2 processes   handler ran (tsx forwards)
+#   node --import tsx …        1 process     handler ran, our exit code, lock released
+#
+# `node --import tsx` is the documented tsx entrypoint and uses the same loader the CLI
+# installs, so the tsconfig `paths` aliases (@app-lib/*, @/*) resolve identically — proved
+# by booting the real server this way and watching it serve, since server.ts's import graph
+# reaches @app-lib/redact through domain/projectData.
+CMD ["node", "--import", "tsx", "src/server.ts"]

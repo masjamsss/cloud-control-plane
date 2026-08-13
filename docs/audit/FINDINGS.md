@@ -114,8 +114,8 @@ Unguarded full-row writes and lost updates. Largely one root cause — the store
 - [x] DATA-8 | medium | concurrency | fixed:b3d34f5 | 03-data-integrity.md | Pending-change status transitions have no CAS: concurrent ack + reject can apply a change and record it as REJECTED
 - [x] DATA-9 | medium | concurrency | fixed:9dce28b | 03-data-integrity.md | No single-writer guard: restore can be silently clobbered by a running server; nothing prevents two processes on one file
 - [x] ERR-11 | medium | concurrency | fixed:09fb510 | 09-error-handling.md | The bundle idempotency claim guards on `status`, not `bundle.state`: concurrent applies can both run
-- [ ] ERR-8 | medium | concurrency | open | 09-error-handling.md | No process-level failure handling: no graceful shutdown, no rejection/exception handlers, npm-as-PID-1
-- [ ] OPS-8 | medium | concurrency | open | 10-reliability-operations.md | No graceful shutdown: `npm` as PID 1, no SIGTERM handling, default 10 s grace on the api
+- [x] ERR-8 | medium | concurrency | fixed:aaf11c9; node as PID 1 + graceful drain (src/shutdown.ts) + boot failures exit non-zero; test/processLifecycle.test.ts | 09-error-handling.md | No process-level failure handling: no graceful shutdown, no rejection/exception handlers, npm-as-PID-1
+- [x] OPS-8 | medium | concurrency | fixed:aaf11c9; same defect as ERR-8, closed by it; adds stop_grace_period above the drain budget; test/processLifecycle.test.ts | 10-reliability-operations.md | No graceful shutdown: `npm` as PID 1, no SIGTERM handling, default 10 s grace on the api
 - [ ] TEST-6 | medium | concurrency | open | 12-testing-quality.md | No route-level concurrency/race tests; store-level concurrency only
 - [ ] API-14 | low | concurrency | open | 02-api-correctness.md | Conditional-write collisions inside `transactWithAudit` surface as the wrong error
 - [ ] CONC-12 | low | concurrency | open | 04-concurrency.md | The store-backed submit rate limiter is check-then-insert: concurrent submits breach both caps
@@ -160,7 +160,7 @@ Failures that produce no signal — swallowed rejections, best-effort compensati
 - [ ] DATA-5 | medium | silent-failure | open | 03-data-integrity.md | Store rows are not validated against the schemas on load: corrupt-but-parseable state is accepted silently
 - [ ] ERR-6 | medium | silent-failure | open | 09-error-handling.md | `executor.replan()` failures are an unmodeled halt: unbounded silent retry, and they abort the rest of the project's due list
 - [x] FE-8 | medium | silent-failure | fixed:loadAuditRows returns {rows, cursor}; AuditHistory adds a "Load older events" control + honest "N events loaded ... more available" caption | 05-frontend-flows.md | AuditHistory silently truncates to the first page (100 entries) — the cursor is fetched and thrown away
-- [ ] OPS-6 | medium | silent-failure | open | 10-reliability-operations.md | Plain `compose up` (including every self-update cycle) silently strips the armed overlay
+- [x] OPS-6 | medium | silent-failure | fixed:d10d035 | 10-reliability-operations.md | Plain `compose up` (including every self-update cycle) silently strips the armed overlay
 - [x] TEST-8 | medium | silent-failure | fixed:treeDiff() now walks gotDir too, catching extra files golden.go never accounted for; golden_test.go TestTreeDiff | 12-testing-quality.md | Golden-tree comparison is one-directional: extra files created by an edit go unnoticed
 - [x] CTL-8 | low | silent-failure | fixed:atomicWrite os.Stats the target's existing mode (default 0644 for a new file) and Chmods the temp file before rename; adds tmp.Sync() before Close() for crash-durability, mirroring ccp-api's FileStore.writeAtomic/ERR-10 pattern | 07-catalogctl.md | `atomicWrite` silently changes edited-file permissions to 0600 and skips fsync
 - [x] ERR-14 | low | silent-failure | fixed:572e96d | 09-error-handling.md | Drift-upload compensation is non-transactional best-effort
@@ -390,7 +390,7 @@ No request logging, no request ids, missing healthchecks.
 - [x] OPS-2 | high | observability | fixed:c89f727 | 10-reliability-operations.md | Unhandled errors become 500 `INTERNAL` with zero server-side logging
 - [x] ERR-7 | medium | observability | fixed:verified closed by OPS-2 — registerErrorHandler (errors.ts) calls logServerError (message+stack+method+path, redacted) before every 500; confirmed via grep that errors.ts's app.onError is the ONLY HTTP-500-producing code path anywhere in ccp/api/src, so "every 500 path logs" is trivially satisfied; test/serverErrorLogging.test.ts (11 tests) pins it | 09-error-handling.md | Unexpected errors become `{code:'INTERNAL'}` 500 with zero server-side logging
 - [x] OPS-10 | medium | observability | fixed:shared x-logging anchor (json-file, max-size 10m, max-file 5) applied to all 5 services; api gets mem_limit ${CCP_API_MEM_LIMIT:-1g}, runner gets ${CCP_RUNNER_MEM_LIMIT:-4g} — both compose-syntax (mem_limit/cpus, not deploy:, which plain `docker compose up` ignores outside swarm mode) | 10-reliability-operations.md | No log rotation and no resource limits on any service
-- [ ] OPS-7 | medium | observability | open | 10-reliability-operations.md | No HTTP request logging and no request IDs anywhere in the api
+- [x] OPS-7 | medium | observability | fixed:d10d035 | 10-reliability-operations.md | No HTTP request logging and no request IDs anywhere in the api
 
 ## frontend-form
 

@@ -369,7 +369,19 @@ export function registerErrorHandler<E extends Env>(app: Hono<E>): void {
     // it is not logged as one. Everything else reaching here is a bug, and used to vanish
     // without a trace (OPS-2).
     if (err instanceof ApiError) return apiError(c, err.code, err.details);
-    logServerError(err, { method: c.req.method, path: c.req.path });
+    // OPS-7 — the id withRequestLog minted is threaded into the fault log line, so an
+    // operator can go from "user reports it failed, here's the X-Request-Id header they
+    // saw" straight to the matching stack trace, without another correlation mechanism.
+    // registerErrorHandler is generic over `E extends Env` (reused by non-AppEnv test
+    // apps too), so `requestId` cannot be typed on `c.get` directly here — read it
+    // defensively off `c.var` instead, absent whenever this app never mounted
+    // withRequestLog rather than a type or runtime error.
+    const requestId = (c.var as { requestId?: unknown }).requestId;
+    logServerError(err, {
+      method: c.req.method,
+      path: c.req.path,
+      ...(typeof requestId === "string" ? { requestId } : {}),
+    });
     return c.json({ code: "INTERNAL", reason: "Internal error." }, 500);
   });
 }

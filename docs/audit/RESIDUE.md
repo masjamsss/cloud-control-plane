@@ -708,3 +708,63 @@ argues a retry budget should be derived.
 back-off, derived from expected concurrency rather than an arbitrary number) is the shape to
 apply here too, once `domain/audit.ts`'s `CHAIN_WRITE_ATTEMPTS`/`chainBackoff` (PERF-11, a
 parallel batch's file) are available to reuse rather than duplicating a second retry policy.
+### R-60 · Nothing drives `docker stop` against the built image
+*Residue on **ERR-8 / OPS-8**.*
+
+The PID 1 defect existed *because* the shipped artifact's behaviour was never exercised: the
+handler had a passing unit test and had never run in a container. The fix is now guarded by a
+static rule over the Dockerfile `CMD` (any process-manager head, and the shell form, are
+refused) and by CI's existing `docker-build.yml` step, which builds the api image, boots it and
+waits for `/readyz=200` — so a CMD that cannot start the process is caught. What is *not*
+covered is the stop half: no test sends `docker stop` to the built image and asserts it exits
+0 within the grace period with the writer lock released.
+
+**Not done here on purpose, twice over.** That step belongs in `.github/workflows/docker-build.yml`,
+which is `B-O8`'s lane, and widening into it is exactly what the runbook says not to do. And it
+cannot be written honestly from this environment: the docker CLI is present but there is no
+daemon, so the image was never built here — the container-shape claims in this batch rest on the
+static rules, the process-level probes against the real entrypoint, and review.
+
+**State:** accepted, bounded. No open finding owns the workflow addition, so this entry is its
+only record — deliberately, rather than claiming a tracker that does not exist. The cheap
+version is three lines in the existing job that already has the container running:
+`docker stop --timeout 30`, assert the exit code, and grep the logs for `shutdown complete`.
+
+### R-61 · The drain does not await store writes no connection is holding open
+*Residue on **ERR-8 / OPS-8**.*
+
+ERR-8's recommendation says the SIGTERM handler should "await the FileStore write chain". The
+drain awaits `server.close()`, which covers request-driven durability *transitively and
+completely*: a request that awaits `persist()` has not answered yet, so its connection is still
+open and the drain is still waiting on it. The gap is writes with no connection behind them —
+the auto-apply scheduler's tick being the real instance. `scheduler.stop()` prevents a *new*
+tick, but a tick already in flight can still be cut at the deadline.
+
+Closing it properly needs `FileStore` to expose "the write chain is idle" — `flush()` is
+private and there is no public equivalent. That is `ccp/api/src/store/*`, which is `B-O3`'s
+lane, so the seam is described here rather than reached into.
+
+**State:** open, bounded and small. In practice the exposure is one scheduler tick's writes
+during a 15s drain, on a deployment that has explicitly set `CCP_SCHEDULER=1`; the store's own
+atomic-rename design means the outcome is a lost write, never a corrupt snapshot.
+
+### R-65 · The armed-overlay shell regression suite runs nowhere in CI
+*Residue on **OPS-6**.*
+
+`ccp/scripts/test/*.test.sh` already has a sibling compose check for the armed overlay, and
+grep-verified: no workflow, no gate script, no npm script references any file under
+`ccp/scripts/test/`. `OPS-6`'s own regression test (`ccp/api/test/armedOverlay.test.ts`)
+therefore lives in the api's vitest suite instead — which runs on every CI job that touches
+`ccp/` — precisely so the fix has a test that actually executes, rather than adding to a shell
+suite nothing runs (the exact `L-1`/can-it-fail shape this audit keeps finding).
+
+That is a workaround, not a fix for the underlying gap: the existing shell suite in
+`ccp/scripts/test/` is real coverage of other operator-script behaviour that ALSO runs nowhere,
+and wiring an entire shell-test runner into a GitHub Actions workflow is a `.github/workflows/`
+change — a different batch's files (this repo's own convention keeps CI wiring changes together
+so path-filter coverage stays reasoned about in one place, per `scripts/ci/check-path-filters.sh`'s
+header).
+
+**State:** open, not tracked by any other finding. The cheap version is a new job (or a step in
+an existing one) that runs `for f in ccp/scripts/test/*.test.sh; do bash "$f"; done`, gated the
+same way `ccp/scripts/publish-gate.sh` already is.
