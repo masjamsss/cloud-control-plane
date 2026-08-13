@@ -4,6 +4,7 @@ import type { ConfigStore } from './store/configStore';
 import type { AppEnv } from './appEnv';
 import { registerErrorHandler } from './errors';
 import { CLIENT_HEADER, withClientHeader, withPasswordGate, withProject, withSession, withSettlement } from './middleware/session';
+import { withRequestLog } from './middleware/requestLog';
 import { authRoutes } from './routes/auth';
 import { accountRoutes } from './routes/account';
 import { requestRoutes } from './routes/requests';
@@ -14,6 +15,7 @@ import { scanJobRoutes } from './routes/scanJobs';
 import { instanceAdminRoutes, instancePublicRoutes } from './routes/instance';
 import { corsOrigins } from './deploy';
 import { readiness } from './domain/readiness';
+import { resolveProjectDataRoot } from './domain/projectData';
 
 // Allowed credentialed-CORS origins live in the deploy-config surface (deploy.ts),
 // read at request time so a deploy sets CCP_CORS_ORIGIN without a rebuild and
@@ -27,19 +29,25 @@ export type CreateAppOptions = {
 };
 
 /**
- * Assemble the app. Global middleware order: store context → withSettlement
- * (one-time legacy settlement, data-birth spec §9 — must precede session
- * resolution, see its own doc comment) → withSession (resolve cookie) →
- * withClientHeader (CSRF on non-GET business routes) → withProject (resolve
- * x-ccp-project, default the reserved `@control` scope) → withPasswordGate.
- * Route guards attach per sub-app. The same app object deploys to Lambda later.
+ * Assemble the app. Global middleware order: withRequestLog (OPS-7 — mints the
+ * per-request id and logs method/path/status/latency; FIRST so absolutely
+ * everything below, including a CORS rejection, has an id and gets logged) →
+ * CORS → store context → withSettlement (one-time legacy settlement, data-birth
+ * spec §9 — must precede session resolution, see its own doc comment) →
+ * withSession (resolve cookie) → withClientHeader (CSRF on non-GET business
+ * routes) → withProject (resolve x-ccp-project, default the reserved
+ * `@control` scope) → withPasswordGate. Route guards attach per sub-app. The
+ * same app object deploys to Lambda later.
  */
 export function createApp(store: ConfigStore, opts: CreateAppOptions = {}): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   registerErrorHandler(app);
 
-  // CORS FIRST so a preflight (OPTIONS) short-circuits before the CSRF/session gates,
-  // and every response to a browser at the SPA origin carries credentialed CORS headers.
+  app.use('*', withRequestLog);
+
+  // CORS FIRST (among the rest) so a preflight (OPTIONS) short-circuits before the
+  // CSRF/session gates, and every response to a browser at the SPA origin carries
+  // credentialed CORS headers.
   app.use('*', cors({
     origin: (origin) => (origin && corsOrigins().includes(origin) ? origin : null),
     credentials: true, // the session cookie is credentialed — the browser needs ACAC:true
@@ -68,10 +76,13 @@ export function createApp(store: ConfigStore, opts: CreateAppOptions = {}): Hono
   app.get('/healthz', (c) => c.json({ ok: true }));
 
   // Readiness that does not lie: reports store-loaded + account-count + audit-chain
-  // verification, so an emptied/corrupt store is visibly NOT ready (503). Unauthenticated
-  // infra probe — no session required (the middleware above is non-rejecting for GET).
+  // verification + (DATA-10) served-file presence, so an emptied/corrupt store OR a
+  // disk-death restore that lost/mismatched the project-data root is visibly NOT ready
+  // (503). Unauthenticated infra probe — no session required (the middleware above is
+  // non-rejecting for GET). Same root the serve routes use (opts.projectDataRoot ??
+  // the real deploy resolution), so a test's temp root and the readiness probe agree.
   app.get('/readyz', async (c) => {
-    const r = await readiness(c.get('store'));
+    const r = await readiness(c.get('store'), opts.projectDataRoot ?? resolveProjectDataRoot());
     return c.json(r, r.ready ? 200 : 503);
   });
 

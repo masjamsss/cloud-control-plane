@@ -74,6 +74,15 @@ docker compose version >/dev/null 2>&1 || die "'docker compose' v2 not found —
 [ -d /data ] || die "mount a persistent disk at /data — laptop trials: run-local.sh (see docs/go-live.md → Prerequisites)"
 
 compose() { ( cd "$CCP_DIR" && docker compose "$@" ); }
+# OPS-6 — a RE-RUN of this installer on an armed host would recreate the api from
+# docker-compose.yml alone and silently strip the socket/scratch overlay. Same guard, same
+# reasoning and same one-line fix as self-update.sh; sourced rather than restated, because
+# a check that exists in one copy of a copied helper is not a check (L-8).
+# shellcheck source=lib/armed.sh
+. "$CCP_DIR/scripts/lib/armed.sh"
+if armed_drift_detected; then
+  die "the RUNNING api is armed (docker socket mounted) but the resolved compose config is NOT — re-running the installer here would silently DISARM the bundle/drift lanes. $(armed_fix_hint)"
+fi
 api_port() { grep -E '^PORT=' "$CCP_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '[:space:]'; }
 app_port() { grep -E '^APP_PORT=' "$CCP_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '[:space:]'; }
 readyz_code() { curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$1/readyz" 2>/dev/null || echo 000; }

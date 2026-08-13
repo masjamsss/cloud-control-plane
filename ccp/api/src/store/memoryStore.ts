@@ -153,6 +153,14 @@ export class MemoryStore implements ConfigStore {
     return this.itemsInKeyOrder().map((it) => cloneValue(it));
   }
 
+  /** ARCH-9 — the private row counter every put/delete already maintains, exposed
+   * read-only. O(1): no traversal, no clone — cheap enough to read on every
+   * `/readyz` probe, unlike `exportItems()`. FileStore inherits this unchanged
+   * (it IS a MemoryStore plus a snapshot-on-write). */
+  approxItemCount(): number {
+    return this.count;
+  }
+
   /**
    * The snapshot as JSON, key-sorted — byte-identical to
    * `JSON.stringify(exportItems())` but WITHOUT the intermediate deep copy.
@@ -186,12 +194,21 @@ export class MemoryStore implements ConfigStore {
     const limit = opts?.limit;
     if (limit !== undefined && limit <= 0) return [];
     const descending = opts?.forward === false;
+    const after = opts?.after;
     const out: Item[] = [];
     // Walk the sorted keys from whichever end the caller asked for and stop at the
     // limit, so a descending page read costs the page and not the partition.
     for (let i = 0; i < keys.length; i++) {
       const sk = keys[descending ? keys.length - 1 - i : i]!;
       if (skPrefix !== undefined && !sk.startsWith(skPrefix)) continue;
+      // `after` is EXCLUSIVE and direction-aware, exactly as in `queryGSI1` below.
+      // It was declared on the SEAM (`QueryOptions.after`, "the one component that
+      // varies within a partition") and honoured only on the GSI — so a primary-index
+      // caller that passed it got every row from the top of the partition and no
+      // error, which is the worst of the three possible behaviours: a resume that
+      // silently replays. A seam option the seam ignores is a lie about what the
+      // real table would do, and the audit reader is the caller that needs it.
+      if (after !== undefined && (descending ? sk >= after : sk <= after)) continue;
       const it = part.rows.get(sk);
       if (!it) continue;
       out.push(cloneValue(it));
@@ -227,6 +244,29 @@ export class MemoryStore implements ConfigStore {
       if (limit !== undefined && out.length >= limit) break;
     }
     return out;
+  }
+
+  /**
+   * Fold one GSI1 partition without cloning (PERF-10 — see the seam's doc).
+   * Partition order is the same order `queryGSI1` would return, so a fold and a
+   * query see the same rows in the same sequence; the only difference is that
+   * nothing is copied and nothing escapes but the accumulator.
+   */
+  async foldGSI1<T>(gsi1pk: string, initial: T, visit: (acc: T, item: Readonly<Item>) => T): Promise<T> {
+    const part = this.gsi1.get(gsi1pk);
+    if (!part) return initial;
+    const rows = part.rows;
+    const keys = partitionKeys(part, (a, b) => {
+      const ia = rows.get(a);
+      const ib = rows.get(b);
+      return cmp(ia ? gsiSortKey(ia) : a, ib ? gsiSortKey(ib) : b);
+    });
+    let acc = initial;
+    for (const k of keys) {
+      const it = rows.get(k);
+      if (it) acc = visit(acc, it);
+    }
+    return acc;
   }
 
   /* ── writes ────────────────────────────────────────────────────────────── */

@@ -2,6 +2,7 @@ import { canSignApprovalStep } from '@app-lib/approvalLadder';
 import type { ConfigStore } from '../store/configStore';
 import type { AccountItem, RoleName } from '../store/schema';
 import { loadAccounts } from './config';
+import { accountsGsi } from '../store/schema';
 import { roleFor } from '../projects';
 import { totpDevicesOf } from '../auth/totp';
 import type { LadderStep } from './exposure';
@@ -67,4 +68,48 @@ export async function eligibleApprovers(
 ): Promise<AccountItem[]> {
   const accounts = await loadAccounts(store);
   return accounts.filter((a) => isEligibleApprover(a, projectId, requesterId));
+}
+
+/**
+ * The same set, reduced to the two numbers feasibility actually needs.
+ *
+ * PERF-10 — `computeFeasibility` runs on every submit and on every
+ * `GET /requests/:id/feasibility`, and it only ever wanted a total and a lead
+ * count. Getting there through {@link eligibleApprovers} meant deep-cloning the
+ * ENTIRE global account directory and building a filtered array, per call, to
+ * derive two integers: 7.1 ms at 5,000 accounts, on the submit critical path.
+ *
+ * The counting is identical — same predicate, same per-project `roleFor` — so
+ * this cannot disagree with `eligibleApprovers`; `test/feasibility.test.ts`
+ * pins the two against each other rather than trusting that sentence.
+ *
+ * Deliberately NOT a maintained index of "eligible approvers per project".
+ * Eligibility is a function of the per-project role binding AND `status` AND
+ * `mustChangePassword` AND TOTP enrolment, so such an index would have to be
+ * updated from every account mutation in admin, settlement, login, password
+ * change and TOTP enrolment — and a site that forgot would understate the
+ * signer count, which reads to the requester as "this request can never be
+ * approved". A wrong count here is a governance-visible lie, so the derived
+ * answer stays derived; only the copying is removed.
+ */
+export async function countEligibleApprovers(
+  store: ConfigStore,
+  projectId: string,
+  requesterId: string,
+): Promise<{ total: number; leads: number }> {
+  const tally = (acc: { total: number; leads: number }, a: AccountItem): { total: number; leads: number } => {
+    if (!isEligibleApprover(a, projectId, requesterId)) return acc;
+    acc.total += 1;
+    // A lead for the ladder's L3 step is drawn from this same set — the role
+    // that counts is the one held ON THIS PROJECT.
+    if (roleFor(a, projectId) === 'lead') acc.leads += 1;
+    return acc;
+  };
+
+  if (store.foldGSI1) {
+    // The fast path: no row is copied and nothing but the tally escapes.
+    return store.foldGSI1(accountsGsi(), { total: 0, leads: 0 }, (acc, item) => tally(acc, item as AccountItem));
+  }
+  // Fallback for a store that does not implement the fold — same answer, old cost.
+  return (await loadAccounts(store)).reduce(tally, { total: 0, leads: 0 });
 }

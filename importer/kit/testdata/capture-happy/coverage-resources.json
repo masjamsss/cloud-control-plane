@@ -7,6 +7,22 @@
     { "ResourceARN": "arn:aws:iam::111111111111:role/app_runtime", "Tags": [] },
     { "ResourceARN": "arn:aws:rds:ap-southeast-5:111111111111:db:appdb-postgres", "Tags": [] },
     { "ResourceARN": "arn:aws:dynamodb:ap-southeast-5:111111111111:table/sessions-table", "Tags": [] },
-    { "ResourceARN": "arn:aws:sagemaker:ap-southeast-5:111111111111:domain/d-happyfixture", "Tags": [] }
+    { "ResourceARN": "arn:aws:sagemaker:ap-southeast-5:111111111111:domain/d-happyfixture", "Tags": [] },
+    { "ResourceARN": "arn:aws:kms:ap-southeast-5:111111111111:key/22222222-aaaa-bbbb-cccc-dddddddddddd", "Tags": [] },
+    { "ResourceARN": "arn:aws:kms:ap-southeast-5:111111111111:key/99999999-eeee-ffff-0000-111111111111", "Tags": [] },
+    { "ResourceARN": "arn:aws:kms:ap-southeast-5:111111111111:key/11111111-aaaa-bbbb-cccc-dddddddddddd", "Tags": [] },
+    { "ResourceARN": "arn:aws:kms:ap-southeast-5:111111111111:alias/app-data", "Tags": [] }
+  ],
+  "$comment": [
+    "IMP-15: the last four rows make the KMS shadow real in the happy path.",
+    "22222222… is the key kms-aliases.json DOES reach (via alias/app-data) — discovered.",
+    "99999999… has NO alias, so `kms list-aliases` — the only KMS lister — cannot see it.",
+    "  It used to land in family `kms`, be counted 'covered', and vanish. It must now be",
+    "  named in coverage.shadowedTypes.",
+    "11111111… is the AWS-managed key behind alias/aws/s3: skipped WITH a reason into",
+    "  manifest.ignored, which is the opposite of a shadow — it must NOT be reported as",
+    "  undiscovered, or this check invents its own false positives.",
+    "The alias ARN is here so the arnResourceType token ('key' vs 'alias') is doing real",
+    "  work: family `kms` alone cannot separate these two rows."
   ]
 }

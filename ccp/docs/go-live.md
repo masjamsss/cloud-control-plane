@@ -555,13 +555,32 @@ These two operator-configured commands
 ([`api/README.md`](../api/README.md#environment-variables) is the canonical doc
 for what they are and what arms them) run **inside the api container**. Arming
 them means giving that container what it needs to shell out to
-Terraform/`catalogctl`: the opt-in overlay `docker-compose.armed.yml`. First set
-`CCP_DOCKER_GID` in `.env` (`stat -c %g /var/run/docker.sock` — the overlay
-refuses to start without it; see `.env.example`), then:
+Terraform/`catalogctl`: the opt-in overlay `docker-compose.armed.yml`.
+
+**Arm in `.env`, not on the command line.** Both lines go in `ccp/.env`:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.armed.yml up -d
+COMPOSE_FILE=docker-compose.yml:docker-compose.armed.yml
+CCP_DOCKER_GID=<stat -c %g /var/run/docker.sock>   # the overlay refuses to start without it
 ```
+
+then bring it up the ordinary way:
+
+```bash
+docker compose up -d
+```
+
+> **Why not `docker compose -f docker-compose.yml -f docker-compose.armed.yml up -d`?**
+> Because that arms the *container* and records nothing about the *deployment* (OPS-6).
+> The overlay is gone at the next plain `docker compose up` — which `install.sh`
+> re-runs, the `migrate-data.sh` cutover, and the nightly `self-update.sh` all
+> perform — and the api comes back with no docker socket, no `/data/scratch`
+> bind and no `TMPDIR`. The bundle/drift lanes then fail with a
+> docker-cannot-connect error that nothing on the host explains. `COMPOSE_FILE`
+> makes arming a property of the deployment, so every compose command in every
+> script picks it up with no flag changes. Those three scripts now **refuse** to
+> run when the container is armed but the resolved config is not, rather than
+> disarming you silently, and `doctor.sh` reports arming that is not sticky.
 
 > **SECURITY.** This overlay mounts the docker socket into the api container,
 > which makes that container **root-equivalent on the host** — it can run

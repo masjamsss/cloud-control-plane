@@ -61,7 +61,7 @@ afterAll(() => {
 });
 
 /** A minimal well-formed bundle carrying `manifests`, with self-consistent digests. */
-function bundleWith(manifests: unknown[]): UploadBundle {
+async function bundleWith(manifests: unknown[]): Promise<UploadBundle> {
   const inventory = {
     generatedAt: '2026-07-17T00:00:00.000Z',
     sourceCommit: COMMIT,
@@ -89,7 +89,7 @@ function bundleWith(manifests: unknown[]): UploadBundle {
     },
   };
   const bundle = { inventory, blocks, manifests } as unknown as UploadBundle;
-  return { ...bundle, digests: digestsOf(bundle) } as UploadBundle;
+  return { ...bundle, digests: await digestsOf(bundle) } as UploadBundle;
 }
 
 /**
@@ -108,7 +108,7 @@ async function activateManifests(
 ): Promise<void> {
   const id = SAMPLE_PROJECT_ID;
   const version = 1;
-  const bundle = bundleWith(manifests);
+  const bundle = await bundleWith(manifests);
   await writeProjectDataVersion(dataRoot, id, version, bundle);
   const vKey = projectDataVersionKey(id, version);
   await store.put({
