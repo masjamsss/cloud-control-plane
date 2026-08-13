@@ -12,7 +12,7 @@ import { checkUploadRateLimit } from '../middleware/rateLimit';
 import { PROJECT_ID_RE, isBoundToProject, refreshKnownProjects } from '../projects';
 import { hashPassword, verifyPassword } from '../auth/credentials';
 import { commitOrPropose, publicPendingChange } from '../domain/dualControl';
-import { transactWithAudit } from '../domain/audit';
+import { DomainConditionError, transactWithAudit } from '../domain/audit';
 import {
   MAX_UPLOAD_BYTES,
   UploadBundle,
@@ -320,9 +320,12 @@ export function projectDataRoutes(dataRoot: string): Hono<AppEnv> {
           },
         );
       } catch (e) {
-        // A lost version race surfaces as chain contention (the ifNotExists put
-        // aborts the audited transact) — re-read the tail and try the next number.
-        if (e instanceof ApiError && e.code === 'CHAIN_CONTENTION' && attempt === 0) continue;
+        // A lost version race is the version row's OWN `ifNotExists` losing — since
+        // CONC-15 that is reported as such (`DomainConditionError`) instead of being
+        // rounded up to chain contention. Either way this loop wants the same thing:
+        // re-read the tail and try the next number. Both arms are kept because a moved
+        // chain head is equally worth one retry here.
+        if (e instanceof ApiError && (e instanceof DomainConditionError || e.code === 'CHAIN_CONTENTION') && attempt === 0) continue;
         throw e;
       }
       try {

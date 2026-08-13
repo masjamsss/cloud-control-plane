@@ -444,12 +444,10 @@ export function requestRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     const schedule = scheduleResult.schedule;
 
     // The request's id is minted HERE rather than just before the row is built,
-    // because the submit-quota index entry names it and has to be written in the
-    // same transact as the request itself (PERF-10) — admission and creation are
-    // one atomic fact or the limiter drifts.
+    // because the submit-quota index entry names it (PERF-10) and must stay the
+    // SAME id across every retry attempt below — admission is re-checked fresh
+    // each attempt (CONC-12), but it is still an admission for THIS submit.
     const id = ulid();
-    const admission = await checkSubmitRateLimit(store, projectId, account.id, id);
-    if (!admission.ok) return apiError(c, 'RATE_LIMITED');
 
     // The COMBINED review requirement is the STRICTEST across all items (tighten-only,
     // ADR-0008): the strictest exposure→tier of any item, with forces-replace floored ON if
@@ -628,13 +626,23 @@ export function requestRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
           markerWrite = { kind: 'put', item: marker, ifEquals: { attr: 'requestId', value: current.requestId } };
         }
       }
+      // CONC-12: admission is derived INSIDE the loop and rides IN the batch below, so
+      // the caps are decided by the same all-or-nothing write that creates the request
+      // instead of by a count taken earlier against a store that then moved. A concurrent
+      // submit by this same requester either committed before the count (and is counted)
+      // or bumps the gate row and aborts this attempt, which re-counts on the retry. It
+      // is re-derived per attempt for that reason — a retry that reused attempt 0's
+      // admission would be the original check-then-insert with extra steps.
+      const admission = await checkSubmitRateLimit(store, projectId, account.id, id);
+      if (!admission.ok) return apiError(c, 'RATE_LIMITED');
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
       const { writes: auditWrites } = recordIn(projectId, head, entry);
       const domain: TransactWrite[] = [
         { kind: 'put', item, ifNotExists: true },
         ...(markerWrite ? [markerWrite] : []),
-        // PERF-10: the requester's quota-index pointer, atomically with the row it
-        // points at. Never commit this separately — see `SubmitAdmission`.
+        // PERF-10 + CONC-12: the requester's quota-index pointer and gate-CAS bump,
+        // atomically with the row they admit. Never commit this separately — see
+        // `SubmitAdmission`.
         ...admission.writes,
       ];
       try {

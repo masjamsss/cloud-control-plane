@@ -311,12 +311,93 @@ export async function record(
 }
 
 /**
+ * Thrown by {@link transactWithAudit} when the CALLER's OWN domain condition — not the
+ * audit chain head — is what refused the batch (CONC-15 / API-14 / R-10).
+ *
+ * The store reports a refused batch as one undifferentiated `ConditionError`: it says the
+ * transaction did not apply, never by which condition. This helper used to guess from the
+ * SHAPE of the domain writes — a value guard meant `STATE_CONFLICT`, anything else meant
+ * `CHAIN_CONTENTION` — and the guess was wrong in both directions. A caller whose
+ * `ifNotExists` genuinely collided (a duplicate username, a lost version-row race) was
+ * told "the audit chain is busy; please retry" about something no retry can fix, and a
+ * value-guarded caller that merely lost the chain head was told its state was stale when
+ * it was not.
+ *
+ * `failed` is the caller's write whose condition is false against the store, so a caller
+ * carrying several conditional writes can map the domain-accurate 409 for the one that
+ * actually lost (`DUPLICATE_USERNAME`, `DUPLICATE_TEAM`, `INSTANCE_STALE`, …). The code
+ * is `STATE_CONFLICT` for callers that do not care to distinguish — "conflicting state,
+ * re-read" is at least true of every domain-condition failure, which "chain busy" never
+ * was.
+ */
+export class DomainConditionError extends ApiError {
+  constructor(public readonly failed: TransactWrite) {
+    super('STATE_CONFLICT');
+    this.name = 'DomainConditionError';
+  }
+}
+
+/** Every key on a `TransactWrite` that names a CONDITION, derived FROM the union rather
+ *  than listed — see `_everyConditionIsEvaluated` below. */
+type KeysOfUnion<T> = T extends unknown ? keyof T : never;
+type ConditionKey = Extract<KeysOfUnion<TransactWrite>, `if${string}`>;
+
+/**
+ * Compile-time exhaustiveness for {@link failedDomainCondition}: `ifNotExists` and
+ * `ifEquals` are ALL the condition primitives the store seam has. Add a third to
+ * `TransactWrite` and this line stops compiling until the evaluator below is taught it —
+ * because the failure mode of forgetting is silent (an unevaluated condition reads as
+ * "still holds", and its failure gets reported as chain contention all over again, which
+ * is the exact defect this file just fixed).
+ */
+type _EveryConditionIsEvaluated = Exclude<ConditionKey, 'ifNotExists' | 'ifEquals'> extends never ? true : never;
+const _everyConditionIsEvaluated: _EveryConditionIsEvaluated = true;
+
+/**
+ * Which of the CALLER's own conditions is false against the store RIGHT NOW — or `null`
+ * if every one of them still holds, which leaves the chain head as the only thing that
+ * can have refused the batch.
+ *
+ * Mirrors `ConfigStore.transact`'s phase-1 evaluation exactly, INCLUDING its fail-closed
+ * rule for an `ifEquals` against a missing item (a guarded write must never resurrect a
+ * deleted row). This is the check `ackPending` hand-rolls at the one call site that could
+ * not live with the guess; making it general is what closes CONC-15 for the rest.
+ *
+ * It is a re-read AFTER the fact, so it is a diagnosis and not a proof: state can move
+ * again between the refused transact and this walk. That only ever costs precision in the
+ * direction of "looks like chain contention", which is the retryable answer, and the
+ * caller re-reads either way.
+ */
+async function failedDomainCondition(store: ConfigStore, writes: TransactWrite[]): Promise<TransactWrite | null> {
+  for (const w of writes) {
+    const pk = w.kind === 'put' ? w.item.PK : w.pk;
+    const sk = w.kind === 'put' ? w.item.SK : w.sk;
+    const ifNotExists = w.kind === 'put' && w.ifNotExists === true;
+    if (!ifNotExists && w.ifEquals === undefined) continue; // unconditional — cannot be the refusal
+    const cur = await store.get(pk, sk);
+    if (ifNotExists && cur !== null) return w;
+    if (w.ifEquals !== undefined && (cur === null || cur[w.ifEquals.attr] !== w.ifEquals.value)) return w;
+  }
+  return null;
+}
+
+/**
  * Fold an audit append into the CALLER's domain writes and run ONE transact.
- * Use when the ONLY conditional writes are the domain puts on fresh keys + the
- * chain head (submit, admin apply). A ConditionError retries once against the
- * fresh head, then 409 CHAIN_CONTENTION. Callers that carry their OWN dedupe
- * condition (e.g. approve's ifNotExists) must NOT use this — they need to tell a
- * dedupe failure apart from chain contention.
+ *
+ * On a refused batch the helper asks the store WHICH condition failed instead of guessing
+ * from the write shapes (CONC-15): a caller's own failed condition becomes a
+ * {@link DomainConditionError} carrying that write, and only a genuinely moved chain head
+ * is reported as `CHAIN_CONTENTION`. So the docstring's old warning — "callers that carry
+ * their OWN dedupe condition must NOT use this" — no longer holds, which matters because
+ * scanJobs, settlement, drift staging, enroll and team-create all used it anyway, each
+ * with local compensation of varying completeness.
+ *
+ * What has NOT changed, and must not: a domain write is never REPLAYED. `domainWrites`
+ * was computed by the caller from a read it did BEFORE this call, so replaying a value-
+ * guarded write verbatim writes exactly the lost update the guard just prevented (CONC-1
+ * showed the same retry doing that in the approve handler; CONC-9's pending-change CAS
+ * leans on the refusal). Only the unguarded `ifNotExists`-on-a-fresh-key shape — what
+ * this helper was originally built for — is replayed against a fresh head.
  */
 export async function transactWithAudit(
   store: ConfigStore,
@@ -327,6 +408,9 @@ export async function transactWithAudit(
 ): Promise<{ id: string; hash: string }> {
   const hKey = chainHead(projectId);
   const guarded = domainWrites.some((w) => 'ifEquals' in w && w.ifEquals !== undefined);
+  // PERF-11: the wider, shared chain-write budget with full-jitter backoff (below) — CONC-15's
+  // diagnostic (failedDomainCondition) still decides case-by-case whether a given attempt is
+  // safe to retry at all; this only widens how many times it gets to ask.
   for (let attempt = 0; attempt < CHAIN_WRITE_ATTEMPTS; attempt++) {
     const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
     const { writes, newHash, id } = recordIn(projectId, head, entry, opts);
@@ -335,18 +419,20 @@ export async function transactWithAudit(
       return { id, hash: newHash };
     } catch (e) {
       if (e instanceof ConditionError) {
-        // Only chain contention is safe to replay. `domainWrites` was computed by the
-        // caller from a read it did BEFORE this call, so if one of its own `ifEquals`
-        // guards is what failed, the row moved and these writes are stale — replaying
-        // them verbatim writes exactly the lost update the guard just prevented (CONC-1
-        // showed the same retry doing exactly that in the approve handler). We cannot
-        // tell which condition failed, so when the caller carries a value guard we do not
-        // guess: refuse and let it re-read.
-        //
-        // `ifNotExists` on a fresh key is different and still retries — that is what this
-        // helper was built for, and if the key now exists it is a genuine duplicate that
-        // the second attempt reports correctly.
-        if (guarded) throw new ApiError('STATE_CONFLICT');
+        const failed = await failedDomainCondition(store, domainWrites);
+        // The caller's own condition lost. Permanent for these writes: no retry of THIS
+        // batch can succeed, and the caller — not this helper — knows what the collision
+        // means in its domain.
+        if (failed !== null) throw new DomainConditionError(failed);
+        // Every domain condition still holds, so the chain head is what moved. Transient,
+        // and the caller may sensibly retry — but we can only replay the writes ourselves
+        // when none of them carries a value guard: `domainWrites` was computed by the
+        // caller from a read it did BEFORE this call, and replaying a value-guarded write
+        // verbatim against a fresh head writes exactly the lost update the guard just
+        // prevented (CONC-1 showed the same retry doing exactly that in the approve
+        // handler). `ifNotExists` on a fresh key is different and safe to replay — that is
+        // what this helper was originally built for.
+        if (guarded) throw new ApiError('CHAIN_CONTENTION');
         if (await chainBackoff(attempt)) continue;
         throw new ApiError('CHAIN_CONTENTION');
       }
