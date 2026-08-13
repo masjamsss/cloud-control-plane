@@ -153,6 +153,14 @@ export class MemoryStore implements ConfigStore {
     return this.itemsInKeyOrder().map((it) => cloneValue(it));
   }
 
+  /** ARCH-9 — the private row counter every put/delete already maintains, exposed
+   * read-only. O(1): no traversal, no clone — cheap enough to read on every
+   * `/readyz` probe, unlike `exportItems()`. FileStore inherits this unchanged
+   * (it IS a MemoryStore plus a snapshot-on-write). */
+  approxItemCount(): number {
+    return this.count;
+  }
+
   /**
    * The snapshot as JSON, key-sorted — byte-identical to
    * `JSON.stringify(exportItems())` but WITHOUT the intermediate deep copy.

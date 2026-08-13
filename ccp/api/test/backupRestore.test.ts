@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -122,5 +122,112 @@ describe('restore fails closed on a bad backup', () => {
     const res = await runBackup({ dataFile: join(dir, 'nope.json'), out: backupFile, io: silent });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.reason).toMatch(/does not exist/i);
+  });
+});
+
+/* ── DATA-10: backup/restore also covers the on-disk project-data/drift root ── */
+
+describe('DATA-10 — backup/restore covers the project-data root, not just the store JSON', () => {
+  let projectDataRoot: string;
+  beforeEach(() => {
+    projectDataRoot = join(dir, 'projects');
+  });
+
+  it('backup captures the project-data root; restore installs it back after disk death', async () => {
+    await seedStore();
+    mkdirSync(join(projectDataRoot, 'acme', 'v1', 'blocks'), { recursive: true });
+    writeFileSync(join(projectDataRoot, 'acme', 'v1', 'inventory.json'), '{"resources":[]}');
+    writeFileSync(join(projectDataRoot, 'acme', 'v1', 'blocks', 'index.json'), '{}');
+
+    const b = await runBackup({ dataFile, out: backupFile, projectDataRoot, io: silent });
+    expect(b.ok).toBe(true);
+    if (b.ok) {
+      expect(b.projectDataOut).not.toBeNull();
+      expect(existsSync(b.projectDataOut!)).toBe(true);
+      expect(existsSync(join(b.projectDataOut!, 'acme', 'v1', 'inventory.json'))).toBe(true);
+    }
+
+    // DISK DEATH — both the store file AND the project-data root vanish
+    rmSync(dataFile);
+    rmSync(projectDataRoot, { recursive: true, force: true });
+    expect(existsSync(projectDataRoot)).toBe(false);
+
+    const r = await runRestore({ backup: backupFile, dataFile, projectDataRoot, io: silent });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.projectDataRoot).toBe(projectDataRoot);
+
+    expect(readFileSync(join(projectDataRoot, 'acme', 'v1', 'inventory.json'), 'utf8')).toBe('{"resources":[]}');
+    expect(readFileSync(join(projectDataRoot, 'acme', 'v1', 'blocks', 'index.json'), 'utf8')).toBe('{}');
+  });
+
+  it('restore REPLACES the project-data root wholesale — a file added after the backup does not survive', async () => {
+    await seedStore();
+    mkdirSync(join(projectDataRoot, 'acme', 'v1'), { recursive: true });
+    writeFileSync(join(projectDataRoot, 'acme', 'v1', 'inventory.json'), 'v1-content');
+    await runBackup({ dataFile, out: backupFile, projectDataRoot, io: silent });
+
+    // A v2 upload lands AFTER the backup was taken.
+    mkdirSync(join(projectDataRoot, 'acme', 'v2'), { recursive: true });
+    writeFileSync(join(projectDataRoot, 'acme', 'v2', 'inventory.json'), 'v2-content');
+
+    const r = await runRestore({ backup: backupFile, dataFile, projectDataRoot, io: silent });
+    expect(r.ok).toBe(true);
+    // v1 (in the backup) survives, byte-identical …
+    expect(readFileSync(join(projectDataRoot, 'acme', 'v1', 'inventory.json'), 'utf8')).toBe('v1-content');
+    // … but v2 (not in the backup) is gone — a merge would have kept it, a replace does not.
+    expect(existsSync(join(projectDataRoot, 'acme', 'v2'))).toBe(false);
+  });
+
+  it('a backup taken before any project-data root existed has no companion dir; restore leaves the CURRENT root untouched and warns loudly', async () => {
+    await seedStore();
+    // projectDataRoot does not exist yet at backup time (fresh install, no uploads).
+    const b = await runBackup({ dataFile, out: backupFile, projectDataRoot, io: silent });
+    expect(b.ok).toBe(true);
+    if (b.ok) expect(b.projectDataOut).toBeNull();
+
+    // Something exists in the CURRENT root by the time restore runs.
+    mkdirSync(join(projectDataRoot, 'acme', 'v1'), { recursive: true });
+    writeFileSync(join(projectDataRoot, 'acme', 'v1', 'inventory.json'), 'still-here');
+
+    const errors: string[] = [];
+    const capturing = { log: () => {}, error: (s: string) => errors.push(s) };
+    const r = await runRestore({ backup: backupFile, dataFile, projectDataRoot, io: capturing });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.projectDataRoot).toBeNull();
+    expect(readFileSync(join(projectDataRoot, 'acme', 'v1', 'inventory.json'), 'utf8')).toBe('still-here'); // untouched
+    expect(errors.some((e) => /WARNING.*no companion project-data backup/i.test(e))).toBe(true);
+  });
+
+  it('--skip-project-data on backup omits the companion dir even when the root exists', async () => {
+    await seedStore();
+    mkdirSync(join(projectDataRoot, 'acme', 'v1'), { recursive: true });
+    writeFileSync(join(projectDataRoot, 'acme', 'v1', 'inventory.json'), 'x');
+
+    const b = await runBackup({ dataFile, out: backupFile, projectDataRoot, skipProjectData: true, io: silent });
+    expect(b.ok).toBe(true);
+    if (b.ok) expect(b.projectDataOut).toBeNull();
+  });
+
+  it('--skip-project-data on restore leaves the current root untouched even when a companion backup exists', async () => {
+    await seedStore();
+    mkdirSync(join(projectDataRoot, 'acme', 'v1'), { recursive: true });
+    writeFileSync(join(projectDataRoot, 'acme', 'v1', 'inventory.json'), 'original');
+    await runBackup({ dataFile, out: backupFile, projectDataRoot, io: silent });
+
+    writeFileSync(join(projectDataRoot, 'acme', 'v1', 'inventory.json'), 'modified-after-backup');
+
+    const r = await runRestore({ backup: backupFile, dataFile, projectDataRoot, skipProjectData: true, io: silent });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.projectDataRoot).toBeNull();
+    expect(readFileSync(join(projectDataRoot, 'acme', 'v1', 'inventory.json'), 'utf8')).toBe('modified-after-backup');
+  });
+
+  it('a project-data root with NO projects (empty dir) round-trips as an empty companion dir, not "does not exist"', async () => {
+    await seedStore();
+    mkdirSync(projectDataRoot, { recursive: true }); // exists, but empty — no projects onboarded
+
+    const b = await runBackup({ dataFile, out: backupFile, projectDataRoot, io: silent });
+    expect(b.ok).toBe(true);
+    if (b.ok) expect(b.projectDataOut).not.toBeNull(); // the root existed, so it WAS copied
   });
 });

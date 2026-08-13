@@ -96,6 +96,19 @@ export interface ConfigStore {
    * which is a readiness fact, not a request-level one.
    */
   durabilityFault?(): string | null;
+  /**
+   * ARCH-9 — how many rows this store currently holds, or `undefined` when a backend
+   * has no cheap way to answer (e.g. a future DynamoDB implementation would read this
+   * from CloudWatch table metrics, not count on every call). Every write accretes here
+   * forever — accounts, sessions, requests, both audit chains, per-project drift/audit
+   * history — with no compaction or archival, so this is the one number that tells an
+   * operator "we are approaching the point where write-amplification (a full-store
+   * fsync per mutation, see FileStore's own doc comment) starts to matter" BEFORE
+   * write latency actually degrades. Surfaced read-only in `/readyz`'s `storeItemCount`
+   * — informational telemetry, never a readiness gate: a large store is a growth trend
+   * to alert on, not itself a fault.
+   */
+  approxItemCount?(): number;
 }
 
 /**

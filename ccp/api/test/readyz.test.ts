@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store/memoryStore';
+import type { ConfigStore } from '../src/store/configStore';
 import { seed } from './helpers/seed';
 import { record } from '../src/domain/audit';
-import { auditKey, type AuditItem } from '../src/store/schema';
+import { auditKey, driftPointerKey, projectKey, type AuditItem, type DriftPointerItem, type ProjectItem } from '../src/store/schema';
 import { nowIso } from '../src/clock';
 
 /**
@@ -74,5 +78,170 @@ describe('/readyz reflects real store health (unlike /healthz)', () => {
     expect(body.ready).toBe(false);
     expect(body.accounts).toBe(4); // accounts are fine …
     expect(body.reasons.join(' ')).toMatch(/does not verify/); // … but the evidence chain is broken
+  });
+});
+
+/* ── DATA-10: the on-disk served-file cross-check ─────────────────────────── */
+
+describe('/readyz cross-checks dataActive / drift pointer rows against the disk (DATA-10)', () => {
+  let dataRoot: string;
+  beforeEach(() => {
+    dataRoot = mkdtempSync(join(tmpdir(), 'ccp-readyz-data-'));
+  });
+  afterEach(() => rmSync(dataRoot, { recursive: true, force: true }));
+
+  /** Seed + trigger the lazy legacy settlement (a throwaway request through the
+   * SAME middleware chain the real assertion call uses below) so 'sample' has a
+   * real ProjectItem row to mutate, exactly the existing suite's own pattern
+   * (see the "seeded store" test above). */
+  async function seededApp(store: ConfigStore): Promise<ReturnType<typeof createApp>> {
+    await seed(store);
+    const app = createApp(store, { projectDataRoot: dataRoot });
+    await app.request('/healthz'); // settles 'sample' before the test reads its row
+    return app;
+  }
+
+  it('a project whose ACTIVE served-data version has no files on disk is NOT ready', async () => {
+    const store = new MemoryStore();
+    const app = await seededApp(store);
+
+    const pk = projectKey('sample');
+    const project = (await store.get(pk.PK, pk.SK)) as ProjectItem;
+    await store.put({
+      ...project,
+      dataActive: { version: 1, activatedBy: 'putra', activatedAt: nowIso() },
+    } as never); // v1 activated, but nothing was ever written to dataRoot
+
+    const ready = await app.request('/readyz');
+    expect(ready.status).toBe(503);
+    const body = await ready.json();
+    expect(body.reasons.join(' ')).toMatch(/ACTIVE served-data version \(v1\).*missing on disk/);
+  });
+
+  it('the SAME project is ready once its active version files are actually on disk', async () => {
+    const store = new MemoryStore();
+    const app = await seededApp(store);
+
+    const pk = projectKey('sample');
+    const project = (await store.get(pk.PK, pk.SK)) as ProjectItem;
+    await store.put({
+      ...project,
+      dataActive: { version: 1, activatedBy: 'putra', activatedAt: nowIso() },
+    } as never);
+    // The one file every version unconditionally writes (writeProjectDataVersion,
+    // domain/projectData.ts) — the exact convention projectDataVersionExists checks.
+    mkdirSync(join(dataRoot, 'sample', 'v1'), { recursive: true });
+    writeFileSync(join(dataRoot, 'sample', 'v1', 'inventory.json'), '{}');
+
+    const ready = await app.request('/readyz');
+    expect(ready.status).toBe(200);
+    const body = await ready.json();
+    expect(body.reasons).toEqual([]);
+  });
+
+  it('a project with no dataActive at all is unaffected (nothing to cross-check)', async () => {
+    const store = new MemoryStore();
+    const app = await seededApp(store);
+    const ready = await app.request('/readyz');
+    expect(ready.status).toBe(200);
+  });
+
+  it('a served drift report whose file has vanished from disk is NOT ready', async () => {
+    const store = new MemoryStore();
+    const app = await seededApp(store);
+
+    const dk = driftPointerKey('sample');
+    const pointer: DriftPointerItem = {
+      ...dk,
+      version: 1,
+      capturedAt: nowIso(),
+      planExitCode: 0,
+      driftedCount: 0,
+      securityCount: 0,
+    };
+    await store.put(pointer as never); // pointer advanced, but the report file was never written
+
+    const ready = await app.request('/readyz');
+    expect(ready.status).toBe(503);
+    const body = await ready.json();
+    expect(body.reasons.join(' ')).toMatch(/served drift report \(v1\).*missing on disk/);
+  });
+
+  it('the SAME project is ready once its pointed-to drift report file is actually on disk', async () => {
+    const store = new MemoryStore();
+    const app = await seededApp(store);
+
+    const dk = driftPointerKey('sample');
+    const pointer: DriftPointerItem = {
+      ...dk,
+      version: 1,
+      capturedAt: nowIso(),
+      planExitCode: 0,
+      driftedCount: 0,
+      securityCount: 0,
+    };
+    await store.put(pointer as never);
+    // The exact on-disk convention driftReportExists checks (domain/drift.ts's
+    // driftReportPath: `<root>/<projectId>/drift/v<n>.json`).
+    mkdirSync(join(dataRoot, 'sample', 'drift'), { recursive: true });
+    writeFileSync(join(dataRoot, 'sample', 'drift', 'v1.json'), '{}');
+
+    const ready = await app.request('/readyz');
+    expect(ready.status).toBe(200);
+    const body = await ready.json();
+    expect(body.reasons).toEqual([]);
+  });
+});
+
+/* ── ARCH-9: store-size telemetry (informational, never a readiness gate) ──── */
+
+describe('/readyz reports storeItemCount (ARCH-9) — never a gate, just a number', () => {
+  it('MemoryStore.approxItemCount tracks puts and deletes exactly', async () => {
+    const store = new MemoryStore();
+    expect(store.approxItemCount()).toBe(0);
+    await store.put({ PK: 'T', SK: 'a' });
+    expect(store.approxItemCount()).toBe(1);
+    await store.put({ PK: 'T', SK: 'b' });
+    expect(store.approxItemCount()).toBe(2);
+    await store.put({ PK: 'T', SK: 'a' }); // overwrite, not a new row
+    expect(store.approxItemCount()).toBe(2);
+    await store.delete('T', 'a');
+    expect(store.approxItemCount()).toBe(1);
+  });
+
+  it('grows as the store grows, surfaced through /readyz', async () => {
+    const store = new MemoryStore();
+    await seed(store);
+    const app = createApp(store);
+    await app.request('/healthz'); // settle first, same pattern as the DATA-10 block above
+
+    const before = await (await app.request('/readyz')).json();
+    expect(typeof before.storeItemCount).toBe('number');
+    expect(before.storeItemCount).toBeGreaterThan(0);
+
+    for (let i = 0; i < 5; i++) {
+      await record(store, 'sample', { action: `growth-${i}`, actor: 'putra', targetType: 'session', targetId: 'putra' });
+    }
+    const after = await (await app.request('/readyz')).json();
+    // >= rather than a pinned exact delta: the FIRST audit entry for a project also
+    // creates its chain-head row (a second new item), so the exact delta depends on
+    // audit-internal bookkeeping this test has no business pinning — "it grew, by at
+    // least one new row per record()" is the property that actually matters here.
+    expect(after.storeItemCount).toBeGreaterThanOrEqual(before.storeItemCount + 5);
+  });
+
+  it('is null, never thrown or a fault, for a store that does not implement approxItemCount', async () => {
+    // The same optionality durabilityFault already relies on: a hypothetical
+    // DynamoDB-shaped store with no cheap count implements nothing, and readiness
+    // must not treat that as a reason to refuse.
+    const bareStore = new MemoryStore();
+    (bareStore as unknown as { approxItemCount?: unknown }).approxItemCount = undefined;
+    await seed(bareStore);
+    const app = createApp(bareStore);
+    const ready = await app.request('/readyz');
+    expect(ready.status).toBe(200);
+    const body = await ready.json();
+    expect(body.storeItemCount).toBeNull();
+    expect(body.reasons).toEqual([]);
   });
 });

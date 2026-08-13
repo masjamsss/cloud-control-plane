@@ -131,6 +131,23 @@ func covdriftedImportRequest(t *testing.T, params ...ImportParams) string {
 	return covdriftedWrite(t, "req.json", string(body))
 }
 
+// covdriftedAdoptRequest writes a system-drift-adopt bundle request from
+// already-built AdoptParams — covdriftedImportRequest's adopt twin, for the
+// same reason: a test can hand-build one item's params with a deliberately
+// wrong field (e.g. proposalDigest) without disturbing another item's.
+func covdriftedAdoptRequest(t *testing.T, params ...AdoptParams) string {
+	t.Helper()
+	items := make([]map[string]any, len(params))
+	for i, p := range params {
+		items[i] = map[string]any{"operationId": opAdopt, "params": p}
+	}
+	body, err := json.Marshal(map[string]any{"operationId": opAdopt, "items": items})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return covdriftedWrite(t, "req.json", string(body))
+}
+
 // covdriftedSample01Adopt is the ADOPT-eligible (attrs, verdicts) pair for
 // aws_instance.sample01 / tags.Owner that every drift-edit adopt case here
 // pins — matching covdriftedAdoptEnvelope's single verdict.
@@ -380,6 +397,67 @@ func TestCovdriftedDriftEditImportRefusalsBeforeAnyWrite(t *testing.T) {
 	}
 }
 
+// TestCovdriftedDriftEditImportGatesWholeBatchBeforeAnyWrite pins CTL-5
+// directly, across ITEMS rather than within one: item 0 is a fully valid
+// import that would succeed on its own; item 1's digest is tampered. Before
+// CTL-5, the per-item loop interleaved gate-then-write, so item 0's write
+// landed before the loop ever reached item 1's failing digest check — exit 2
+// with a MODIFIED checkout. Phase 1 now gates every item in the request
+// before phase 2 writes any of them, so item 0's write must never happen.
+func TestCovdriftedDriftEditImportGatesWholeBatchBeforeAnyWrite(t *testing.T) {
+	checkout := copyCheckoutFixture(t)
+	good := importParamsFor(bastionImportItem())
+	bad := importParamsFor(secondImportItem())
+	bad.ProposalDigest = "0000000000000000000000000000000000000000000000000000000000000000"
+	req := covdriftedImportRequest(t, good, bad)
+
+	code, stdout, stderr := covdriftedEdit([]string{"--request", req, "--repo", checkout, "--root", "environments/prod"})
+	if code != 2 {
+		t.Fatalf("code = %d, want 2 (stdout=%q stderr=%q)", code, stdout, stderr)
+	}
+	if !containsAll(stderr, "item 1", "digest mismatch") {
+		t.Errorf("stderr = %q, want it to name item 1's digest mismatch", stderr)
+	}
+	if strings.Contains(stdout, "imported") {
+		t.Errorf("stdout = %q, want item 0's import never claimed", stdout)
+	}
+	if _, err := os.Stat(filepath.Join(checkout, "environments/prod", oobAdoptedFile)); err == nil {
+		t.Fatal("item 1's refusal still let item 0 write oob-adopted.tf — the batch is not gated before any write (CTL-5)")
+	}
+}
+
+// TestCovdriftedDriftEditAdoptGatesWholeBatchBeforeAnyWrite is
+// TestCovdriftedDriftEditImportGatesWholeBatchBeforeAnyWrite's adopt twin:
+// item 0 is a fully valid adopt (aws_instance.sample01's tags.Owner) that
+// would edit main.tf on its own; item 1's digest is tampered. main.tf must
+// survive byte-for-byte.
+func TestCovdriftedDriftEditAdoptGatesWholeBatchBeforeAnyWrite(t *testing.T) {
+	const tf = "resource \"aws_instance\" \"sample01\" {\n  ami = \"ami-0123456789abcdef0\"\n\n  tags = {\n    Owner = \"platform\"\n  }\n}\n"
+	repo := covdriftedRepo(t, covdriftedCleanWatchlist, map[string]string{"main.tf": tf})
+	attrs, verdicts := covdriftedSample01Adopt()
+	good := AdoptParams{Attrs: attrs, Verdicts: verdicts, ProposalDigest: ProposalDigest("adopt", addressesFromAttrs(attrs), attrs)}
+	bad := AdoptParams{Attrs: attrs, Verdicts: verdicts, ProposalDigest: "0000000000000000000000000000000000000000000000000000000000000000"}
+	req := covdriftedAdoptRequest(t, good, bad)
+
+	code, stdout, stderr := covdriftedEdit([]string{"--request", req, "--repo", repo, "--root", "environments/prod"})
+	if code != 2 {
+		t.Fatalf("code = %d, want 2 (stdout=%q stderr=%q)", code, stdout, stderr)
+	}
+	if !containsAll(stderr, "item 1", "digest mismatch") {
+		t.Errorf("stderr = %q, want it to name item 1's digest mismatch", stderr)
+	}
+	if strings.Contains(stdout, "wrote") {
+		t.Errorf("stdout = %q, want item 0's write never claimed", stdout)
+	}
+	got, err := os.ReadFile(filepath.Join(repo, "environments/prod/main.tf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != tf {
+		t.Fatalf("item 1's refusal still let item 0 edit main.tf — the batch is not gated before any write (CTL-5):\n%s", got)
+	}
+}
+
 // TestCovdriftedDriftEditImportUnreadableWatchlistRefuses pins the fail-closed
 // doctrine at drift-edit's import layer (adopt's twin is
 // TestDriftEditUnreadableWatchlistRefusesAdopt): a checkout carrying no
@@ -401,12 +479,11 @@ func TestCovdriftedDriftEditImportUnreadableWatchlistRefuses(t *testing.T) {
 	}
 }
 
-// TestCovdriftedDriftEditImportWriteFailuresExit1 pins appendImportBlock's two
-// I/O arms as INTERNAL errors (exit 1), not refusals: the target cannot be read
-// (something other than "absent"), and the target cannot be written. Both are
-// facts about the checkout's filesystem, never about the pinned request — and
-// both are provoked without depending on mode bits, so the arms are exercised
-// as root too.
+// TestCovdriftedDriftEditImportWriteFailuresExit1 pins appendImportBlock's
+// read arm as an INTERNAL error (exit 1), not a refusal: the target cannot be
+// read for a reason other than "absent." A fact about the checkout's
+// filesystem, never about the pinned request — provoked without depending on
+// mode bits, so it is exercised as root too.
 func TestCovdriftedDriftEditImportWriteFailuresExit1(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -424,18 +501,6 @@ func TestCovdriftedDriftEditImportWriteFailuresExit1(t *testing.T) {
 				}
 			},
 			want: []string{"read", oobAdoptedFile},
-		},
-		{
-			// A symlink pointing into a directory that does not exist: the read
-			// resolves to ENOENT (so the banner arm is taken, exactly as for a
-			// genuinely absent file) but the WRITE then fails.
-			name: "target is a dangling symlink into a missing directory",
-			setup: func(t *testing.T, envDir string) {
-				if err := os.Symlink(filepath.Join(envDir, "no-such-dir", "target.tf"), filepath.Join(envDir, oobAdoptedFile)); err != nil {
-					t.Fatal(err)
-				}
-			},
-			want: []string{"write", oobAdoptedFile},
 		},
 	}
 	for _, tc := range cases {
@@ -456,6 +521,51 @@ func TestCovdriftedDriftEditImportWriteFailuresExit1(t *testing.T) {
 				t.Errorf("stdout = %q, want no import to be claimed after an I/O failure", stdout)
 			}
 		})
+	}
+}
+
+// TestCovdriftedDriftEditImportThroughDanglingSymlinkSucceeds pins a CTL-5
+// behavior change directly: appendImportBlock used to write via a bare
+// os.WriteFile, which FOLLOWS a symlink at the target path — a dangling one
+// (pointing into a directory that does not exist) made the write fail, an
+// exit-1 case this file used to pin. Now that the write goes through
+// hclops.AtomicWrite (temp file + rename, CTL-5), the rename REPLACES
+// whatever sits at the target path — file or symlink — rather than
+// traversing it, so a dangling symlink no longer matters: the import
+// succeeds and oob-adopted.tf ends up a REGULAR file holding the composed
+// bytes, not a symlink into nowhere. This is strictly safer (a planted
+// symlink can no longer redirect the write outside the checkout) and is
+// worth pinning as a positive fact about the new behavior, not just noting
+// where the old negative test went.
+func TestCovdriftedDriftEditImportThroughDanglingSymlinkSucceeds(t *testing.T) {
+	checkout := copyCheckoutFixture(t)
+	envDir := filepath.Join(checkout, "environments/prod")
+	target := filepath.Join(envDir, oobAdoptedFile)
+	if err := os.Symlink(filepath.Join(envDir, "no-such-dir", "target.tf"), target); err != nil {
+		t.Fatal(err)
+	}
+	req := covdriftedImportRequest(t, importParamsFor(bastionImportItem()))
+
+	code, stdout, stderr := covdriftedEdit([]string{"--request", req, "--repo", checkout, "--root", "environments/prod"})
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 (stdout=%q stderr=%q)", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "imported") {
+		t.Fatalf("stdout = %q, want the import claimed", stdout)
+	}
+	info, err := os.Lstat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("oob-adopted.tf is still a symlink after the write — the atomic rename should have replaced it with a regular file")
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "import {") {
+		t.Fatalf("oob-adopted.tf does not contain the composed import block:\n%s", got)
 	}
 }
 
