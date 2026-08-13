@@ -303,7 +303,7 @@ Red suites, silent skips, fixtures that pin the wrong premise.
 - [ ] API-8 | medium | stuck-state | open | 02-api-correctness.md | Freeze-held `kind:'now'` requests dead-end in AWAITING_DEPLOY_APPROVAL after the freeze lifts
 - [ ] CONC-8 | medium | data-persistence | open | 04-concurrency.md | Every authenticated request triggers a full-store snapshot write; snapshot serialization is synchronous O(store) on the event loop
 - [x] FE-6 | medium | duplication | fixed:572e96d | 05-frontend-flows.md | Api-mode submit gates read the advisory localStorage settings, not the server's — the freeze preview is dead and a stale local freeze silently blocks valid submits
-- [ ] PERF-12 | medium | scale-and-paging | open | 11-performance-scalability.md | Upload ingest does 4+ full canonical-JSON passes over the 16 MiB bundle synchronously on the event loop
+- [x] PERF-12 | medium | scale-and-paging | fixed:5f9687b | 11-performance-scalability.md | Upload ingest does 4+ full canonical-JSON passes over the 16 MiB bundle synchronously on the event loop
 
 ## fail-open
 
@@ -348,7 +348,7 @@ Full scans, unpaged reads, work proportional to total data.
 
 - [x] PERF-3 | high | scale-and-paging | fixed:813a6d9 | 11-performance-scalability.md | `GET /requests` has no pagination and ships full rows (events, params, plan summaries, pinned plan text), with an O(n) write-capable settle loop per call
 - [x] PERF-5 | high | scale-and-paging | fixed:2fd1794 | 11-performance-scalability.md | Frontend main bundle is 3.76 MB (663 KB gzip) with all 115 manifest JSONs inlined and zod-parsed at module init
-- [ ] PERF-10 | medium | scale-and-paging | open | 11-performance-scalability.md | Submit-path full scans: rate-limit check and feasibility each re-scan whole collections per submission
+- [x] PERF-10 | medium | scale-and-paging | fixed:5f9687b | 11-performance-scalability.md | Submit-path full scans: rate-limit check and feasibility each re-scan whole collections per submission
 - [x] PERF-8 | medium | scale-and-paging | fixed:25a7f0b | 11-performance-scalability.md | Admin audit "pagination" materializes and re-sorts the whole chain per page; cursor lookup is a linear scan
 - [x] PERF-9 | medium | scale-and-paging | fixed:blockSourcesFor fetches only the chunks the given addresses live in; test/block-source.test.ts | 11-performance-scalability.md | `ServiceConsole` loads the entire block-source corpus on every service page mount, fetching server chunks sequentially
 - [x] PERF-13 | low | scale-and-paging | fixed:resolveEnum's inventory scan is memoized per (inventory, resourceType, field) in a WeakMap; test/interpreter.test.ts | 11-performance-scalability.md | SchemaForm recomputes inventory-derived enums for every field on every keystroke

@@ -397,7 +397,13 @@ export function requestRoutes(): Hono<AppEnv> {
     if (!scheduleResult.ok) return apiError(c, scheduleResult.code);
     const schedule = scheduleResult.schedule;
 
-    if (!(await checkSubmitRateLimit(store, projectId, account.id)).ok) return apiError(c, 'RATE_LIMITED');
+    // The request's id is minted HERE rather than just before the row is built,
+    // because the submit-quota index entry names it and has to be written in the
+    // same transact as the request itself (PERF-10) — admission and creation are
+    // one atomic fact or the limiter drifts.
+    const id = ulid();
+    const admission = await checkSubmitRateLimit(store, projectId, account.id, id);
+    if (!admission.ok) return apiError(c, 'RATE_LIMITED');
 
     // The COMBINED review requirement is the STRICTEST across all items (tighten-only,
     // ADR-0008): the strictest exposure→tier of any item, with forces-replace floored ON if
@@ -440,7 +446,6 @@ export function requestRoutes(): Hono<AppEnv> {
       ...(v.replaceConfirmation !== undefined ? { replaceConfirmation: v.replaceConfirmation } : {}),
     }));
 
-    const id = ulid();
     const now = nowIso();
     const createdLabel = isSet
       ? `Requested by ${account.displayName} — ${validated.length} changes`
@@ -559,6 +564,9 @@ export function requestRoutes(): Hono<AppEnv> {
       const domain: TransactWrite[] = [
         { kind: 'put', item, ifNotExists: true },
         ...(marker ? [{ kind: 'put' as const, item: marker, ifNotExists: true }] : []),
+        // PERF-10: the requester's quota-index pointer, atomically with the row it
+        // points at. Never commit this separately — see `SubmitAdmission`.
+        ...admission.writes,
       ];
       try {
         await store.transact([...domain, ...auditWrites]);

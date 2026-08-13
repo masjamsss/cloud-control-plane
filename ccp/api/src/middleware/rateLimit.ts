@@ -1,8 +1,15 @@
-import type { ConfigStore } from '../store/configStore';
+import type { ConfigStore, Item, TransactWrite } from '../store/configStore';
 import type { RequestItem } from '../store/schema';
-import { requestCollectionGsi } from '../store/schema';
+import {
+  SUBMIT_QUOTA_SK_PREFIX,
+  requestCollectionGsi,
+  requestKey,
+  submitQuotaKey,
+  submitQuotaMarkerKey,
+  submitQuotaPk,
+} from '../store/schema';
 import { rateLimits } from '../domain/config';
-import { nowMs } from '../clock';
+import { nowIso, nowMs } from '../clock';
 import { occupiesQuotaSlot } from '@app-lib/requestStatus';
 
 /**
@@ -37,11 +44,69 @@ import { occupiesQuotaSlot } from '@app-lib/requestStatus';
  * consuming requester quota.
  */
 
+/**
+ * One pointer row in a requester's submit-quota partition
+ * ({@link submitQuotaKey}). Deliberately tiny — the whole point of the index is
+ * that reading it does not drag full request rows through a deep clone.
+ */
+export type SubmitQuotaPointer = Item & {
+  requestId: string;
+  /** The request's `createdAt`, copied so the hourly window needs no row read. */
+  createdAt: string;
+};
+
+/**
+ * What the caller must persist for the admitted submit, atomically WITH the
+ * request row it is about to create.
+ *
+ * Returning writes rather than performing them is the load-bearing part. The
+ * pointer has to land in the SAME transact as the request, or the two can
+ * disagree: a separately-committed pointer can exist for a request that was
+ * never created (over-counts, and the requester is locked out of a slot they
+ * never used), and a request can exist with no pointer (under-counts — a
+ * limiter that silently stops limiting, which is the failure that matters).
+ * Making it one transact removes the window entirely rather than narrowing it.
+ *
+ * It also keeps the durable path honest: FileStore snapshots the whole store per
+ * applied mutation, so a second write here would have doubled the cost of every
+ * submit to save a scan.
+ */
+export type SubmitAdmission =
+  | { ok: false }
+  | {
+      ok: true;
+      /** Splice into the submit's existing transact — never commit separately. */
+      writes: TransactWrite[];
+    };
+
+/**
+ * PERF-10 — this used to read the project's ENTIRE request collection on every
+ * submit (`queryGSI1(requestCollectionGsi)`), which clones every row in full,
+ * to count the handful belonging to one requester. Measured: 0.009 ms with no
+ * history, 28 ms at 5,000 requests, and the curve is the project's whole
+ * lifetime history because nothing is ever removed from it.
+ *
+ * Now it reads the requester's OWN quota partition, and the request rows it
+ * still has to open are bounded by `maxOpen` rather than by history — a pointer
+ * whose request has gone terminal is deleted as it is discovered (settle-on-read,
+ * the shape already used for scan-job leases, apply claims and bundle claims),
+ * so the partition converges on "this requester's open work plus their last
+ * hour" no matter how much history the project accumulates.
+ *
+ * Terminal is FOREVER — `occupiesQuotaSlot` is the complement of
+ * `TERMINAL_STATUSES`, and no route moves a row out of one — so pruning a
+ * terminal pointer can never lose a slot that later comes back. A `WINDOW_EXPIRED`
+ * or halted row is NOT terminal and keeps both its pointer and its slot.
+ *
+ * `requestId` is the id the caller is ABOUT to create, so admission and the
+ * request are one atomic fact; see {@link SubmitAdmission}.
+ */
 export async function checkSubmitRateLimit(
   store: ConfigStore,
   projectId: string,
   requester: string,
-): Promise<{ ok: true } | { ok: false }> {
+  requestId: string,
+): Promise<SubmitAdmission> {
   const limits = await rateLimits(store, projectId);
 
   // A cap of zero admits NOTHING, and must be decided before the walk. `rate.limits`
@@ -51,22 +116,121 @@ export async function checkSubmitRateLimit(
   // fail-CLOSED instead of silently admitting the first submission.
   if (limits.submissionsPerHour <= 0 || limits.maxOpen <= 0) return { ok: false };
 
-  const all = (await store.queryGSI1(requestCollectionGsi(projectId))) as RequestItem[];
+  const marker = submitQuotaMarkerKey(projectId, requester);
+  const materialized = (await store.get(marker.PK, marker.SK)) !== null;
 
-  // One pass, two counters, and an early exit the moment either limit is reached.
-  // This runs on every submit against the project's WHOLE request history, so the
-  // three chained `.filter()`s it replaces were three full traversals plus two
-  // intermediate arrays to answer a question that is just "have we hit a cap yet".
+  const { candidates, backfill } = materialized
+    ? { candidates: await readPointers(store, projectId, requester), backfill: [] as TransactWrite[] }
+    : await materialize(store, projectId, requester);
+
   const hourAgo = nowMs() - 60 * 60 * 1000;
   let inHour = 0;
   let open = 0;
-  for (const r of all) {
-    if (r.requester !== requester) continue;
-    if (Date.parse(r.createdAt) >= hourAgo && ++inHour >= limits.submissionsPerHour) return { ok: false };
-    if (occupiesQuotaSlot(r.status) && ++open >= limits.maxOpen) return { ok: false };
+  const prune: TransactWrite[] = [];
+
+  // Newest first: both caps are about recent work, so the entries that decide the
+  // answer are at this end and the early exits fire without walking the rest.
+  for (const cand of candidates) {
+    const recent = Date.parse(cand.createdAt) >= hourAgo;
+    // The hourly window is answered from the pointer alone — no request row is
+    // opened for it, and it counts REGARDLESS of status: a request submitted and
+    // immediately cancelled still consumed a submission.
+    if (recent && ++inHour >= limits.submissionsPerHour) return { ok: false };
+
+    // `status` is already in hand on the materialization path; on the steady-state
+    // path it costs one point read of a single row, and only for entries that are
+    // still candidates. This is the only place a full request row is opened, and
+    // the loop exits at `maxOpen`, so it is bounded by the CAP and not by history.
+    let status = cand.status;
+    if (status === undefined) {
+      const k = requestKey(projectId, cand.requestId);
+      status = ((await store.get(k.PK, k.SK)) as RequestItem | null)?.status;
+    }
+    const holdsSlot = status !== undefined && occupiesQuotaSlot(status);
+
+    // Prune only what can never matter again: outside the hourly window AND not
+    // holding a slot. Terminal is forever (`occupiesQuotaSlot` is the complement
+    // of TERMINAL_STATUSES and no route moves a row back out), so a pruned entry
+    // cannot come back — but a terminal request inside the window still counts
+    // toward `submissionsPerHour`, and dropping it there would under-count.
+    if (!recent && !holdsSlot && cand.sk !== undefined) {
+      prune.push({ kind: 'delete', pk: submitQuotaPk(projectId, requester), sk: cand.sk });
+      continue;
+    }
+    if (holdsSlot && ++open >= limits.maxOpen) return { ok: false };
   }
 
-  return { ok: true };
+  const pointer: SubmitQuotaPointer = {
+    ...submitQuotaKey(projectId, requester, requestId),
+    requestId,
+    createdAt: nowIso(),
+  };
+  // The prunes and the backfill ride along with the admission. Both are pure index
+  // maintenance over facts that are already settled, so they carry no conditions
+  // and losing them (a refused submit, a lost contention retry) costs nothing but
+  // repeating the work on the next attempt.
+  return {
+    ok: true,
+    writes: [...backfill, ...prune, { kind: 'put', item: pointer, ifNotExists: true }],
+  };
+}
+
+/** One entry the caps are counted over, from either source. */
+type Candidate = {
+  requestId: string;
+  createdAt: string;
+  /** The pointer row's SK — absent for a candidate read straight from a request row. */
+  sk?: string;
+  /** Known upfront on the materialization path; read lazily otherwise. */
+  status?: string;
+};
+
+/** Steady state: the requester's own partition, newest first. */
+async function readPointers(store: ConfigStore, projectId: string, requester: string): Promise<Candidate[]> {
+  const rows = (await store.query(submitQuotaPk(projectId, requester), SUBMIT_QUOTA_SK_PREFIX, {
+    forward: false,
+  })) as SubmitQuotaPointer[];
+  return rows.map((p) => ({ requestId: p.requestId, createdAt: p.createdAt, sk: p.SK }));
+}
+
+/**
+ * Once per requester, ever: build the index from the request collection that
+ * already exists.
+ *
+ * This is the old full scan, and it is deliberately still here — on an existing
+ * deployment every request predates the index, and an index that cannot tell
+ * "nothing indexed yet" from "nothing open" would silently stop enforcing
+ * `maxOpen` for exactly the requesters who already had open work. Paying one
+ * scan per requester buys the guarantee; every later submit reads the partition.
+ *
+ * Only entries that can still matter are written: anything holding a quota slot,
+ * plus anything inside the hourly window whatever its status.
+ */
+async function materialize(
+  store: ConfigStore,
+  projectId: string,
+  requester: string,
+): Promise<{ candidates: Candidate[]; backfill: TransactWrite[] }> {
+  const all = (await store.queryGSI1(requestCollectionGsi(projectId))) as RequestItem[];
+  const hourAgo = nowMs() - 60 * 60 * 1000;
+  const candidates: Candidate[] = [];
+  const backfill: TransactWrite[] = [];
+  for (const r of all) {
+    if (r.requester !== requester) continue;
+    if (!occupiesQuotaSlot(r.status) && Date.parse(r.createdAt) < hourAgo) continue;
+    const key = submitQuotaKey(projectId, requester, r.requestUlid || r.id);
+    candidates.push({ requestId: r.id, createdAt: r.createdAt, sk: key.SK, status: r.status });
+    const pointer: SubmitQuotaPointer = { ...key, requestId: r.id, createdAt: r.createdAt };
+    // Unconditional: two concurrent submits by the same requester both
+    // materialize, and writing the same pointer twice must not abort either
+    // transact. Same value both times, so the result is identical either way.
+    backfill.push({ kind: 'put', item: pointer });
+  }
+  // GSI1SK order is the request ulid, so the collection arrives oldest-first;
+  // the counting loop wants newest-first like the pointer read gives it.
+  candidates.reverse();
+  backfill.push({ kind: 'put', item: { ...submitQuotaMarkerKey(projectId, requester), materializedAt: nowIso() } });
+  return { candidates, backfill };
 }
 
 /* ── the upload lane's token bucket (DoS hardening, security review F3) ────── */
