@@ -68,11 +68,23 @@ export function forgeCipher(env: Env = process.env): DevAesCipher {
   return new DevAesCipher(key);
 }
 
-/** A refusal the routes turn into a plain operator-facing message. */
+/**
+ * A refusal the routes turn into a plain operator-facing message.
+ *
+ * `transient` tells a caller whether retrying is worth it: `true` means
+ * "GitHub blip, network hiccup, or a 5xx — try again"; `false` (the default,
+ * and every pre-existing call site's meaning) means "operator must fix
+ * something — a missing seal key, a malformed App key, a 404 because the App
+ * isn't installed on this repo, a bad credential — and retrying changes
+ * nothing." Defaulting to `false` keeps every call site that predates this
+ * field exactly as permanent as it already was.
+ */
 export class ForgeCredentialError extends Error {
-  constructor(message: string) {
+  readonly transient: boolean;
+  constructor(message: string, transient = false) {
     super(message);
     this.name = "ForgeCredentialError";
+    this.transient = transient;
   }
 }
 
@@ -193,6 +205,30 @@ export type FetchLike = (
 const GITHUB_API = "https://api.github.com";
 
 /**
+ * A non-2xx GitHub response other than the well-known 404: a 5xx is GitHub's
+ * own outage, not ours, and worth one retry; any other 4xx is a request the
+ * operator (or this code) built wrong and will build wrong again on retry.
+ */
+function refusalFor(status: number, verb: string): ForgeCredentialError {
+  return new ForgeCredentialError(
+    `GitHub refused ${verb} (${status}).`,
+    status >= 500,
+  );
+}
+
+/** Wraps a raw network throw from `fetchLike` (DNS failure, connection reset,
+ * the `AbortSignal.timeout` in realAppFetch firing) as transient — none of
+ * those say anything about the request itself, only that this attempt didn't
+ * complete. */
+function networkFailure(e: unknown): ForgeCredentialError {
+  const message = e instanceof Error ? e.message : String(e);
+  return new ForgeCredentialError(
+    `Could not reach GitHub to mint an installation token: ${message}`,
+    true,
+  );
+}
+
+/**
  * Mint an installation access token for ONE repository.
  *
  * Two calls, both narrowing: find the installation that can see this repo, then
@@ -203,6 +239,11 @@ const GITHUB_API = "https://api.github.com";
  * A repo the App is not installed on comes back 404 — reported as a plain
  * refusal, because "the App cannot see that repository" is the operator's
  * problem to fix at the forge and is precisely what they need told.
+ *
+ * Every error this throws is a {@link ForgeCredentialError} carrying
+ * `transient` so a caller (see `resolveCloneAuth`'s retry-once wrapper in
+ * scanJobs.ts) can tell a passing GitHub blip from something the operator
+ * has to fix.
  */
 export async function mintInstallationToken(
   repo: RepoRef,
@@ -219,42 +260,48 @@ export async function mintInstallationToken(
   };
   const owner = encodeURIComponent(repo.owner);
   const name = encodeURIComponent(repo.name);
-  const found = await fetchLike(
-    `${GITHUB_API}/repos/${owner}/${name}/installation`,
-    { method: "GET", headers },
-  );
+  let found: Awaited<ReturnType<FetchLike>>;
+  try {
+    found = await fetchLike(
+      `${GITHUB_API}/repos/${owner}/${name}/installation`,
+      { method: "GET", headers },
+    );
+  } catch (e) {
+    throw networkFailure(e);
+  }
   if (found.status === 404) {
     throw new ForgeCredentialError(
       "The GitHub App is not installed on that repository — add it to the App's repository list.",
     );
   }
   if (found.status < 200 || found.status >= 300) {
-    throw new ForgeCredentialError(
-      `GitHub refused the App credential (${found.status}).`,
-    );
+    throw refusalFor(found.status, "the App credential");
   }
   const installation = (await found.json()) as { id?: number };
   if (typeof installation.id !== "number") {
     throw new ForgeCredentialError("GitHub returned no installation id.");
   }
 
-  const minted = await fetchLike(
-    `${GITHUB_API}/app/installations/${installation.id}/access_tokens`,
-    {
-      method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
-      // THE NARROWING. Without these two fields the token would carry every
-      // permission and every repository the installation holds.
-      body: JSON.stringify({
-        repositories: [repo.name],
-        permissions: { contents: "read", metadata: "read" },
-      }),
-    },
-  );
-  if (minted.status < 200 || minted.status >= 300) {
-    throw new ForgeCredentialError(
-      `GitHub refused to mint an installation token (${minted.status}).`,
+  let minted: Awaited<ReturnType<FetchLike>>;
+  try {
+    minted = await fetchLike(
+      `${GITHUB_API}/app/installations/${installation.id}/access_tokens`,
+      {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        // THE NARROWING. Without these two fields the token would carry every
+        // permission and every repository the installation holds.
+        body: JSON.stringify({
+          repositories: [repo.name],
+          permissions: { contents: "read", metadata: "read" },
+        }),
+      },
     );
+  } catch (e) {
+    throw networkFailure(e);
+  }
+  if (minted.status < 200 || minted.status >= 300) {
+    throw refusalFor(minted.status, "to mint an installation token");
   }
   const body = (await minted.json()) as { token?: string; expires_at?: string };
   if (typeof body.token !== "string" || body.token.length === 0) {
