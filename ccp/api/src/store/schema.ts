@@ -481,11 +481,14 @@ export const RequestItem = z.object({
    * ADR-0016 approval-to-apply bundle progress (POST /requests/:id/apply).
    * Additive-optional (deploy-inert): 'running' claims the bundle (idempotency
    * guard), 'triggered' = landed on main + gated-apply approval fired (sha set),
-   * 'failed' = a step went red (re-runnable). Absent = never bundled.
+   * 'landed-untriggered' = the commit landed but firing the trigger failed (sha
+   * set; ERR-12 — a retry resumes from the trigger step alone, never re-commits),
+   * 'failed' = a step before commit went red, nothing landed (re-runnable from
+   * the top). Absent = never bundled.
    */
   bundle: z
     .object({
-      state: z.enum(["running", "triggered", "failed"]),
+      state: z.enum(["running", "triggered", "landed-untriggered", "failed"]),
       sha: z.string().optional(),
       at: z.string().optional(),
     })

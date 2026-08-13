@@ -80,18 +80,22 @@ the stronger guarantee — but it did not make the worker better behaved.
 `fail()`, the same best-effort terminal-report attempt every other failure path in `runJob`
 already gets.
 
+### R-6 · The bundle's landed-but-untriggered half state
+*Recorded as residue on **ERR-2**, tracked by **ERR-12**.*
+
+If `commit` succeeds but `trigger` fails, the landed SHA survived only inside the audit
+`steps`, and a retry re-cloned and died at commit with a technically-true but actively
+misleading message. ERR-2's lease made the request appliable again; it did not make that
+retry smarter.
+
+**Resolved by ERR-12**: a `bundle.state:'landed-untriggered'` row now carries the landed
+`sha`, and a retry detects it and resumes from the trigger step alone — `retriggerBundle`
+in `domain/bundle.ts` — rather than re-cloning and re-attempting a commit that can now only
+fail, since the change is already on the branch.
+
 ---
 
 ## tracked — an open finding covers it
-
-### R-6 · The bundle's landed-but-untriggered half state
-*Residue on **ERR-2**.*
-**Tracked by: ERR-12.**
-
-If `commit` succeeds but `trigger` fails, the landed SHA survives only inside the audit
-`steps`, and a retry re-clones and dies at commit with a technically-true but actively
-misleading message. ERR-2's lease makes the request appliable again; it does not make that
-retry smarter.
 
 ---
 
@@ -738,6 +742,31 @@ gitleaks a red gate, the backstop is present wherever it is claimed to be — wh
 condition under which "the heuristic is deliberately approximate" is an honest statement rather
 than the whole story.
 
+### R-75 · The bundle-outcome write still gives up under sustained contention
+*Residue on **CONC-6**.*
+
+`routes/requests.ts`'s outcome-attach loop re-reads the request row and the chain head fresh
+on every attempt and CASes on the seq it just read — a single competing writer between the read
+and the transact is exactly what that CAS is for, and the loop simply goes round again with a
+fresh read. What it does not do is retry unboundedly: `OUTCOME_ATTEMPTS = 3`. Under SUSTAINED
+contention on the row or the chain head — several writers landing inside the same handful of
+iterations, not one lost race — the budget can still be exhausted, and the handler falls into
+the audit-only path: the entry lands (marked `requestRowUpdated:false`), but the claim this run
+still holds is released with an unaudited row write (the fact was already recorded a moment
+earlier, so this write carries nothing new).
+
+That fallback is a deliberate, bounded degradation, not a silent one — the caller gets
+`BUNDLE_OUTCOME_CONTENDED` with the full outcome in `details`, never a lost record. What is not
+covered is the CONSTANT: is 3 attempts enough for this system's actual concurrency? The
+regression test (`test/bundleOutcomeRecord.test.ts`) pins the behavioural CONTRACT — the audit
+entry lands, the code is specific, the claim is released or explicitly left to the lease — not
+the retry count against a measured contention rate the way `L-30` (PERF-11, a parallel batch)
+argues a retry budget should be derived.
+
+**State:** open, bounded. The pattern PERF-11 established (a NAMED constant + full jitter
+back-off, derived from expected concurrency rather than an arbitrary number) is the shape to
+apply here too, once `domain/audit.ts`'s `CHAIN_WRITE_ATTEMPTS`/`chainBackoff` (PERF-11, a
+parallel batch's file) are available to reuse rather than duplicating a second retry policy.
 ### R-60 · Nothing drives `docker stop` against the built image
 *Residue on **ERR-8 / OPS-8**.*
 

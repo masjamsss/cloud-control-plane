@@ -5329,6 +5329,270 @@ behavioral divergence.*
       `test/approvalLadder.test.ts`, `test/perProjectAuthz.test.ts` all pass, unchanged
       expectations). `ccp/app`: `npx tsc --noEmit` clean; `npx vitest run` — 160 files, 2830
       passed (`test/approvalLadder.test.ts` unchanged expectations, 23/23).
+## API-4
+
+*The bundle "claim" is not a mutual-exclusion, and a crashed bundle wedges the request at
+`running`.*
+
+**VERIFY-AND-CLOSE — no production code changed.** B-O1's instruction: "Both defects look
+closed already — ERR-11 made the claim guard `eventSeq` (which the claim advances), and ERR-2
+added the lease + takeover. Confirm against the code, add a regression test if none pins it."
+Both are indeed closed in the code. **One of them was closed and unprotected**, which is the
+part this entry exists to record.
+
+- [x] **Defect reproduced first** — both halves checked against the branch point (`e957eb7`),
+      then each one *re-broken* to see what the suite would say (L-29 + the runbook's negative
+      run, applied to a verify-first finding rather than to a fix):
+      - **Defect 1 (the claim is not exclusive).** Closed at `routes/requests.ts:1160`: the
+        claim CASes `ifEquals {attr:'eventSeq', value: req.eventSeq}` and itself sets
+        `eventSeq: claimSeq` at `:1157`. **But nothing pinned it.** Reverting that one guard to
+        the original `ifEquals {attr:'status', value: req.status}` — the exact pre-ERR-11 shape
+        the finding names — left **all 28 tests** in `bundleClaimLease.test.ts`,
+        `bundle.test.ts` and `applyLaneExclusion.test.ts` green. The two existing ERR-11 cases
+        assert only that the claim *advances* `eventSeq`, and one of them supplies its own
+        `ifEquals` rather than exercising the route's, so both pass unchanged against a route
+        guarded on `status`.
+      - **Defect 2 (a crashed bundle wedges `running` forever).** Closed at `:1126-1129`
+        (refuse only while `bundleClaimLive`) + `:1145-1147` (the takeover event), and it **is**
+        pinned: forcing `claimExpired = false` — the pre-ERR-2 "running is forever" shape —
+        failed 3 tests in the ERR-2 block ("the request must be appliable again", the
+        `bundle-claim-expired` timeline assertion, and the unparseable-timestamp case).
+- [x] **Cause, not symptom** — no production change, and deliberately none: re-fixing a closed
+      defect is the most expensive way to spend this batch. The cause of the *gap* was in the
+      test, not the route — a guard that no test discriminates is a guard nobody is protecting,
+      and the next person to touch this handler would have had nothing telling them why the
+      attribute is `eventSeq` and not the more obvious `status`.
+- [x] **Regression test** — new `describe('API-4 — a write between the read and the claim costs
+      the handler the claim')` in `test/bundleClaimLease.test.ts`. It pins the **property**, not
+      the attribute name (L-25): a request-row write landing between this handler's read and its
+      claim must cost the handler the claim. `status` cannot deliver that, because the claim
+      does not move `status`. The race is driven by a store wrapper — a route test cannot
+      otherwise produce the interleaving, since the two handlers would have to be suspended
+      between their read and their write — which lands one competing write (advancing `eventSeq`
+      and deliberately *not* `status`, exactly what a second apply's own claim does) at that
+      point. The assertion is on the **effects**: the gate command writes a marker file outside
+      the checkout (so it survives `cleanup(dir)`), and a handler that lost its claim must never
+      have spawned it.
+      **Negative test confirmed** — with the claim reverted to the `status` guard the race case
+      fails `a lost claim is reported, not run: expected 200 to be 409`, and a 200 there means
+      the bundle really did clone, run the gate, push and fire the trigger on a row that had
+      moved under it. Guard restored, re-verified green.
+- [x] **Failure is loud** — every assertion carries its own message naming what broke ("the gate
+      ran on a request this handler never claimed", "no claim was written"), and L-1 is pinned
+      explicitly: the test asserts `raced === true`, so a wrapper that silently stopped firing
+      turns into a failure instead of a race test that never raced. The `CONTROL` case runs the
+      same fixture with nothing racing and asserts the gate marker *is* written and the row
+      reaches `triggered` — so a broken marker, gate command or fixture cannot masquerade as the
+      defect being absent.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json` clean;
+      `npx vitest run test/bundleClaimLease.test.ts test/bundle.test.ts
+      test/applyLaneExclusion.test.ts` → 30 passed (up from 28).
+
+## CONC-6
+
+*The bundle claim has no crash/exception/race recovery: `bundle.state:'running'` can stick
+forever, and a raced outcome write loses the record of a fired deploy.*
+
+- [x] **Defect reproduced first** — both halves, through the real route:
+      - **The exception path.** `realSteps.prepare` opens its workspace with
+        `mkdtempSync(join(tmpdir(), …))`, so pointing `TMPDIR` at a path that does not exist
+        makes it throw `ENOENT` — the same shape as the `writeFileSync` ENOSPC the finding
+        names, and reachable end-to-end. Against the unfixed code `POST /:id/apply` answered
+        **500**, and the row kept the `bundle.state:'running'` claim the handler had written
+        moments earlier.
+      - **The raced outcome.** With a store wrapper landing a competing claim on the request
+        row while the bundle ran, the unfixed handler answered **`CHAIN_CONTENTION`** — after
+        the gate had run, a commit had landed on `main` and the CI apply had been triggered —
+        and the audit chain contained **no `request-bundle` entry at all**.
+- [x] **Cause, not symptom** — three changes, one idea: *a fired deploy is a fact, and a
+      fact is not a state transition.*
+      1. **`runBundle` is now TOTAL** (`domain/bundle.ts`). A throw at any stage is converted
+         into the failed outcome it actually is, attributed to the stage that raised it, with
+         every already-completed step still in the log — a partially-executed bundle's step
+         log is evidence, and worth more than an exception type. `cleanup` still runs, and a
+         `cleanup` that throws no longer turns a recorded outcome back into an exception. The
+         route keeps its own `try/catch` as defence in depth for everything outside that call,
+         because the one thing the handler must never do is return while holding the claim it
+         wrote.
+      2. **The outcome write re-reads and re-derives on every attempt**, and appends to the
+         timeline instead of replacing it. `events` is a full-array replacement, so deriving it
+         once from a pre-image read minutes earlier silently erased anything that landed while
+         the bundle ran. The CAS now guards the seq read *this iteration* ("nothing moved since
+         I looked a moment ago"); ownership of the run is established separately and explicitly
+         by comparing `bundle.at` against the claim this handler wrote. Splitting those two
+         meanings is what makes a lost race merely worth re-reading instead of unrecoverable.
+      3. **The audit entry is written even when the row refuses the transition**, marked
+         `requestRowUpdated:false` with the reason, and the caller gets the specific code
+         **`BUNDLE_OUTCOME_CONTENDED`** carrying `details:{bundle,steps}`. `CHAIN_CONTENTION`
+         said "the chain is busy; please retry" about a deploy that had already fired — an
+         answer that is both wrong and actively dangerous, since retrying re-runs the bundle.
+      **The finding's recommendation was partly unimplementable as written.** It suggests
+      recording the outcome "guarded on `bundle.state:'running'` (which cancel never touches)".
+      The store seam compares `ifEquals` with `!==` on a top-level attribute
+      (`memoryStore.ts`), and `bundle` is an object that is deep-cloned on read — so that
+      guard could never match, on any row, ever. The property it was reaching for is real, so
+      it is enforced as an explicit ownership check (`bundle.at` identifies the claim) rather
+      than as a CAS that would have silently failed 100% of the time.
+      One further deliberate choice: on the doubly-unlucky path where the chain is too busy to
+      attach the outcome, the handler writes the audit entry alone, then releases a still-held
+      claim to its terminal state with an **unaudited row write**. That write carries no fact
+      the chain does not already have — the entry for that exact outcome landed immediately
+      before it — and the alternative is leaving a fully-approved request wedged at `running`
+      for the length of ERR-2's lease over a transient jam.
+- [x] **Regression test** — new `test/bundleOutcomeRecord.test.ts`, 8 cases in three groups:
+      `runBundle` totality (a throw at each of the four stages becomes a failed outcome; the
+      partial step log survives; a post-commit throw still reports the landed sha; cleanup
+      still runs; a throwing cleanup does not resurrect the exception), the route's
+      terminal-state property (the `TMPDIR` reproduction above, asserting 502-not-500, a
+      `failed` bundle state, and — the consequence the finding is actually about — that the
+      *next* apply is no longer refused), and the contended-outcome property (the audit entry
+      lands, `requestRowUpdated:false`, the specific code, and the other run's claim left
+      untouched).
+      **Negative test confirmed** — reverting `domain/bundle.ts` and `routes/requests.ts` to
+      their pre-fix state fails **7 of the 8**, with exactly the finding's symptoms:
+      `expected 500 to be 502` on the route case and
+      `expected 'CHAIN_CONTENTION' to be 'BUNDLE_OUTCOME_CONTENDED'` on the raced one. Both
+      files restored, re-verified green.
+- [x] **Failure is loud** — every assertion names the property ("the claim must be released to
+      a terminal state", "a fired deploy must be in the audit chain", "not CHAIN_CONTENTION —
+      that says retry, and retrying re-runs the deploy"). L-1 is pinned in three places: the
+      throwing-step cases assert the throwing stage was actually *called*, the route case
+      asserts the run really died in `prepare` (rather than being refused for some unrelated
+      reason), and the race case asserts the takeover actually landed. The eighth test is a
+      CONTROL that runs the same fixture with nothing racing and asserts the outcome *does*
+      reach the row — so a fixture that could never record an outcome cannot masquerade as the
+      defect being absent.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json`
+      clean; full suite `npm test` → 103 files, 1431 passed (up from 1421).
+      `python3 scripts/docs-error-codes-check.py` passes with the new inline code documented;
+      `openapi/ccp-api.yaml`, `ccp/docs/ERROR-STATES.md` and `ccp/docs/API-SPEC.md` updated —
+      the last two also corrected a pre-existing contract inaccuracy, both still describing the
+      claim as "a CAS on the observed status", which ERR-11 changed to `eventSeq`.
+
+**Residue:** the outcome write can still lose a concurrent timeline entry in a
+microsecond-wide window, and a chain that stays contended still leaves the run's own claim to
+the lease. See `R-75`.
+
+## API-5
+
+*Cancel can race an in-flight bundle: the change applies but the request reads CANCELLED.*
+
+- [x] **Defect reproduced first.** `AWAITING_DEPLOY_APPROVAL` is in `CANCELLABLE_STATUSES`,
+      and the bundle claim (API-4) deliberately leaves `status` untouched — so a cancel
+      issued while a bundle is mid-flight satisfied `ifEquals status ==
+      AWAITING_DEPLOY_APPROVAL` unconditionally. Reproduced directly: seeded a request with
+      `bundle:{state:'running', at:<now>}`, called `POST /cancel` — before this fix it
+      returned 200 and set `status:'CANCELLED'` while the (simulated) bundle was still
+      landing a commit on `main` and firing the CI apply trigger.
+- [x] **Cause, not symptom.** Cancel checked only `status`, never `bundle`. The two are
+      independent attributes by design (API-4's whole point was that the claim must NOT
+      move `status`, so a concurrent read of the request during a bundle run still shows
+      the true pre-apply status) — but that independence is exactly what let cancel act as
+      though no bundle existed.
+- [x] **The fix shape was one of two the finding itself offered (refuse, or require
+      confirmation) — refuse, and here is why.** A confirmation dialog would still be built
+      from the SAME stale status this defect is about — by the time a lead sees "are you
+      sure?", the bundle may already have landed the commit. Refuse is the only shape that
+      hands the caller the CURRENT truth. Reuses `bundleClaimExpired`, the exact
+      live/expired distinction `/apply` already applies (ERR-2): a LIVE claim blocks
+      cancel with 409 `BUNDLE_RUNNING` (the same code `/apply`'s own non-reentrancy guard
+      already uses, not a new one — the same fact, "a bundle is in flight," told to two
+      different callers); an EXPIRED claim (a crashed run) does NOT block it, because
+      refusing on a claim nothing will ever finish would just move the wedge from
+      `bundle.state` (fixed by API-4/CONC-6) to `status`.
+- [x] **What this closes vs. what CONC-6 already closed.** The finding's second half — "on
+      the bundle's lost outcome write, record a standalone audit entry instead of
+      throwing" — was independently fixed by the parallel CONC-6 work in this same batch
+      (`BUNDLE_OUTCOME_CONTENDED` + the always-written audit entry). This entry closes only
+      the remaining half: stopping the race at its SOURCE rather than only recording it
+      better after the fact.
+- [x] **Regression test — `test/bundleCancelRace.test.ts`, 5 cases:** a live claim blocks
+      cancel with the specific code; the row is asserted UNCHANGED (not just the response
+      code) so the test cannot pass on a refusal that still let the write through; an
+      expired claim does NOT block cancel; no bundle claim at all cancels normally
+      (control); an already-`triggered` (terminal) bundle does not block cancel — this
+      guard is specifically about a claim still `running`.
+- [x] **Assert the setup fired (L-1).** The expired-claim test asserts the fixture's `at`
+      is actually past `BUNDLE_LEASE_MS` before relying on that gap mattering.
+- [x] **Negative test confirmed** — reverted the guard (`if (false && …)`), reran: the
+      live-claim test fails `expected 409 to be 200`, and the row-unchanged test fails
+      `expected 'CANCELLED' to be 'AWAITING_DEPLOY_APPROVAL'` — the exact defect. Restored;
+      5/5 green.
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/bundleCancelRace.test.ts`
+      (5 passed); full suite (below, shared with ERR-12); `openapi/ccp-api.yaml`,
+      `API-SPEC.md`, `ERROR-STATES.md` updated for `/cancel`'s new refusal.
+
+## ERR-12
+
+*Trigger failure after a landed commit: honest-but-dead-end half state, and spawn timeouts
+are indistinguishable from exit-1.*
+
+- [x] **Half of this finding was already fixed, verified rather than re-fixed.** The
+      "spawn timeouts indistinguishable from exit-1" half named `bundle.ts`'s old
+      `spawnSync`-based `sh()`/`git()`, which a prior fix (`domain/exec.ts#execCapture`,
+      closing API-1/CONC-5/OPS-3/PERF-2) replaced entirely. Read the current
+      implementation: a timeout resolves `status:124` with an explicit `` `timed out after
+      ${ms}ms` `` appended to the captured output, and a spawn error resolves `status:1`
+      with `` `spawn failed: ${e.message}` `` — exactly the finding's own recommendation
+      ("include `r.error?.message` and an explicit 'timed out after Nms'"), already
+      shipped. Confirmed live: `bundle.ts`'s `sh()` and `git()` both call `execCapture`, not
+      `spawnSync`. Nothing to fix here; closing with this evidence rather than a patch.
+- [x] **Defect reproduced first, the remaining half.** A landed commit whose trigger then
+      failed wrote `bundle.state:'failed'` with NO `sha` at the row level — identical to a
+      run that never got anywhere. Reproduced against a real git remote (the same harness
+      CONC-6's tests use): armed with a trigger command that always fails, called
+      `/apply` — the commit genuinely landed on the bare repo (confirmed by reading its
+      history), and the row/response both said plain `failed`, losing the landed commit's
+      identity. A same-request retry against the unfixed code re-cloned, re-gated, and hit
+      `commit failed (gate left no change?)` — technically true, actively misleading: the
+      change was already there.
+- [x] **Cause, not symptom.** The row-state mapping had exactly two outcomes (`triggered`
+      on success, `failed` on anything else), collapsing "never got anywhere" and "landed,
+      then something after commit went wrong" into the same bucket — even though
+      `runBundle`'s own outcome (via CONC-6's `sha` propagation) already knew the
+      difference internally.
+- [x] **The fix: a third state, and a resume path that uses it.**
+      `bundle.state:'landed-untriggered'` (schema.ts) carries the landed `sha`.
+      `domain/bundle.ts#retriggerBundle` fires ONLY the trigger step for a sha a previous
+      run already landed — deliberately not a re-run of prepare/gate/commit, because
+      re-attempting commit for a change already on the branch is the exact confusion this
+      finding is about (and, worse than misleading, a genuine risk of a second commit if
+      the branch moved). The route detects `bundle.state === 'landed-untriggered'` (or an
+      EXPIRED `running` claim that itself carries a `sha` — see next bullet) and calls
+      `retriggerBundle` instead of the full `runBundle`.
+- [x] **A second gap found while implementing the first, not left for someone else to
+      find.** The claim write unconditionally overwrote `bundle` with `{state:'running',
+      at:now}` on every attempt, INCLUDING a resume — so a crash mid-retrigger would leave
+      a `running` claim with no memory of the landed sha, and the next attempt, seeing
+      only an ordinary expired claim, would fall back to a full re-run and reintroduce the
+      exact defect this fix closes. Fixed by carrying `sha` forward into the claim
+      whenever the current attempt IS a resume, and by treating an EXPIRED `running` claim
+      that carries a `sha` as a resume candidate too, not only the more obvious
+      `landed-untriggered` state.
+- [x] **Regression test — `test/bundleOutcomeRecord.test.ts`, 3 new cases, against a REAL
+      git remote (not a mock trigger):** trigger failure reports `landed-untriggered` with
+      the sha, not `failed`; a retry with the trigger now fixed resumes and reports
+      `steps:[{step:'trigger',…}]` ONLY (proving prepare/gate/commit did not re-run) —
+      verified by reading the remote's own commit history before and after and asserting
+      it is IDENTICAL, not by trusting the response; and a simulated crash mid-retrigger
+      (the row forced back to a `running` claim carrying the sha, dated to force
+      expiry) still resumes correctly on the next attempt.
+- [x] **Assert the setup fired (L-1).** The "no second commit" test asserts the remote
+      really does hold the landed commit (2 commits: seed + the change) BEFORE the retry
+      runs, so "identical before and after" cannot pass because nothing was checked either
+      time.
+- [x] **Negative test confirmed** — reverted `bundle.ts`/`requests.ts`/`schema.ts` to HEAD
+      (post-CONC-6) with the new tests kept: all 3 new tests fail. The first:
+      `expected 'failed' to be 'landed-untriggered'`. The second: `expected [seed-commit]
+      to include undefined` — on unfixed code the failed-trigger response carries no `sha`
+      at all (the whole defect), so the test's own setup assertion ("the landed commit
+      must already be on the remote") is the first thing to catch it, before the
+      no-second-commit property is even reached. The third: `expected 502 to be 200` on
+      the crash-resume case. Restored; 11/11 green in that file, full suite 104 files /
+      1439 passed.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json &&
+      npx vitest run` — 104 files, 1439 passed; `python3 scripts/docs-error-codes-check.py`
+      passes (BUNDLE_RUNNING is reused on `/cancel`, not a new literal).
 ## ERR-8
 
 *No process-level failure handling: no graceful shutdown, no rejection/exception handlers,
