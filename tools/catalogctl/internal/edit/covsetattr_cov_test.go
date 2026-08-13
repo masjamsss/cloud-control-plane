@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/zclconf/go-cty/cty"
 
+	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/hclobj"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/hclops"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/manifests"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/request"
@@ -634,10 +635,19 @@ func TestCovsetattrParseObjectFromHCL(t *testing.T) {
 			wantVals: []string{"(1+2)", "\"e\""},
 		},
 		{
+			// CTL-10: a non-trailing comment (this one doesn't end in "\n", so it
+			// sits INSIDE the value, not at the end of the entry's own line) stays
+			// in ValToks, in place, rather than being hoisted into Entry.Comment
+			// and re-emitted after the value — hoisting it would reposition a
+			// comment on an entry a merge never touched, adding a spurious second
+			// changed line to what must be a one-line diff. See hclobj.ParseObject's
+			// doc comment for the full reasoning (this is the one observable
+			// behavior change from reconciling edit's and driftpropose's two
+			// independently-diverged copies of this walker into one).
 			name:     "inline block comment inside a value does not end the entry",
 			src:      "resource \"x\" \"y\" {\n  m = {\n    a = /* why */ \"v\"\n    d = \"e\"\n  }\n}\n",
 			wantKeys: []string{"a", "d"},
-			wantVals: []string{" \"v\"", "\"e\""},
+			wantVals: []string{"/* why */\"v\"", "\"e\""},
 		},
 		{
 			name:     "single-entry map with a comma separator",
@@ -649,7 +659,7 @@ func TestCovsetattrParseObjectFromHCL(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, block := covsetattrParseBlock(t, tc.src)
-			entries, ok := parseObject(block.Body().GetAttribute("m").Expr().BuildTokens(nil))
+			entries, ok := hclobj.ParseObject(block.Body().GetAttribute("m").Expr().BuildTokens(nil))
 			if !ok {
 				t.Fatal("parseObject not ok on a literal object")
 			}
@@ -657,10 +667,10 @@ func TestCovsetattrParseObjectFromHCL(t *testing.T) {
 				t.Fatalf("got %d entries, want %d", len(entries), len(tc.wantKeys))
 			}
 			for i := range tc.wantKeys {
-				if entries[i].key != tc.wantKeys[i] {
-					t.Fatalf("entry %d key = %q, want %q", i, entries[i].key, tc.wantKeys[i])
+				if entries[i].Key != tc.wantKeys[i] {
+					t.Fatalf("entry %d key = %q, want %q", i, entries[i].Key, tc.wantKeys[i])
 				}
-				if got := strings.TrimSpace(tokensString(entries[i].valToks)); got != strings.TrimSpace(tc.wantVals[i]) {
+				if got := strings.TrimSpace(tokensString(entries[i].ValToks)); got != strings.TrimSpace(tc.wantVals[i]) {
 					t.Fatalf("entry %d value = %q, want %q", i, got, tc.wantVals[i])
 				}
 			}
@@ -730,7 +740,7 @@ func TestCovsetattrParseObjectTokenStreams(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			entries, ok := parseObject(tc.toks)
+			entries, ok := hclobj.ParseObject(tc.toks)
 			if ok != tc.wantOK {
 				t.Fatalf("parseObject ok = %v, want %v (entries=%d)", ok, tc.wantOK, len(entries))
 			}
@@ -744,8 +754,8 @@ func TestCovsetattrParseObjectTokenStreams(t *testing.T) {
 				t.Fatalf("got %d entries, want %d", len(entries), len(tc.wantKeys))
 			}
 			for i := range tc.wantKeys {
-				if entries[i].key != tc.wantKeys[i] {
-					t.Fatalf("entry %d key = %q, want %q", i, entries[i].key, tc.wantKeys[i])
+				if entries[i].Key != tc.wantKeys[i] {
+					t.Fatalf("entry %d key = %q, want %q", i, entries[i].Key, tc.wantKeys[i])
 				}
 			}
 		})

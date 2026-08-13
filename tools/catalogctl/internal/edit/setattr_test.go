@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclwrite"
 
+	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/hclobj"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/hclops"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/manifests"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/request"
@@ -253,20 +254,20 @@ func TestParseObjectTrailingCommentEndsEntry(t *testing.T) {
 		t.Fatal(diags.Error())
 	}
 	block := f.Body().Blocks()[0]
-	entries, ok := parseObject(block.Body().GetAttribute("tags").Expr().BuildTokens(nil))
+	entries, ok := hclobj.ParseObject(block.Body().GetAttribute("tags").Expr().BuildTokens(nil))
 	if !ok {
 		t.Fatal("parseObject not ok on a literal map")
 	}
 	if len(entries) != 2 {
 		t.Fatalf("parsed %d entries, want 2 (comment must terminate the App entry)", len(entries))
 	}
-	if entries[0].key != "App" || entries[1].key != "Arc" {
-		t.Fatalf("keys = %q,%q, want App,Arc", entries[0].key, entries[1].key)
+	if entries[0].Key != "App" || entries[1].Key != "Arc" {
+		t.Fatalf("keys = %q,%q, want App,Arc", entries[0].Key, entries[1].Key)
 	}
-	if got := tokensString(entries[0].valToks); got != "\"member \"" {
+	if got := tokensString(entries[0].ValToks); got != "\"member \"" {
 		t.Fatalf("App valToks = %q — must not swallow the Arc line", got)
 	}
-	if len(entries[0].comment) == 0 {
+	if len(entries[0].Comment) == 0 {
 		t.Fatal("App entry lost its trailing comment")
 	}
 }

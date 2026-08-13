@@ -1,0 +1,10 @@
+--- a/environments/prod/main.tf
++++ b/environments/prod/main.tf
+@@ -9,6 +9,7 @@
+     tags = {
+       Name = "app-root" # keep in sync with root volume naming policy
+       Role = "data"
++      Snap = "daily"
+     }
+   }
+ 

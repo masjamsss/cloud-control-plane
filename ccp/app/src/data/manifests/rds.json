@@ -1154,12 +1154,13 @@
       "id": "rds-snapshot-unshare-account",
       "service": "rds",
       "macd": "Delete",
-      "codemodOp": "remove_foreach_entry",
+      "codemodOp": "remove_list_entry",
       "title": "Stop sharing a DB snapshot with an account",
       "summary": "Stop one AWS account from being able to restore this snapshot. Tightens access; you can re-share it again later if needed.",
       "description": "Remove one AWS account ID from shared_accounts, revoking that account's access to the snapshot. Security-tightening (reduces exposure), reversible by re-sharing, no downtime. Guardrails because a legitimate cross-account restore consumer could lose access.",
       "target": {
-        "resourceType": "aws_db_snapshot"
+        "resourceType": "aws_db_snapshot",
+        "block": "shared_accounts"
       },
       "params": [
         {

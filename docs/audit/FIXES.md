@@ -5197,6 +5197,227 @@ the upload lane.*
 - [x] **Evidence in the status line.** `cd ccp/api && npx tsc --noEmit -p tsconfig.json && npx
       vitest run` — 104 files, 1439 passed; `ccp/app`: `npx tsc --noEmit && npx vitest run` —
       160 files, 2828 passed.
+## CTL-2
+
+*`moved_block` writes invalid or duplicate-resource HCL at exit 0: no identifier validation, no
+destination-collision check, no dangling-reference handling.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD (`internal/edit/moved.go`) `movedBlock`
+      relabeled a resource and emitted `moved{}` with none of the three checks the finding
+      names. `new_name: "bad name!"` (no `pattern` bound in the fixture manifest) wrote
+      `resource "aws_instance" "bad name!" { ... }` at exit 0 — not even parseable HCL. Renaming
+      `aws_instance.web` → `app` while `aws_instance.app` already existed produced two
+      `resource "aws_instance" "app"` blocks, both at exit 0. A live reference to the FROM
+      address survived untouched, so the tree would fail `terraform plan` after apply.
+- [x] **Cause, not symptom** — `movedBlock` gains three pre-write checks, in order: (1)
+      `manifests.IsValidBlockIdent(newName)` → `MALFORMED_NEW_NAME`; (2) `hclops.Locate(envDir,
+      to)` resolving → `ALREADY_EXISTS` (the exact code `create_resource`/`instantiate_module`
+      already use for their own existence gates); (3) `danglingRef(envDir, from, loc)` →
+      `DANGLING_REF` (reused verbatim from `remove_block`, same signature, same self-exclusion).
+      All three refuse (exit 2, tree untouched) before any bytes are computed.
+- [x] **Regression test** — three new golden cases (`testdata/golden/moved/
+      reject-malformed-new-name`, `reject-already-exists`, `reject-dangling-ref`).
+      **Negative test confirmed**: stashed `moved.go` back to its pre-fix state and reran —
+      all three new cases failed (exit 0 instead of 2) exactly as expected, the other three
+      existing `moved/*` cases still passed; restored, re-verified green.
+- [x] **Failure is loud** — each golden case asserts both the exact exit code and the `REFUSE
+      <CODE>` line via the shared `TestGolden` harness (same assertion shape as every other
+      refusal case in this package).
+- [x] **Evidence in the status line** — `go build ./... && go vet ./... && go test ./...`
+      clean (16 packages); `gofmt -l .` empty.
+
+## CTL-3
+
+*Shipped catalog op `waf-add-ip-set-entry` can never execute (exit 1 internal error); the
+corrected manifest exists only in test fixtures.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `waf-add-ip-set-entry`/
+      `waf-remove-ip-set-entry` in the shipped catalog (`ccp/app/src/data/manifests/waf.json`)
+      declared `codemodOp: "append_foreach_entry"`/`"remove_foreach_entry"` with only ONE
+      non-inventory param each — `appendForeachEntry`'s arity check (`len(nonInv) < 2`) died
+      with a bare Go `error`, surfacing as exit 1 "internal error" on every real invocation.
+      The corrected shape (`append_list_entry`/`remove_list_entry`) was already fully
+      implemented and golden-tested (`testdata/golden/u5-append-list-entry/*`) against a
+      forked fixture manifest that was never propagated to the shipped catalog. `waf-add-ip-set-
+      entry`'s `foreach-arity` finding sat grandfathered in `manifest_lint_test.go`'s
+      `arityBaseline` as tracked-but-unfixed debt.
+- [x] **Cause, not symptom** — flipped both ops' `codemodOp` in the shipped catalog to the
+      tested verb (params/target already matched `testdata/manifests-u5`'s proven shape
+      byte-for-byte — no other manifest field needed to change) and removed the `foreach-arity`
+      grandfather entry (fixed, not silenced — a stale grandfather entry is harmless per the
+      file's own doctrine, but removing it is more honest). Also: the foreach arity check itself
+      (`append_foreach_entry` needing key+value, `remove_foreach_entry` needing a key) now
+      returns `FOREACH_ARITY` (exit 2, REFUSE) instead of a bare Go error (exit 1) — a mis-shaped
+      manifest is bad DATA, not catalogctl malfunctioning, matching every other manifest-shape
+      refusal in this file (`UNSUPPORTED_PATH`, `SELECTOR_AMBIGUOUS`, ...).
+- [x] **Regression test** — `covblocks_cov_test.go`'s two arity subtests updated to assert
+      the refusal shape instead of a Go error. **Negative test confirmed**: reverted BOTH the
+      manifest flip and the `foreach.go` exit-code fix together (not just one — see CTL-11
+      below for why that distinction mattered) and reran the new catalog-smoke lane; it failed
+      on `waf-add-ip-set-entry` with the exact original exit-1 crash; restored, re-verified green.
+- [x] **Failure is loud** — the smoke lane (CTL-11) now fails loudly with the full stderr on
+      any shipped op returning exit 1; the golden/arity-ratchet tests fail with the exact
+      code/reason mismatch.
+- [x] **Evidence in the status line** — `go build ./... && go vet ./... && go test ./...`
+      clean; `TestManifestLint_ArityRatchet` passes with the grandfather entry removed (no new
+      finding introduced by the fix, confirming the flip fully cleared it).
+
+## CTL-4
+
+*plan-check R1 structurally vetoes every legitimate plan for a `local.`-targeted foreach op.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `allowSet`'s default arm
+      (`internal/plancheck/plancheck.go`, shared by every resource-targeting `codemodOp`, not
+      just foreach) computes the allow set as `{target, target[...]}`. For a foreach op whose
+      inventory target resolves to `local.legacy_host_alarms`, that set is functionally EMPTY —
+      a local is never itself a planned resource change, so no real address can ever satisfy
+      it, while editing the `for_each` source map necessarily changes the CONSUMING resources'
+      planned instances. Reproduced exactly per the finding: a plan creating
+      `aws_cloudwatch_metric_alarm.host["api01"]` after an `fx-append-foreach` add trips
+      `VIOLATION address-subset`, unconditionally — now pinned as
+      `testdata/plans/r1-fail-local-target-consumer`.
+- [x] **Cause, not symptom, chosen deliberately for the SAFETY GATE** — R1 is already
+      fail-closed here (never passes a bad plan); the finding names two legitimate fixes.
+      Teaching `allowSet` to model a `local.`'s consuming resources touches the shared default
+      arm every op relies on — the finding's own words call a wrong model there "a potential
+      silent security regression." Refused instead: a new manifest lint rule
+      (`RuleForeachLocalTarget`, `internal/manifests/lint.go`) flags any
+      `append_foreach_entry`/`remove_foreach_entry` op with no `target.block` — the exact
+      condition that lets a `local.` target reach the executor at all (`foreachMapAttr` only
+      ever resolves a block-less target for a `local.` address; any other address always
+      errors). This closes the "guaranteed pipeline dead end" (the finding's own phrase) at
+      manifest-authoring time, with `plancheck.go` untouched — zero risk to the R1 gate itself.
+      Zero real ops needed a NEW baseline entry for this rule; `efs-add-mount-target` (already
+      grandfathered under two OTHER, unrelated arity findings from a deeper mismodeling) also
+      trips it and is grandfathered here too, not fixed.
+      **Incidental fix, found auditing every foreach op for this shape:**
+      `rds-snapshot-unshare-account` had no `target.block` AND the wrong verb
+      (`remove_foreach_entry` expects a map; `shared_accounts` is a list) — dead on arrival on
+      every real invocation. Fixed fully: `target.block` added, `codemodOp` flipped to
+      `remove_list_entry` (verified end to end with a throwaway removal test before/after —
+      first attempt with only the block added still refused `NOT_LITERAL`, confirming the verb
+      itself was wrong, not just the missing field).
+- [x] **Regression test** — `testdata/plans/r1-fail-local-target-consumer` (new plan-check
+      fixture, pins today's fail-closed VIOLATION as documented, intentional behavior rather
+      than latent). Manifest lint: `TestManifestLint_ArityRatchet` against the real catalog
+      (no new unbaselined finding). **Negative test confirmed**: the plan fixture reproduces
+      the exact violation text from the finding; `rds-snapshot-unshare-account`'s fix was
+      verified failing (`NOT_LITERAL`, then the original exit-1 crash before that) before each
+      partial fix and passing (a correct diff removing exactly the requested account) after
+      the full fix.
+- [x] **Failure is loud** — the plan fixture asserts the exact `VIOLATION address-subset`
+      line; the lint ratchet fails with `NEW arity finding` naming the op and rule if a future
+      manifest regresses into this shape.
+- [x] **Evidence in the status line** — `go build ./... && go vet ./... && go test ./...`
+      clean; `gofmt -l .` empty.
+
+## CTL-9
+
+*`pr-prepare`'s UNAPPROVED gate accepts any non-empty approvals list without checking
+`decision`.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: the gate was `len(req.Approvals) ==
+      0`. `Approval.Decision` was loaded (strict YAML) but never evaluated — a request whose
+      only approval carried `decision: "reject"` (or `"changes_requested"`) passed the
+      UNAPPROVED check and was bundled into a PR; `ApprovedDigest`'s split-brain check was
+      likewise decision-blind, letting a rejection's digest participate in the "quorum agrees"
+      computation.
+- [x] **Cause, not symptom** — `request.Request` gains `DecisionApprove`,
+      `ApprovedEntries()` (only `Decision == approve` counts), and `HasExplicitRejection()` (a
+      non-blank, non-approve `Decision` — distinct from an entry with no vote recorded at all).
+      `ApprovedDigest` now iterates `ApprovedEntries()`, so a rejection's (or an unrecorded
+      entry's) digest never binds a quorum or manufactures a false disagreement. `pr-prepare`'s
+      gate refuses `REJECTED` outright on any explicit reject — even alongside an otherwise-
+      sufficient quorum of real approvals, so a single dissent can never be silently outvoted —
+      and `UNAPPROVED` now means "no approve decisions," not "no rows."
+- [x] **Regression test** — unit tests for `ApprovedEntries`/`HasExplicitRejection`/decision-
+      filtered `ApprovedDigest` (`covrequest_cov_test.go`); end-to-end `pr-prepare` cases for a
+      blank-decision entry, a lone reject, and a reject alongside a met quorum
+      (`covprprep_cov_test.go`). **Negative test confirmed** during development: reverting the
+      gate to the old `len(req.Approvals) == 0` check re-failed every new refusal case exactly
+      as expected.
+- [x] **Failure is loud** — each case asserts the exact `REFUSE <CODE>` line and reason
+      substring via the shared refusal-test harness.
+- [x] **Evidence in the status line** — `go build ./... && go vet ./... && go test ./...`
+      clean.
+
+## CTL-10
+
+*Duplicated literal-object token-walkers (edit vs driftpropose) have already diverged in
+behavior.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD both copies (`internal/edit/setattr.go`'s
+      `parseObject`/`buildObject`/`keyString`/`keyTokens`/`anyToCty` and
+      `internal/driftpropose/adopt.go`'s `parseObjectLiteral`/`buildObjectLiteral`/
+      `keyLiteral`/`keyTokensFor`/`jsonToCty`) were independently re-implemented ("unexported
+      there, so re-implemented rather than imported", `adopt.go`'s own prior comment). CTL-1 had
+      already needed manual, by-hand syncing into both at once (`bd7275b`) specifically because
+      leaving one fixed and one not would have left the unfixed half looking maintained while
+      it silently wasn't. Confirmed still-live divergence beyond CTL-1: a mid-value
+      (non-trailing) comment survived a rebuild unmoved in the driftpropose copy, but was
+      unconditionally hoisted out to trail the whole value in the edit copy — repositioning a
+      comment on an entry the edit never touched.
+- [x] **Cause, not symptom** — extracted both walkers into a new package,
+      `internal/hclobj`: `ParseObject`/`BuildObject`/`KeyString`/`KeyTokens` (standing on the
+      driftpropose copy's more careful mid-value-comment handling for both callers — the one
+      place reconciliation meant picking a winner, not merging) and `ValueToCty` (generalizing
+      `anyToCty`/`jsonToCty`, with the two callers' real semantic differences — edit's request
+      params accept a native int, never nil; driftpropose's decoded liveJson accepts nil as a
+      real null, never an int — now an explicit `ValueOptions` the caller passes, applied at
+      every recursion depth). `mergeMap`/`azureTagKeyCaseCollision` (edit) and
+      `mergeSingleKey`/`removeSingleKey` (driftpropose) keep everything actually op-specific.
+      Both callers' existing, already-asserted-on error wording is unchanged.
+- [x] **Regression test** — `internal/hclobj/hclobj_test.go` (new): round-trip, leading-
+      comment, the CTL-10 comment-placement reconciliation itself (both branches), dangling-
+      comment refusal, key escaping, and the `ValueOptions` matrix (int/null gated at every
+      recursion depth, not just the top level). Existing `edit`/`driftpropose` suites updated to
+      call through `hclobj.*`; one assertion (`covsetattr_cov_test.go`) updated for the
+      intentional mid-value-comment behavior change, with the reasoning inline.
+      **Negative test confirmed**: the full existing suite of both packages needed exactly ONE
+      assertion update across the whole extraction — everything else passed unchanged,
+      confirming the extraction preserved behavior except the one deliberate reconciliation.
+- [x] **Failure is loud** — each `hclobj` test names the exact token/entry it expected;
+      `ErrUnsupportedType` carries the offending value itself, not just a generic message.
+- [x] **Evidence in the status line** — `go build ./... && go vet ./... && go test ./...`
+      clean (17 packages, `hclobj` new); `gofmt -l .` empty.
+
+## CTL-11
+
+*Golden coverage runs against forked fixture manifests, not the shipped catalog;
+comment-bearing fixtures are absent.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: every golden/plancheck case runs
+      against a fixture manifest (`testdata/manifests*`); the shipped catalog is only *linted*,
+      never *executed* — exactly how CTL-3 (a corrected op shape living only in fixtures while
+      the shipped op was broken) and CTL-1 (zero `before/` fixtures anywhere contain a full-line
+      comment inside a map, so the highest-traffic op family had zero coverage for the single
+      most common real-world formatting feature) both survived a fully green suite.
+- [x] **Cause, not symptom** — (a) `catalogsmoke_test.go` (new): a smoke lane that dry-runs a
+      representative request per (`codemodOp`, service) pair — 39 pairs, the foreach/list
+      families CTL-1 and CTL-3 broke in — against the SHIPPED catalog. Values are synthesized
+      generically and verified through the real `manifests.Validate` (never a reimplementation
+      of bounds semantics); the assertion is exit code — never 1 (internal fault), only 0 or a
+      clean REFUSE (2). Deliberately NOT gated on the op's non-inventory param count matching
+      the verb's expectation — an op with too FEW is exactly CTL-3's shape, and excluding it
+      would silently drop the one case this lane exists to catch. (b)
+      `testdata/golden/comment-fixtures/`: four new end-to-end golden cases — a leading
+      full-line comment survives a `mergeMap` update, a trailing comment on a sibling survives
+      a foreach add, a leading comment travels with its entry on a foreach remove (CTL-1's exact
+      regression shape, now proven through the FULL CLI pipeline — Locate, FmtCanonical, splice,
+      diff, idempotent rerun — not just the unit level `leadingcomment_test.go` already
+      covered), and a commented list refuses cleanly (`NOT_LITERAL`) rather than corrupting
+      data.
+- [x] **Regression test** — the smoke lane and the four golden cases ARE the regression
+      tests. **Negative test confirmed**: reverted CTL-3's fix (both the manifest AND the
+      exit-code fix together — reverting only the manifest, with the exit-code fix still in
+      place, produces a CORRECT clean REFUSE, not a crash, since that half of CTL-3 was already
+      fixed independently; this distinction is itself evidence the two fixes are separately
+      load-bearing) and reran the smoke lane with `-count=1`: it failed on `waf-add-ip-set-
+      entry` with the exact original exit-1 crash; restored, re-verified green.
+- [x] **Failure is loud** — the smoke lane's failure message includes the full stderr and
+      names the exact op; each golden case's diff/refuse assertions are byte-exact.
+- [x] **Evidence in the status line** — `go build ./... && go vet ./... && go test ./...`
+      clean; `gofmt -l .` empty.
 ## API-17
 
 *Store-seam divergences from the DynamoDB semantics it mirrors.*

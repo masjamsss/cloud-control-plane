@@ -1,0 +1,11 @@
+--- a/environments/prod/s3.tf
++++ b/environments/prod/s3.tf
+@@ -3,7 +3,7 @@
+ 
+   tags = {
+     # owner of record
+-    PIC = "user05@example.com"
++    PIC = "user09@example.com"
+   }
+ 
+   lifecycle {

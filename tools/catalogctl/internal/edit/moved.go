@@ -2,6 +2,7 @@ package edit
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/hashicorp/hcl/v2"
@@ -15,6 +16,25 @@ import (
 // movedBlock relabels the resource and emits a moved{} at EOF of the from-file
 // (spec + frozen). forcesReplace is refused by the pipeline before any
 // file open; an identical from/to is a resolution error (exit 3).
+//
+// CTL-2: every other verb that authors a new structural name/address runs it
+// through the same three checks this used to skip entirely — a rename verb is
+// no different, and skipping them let it write invalid or duplicate-resource
+// HCL at exit 0 (verified: `new_name: "bad name!"` produced unparseable HCL;
+// renaming onto an address that already existed produced two `resource
+// "aws_instance" "app"` blocks, both at exit 0). All three refuse (exit 2,
+// tree untouched) rather than guess:
+//   - MALFORMED_NEW_NAME — new_name is not a valid HCL identifier
+//     (manifests.IsValidBlockIdent, the one canonical name-safety predicate
+//     every other verb already funnels structural names through).
+//   - ALREADY_EXISTS — the destination address already resolves to a DIFFERENT
+//     block in --env (mirrors create_resource/instantiate_module's own
+//     pre-write existence gate, same code).
+//   - DANGLING_REF — the FROM address is still referenced elsewhere in --env;
+//     moved{} rewrites Terraform's own state mapping, never the .tf source, so
+//     a stray reference to the old address would fail `terraform plan` after
+//     apply ("Reference to undeclared resource") — same check, same code,
+//     remove_block already runs against the address it deletes.
 func movedBlock(op manifests.Op, req *request.Request, loc *hclops.Located) ([]byte, string, string, error) {
 	from, err := targetAddress(op, req.Params)
 	if err != nil {
@@ -24,6 +44,9 @@ func movedBlock(op manifests.Op, req *request.Request, loc *hclops.Located) ([]b
 	if newName == "" {
 		return nil, "", "", fmt.Errorf("moved_block: missing new name param")
 	}
+	if !manifests.IsValidBlockIdent(newName) {
+		return nil, "MALFORMED_NEW_NAME", fmt.Sprintf("new name %q is not a valid HCL identifier — refusing rather than emit unparseable HCL; routed to an engineer", newName), nil
+	}
 	parts := strings.Split(from, ".")
 	if len(parts) != 2 {
 		return nil, "", "", fmt.Errorf("moved_block: unsupported from address %q", from)
@@ -31,6 +54,13 @@ func movedBlock(op manifests.Op, req *request.Request, loc *hclops.Located) ([]b
 	to := parts[0] + "." + newName
 	if from == to {
 		return nil, "", "", fmt.Errorf("%w: moved from == to (%s)", errResolution, from)
+	}
+	envDir := filepath.Dir(loc.File)
+	if _, _, code := hclops.Locate(envDir, to); code == 0 {
+		return nil, "ALREADY_EXISTS", fmt.Sprintf("%s already exists in the environment — a moved_block rename can never collide with an existing resource", to), nil
+	}
+	if danglingRef(envDir, from, loc) {
+		return nil, "DANGLING_REF", fmt.Sprintf("%s is still referenced elsewhere in the environment — moved{} rewrites state, not those references", from), nil
 	}
 
 	// Relabel the resource block in place.
