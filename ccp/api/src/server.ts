@@ -5,13 +5,14 @@ import { createApp } from './index';
 import type { ConfigStore } from './store/configStore';
 import { MemoryStore } from './store/memoryStore';
 import { FileStore, ensureDataDir } from './store/fileStore';
-import { assertDeployable, DeployConfigError, isProduction, resolveDataFile } from './deploy';
+import { assertDeployable, DeployConfigError, deployWarnings, isProduction, resolveDataFile } from './deploy';
 import { ensureProjectDataRoot, resolveProjectDataRoot } from './domain/projectData';
 import { bootstrap, seedInstanceIdentity } from '../scripts/bootstrap';
 import { executorKind, maybeStartSchedulerLoop, schedulerEnabled } from './domain/apply/loop';
 import { runSettlement, SettlementConfigError } from './domain/settlement';
 import { runVersionStamp } from './domain/versionStamp';
-import { installProcessErrorLogging } from './log';
+import { installProcessErrorLogging, logServerError, markProcessServing } from './log';
+import { createShutdown } from './shutdown';
 
 export { resolveDataFile };
 
@@ -59,6 +60,12 @@ async function start(): Promise<void> {
     }
     throw e;
   }
+
+  // ARCH-11 — advisory, never fatal (unlike the preflight above): a sub-flag
+  // armed for a lane whose own gate is off, so nothing anywhere will ever
+  // consult it. Printed in every env, not just production — the same typo
+  // is just as silent in local dev.
+  for (const w of deployWarnings(process.env)) console.warn(`ccp-api: config warning — ${w}`);
 
   // A durable store needs its data directory. Create it eagerly in production so a bad
   // CCP_DATA_DIR fails at boot rather than on the first mutation. The per-project
@@ -155,7 +162,8 @@ async function start(): Promise<void> {
   // is DRY-RUN (no terraform, no AWS) unless `CCP_EXECUTOR=terraform` is ALSO
   // explicitly set with an explicit CCP_TF_ROOT (proof milestone — real estate
   // roots refused by construction; a misconfig refuses to arm the loop).
-  const armed = maybeStartSchedulerLoop(store) !== null;
+  const scheduler = maybeStartSchedulerLoop(store);
+  const armed = scheduler !== null;
   if (schedulerEnabled()) {
     console.log(
       armed
@@ -165,25 +173,57 @@ async function start(): Promise<void> {
   }
 
   const port = Number(process.env.PORT) || 8801;
-  // CONC-7 / DATA-9 — hand the writer lock back on a clean shutdown, so a rolling deploy
-  // or a `docker compose restart` does not leave the next process clearing a lock before
-  // it can boot. A `kill -9` still leaves one behind; that path is covered by the
-  // same-host dead-pid takeover in `dataLock.ts`, which is the one case where the holder
-  // can be PROVEN gone rather than assumed.
-  if (store instanceof FileStore) {
-    const release = (): void => store.close();
-    process.once('SIGTERM', () => {
-      release();
-      process.exit(0);
-    });
-    process.once('SIGINT', () => {
-      release();
-      process.exit(0);
-    });
-    process.once('exit', release);
-  }
 
-  serve({ fetch: app.fetch, port }, (i) => console.log(`ccp-api dev on :${i.port}`));
+  const server = serve({ fetch: app.fetch, port }, (i) => console.log(`ccp-api dev on :${i.port}`));
+
+  // The port is bound: from here a process-level fault is survivable rather than fatal
+  // (log.ts explains the two policies, and why R-16's "never exit" is right for exactly
+  // one of them). Marked AFTER serve() returns, so anything that throws on the way here
+  // still exits non-zero.
+  markProcessServing();
+
+  // ERR-8 / OPS-8 — graceful shutdown. This REPLACES CONC-7's pair of handlers, which
+  // called `process.exit(0)` synchronously: correct about the writer lock, but it cut
+  // every in-flight request and left the scheduler's current tick mid-flight. The lock
+  // handback is preserved exactly (it is now the LAST step of the drain, since in-flight
+  // requests are still writing through it) and the drain is added around it.
+  //
+  // Registered for EVERY store kind, not just FileStore. The old block was inside an
+  // `instanceof FileStore` guard, so a memory-store deployment had no signal handling of
+  // any kind — the drain is about in-flight HTTP requests, which exist either way.
+  //
+  // A `kill -9` still bypasses all of this; that path is covered by the same-host dead-pid
+  // takeover in `dataLock.ts`, the one case where the holder can be PROVEN gone.
+  const shutdown = createShutdown({
+    server,
+    scheduler,
+    releaseStore: store instanceof FileStore ? (): void => store.close() : undefined,
+    exit: (code) => process.exit(code),
+    log: (line) => console.log(line),
+  });
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  if (store instanceof FileStore) {
+    // Last resort for the paths that never reach the drain (an explicit process.exit
+    // elsewhere, a fatal error after boot). Idempotent on the store side.
+    process.once('exit', () => store.close());
+  }
 }
 
-void start();
+/**
+ * ERR-8 — `void start()` used to be the whole of this, and a boot failure that was neither
+ * a DeployConfigError nor a SettlementConfigError therefore had no catch anywhere. Since
+ * OPS-2 that rejection reached a deliberately non-exiting handler, so the measured result
+ * of booting against a corrupt store was a logged stack and **exit code 0** — a failed
+ * start reported as a successful one (log.ts has the transcript and the reasoning).
+ *
+ * A boot failure exits non-zero here, with an operator-grade line above the stack. The
+ * process handlers cover the same ground for a fault that arrives outside this promise;
+ * this catch is what covers `start()` itself, which is where the store, the settlement
+ * pass and the version stamp all live.
+ */
+start().catch((e: unknown) => {
+  logServerError(e, { method: 'boot' });
+  console.error('ccp-api: refusing to start — the failure above happened during boot; the process never bound its port. Fix the cause and restart (see ccp/api/README.md "Deploy").');
+  process.exit(1);
+});

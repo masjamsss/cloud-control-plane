@@ -1,7 +1,7 @@
 import type { ConfigStore, TransactWrite } from '../store/configStore';
 import { ConditionError } from '../store/configStore';
 import type { AuditEntryInput } from './audit';
-import { recordIn } from './audit';
+import { CHAIN_WRITE_ATTEMPTS, chainBackoff, recordIn } from './audit';
 import type { ChainHeadItem, RequestItem } from '../store/schema';
 import { chainHead, requestKey } from '../store/schema';
 import { ApiError } from '../errors';
@@ -60,7 +60,7 @@ export async function settleCooling(store: ConfigStore, projectId: string, req: 
 
   const k = requestKey(projectId, req.id);
   const hKey = chainHead(projectId);
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < CHAIN_WRITE_ATTEMPTS; attempt++) {
     const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
     const { writes } = recordIn(projectId, head, entry);
     const domain: TransactWrite[] = [
@@ -73,7 +73,7 @@ export async function settleCooling(store: ConfigStore, projectId: string, req: 
       if (e instanceof ConditionError) {
         const fresh = (await store.get(k.PK, k.SK)) as RequestItem | null;
         if (fresh && fresh.status !== 'APPROVED_COOLING') return fresh; // already settled/cancelled by someone else
-        if (attempt === 0) continue; // chain contention (a DIFFERENT request's write) → retry once
+        if (await chainBackoff(attempt)) continue; // chain contention (a DIFFERENT write) → retry
         throw new ApiError('CHAIN_CONTENTION');
       }
       throw e;

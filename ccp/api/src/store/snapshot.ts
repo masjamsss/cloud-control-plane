@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { open as fsOpen, mkdir, rename, rm } from 'node:fs/promises';
+import { cp, open as fsOpen, mkdir, rename, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Item } from './configStore';
 import { verifyChain, type ChainEntry, type VerifyResult } from '../domain/audit';
@@ -207,4 +207,38 @@ async function syncDir(dir: string): Promise<void> {
   } finally {
     await dh?.close().catch(() => undefined);
   }
+}
+
+/**
+ * DATA-10 — {@link writeFileAtomic}'s temp+rename discipline, extended to a whole
+ * directory TREE: copy `src` into a temp sibling of `dest`, then swap it in with one
+ * rename, so a killed backup/restore never leaves a half-copied `dest` where a later
+ * read could find it. `dest`, if it already exists, is replaced wholesale (never
+ * merged) — the point is that the result is byte-for-byte `src`, not `src` layered
+ * over whatever `dest` happened to hold. Shared by scripts/backup.ts (root → the
+ * backup's companion `.projects` dir) and scripts/restore.ts (that dir → the live
+ * project-data root) so the one atomic-tree-copy implementation is exercised both
+ * directions rather than duplicated per script. Returns the number of entries
+ * (files + directories) copied, for the caller's own log line.
+ */
+export async function copyTreeAtomic(src: string, dest: string): Promise<number> {
+  const tmp = `${dest}.tmp-${process.pid}-${randomBytes(6).toString('hex')}`;
+  await rm(tmp, { recursive: true, force: true });
+  let count = 0;
+  await cp(src, tmp, {
+    recursive: true,
+    filter: () => {
+      count += 1;
+      return true;
+    },
+  });
+  try {
+    await rm(dest, { recursive: true, force: true });
+    await rename(tmp, dest);
+  } catch (e) {
+    await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
+    throw e;
+  }
+  await syncDir(dirname(dest));
+  return count;
 }

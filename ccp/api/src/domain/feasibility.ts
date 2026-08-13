@@ -1,7 +1,6 @@
 import type { ConfigStore } from '../store/configStore';
 import type { LadderStep } from './exposure';
-import { eligibleApprovers } from './eligibility';
-import { roleFor } from '../projects';
+import { countEligibleApprovers } from './eligibility';
 
 /**
  * 0021 F5/G5 — quorum-infeasibility surfacing, re-expressed for the 0037 ladder.
@@ -33,10 +32,11 @@ export async function computeFeasibility(
   ladder: LadderStep[],
   requesterId: string,
 ): Promise<Feasibility> {
-  const signers = await eligibleApprovers(store, projectId, requesterId);
-  const total = signers.length;
+  // PERF-10: counted in one non-cloning pass over the account directory. This
+  // used to materialize the filtered signer array (and, before it, a deep clone
+  // of every account row in the estate) to read two integers off it.
   // Per-project: a lead for the L3 step is one whose role ON THIS project is 'lead'.
-  const leads = signers.filter((a) => roleFor(a, projectId) === 'lead').length;
+  const { total, leads } = await countEligibleApprovers(store, projectId, requesterId);
   const needsLead = ladder.includes('L3');
   const feasible = total >= ladder.length && (!needsLead || leads >= 1);
   return { eligibleApprovers: total, feasible, interimProfileWillApply: false };

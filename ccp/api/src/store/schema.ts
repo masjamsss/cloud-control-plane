@@ -481,11 +481,14 @@ export const RequestItem = z.object({
    * ADR-0016 approval-to-apply bundle progress (POST /requests/:id/apply).
    * Additive-optional (deploy-inert): 'running' claims the bundle (idempotency
    * guard), 'triggered' = landed on main + gated-apply approval fired (sha set),
-   * 'failed' = a step went red (re-runnable). Absent = never bundled.
+   * 'landed-untriggered' = the commit landed but firing the trigger failed (sha
+   * set; ERR-12 — a retry resumes from the trigger step alone, never re-commits),
+   * 'failed' = a step before commit went red, nothing landed (re-runnable from
+   * the top). Absent = never bundled.
    */
   bundle: z
     .object({
-      state: z.enum(["running", "triggered", "failed"]),
+      state: z.enum(["running", "triggered", "landed-untriggered", "failed"]),
       sha: z.string().optional(),
       at: z.string().optional(),
     })
@@ -1456,6 +1459,50 @@ export function requestKey(projectId: string, ulid: string): Key {
  */
 export const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9._:@~-]{1,200}$/;
 
+/**
+ * One requester's submit-quota INDEX partition (PERF-10). Each of their submits
+ * writes a tiny pointer row here — SK is the request's ulid, so the partition is
+ * SK-ordered by submission time exactly like the request collection is.
+ *
+ * The point is the PARTITION, not the rows: `checkSubmitRateLimit` used to read
+ * the project's ENTIRE request collection (every row cloned in full — events,
+ * params, planSummary) on every submit, to count the ~20 that belong to the
+ * requester. This gives that question its own partition, so the read costs the
+ * requester's own recent submits instead of the project's whole history.
+ *
+ * One row PER REQUEST rather than one counter row per requester, deliberately:
+ * a counter is a shared mutable cell, and two concurrent submits by the same
+ * account both read N and both write N+1, so the count drifts DOWN by one per
+ * collision and never recovers — a limiter that silently stops limiting. Two
+ * concurrent submits write two DIFFERENT pointer SKs and cannot lose each
+ * other's write. (The check itself is still read-then-write and can still admit
+ * both racers past the cap by one — that overshoot is CONC-12, and it is
+ * bounded and self-correcting because the index stays exact.)
+ */
+export function submitQuotaKey(projectId: string, requester: string, ulid: string): Key {
+  return { PK: submitQuotaPk(projectId, requester), SK: `${SUBMIT_QUOTA_SK_PREFIX}${ulid}` };
+}
+/** SK prefix for the pointer rows, so the partition's one non-pointer row (the
+ *  materialization marker) can never be mistaken for a pointer by a prefix read. */
+export const SUBMIT_QUOTA_SK_PREFIX = "P#";
+/**
+ * The marker saying this requester's pointers have been built from the
+ * pre-existing request collection.
+ *
+ * Without it the index is a silent FAIL-OPEN on every existing deployment: an
+ * index that only learns about requests submitted after it shipped reports zero
+ * open work for every requester who already had some, and `maxOpen` stops being
+ * enforced until they have submitted `maxOpen` more. The marker is what makes
+ * "the index is empty" distinguishable from "this requester has nothing open" —
+ * the first requires a real scan, the second is an answer.
+ */
+export function submitQuotaMarkerKey(projectId: string, requester: string): Key {
+  return { PK: submitQuotaPk(projectId, requester), SK: "MATERIALIZED" };
+}
+/** The partition holding one requester's submit-quota pointers. */
+export function submitQuotaPk(projectId: string, requester: string): string {
+  return `${P(projectId)}RQUOTA#${requester}`;
+}
 /** Idempotency marker for a submit — scoped to (project, requester, client key), so a resubmit
  * carrying the same key resolves the FIRST request instead of creating a duplicate, and a key
  * can never collide across accounts or projects. Value: `{ requestId }`.

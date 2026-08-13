@@ -143,47 +143,79 @@ redeploy never reseeds a fresh admin over the live audit chain. Drop
 
 ## Backup & restore (disk/host recovery)
 
-The durable store is a single JSON snapshot file (accounts, sessions, the per-project
-hash-chained audit log, policy). The audit chain is the **evidence-of-record**, so
-backups are verified copies and restore refuses to install an unverifiable one.
+The durable state spans **two** stores, and both matter (DATA-10): the JSON snapshot
+file (accounts, sessions, the per-project hash-chained audit log, policy) AND the
+on-disk project-data/drift root the snapshot's rows point into (`ProjectItem.dataActive`,
+`DriftPointerItem` — served inventory, manifests, block chunks, drift reports, drift
+proposal bodies). `backup`/`restore` capture and install **both together, from the same
+moment**, so a restore never reconstructs rows that reference files a different backup
+generation left behind. The audit chain is the **evidence-of-record**, so the snapshot
+half is a verified copy and restore refuses to install an unverifiable one.
 
 ```bash
-# Snapshot the live data file (atomic copy; verifies + reports the audit chain).
+# Snapshot the live data file + project-data root (atomic copies; verifies + reports the audit chain).
 npm run backup -- --out /backups/ccp-$(date +%F).json
 
-# Recover after a disk/host loss (atomic write; refuses a corrupt backup).
+# Recover after a disk/host loss (atomic writes; refuses a corrupt backup).
 npm run restore -- --from /backups/ccp-2026-07-12.json
 ```
 
 - `backup` reads the data file (`--data`, default = the resolved `CCP_DATA_*`
   path), validates it, prints `accounts` + per-project `audit … verified=…`, and
   writes a byte-for-byte atomic copy to `--out` (default `<data>.backup-<timestamp>.json`).
-  A damaged source is still captured (for forensics) with a loud warning.
+  A damaged source is still captured (for forensics) with a loud warning. It then also
+  copies the project-data root (`--project-data`, default = the resolved
+  `<CCP_DATA_DIR>/projects`) into a companion `<out-without-.json>.projects/` directory
+  alongside it — atomically, and skipped only if the root does not exist yet (a fresh
+  install with no projects onboarded) or `--skip-project-data` is passed.
 - `restore` reads `--from`, re-verifies every audit chain, and only then atomically
   replaces the data file (`--data`, default = resolved path). If a chain does **not**
   verify it refuses (exit 1) — pass `--force` for a deliberate disaster restore. The
   write is temp-file + fsync + rename, so an interrupted restore leaves the old file intact.
+  It then looks for that backup's companion `.projects/` directory (by convention next
+  to `--from`, or `--project-data` to point elsewhere) and, if found, **replaces the
+  project-data root wholesale** (`--project-data`, default = resolved path) — never
+  merged, so the result is exactly what the one backup captured. A backup made before
+  this feature (or with `--skip-project-data`) has no companion directory: restore still
+  installs the store and **warns loudly** rather than either refusing or silently leaving
+  served files that may now be inconsistent with the restored rows — `/readyz`'s
+  presence cross-check (below) is the safety net for exactly that gap. `--skip-project-data`
+  on restore leaves the current project-data root untouched even when a companion backup
+  exists.
 
 Restore into a **stopped** API (the running process holds state in memory and
-re-snapshots on the next mutation, which would overwrite a hot restore). Start the API
-after restoring; it load-verifies the file on boot and `/readyz` re-confirms the chain.
+re-snapshots on the next mutation, which would overwrite a hot restore; it also
+actively reads/writes the project-data root). Start the API after restoring; it
+load-verifies the file on boot and `/readyz` re-confirms both the audit chain AND
+(DATA-10) that every project's active served-data version and drift report actually
+have files on disk.
 
 ## Health & readiness probes
 
 | Endpoint | Meaning | Wire to |
 | --- | --- | --- |
 | `GET /healthz` | **Liveness** — the process is up and serving. Deliberately shallow: `200 {"ok":true}` even with an empty store. | container/liveness probe (restart-on-fail) |
-| `GET /readyz` | **Readiness** — store loaded + `accounts` count + every project's audit chain verifies. `200` only when all hold; `503` with `reasons` otherwise. | load-balancer/readiness probe (take out of rotation) |
+| `GET /readyz` | **Readiness** — store loaded + `accounts` count + every project's audit chain verifies + (DATA-10) every project's ACTIVE served-data version and drift report actually have files on disk. `200` only when all hold; `503` with `reasons` otherwise. | load-balancer/readiness probe (take out of rotation) |
 
 `/readyz` exists because `/healthz` cannot tell a healthy store from an emptied or
-corrupted one. A wiped store (0 accounts) or a broken audit chain returns **503** with
-a machine-readable body, e.g.:
+corrupted one. A wiped store (0 accounts), a broken audit chain, or a `dataActive`/drift
+pointer whose files are missing from the project-data root (a disk-death restore that
+lost — or restored from a different backup generation than — the store JSON) returns
+**503** with a machine-readable body, e.g.:
 
 ```json
 { "ready": false, "storeLoaded": true, "accounts": 0,
   "chains": [{ "projectId": "sample", "count": 0, "verified": true }],
+  "storeItemCount": 41,
   "reasons": ["store holds 0 accounts — an emptied/wiped store is not ready ..."] }
 ```
+
+`storeItemCount` (ARCH-9) is the total row count the store currently holds —
+informational telemetry, never a readiness gate. Nothing here compacts or
+archives: every account, session, request, and per-project audit/drift entry
+accretes forever, so this is the number to alert an operator on (an external
+threshold — this API does not itself flag "too big") before write latency
+starts to reflect it. See "Scaling & the single-process invariant" below.
 
 Both probes are unauthenticated (no session required).
 
@@ -204,3 +236,37 @@ npx tsx scripts/bench.ts --scale 8000 --store both --concurrency 32
 The bench boots the real app against a deterministically seeded store and reports
 p50/p95/p99 plus concurrent throughput per endpoint, for the MemoryStore and the
 FileStore. Run it before and after a change with `--json` to A/B a diff.
+
+## Scaling & the single-process invariant (ARCH-9)
+
+**Run exactly one `ccp-api` process against one data directory.** This is
+enforced TODAY for the store itself (below), but four other pieces of
+correctness-relevant state live only in this ONE process's memory, with no
+cross-process visibility at all — a second process, or the planned DynamoDB
+`ConfigStore` implementation (which is explicitly designed to allow more than
+one process, unlike `FileStore`), would silently diverge on every one of them,
+with no error anywhere:
+
+| In-process singleton | Where | What it does | What breaks with >1 process |
+| --- | --- | --- | --- |
+| The store's single-writer lock | `store/fileStore.ts`, `store/dataLock.ts` (CONC-7/DATA-9) | `FileStore` rewrites the ENTIRE snapshot from its private in-memory map on every mutation; a pid/host lock file REFUSES a second process from opening the same data file at all. | Nothing — this is the one singleton already structurally enforced. A `DynamoDB` store has no such lock (rows are independently writable), so this protection does **not** carry over automatically; the other four rows in this table are the reason it still needs to. |
+| Known-projects routing cache | `projects.ts` (`KNOWN`, `hydrated`) | Every request's `x-ccp-project` binding check and account-scope validation reads this in-process `Set`, hydrated lazily and refreshed only by the SAME process that handled a registry write (project completed, archived, deregistered). | A second process's cache never sees the first process's registry write. It keeps routing to (or refusing) a project by a stale ready/archived state — wrong-tenant access decisions with no error, since nothing about the check itself fails. |
+| Upload-lane rate-limit buckets | `middleware/rateLimit.ts` (`uploadBuckets`) | A per-tokenId token bucket that throttles `PUT /projects/:id/data` BEFORE the expensive argon2id verify — deliberately in-memory (the doc comment there is explicit: "the cost being defended is THIS process's argon2 work"). | Each process enforces its own independent quota — an attacker (or a misbehaving CI job) spread across N processes gets N× the intended burst capacity. Not a correctness bug (the design already accepts "a restart forgets counters"), but the throttle's real ceiling silently becomes N times looser than configured. |
+| Drift-check / drift-generation in-flight guards | `domain/driftCheck.ts` (`inFlightProjects`), `domain/driftProposals.ts` (its own `genState`-shaped guard) | A `Set<projectId>` refusing a second concurrent trigger for the same project — "one in flight per project", the same shape as the bundle/scheduler reentrancy guards. | Two processes can each believe they hold the ONLY in-flight run for a project and both trigger the operator's shell command concurrently — the guard's whole purpose (never double-fire an external workflow_dispatch/generation command) is defeated with zero indication either run knew about the other. |
+| Scheduler tick reentrancy flag | `domain/apply/loop.ts` (`inFlight`, inside `maybeStartSchedulerLoop`) | Skips a `setInterval` tick if the previous one is still running, so a slow `executor.apply` never overlaps itself. | Lower risk than the others: this flag is explicitly "defense-in-depth atop the scheduler's own claim-first single-apply guard" (a CAS on the request row itself, which IS safe across processes/DynamoDB). Two processes each ticking independently would duplicate WORK (both scan `knownProjects()` and attempt claims) but not duplicate an APPLY — the claim's `ifEquals` guard is what actually prevents that, not this flag. |
+
+**Before any of this changes** (a second replica, a load balancer fronting
+more than one `ccp-api`, or the DynamoDB `ConfigStore` implementation the
+seam already anticipates — `store/configStore.ts`'s own doc comment): every
+row above needs either a shared/coordinated replacement (the routing cache
+and the drift in-flight guards are the two that actually need one — a TTL,
+a pub/sub invalidation, or a store-level claim analogous to the scheduler's
+own row CAS) or a documented decision that per-process behavior is
+acceptable (plausible for the rate-limit buckets, whose design already
+tolerates a coarser, restart-losable quota).
+
+Audit-chain archival/compaction (so `storeItemCount` above stops growing
+unbounded — month-partitioned keys already anticipate this) is real design
+work belonging to whichever change actually introduces a second process or
+the DynamoDB backend, not to this note; recorded here as a known
+prerequisite, not implemented by it.

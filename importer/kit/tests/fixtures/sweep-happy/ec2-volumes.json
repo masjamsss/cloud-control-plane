@@ -1,0 +1,46 @@
+{
+  "$comment": [
+    "IMP-6 fixture: aws_volume_attachment is the id-divergent type — its discovery/import",
+    "id is `{Device}:{VolumeId}:{InstanceId}` while terraform-provider-aws stores a",
+    "SYNTHESIZED `vai-<hash>` as the state id. Both attachments below are `attached`, so",
+    "both reach the sweep; plan-sweep-happy.json manages exactly ONE of them. The managed",
+    "one must NOT be a finding (it used to be, on every sweep, forever) and the unmanaged",
+    "one MUST still be, which is what stops the fix from passing by suppressing the type.",
+    "Both VOLUMES are managed with plain ids, so the same capture file exercises a",
+    "plain-id match and a declared state_id_format match side by side."
+  ],
+  "Volumes": [
+    {
+      "VolumeId": "vol-happy0000000000001",
+      "Size": 100,
+      "VolumeType": "gp3",
+      "State": "in-use",
+      "AvailabilityZone": "ap-southeast-9a",
+      "Attachments": [
+        {
+          "Device": "/dev/sdh",
+          "VolumeId": "vol-happy0000000000001",
+          "InstanceId": "i-happy0000000000002",
+          "State": "attached"
+        }
+      ],
+      "Tags": [{ "Key": "Name", "Value": "tf-managed-volume" }]
+    },
+    {
+      "VolumeId": "vol-happy0000000000002",
+      "Size": 50,
+      "VolumeType": "gp3",
+      "State": "in-use",
+      "AvailabilityZone": "ap-southeast-9a",
+      "Attachments": [
+        {
+          "Device": "/dev/sdi",
+          "VolumeId": "vol-happy0000000000002",
+          "InstanceId": "i-happy0000000000001",
+          "State": "attached"
+        }
+      ],
+      "Tags": [{ "Key": "Name", "Value": "console-attached-volume" }]
+    }
+  ]
+}

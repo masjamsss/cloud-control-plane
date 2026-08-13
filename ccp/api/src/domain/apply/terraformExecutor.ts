@@ -134,10 +134,31 @@ export class TerraformExecutor implements ApplyExecutor {
     this.timeoutMs = config.timeoutMs ?? 10 * 60_000;
   }
 
-  /** `terraform init` once per executor instance (idempotent, local-state roots only
-   * in this proof — a backend/credential story is production-executor work). */
+  /**
+   * `terraform init` once per executor instance (idempotent, local-state roots only
+   * in this proof — a backend/credential story is production-executor work).
+   *
+   * ERR-5 — MEMOIZE THE SUCCESS, NEVER THE FAILURE. `??=` on a bare `.then()` caches
+   * whatever the first call settles to, INCLUDING a rejection: one transient
+   * `terraform init` (a registry blip, a lock held for a moment, a DNS hiccup) was
+   * then re-awaited verbatim by every later `plan()`/`replan()`/`apply()`. The loop
+   * constructs this executor ONCE at start (`loop.ts`), so a single bad second at boot
+   * took the auto-apply lane out until the process restarted, while the scheduler
+   * re-raised the same stale error every tick.
+   *
+   * Clearing the field from the rejection path keeps the property that matters — while
+   * init is SUCCEEDING it runs at most once per executor, and concurrent callers share
+   * the one in-flight promise — and makes the failure path retryable on the next call.
+   * The next call re-enters `tf(['init'…])` for real; nothing else changes.
+   */
   private init(): Promise<void> {
-    this.initDone ??= this.tf(['init', '-input=false', '-no-color']).then(() => undefined);
+    this.initDone ??= this.tf(['init', '-input=false', '-no-color']).then(
+      () => undefined,
+      (e: unknown) => {
+        this.initDone = null;
+        throw e;
+      },
+    );
     return this.initDone;
   }
 

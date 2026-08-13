@@ -46,6 +46,22 @@ services:
     image: ccp-api:local
     restart: unless-stopped
     logging: *default-logging
+    # ERR-8 / OPS-8 — the api drains on SIGTERM instead of being hard-killed.
+    #
+    # `init: true` puts a real init (tini) at PID 1, which does two things this container
+    # needs. It reaps orphaned processes — the armed lanes spawn `docker run` children from
+    # inside this container, and a node at PID 1 does not reap grandchildren it never
+    # adopted. And it forwards SIGTERM to the api unchanged. The Dockerfile CMD already
+    # makes node the direct child, so this is belt-and-braces rather than the fix itself:
+    # an operator running the image with plain `docker run` gets correct signal handling
+    # from the CMD alone.
+    init: true
+    # MUST stay ABOVE src/shutdown.ts's DEFAULT_DRAIN_MS (15s). Docker's default is 10s,
+    # which is BELOW the drain budget — the process would be SIGKILLed part-way through
+    # its own shutdown, which is the failure the drain exists to prevent. The order is the
+    # invariant: the api cuts its own connections and exits first, and this is only the
+    # backstop for a process that ignored its own deadline.
+    stop_grace_period: 30s
     # OPS-10 — no service had a memory ceiling; a spike in any one container
     # could OOM the host that also holds the governance store. Override via
     # CCP_API_MEM_LIMIT in .env if 1g is wrong for your estate's size.

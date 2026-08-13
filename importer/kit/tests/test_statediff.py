@@ -20,6 +20,14 @@ testable) and then diffed against fixtures/plan-sweep-happy.json:
   i-happy...009 "---"                -> FINDING, empty sanitize -> hash-suffixed
   iam policy orphan-policy-1         -> FINDING (arn trivially derivable: id IS the arn)
   iam policy legacy-ignored-policy   -> ignored: arn rule
+  vol-happy...001 / ...002           -> excluded: prior_state, plain `values.id` match
+  /dev/sdh:vol-...001:i-...002       -> excluded: prior_state, but ONLY via
+                                        services.json's state_id_format — the
+                                        provider's own state id is a synthesized
+                                        `vai-<hash>` matching no discovery id (IMP-6)
+  /dev/sdi:vol-...002:i-...001       -> FINDING (same type, nothing manages it) —
+                                        the half that proves IMP-6's fix matches
+                                        rather than suppresses
 
 data.aws_ami.decoy in the plan's prior_state shares i-happy...001's id but
 carries mode "data" — proving data-source entries are never state-matches.
@@ -160,6 +168,141 @@ class DetectionTests(StatediffTestCase):
         self.assertEqual(doc["coverage"], self.manifest_doc["coverage"])
 
 
+# ── IMP-6: state id != discovery id ─────────────────────────────────────────
+
+MANAGED_ATTACHMENT = "/dev/sdh:vol-happy0000000000001:i-happy0000000000002"
+UNMANAGED_ATTACHMENT = "/dev/sdi:vol-happy0000000000002:i-happy0000000000001"
+
+
+class IdDivergentStateMatchTests(StatediffTestCase):
+    """A type whose Terraform state id is SYNTHESIZED, and therefore equals
+    no discovery id anywhere, must still be recognised as managed.
+
+    Every assertion below is paired with a precondition, because each half
+    of this test can pass for the wrong reason: if the fixture carried no
+    id-divergent row the "not a finding" assertion would be vacuous, and if
+    the fix suppressed the type wholesale the "still a finding" assertion is
+    the only thing that notices (L-1)."""
+
+    def test_the_fixture_really_is_id_divergent(self):
+        # The precondition the rest of this class rests on: services.json
+        # declares a state mapping for this type, prior_state's own `id` is
+        # NOT any discovery id, and the manifest really did discover both
+        # attachments. Read from the files, never assumed.
+        with open(DEFAULT_SERVICES) as fh:
+            spec = json.load(fh)["types"]["aws_volume_attachment"]
+        self.assertIn("id_format", spec, "aws_volume_attachment must build a composite discovery id")
+        self.assertEqual(spec.get("state_id_format"), "{device_name}:{volume_id}:{instance_id}")
+
+        with open(PLAN_SWEEP_HAPPY) as fh:
+            plan = json.load(fh)
+        state_ids = {
+            r["values"]["id"]
+            for r in plan["prior_state"]["values"]["root_module"]["resources"]
+            if r["type"] == "aws_volume_attachment"
+        }
+        self.assertEqual(state_ids, {"vai-1855526686"})
+        self.assertNotIn(MANAGED_ATTACHMENT, state_ids,
+                          "the whole point: the state id is NOT the discovery id, so a plain "
+                          "values.id compare CANNOT match this row")
+
+        discovered = {r["id"] for r in self.manifest_doc["resources"] if r["type"] == "aws_volume_attachment"}
+        self.assertEqual(discovered, {MANAGED_ATTACHMENT, UNMANAGED_ATTACHMENT},
+                          "the sweep must actually see both attachments, or the assertions below "
+                          "are about nothing")
+
+    def test_managed_id_divergent_resource_is_not_a_finding(self):
+        r = self.run_statediff()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        live_ids = {f["liveId"] for f in self.load_out()["findings"]}
+        self.assertNotIn(MANAGED_ATTACHMENT, live_ids,
+                          "a Terraform-managed volume attachment must be state-matched via "
+                          "services.json's state_id_format, not reported forever (IMP-6)")
+
+    def test_unmanaged_id_divergent_resource_is_still_a_finding(self):
+        # The half that stops the fix being "ignore this type". Same type,
+        # same capture file, no prior_state row — must still be loud.
+        r = self.run_statediff()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        live_ids = {f["liveId"] for f in self.load_out()["findings"]}
+        self.assertIn(UNMANAGED_ATTACHMENT, live_ids,
+                          "an attachment nothing manages must remain a finding — the fix is a "
+                          "correct match, not a suppression")
+
+    def test_sibling_type_from_the_same_capture_still_matches_by_plain_id(self):
+        # aws_ebs_volume shares ec2-volumes.json but has no state_id_format:
+        # its state id IS its discovery id. Proves the new path is additive.
+        r = self.run_statediff()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        doc = self.load_out()
+        volumes = {r["id"] for r in self.manifest_doc["resources"] if r["type"] == "aws_ebs_volume"}
+        self.assertEqual(volumes, {"vol-happy0000000000001", "vol-happy0000000000002"})
+        live_ids = {f["liveId"] for f in doc["findings"]}
+        self.assertFalse(volumes & live_ids, "plain-id state matching must be unaffected")
+
+    def test_unresolvable_state_id_format_refuses_rather_than_sweeping(self):
+        # If the declared mapping and the provider's attributes part company
+        # (a renamed attribute, a provider major bump), continuing would
+        # silently reinstate the false positives. It must refuse instead.
+        with open(PLAN_SWEEP_HAPPY) as fh:
+            plan = json.load(fh)
+        for res in plan["prior_state"]["values"]["root_module"]["resources"]:
+            if res["type"] == "aws_volume_attachment":
+                res["values"].pop("device_name")
+        broken = os.path.join(self.tmp.name, "plan-renamed-attr.json")
+        with open(broken, "w") as fh:
+            json.dump(plan, fh)
+        r = self.run_statediff(plan=broken)
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIn("REFUSE STATE_ID_UNRESOLVED", r.stderr)
+        self.assertIn("device_name", r.stderr, "the refusal must name the attribute that vanished")
+
+    def test_a_new_composite_id_type_must_declare_its_state_identity(self):
+        # The RULE, not the list (L-25): the defect's class is "synthesized
+        # discovery id", not "aws_volume_attachment". A future type added
+        # with id_format and no state declaration must refuse, so it cannot
+        # silently join the false-positive class.
+        with open(DEFAULT_SERVICES) as fh:
+            services = json.load(fh)
+        services["types"]["aws_future_composite"] = {
+            "service": "ebs", "arnHint": "ec2", "capture": "ec2-volumes",
+            "cli": "aws ec2 describe-volumes --output json", "records": "Volumes[]",
+            "id_format": "{VolumeId}:{Size}", "name": ["VolumeId"], "phase": 4, "stateful": False,
+        }
+        undeclared = os.path.join(self.tmp.name, "services-undeclared.json")
+        with open(undeclared, "w") as fh:
+            json.dump(services, fh)
+        r = self.run_statediff(extra=["--services", undeclared])
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIn("REFUSE BAD_SERVICES", r.stderr)
+        self.assertIn("aws_future_composite", r.stderr)
+
+        # ...and the explicit opposite claim is accepted, with its reason.
+        services["types"]["aws_future_composite"].pop("id_format")
+        services["types"]["aws_future_composite"]["id_format"] = "{VolumeId}:{Size}"
+        services["types"]["aws_future_composite"]["state_id_matches_discovery"] = True
+        services["types"]["aws_future_composite"]["state_id_reason"] = (
+            "verified against a real state file: the provider stores the composite as `id`"
+        )
+        declared = os.path.join(self.tmp.name, "services-declared.json")
+        with open(declared, "w") as fh:
+            json.dump(services, fh)
+        r = self.run_statediff(extra=["--services", declared])
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_the_opposite_claim_needs_a_reason(self):
+        with open(DEFAULT_SERVICES) as fh:
+            services = json.load(fh)
+        services["types"]["aws_volume_attachment"].pop("state_id_format")
+        services["types"]["aws_volume_attachment"]["state_id_matches_discovery"] = True
+        bare = os.path.join(self.tmp.name, "services-no-reason.json")
+        with open(bare, "w") as fh:
+            json.dump(services, fh)
+        r = self.run_statediff(extra=["--services", bare])
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIn("state_id_reason", r.stderr)
+
+
 # ── ignore-rule-counted-not-silent ──────────────────────────────────────────
 
 class IgnoreRuleTests(StatediffTestCase):
@@ -254,6 +397,7 @@ class OrderingTests(StatediffTestCase):
         "i-happy0000000000007",
         "i-happy0000000000008",
         "i-happy0000000000009",
+        "/dev/sdi:vol-happy0000000000002:i-happy0000000000001",
         "arn:aws:iam::333333333333:policy/orphan-policy-1",
     ]
 
@@ -262,8 +406,9 @@ class OrderingTests(StatediffTestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         doc = self.load_out()
         self.assertEqual([f["liveId"] for f in doc["findings"]], self.EXPECTED_ORDER,
-                          "findings must sort by (arn or '', tfType, liveId) — empty-arn EC2 "
-                          "instances first (by id), the arn-bearing IAM policy last")
+                          "findings must sort by (arn or '', tfType, liveId) — empty-arn rows "
+                          "first (aws_instance before aws_volume_attachment, then by id), the "
+                          "arn-bearing IAM policy last")
 
     def test_rerun_is_byte_identical(self):
         self.assertEqual(self.run_statediff().returncode, 0)
