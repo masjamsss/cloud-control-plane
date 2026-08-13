@@ -1,11 +1,15 @@
 import type { ApprovalStep } from '@/types';
 
 /**
- * The two-level approval ladder — the CLIENT half (0037 Feature B). The api is the
- * authority: `domain/eligibility.ts#canSignStep` re-enforces every rule server-side, and
- * `routes/requests.ts` computes `nextApprovalStep` on the request. These helpers only
- * decide what the SPA SHOWS — the friendly ladder-progress phrase and whether to OFFER
- * the Approve button — never what is permitted.
+ * The two-level approval ladder — the CLIENT half (0037 Feature B) AND, as of ARCH-8, the
+ * canonical definition of the WHO rule the api enforces too. `routes/requests.ts` computes
+ * `nextApprovalStep` on the request; these helpers decide what the SPA SHOWS — the friendly
+ * ladder-progress phrase and whether to OFFER the Approve button — but `canSignApprovalStep`
+ * specifically is not advisory: `ccp/api/src/domain/eligibility.ts#canSignStep` imports it
+ * through the `@app-lib` seam (ARCH-6) rather than re-implementing it, so there is exactly
+ * one WHO rule, not two that happened to agree. The server still gates every actual approve
+ * attempt on its own call to that same function — this is one source, not one enforcement
+ * point.
  *
  * UX audit (2026-07-21, F-03/F-04/S-08) — the ApprovalLadder redesign. The queue's old
  * footer collapsed progress/who/what's-next/schedule into one 12px mono string; this file
@@ -18,11 +22,17 @@ import type { ApprovalStep } from '@/types';
  */
 
 /**
- * Can this role sign the given step? Mirrors the server's `canSignStep`: L2 (a first
- * approver) admits `approver` or `lead`; L3 (the final approver) is `lead` only. `isAdmin`
- * is never consulted — admin is a capability, not an approval seniority.
+ * Can this role sign the given step? L2 (a first approver) admits `approver` or `lead`;
+ * L3 (the final approver) is `lead` only. `isAdmin` is never consulted — admin is a
+ * capability, not an approval seniority.
+ *
+ * THE single source of truth for this rule (ARCH-8) — the api's `domain/eligibility.ts`
+ * imports this exact function rather than re-implementing it. `role: string | undefined`
+ * (not the app's own narrower role union) because the api's `RoleName` type is not visible
+ * from here and an unrecognized/absent role must fall through to `false`, never throw — a
+ * role this function has never heard of is exactly the fail-closed case the ladder needs.
  */
-export function canSignApprovalStep(step: ApprovalStep, role: string): boolean {
+export function canSignApprovalStep(step: ApprovalStep, role: string | undefined): boolean {
   return step === 'L3' ? role === 'lead' : role === 'approver' || role === 'lead';
 }
 

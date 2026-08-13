@@ -1,3 +1,4 @@
+import { canSignApprovalStep } from '@app-lib/approvalLadder';
 import type { ConfigStore } from '../store/configStore';
 import type { AccountItem, RoleName } from '../store/schema';
 import { loadAccounts } from './config';
@@ -12,11 +13,15 @@ import type { LadderStep } from './exposure';
  *   L2 (first approver) → `approver` OR `lead`
  *   L3 (final approver) → `lead` only
  * `isAdmin` is deliberately never consulted (ADR-0011: admin is a capability, not an
- * approval seniority). This is the single source of truth the approve handler gates the
- * NEXT step on; there is no separate tier→role rule anymore.
+ * approval seniority). This is the single ENFORCEMENT point the approve handler gates the
+ * NEXT step on — but as of ARCH-8, no longer a separate DEFINITION of the rule: this
+ * re-exports the app's `lib/approvalLadder.ts#canSignApprovalStep` through the `@app-lib`
+ * seam (ARCH-6's checked boundary — see `test/appLibBoundary.test.ts`) instead of
+ * hand-mirroring it, so the SPA's ladder display and the server's actual gate can no
+ * longer independently drift the way ARCH-7's status vocabulary did.
  */
 export function canSignStep(step: LadderStep, role: RoleName | undefined): boolean {
-  return step === 'L3' ? role === 'lead' : role === 'approver' || role === 'lead';
+  return canSignApprovalStep(step, role);
 }
 
 /**

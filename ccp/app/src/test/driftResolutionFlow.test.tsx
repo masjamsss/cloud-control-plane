@@ -177,9 +177,17 @@ const IMPORT_PROPOSAL: DriftProposal = {
   lastSeenReportVersion: 1,
   diff: null,
   attrs: [],
-  arn: IMPORT_FINDING.arn,
-  tfType: IMPORT_FINDING.tfType,
-  importPayload: IMPORT_FINDING.importPayload,
+  // DOC-7: proposal-level import payload — {@link DriftImportProposalPayload}
+  // — distinct from IMPORT_FINDING.importPayload's finding-level shape
+  // above (no `address`; carries the reviewed identity instead).
+  importPayload: {
+    arn: IMPORT_FINDING.arn ?? null,
+    tfType: IMPORT_FINDING.tfType,
+    liveId: IMPORT_FINDING.liveId!,
+    targetFile: IMPORT_FINDING.importPayload!.targetFile,
+    importBlock: IMPORT_FINDING.importPayload!.importBlock,
+    skeletonHcl: IMPORT_FINDING.importPayload!.skeletonHcl,
+  },
 };
 
 describe('partitionForResolution', () => {
@@ -262,7 +270,14 @@ describe('partitionForResolution', () => {
       importPayload: null,
       payloadWithheldReason: null,
     };
-    const forged: DriftProposal = { ...IMPORT_PROPOSAL, digest: 'f6'.repeat(32), arn: securityFinding.arn };
+    // Note: THE BINDING INVARIANT this test proves holds on `classifyFinding`
+    // alone (securityFamily wins first, unconditionally) — this forged
+    // proposal never needs to claim the security finding's identity to
+    // prove it (its `addresses`/`importPayload`, inherited from
+    // IMPORT_PROPOSAL, still name the OTHER finding; that mismatch is the
+    // point — no proposal data, forged or not, can ever route a
+    // security-family finding into `importEligible`).
+    const forged: DriftProposal = { ...IMPORT_PROPOSAL, digest: 'f6'.repeat(32) };
     const p = partitionForResolution([], [forged], [securityFinding]);
     expect(p.importEligible).toEqual([]);
   });

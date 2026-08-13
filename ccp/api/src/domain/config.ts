@@ -6,9 +6,16 @@ import { accountsGsi, policyKey, riskOverrideKey, settingKey, teamCollectionGsi 
 
 /**
  * Server-side readers of authoritative config. These never touch the app's
- * localStorage-backed stores — the server owns the truth. `approvalsFor`/`canRequest`/
- * `canApprove` are imported read-only from the app and ALWAYS called with the server
- * policy/teams explicitly, so their localStorage default parameters never evaluate.
+ * localStorage-backed stores — the server owns the truth. `canRequest`/`canApprove` (and,
+ * for the ladder's WHO rule, `canSignStep` — `domain/eligibility.ts`) are imported read-only
+ * from the app and ALWAYS called with the server policy/teams explicitly, so their
+ * localStorage default parameters never evaluate.
+ *
+ * `approvalsFor` (`@app-lib/policy`) is NOT among them, despite `ApprovalPolicy`/
+ * `DEFAULT_POLICY` being imported below — `loadPolicy` reads the stored policy back only for
+ * display and `policyVersion` stamping (`routes/requests.ts`). The approval COUNT a request
+ * actually needs comes from `domain/exposure.ts#ladderFor` alone; see
+ * `docs/audit/RESIDUE.md`'s R-76 for why that split exists and is not yet resolved.
  */
 
 export async function loadPolicy(store: ConfigStore, projectId: string): Promise<{ policy: ApprovalPolicy; version: number }> {

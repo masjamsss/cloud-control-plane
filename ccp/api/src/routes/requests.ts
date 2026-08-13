@@ -17,6 +17,9 @@ import { requireProjectMembership, requireRole } from '../middleware/authz';
 import { toUser } from '../auth/account';
 import { CONTROL_SCOPE, roleFor } from '../projects';
 import { getOperation, validateParams } from '../manifests';
+import { operationSkew } from '../domain/catalogSkew';
+import { activeServedOperations } from '../domain/servedCatalog';
+import { resolveProjectDataRoot } from '../domain/projectData';
 import type { ManifestOperation } from '@/types';
 import { isSystemDriftOp } from '../domain/systemOps';
 import { disabledOps, isFrozen, loadPolicy, loadTeams, resolveRisk } from '../domain/config';
@@ -285,8 +288,13 @@ export function bundleRequestPayload(req: RequestItem, projectId: string): Recor
   };
 }
 
-export function requestRoutes(): Hono<AppEnv> {
+export function requestRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
   const r = new Hono<AppEnv>();
+  // ARCH-5 — submit compares the operation it is about to enforce against the project's
+  // ACTIVE served catalog (the one the SPA built the form from). Resolved the same way
+  // `projectRoutes` resolves it, so a deployment that configures a data root gets the same
+  // directory on both surfaces and no submit is comparing against a different tree.
+  const dataRoot = opts.dataRoot ?? resolveProjectDataRoot();
   // Session first, then the account↔project binding: EVERY request route (submit,
   // list, read, approve, reject) is project-scoped, so an account not bound to the
   // resolved project gets 403 PROJECT_SCOPE before any handler runs.
@@ -372,10 +380,32 @@ export function requestRoutes(): Hono<AppEnv> {
     // bound to that item's `targetAddress` so a confirmation can never be a stray or
     // copy-pasted value for a different resource. PREVENT_DESTROY is enforced downstream
     // (executor + Terraform) and is never overridable by this confirmation.
+    // ARCH-5 — the catalog the SPA rendered this form from, when the estate serves one.
+    // `null` means the estate serves no active manifests, so the bundled catalog is
+    // simply authoritative and there is nothing to disagree with; it never means "agrees".
+    // Loaded ONCE per submit, not per item, and memoised per (project, active version).
+    const servedOps = await activeServedOperations(store, dataRoot, projectId);
+
     const validated: ValidatedItem[] = [];
     for (const it of rawItems) {
       const op = getOperation(it.operationId);
       if (!op) return apiError(c, 'VALIDATION_FAILED');
+      // ARCH-5 — refuse rather than silently enforce a definition the requester's form was
+      // not built from. Checked BEFORE the param/confirmation gates below, because those
+      // are the gates that would otherwise produce the misleading refusal: a
+      // PARAM_OUT_OF_BOUNDS for a value the form offered, or a
+      // REPLACE_CONFIRMATION_REQUIRED for a confirmation the form never asked for. An op
+      // the served catalog does not carry at all is NOT skew — an estate may serve a
+      // narrower set, and a form the requester never saw cannot have disagreed with them.
+      if (servedOps) {
+        const servedOp = servedOps.get(op.id);
+        if (servedOp !== undefined) {
+          const fields = operationSkew(op, servedOp);
+          if (fields.length > 0) {
+            return apiError(c, 'CATALOG_SKEW', { operationId: op.id, fields });
+          }
+        }
+      }
       // The direct lane is closed for the drift system ops (drift-portal spec
       // §4.3/§8 enforcement point 2b): no client can hand-craft a drift
       // request with arbitrary params — pinned proposal content (via

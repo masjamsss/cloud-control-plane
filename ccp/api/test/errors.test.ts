@@ -65,6 +65,7 @@ describe("§8 error taxonomy", () => {
       new Set([
         "VALIDATION_FAILED",
         "REPLACE_CONFIRMATION_REQUIRED", // forces-replace lane — typed confirmation required
+        "CATALOG_SKEW", // ARCH-5 — the served (uploaded) catalog disagrees with the bundled one that submit enforces
         "OP_DISABLED",
         "PARAM_OUT_OF_BOUNDS",
         "LAST_LEAD_GUARD",

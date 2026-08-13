@@ -13,6 +13,19 @@ There are two persistence worlds. Do not confuse them.
 
 The authoritative item shapes are the zod schemas in ccp/api/src/store/schema.ts (module doc: schema.ts:4-13). The SPA types in ccp/app/src/types/ are the client projections.
 
+### 1.1 Catalog authority: bundled vs. served manifests (ARCH-5)
+
+A deployed instance carries two different manifest sets, and they can describe the same operation differently.
+
+| Catalog | What it is | What resolves from it |
+|---|---|---|
+| **Image-bundled** | `ccp/app/src/data/manifests/*.json`, vendored into the api image at build time | `manifests.ts#getOperation` (ccp/api/src/manifests.ts:32) — what submit validates against, what the approval ladder is derived from (`domain/requirement.ts:42,44`), what the replace-confirmation requirement comes from (`routes/requests.ts:403`) |
+| **Per-project uploaded** | Staged by the estate's own CI, dual-control-activated, served at `GET /projects/:id/manifests` | What the SPA builds its submit forms from for a real onboarded estate (`ccp/app/src/lib/httpApi.ts`) |
+
+**The bundled catalog is authoritative for every submit-time decision. The uploaded set is a presentation artifact, never a source of governance data.** The reason is validation depth, not convention: `domain/projectData.ts`'s `UploadManifest` schema validates an uploaded operation as `{id: string}.passthrough()` (projectData.ts:114) — so `exposure`, `riskFloor` and `forcesReplace` on an uploaded manifest ride through completely unread — while the same fields on the bundled catalog are gate-enforced in CI (`verify:safety`'s ForceNew gate is what makes a bundled `forcesReplace:false` a checked statement rather than a claim). Resolving submit-time decisions from the uploaded set instead would move the approval ladder and the replace-confirmation requirement onto unvalidated, tenant-supplied data — a governance escalation, not a lookup change.
+
+**Until ARCH-5, nothing compared the two catalogs**, so they could silently disagree in either direction: an operation the form offered and the server refused, bounds rendered that were not the bounds enforced, an approval count shown that was not the count required. `domain/catalogSkew.ts#operationSkew` now detects the divergence per submitted item (field-subtractive comparison — everything is compared except a small named set of presentation-only fields, so a new governance field added to the schema tomorrow is compared by default rather than needing to be added to an allowlist) and `routes/requests.ts`'s submit handler refuses with `422 CATALOG_SKEW` naming the operation and the diverging fields, checked before the param/confirmation gates so the refusal names the real cause rather than surfacing as a misleading `PARAM_OUT_OF_BOUNDS` or `REPLACE_CONFIRMATION_REQUIRED` for a value the requester's own form offered. `domain/servedCatalog.ts#activeServedOperations` resolves and memoises the served side, keyed by `(dataRoot, projectId, activeVersion)` — safe to cache because a served data version is immutable once staged (`ProjectDataVersionItem`, §2.2) and activation only ever moves the version pointer, never mutates a version already served.
+
 ## 2. Entity catalog
 
 ### 2.1 Global identity (NOT project-scoped)

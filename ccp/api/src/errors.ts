@@ -191,6 +191,16 @@ export const ERRORS = {
       "This change destroys and recreates the resource. Type the resource name to confirm before submitting.",
   },
   OP_DISABLED: { status: 422, reason: "That operation is currently disabled." },
+  // ARCH-5 — the project's ACTIVE served catalog (what the SPA built the form from)
+  // defines this operation differently from the image-bundled catalog (what the server
+  // enforces). The bundled catalog is authoritative, so the server COULD just enforce it —
+  // but then the requester is refused for a value their own screen offered, or is never
+  // asked for a confirmation the server requires. `details.fields` names the divergence.
+  CATALOG_SKEW: {
+    status: 422,
+    reason:
+      "This estate's uploaded catalog and the catalog this control plane enforces describe that operation differently. Ask an admin to re-upload the estate's catalog from the version this deployment ships.",
+  },
   PARAM_OUT_OF_BOUNDS: {
     status: 422,
     reason: "A parameter is outside its allowed bounds.",
