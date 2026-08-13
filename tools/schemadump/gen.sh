@@ -18,11 +18,29 @@
 #
 # PROVIDER (default aws) selects the provider: aws | azurerm. It picks the
 # template, the MODULE/REPO_URL/TAG/VERSION defaults, the output filename
-# (${PROVIDER}-v${VERSION}-schema.json), and the -types file. PROVIDER=aws
-# reproduces the pre-0039 run byte-identically. NOTE: azurerm's resource
-# prefix (and this tool's PROVIDER token / filename prefix) is "azurerm", NOT
-# "azure" — the app-level CloudProvider union ('aws'|'azure', providerDisplay.ts)
-# is a different, higher-level concept than this tool's provider short name.
+# (${PROVIDER}-v${VERSION}-schema.json), the default SCOPE and whether the
+# artifact is committed gzipped.
+#
+# SCOPE (IMP-8). TYPES is either a file of resource type names or the literal
+# `all` (equivalently TYPES= , explicitly empty) meaning the whole provider —
+# the tool's own `-types ""` contract. BOTH providers now default to `all`,
+# because both COMMITTED dumps are full-provider reflections: the aws artifact
+# records metadata.summary.requested = 1677, and types-azure.txt's header says
+# in so many words that it has been superseded as the committed scope. The old
+# default passed types.txt (85 types) unconditionally and could not express
+# "no filter" at all, so running gen.sh exactly as documented produced an
+# artifact scoped differently from the one in the tree. types.txt is retained
+# as the catalog-relevant scope for a deliberately narrow regeneration:
+#   TYPES=tools/schemadump/types.txt PROVIDER=aws ./gen.sh
+#
+# COMPRESS=1 gzips the artifact in-script (aws default; the repo commits only
+# aws-*.json.gz). This used to be a manual step nothing documented, which is a
+# third way the committed artifact was not what the pipeline produced.
+#
+# NOTE: azurerm's resource prefix (and this tool's PROVIDER token / filename
+# prefix) is "azurerm", NOT "azure" — the app-level CloudProvider union
+# ('aws'|'azure', providerDisplay.ts) is a different, higher-level concept than
+# this tool's provider short name.
 #
 # Everything is parameterised by env vars with defaults. Nothing is committed
 # except this tool dir; the provider source stays in the scratchpad.
@@ -39,7 +57,13 @@ case "$PROVIDER" in
     MODULE="${MODULE:-github.com/hashicorp/terraform-provider-aws}"
     REPO_URL="${REPO_URL:-https://github.com/hashicorp/terraform-provider-aws.git}"
     TMPL="$TOOLDIR/main.go.tmpl"
-    TYPES="${TYPES:-$TOOLDIR/types.txt}"
+    # IMP-8: the COMMITTED aws dump is the full provider (metadata.summary.requested
+    # = 1677), so `all` is the default that actually reproduces it. types.txt is
+    # still here and still meaningful — it is the catalog-relevant scope — but it
+    # was never what produced the artifact in the tree, and defaulting to it meant
+    # running gen.sh as documented silently produced a differently-scoped dump.
+    TYPES="${TYPES-all}"
+    COMPRESS="${COMPRESS:-1}"   # the repo commits aws-*.json.gz, not the raw json
     ;;
   azurerm)
     TAG="${TAG:-v4.81.0}"
@@ -47,7 +71,11 @@ case "$PROVIDER" in
     MODULE="${MODULE:-github.com/hashicorp/terraform-provider-azurerm}"
     REPO_URL="${REPO_URL:-https://github.com/hashicorp/terraform-provider-azurerm.git}"
     TMPL="$TOOLDIR/main-azurerm.go.tmpl"
-    TYPES="${TYPES:-$TOOLDIR/types-azure.txt}"
+    # types-azure.txt's own header says the committed dump is the FULL reflection
+    # and to "regenerate with an empty -types filter" — an instruction the old
+    # `${TYPES:-file}` could not express, because it treats empty as unset.
+    TYPES="${TYPES-all}"
+    COMPRESS="${COMPRESS:-0}"   # committed uncompressed
     ;;
   *)
     echo "gen.sh: unknown PROVIDER '$PROVIDER' (use: aws|azurerm)" >&2
@@ -121,7 +149,36 @@ log "downloading provider deps (idempotent) ..."
 ( cd "$SRC" && go mod download all )
 log "building ./cmd/schemadump (compiles the whole provider — expect several minutes) ..."
 ( cd "$SRC" && go build -o "$BIN" ./cmd/schemadump )
-log "running reflection over $(grep -vc '^#' "$TYPES") requested types ..."
-"$BIN" -types "$TYPES" -provenance "$PROV" -version "$VERSION" -tag "$TAG" -module "$MODULE" -out "$OUT"
+
+# TYPES selects the SCOPE: a file of type names, or `all` (equivalently, an
+# explicitly empty TYPES=) for the whole provider. The tool's own contract is
+# `-types ""` = every type, so full-provider mode omits the flag entirely
+# rather than passing an empty path. An unreadable TYPES file is a hard error:
+# falling back to full-provider on a typo'd path would silently produce a
+# 1677-type artifact where 85 were asked for, which is this finding in reverse.
+TYPES_ARGS=()
+if [ -z "$TYPES" ] || [ "$TYPES" = "all" ]; then
+  log "running reflection over the FULL provider (no -types filter) ..."
+else
+  [ -f "$TYPES" ] || { echo "gen.sh: TYPES file not found: $TYPES" >&2; exit 1; }
+  log "running reflection over $(grep -vc '^#' "$TYPES") requested types from $TYPES ..."
+  TYPES_ARGS=(-types "$TYPES")
+fi
+"$BIN" ${TYPES_ARGS[@]+"${TYPES_ARGS[@]}"} \
+  -provenance "$PROV" -version "$VERSION" -tag "$TAG" -module "$MODULE" -out "$OUT"
 
 log "wrote $OUT ($(wc -c < "$OUT") bytes)"
+
+# ---- 4. compress, if this provider's artifact is committed gzipped ----------
+# Was a manual, undocumented step: gen.sh wrote the .json and the repo committed
+# only the .gz, so the pipeline as written never produced the file in the tree.
+# `-n` is load-bearing, not tidiness — without it gzip embeds the source file's
+# name and mtime, so two runs over BYTE-IDENTICAL json produce different .gz
+# files and the reproducibility claim above cannot be checked at all. (The
+# committed aws .gz was made without it: its header carries FNAME and a real
+# timestamp.)
+if [ "$COMPRESS" = "1" ]; then
+  gzip -9 -n -c "$OUT" > "$OUT.gz"
+  rm -f "$OUT"
+  log "wrote $OUT.gz ($(wc -c < "$OUT.gz") bytes, gzip -n so reruns are byte-stable)"
+fi

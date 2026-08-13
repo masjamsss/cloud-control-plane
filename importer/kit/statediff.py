@@ -12,6 +12,18 @@ curated ignore rule, is a **finding** — a resource console-created (or
 otherwise never brought under Terraform) that ``terraform plan`` can never
 see, because nothing in code or state references it (runbook D5).
 
+"Absent from prior_state" is NOT simply "no resource carries this as
+``values.id``" (IMP-6). Where a provider synthesizes its own state id, that
+compare is structurally incapable of matching and every managed instance
+becomes a permanent false positive. services.json therefore declares, per
+type, how Terraform identifies it: ``state_id_format`` rebuilds the discovery
+id from prior_state ``values`` (aws_volume_attachment: state id
+``vai-<hash>``, discovery id ``device:volume:instance``), or
+``state_id_matches_discovery`` records the verified claim that the two are
+the same string. Any type with a synthesized discovery id (``id_format``)
+must declare one of the two or the sweep refuses — see
+``_validate_state_identity``.
+
 Usage (the exact invocation the drift workflow runs, §2.2):
 
     python3 importer/kit/statediff.py \\
@@ -141,7 +153,60 @@ def load_services(path):
     doc = _load_json(path, "BAD_SERVICES", "services allowlist")
     if not isinstance(doc, dict) or not isinstance(doc.get("types"), dict) or not doc["types"]:
         refuse("BAD_SERVICES", f"{path} has no 'types' mapping")
+    _validate_state_identity(path, doc["types"])
     return doc
+
+
+# ── IMP-6: how Terraform identifies a type in prior_state ────────────────────
+#
+# The sweep's whole "is this already managed?" answer is one equality, and it
+# used to be `discovery id == prior_state values.id`. That holds for 42 of the
+# 43 types and is FALSE wherever the provider synthesizes its own state id —
+# aws_volume_attachment's is a computed `vai-<hash>` while discovery (and the
+# import id) uses `device:volume:instance`. The compare can then never match,
+# so every Terraform-managed attachment is reported as an unmanaged resource on
+# every sweep, forever, with nothing in the output hinting that the compare was
+# structurally incapable of succeeding.
+#
+# Rather than special-casing the one known type (L-25 — write the rule, not the
+# list), the rule is stated over the CLASS that can contain it: a type whose
+# discovery id is SYNTHESIZED from several record fields (`id_format`) is
+# exactly a type whose state id the provider is equally free to synthesize
+# differently. Every such type must say, in services.json, which of the two it
+# is — `state_id_format` (reconstruct the discovery id from prior_state
+# `values`) or `state_id_matches_discovery` + `state_id_reason` (verified to be
+# the same id). An undeclared one refuses the sweep instead of silently
+# rejoining the false-positive class.
+def _validate_state_identity(path, types):
+    for rtype in sorted(types):
+        spec = types[rtype]
+        if not isinstance(spec, dict):
+            refuse("BAD_SERVICES", f"{path} types.{rtype} is not an object")
+        has_format = isinstance(spec.get("state_id_format"), str) and spec["state_id_format"]
+        claims_same = spec.get("state_id_matches_discovery") is True
+        if has_format and claims_same:
+            refuse(
+                "BAD_SERVICES",
+                f"{path} types.{rtype} declares BOTH 'state_id_format' and "
+                "'state_id_matches_discovery' — they are opposite claims about the same thing",
+            )
+        if claims_same and not (isinstance(spec.get("state_id_reason"), str) and spec["state_id_reason"].strip()):
+            refuse(
+                "BAD_SERVICES",
+                f"{path} types.{rtype} claims 'state_id_matches_discovery' with no "
+                "'state_id_reason' — say how that was verified, the same standard every "
+                "ignore rule is held to",
+            )
+        if "id_format" in spec and not (has_format or claims_same):
+            refuse(
+                "BAD_SERVICES",
+                f"{path} types.{rtype} builds its discovery id with 'id_format' but does not "
+                "declare how Terraform identifies it in prior_state (IMP-6). Add "
+                "'state_id_format' (a str.format template over prior_state `values`, producing "
+                "the same string id_format produces) or 'state_id_matches_discovery': true with "
+                "a 'state_id_reason'. Refusing rather than sweeping with a compare that may be "
+                "structurally incapable of matching",
+            )
 
 
 def load_plan(path):
@@ -197,16 +262,31 @@ def load_watchlist_creation_types(path):
 
 # ── prior_state walk ─────────────────────────────────────────────────────────
 
-def state_keys_from_plan(plan_doc):
+def state_keys_from_plan(plan_doc, services):
     """(type, id) pairs for every MANAGED resource in prior_state, root
     module plus child modules recursed (this estate is single-root per
     ADR-0004, but the walk costs nothing and is honest about the shape
     `terraform show -json` can produce). `mode: "data"` entries (data
     sources also live in prior_state) are deliberately excluded — a data
-    source reads a live resource, it does not manage it."""
+    source reads a live resource, it does not manage it.
+
+    The state id is ALWAYS added, so the 42 types whose state id is the
+    discovery id are untouched. For a type carrying `state_id_format`
+    (IMP-6) the reconstructed discovery id is added AS WELL — the state id
+    is kept because it costs nothing and no manifest row can collide with
+    it, and keeping both means the declaration can only ever add matches,
+    never remove one that already worked.
+
+    An unresolvable `state_id_format` REFUSES. That case means the declared
+    template and the provider's actual state attributes have parted company
+    (a renamed attribute, a provider major bump) — and the failure mode of
+    continuing is precisely the defect being fixed: every managed resource
+    of that type silently becomes an unmanaged finding again. The whole
+    point of the declaration is that it cannot fail quietly."""
     prior = plan_doc.get("prior_state")
     if not isinstance(prior, dict):
         return set()
+    types = services.get("types", {})
     root = ((prior.get("values") or {}).get("root_module")) or {}
     keys = set()
     stack = [root]
@@ -218,13 +298,49 @@ def state_keys_from_plan(plan_doc):
             if not isinstance(res, dict) or res.get("mode") != "managed":
                 continue
             rtype = res.get("type")
-            rid = (res.get("values") or {}).get("id")
-            if isinstance(rtype, str) and isinstance(rid, str) and rid:
+            if not isinstance(rtype, str):
+                continue
+            values = res.get("values") or {}
+            rid = values.get("id") if isinstance(values, dict) else None
+            if isinstance(rid, str) and rid:
                 keys.add((rtype, rid))
+            template = (types.get(rtype) or {}).get("state_id_format")
+            if isinstance(template, str) and template:
+                keys.add((rtype, _state_id_from_values(rtype, template, values, res)))
         children = module.get("child_modules")
         if isinstance(children, list):
             stack.extend(children)
     return keys
+
+
+def _state_id_from_values(rtype, template, values, res):
+    """Render services.json's `state_id_format` against a prior_state
+    resource's `values`, refusing loudly if it cannot be rendered."""
+    if not isinstance(values, dict):
+        refuse(
+            "BAD_PLAN",
+            f"prior_state {res.get('address', rtype)!r} has no 'values' object, so "
+            f"services.json's state_id_format {template!r} for {rtype} cannot be resolved",
+        )
+    try:
+        rendered = template.format(**values)
+    except (KeyError, IndexError) as e:
+        refuse(
+            "STATE_ID_UNRESOLVED",
+            f"services.json types.{rtype} declares state_id_format {template!r} but "
+            f"prior_state {res.get('address', rtype)!r} has no {e} attribute — the declared "
+            "state-identity mapping no longer matches the provider. Refusing: sweeping past "
+            "this would report every managed "
+            f"{rtype} as an unmanaged resource (IMP-6)",
+        )
+    if not rendered:
+        refuse(
+            "STATE_ID_UNRESOLVED",
+            f"services.json types.{rtype} state_id_format {template!r} rendered EMPTY against "
+            f"prior_state {res.get('address', rtype)!r} — an empty key would match nothing and "
+            "silently restore the false positives this declaration exists to prevent",
+        )
+    return rendered
 
 
 # ── raw-capture tag lookup (tagKey ignore rules only) ───────────────────────
@@ -444,7 +560,7 @@ def main(argv=None):
 
     capture_dir = args.capture_dir or os.path.dirname(os.path.abspath(args.manifest))
     tag_lookup = TagLookup(capture_dir, services)
-    state_keys = state_keys_from_plan(plan_doc)
+    state_keys = state_keys_from_plan(plan_doc, services)
     region = manifest.get("region", "unknown")
 
     findings = []

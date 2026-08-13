@@ -360,6 +360,28 @@ know: the chain head would have to carry the genesis month (or the oldest partit
 have to be discoverable in O(1)), which is an additive change to `ChainHeadItem` that every
 existing chain would need backfilled. That is a store-schema decision, so it belongs with
 B-O3's `DATA-16` (the snapshot format/version marker) rather than being smuggled in here.
+### R-56 · AWS coverage is still family-coarse; only declared shadows are type-granular
+*Residue on **IMP-15**.*
+
+IMP-15 removed the *silent* half of the family-granularity limit: a type whose lister cannot
+enumerate it now declares a `shadow` in `services.json`, and `discover.py` names the resources
+the sweep saw but discovery never accounted for. What it did **not** do is make AWS coverage
+type-granular the way `kit-azure/discover.py` already is — the AWS sweep still buckets by ARN
+service family, and a type that has no `shadow` declared still contributes its resources to a
+family that reads as covered.
+
+That is the deliberate half of the trade the kit README has always stated, and it is still the
+right default: parsing every ARN's resource-type token means many fragile, service-specific
+rules where AWS's delimiters are inconsistent and sometimes absent. The residue is that the
+*declaration* is now the only thing standing between a new undiscoverable type and the old
+silent behaviour, and nothing enumerates which types ought to carry one — the finding names
+`aws_kms_key` and gestures at "any ec2-family type not among the 16 ec2-backed entries" without
+resolving it.
+
+Closing it properly is a sweep of all 43 types asking "can this lister reach every instance?",
+which is estate-informed judgement per type rather than a code change, so it is recorded rather
+than guessed at. The parity gap with the Azure kit's full-type classification is the same item
+seen from the other side.
 ### R-52 · Api-mode local-store submit gates survive outside FE-6's three fixed components
 *Residue on **FE-6**.*
 
