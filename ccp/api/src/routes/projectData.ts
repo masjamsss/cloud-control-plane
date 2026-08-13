@@ -492,8 +492,12 @@ export function projectDataRoutes(dataRoot: string): Hono<AppEnv> {
       op: 'update',
       pk: k.PK,
       sk: k.SK,
-      // The store's update semantics: setting the attr to undefined clears it.
-      set: { archived: undefined, version: project.version + 1 },
+      // DATA-14 (3) — REMOVE clears the attribute. `set: { archived: undefined }` did
+      // not survive the snapshot round trip (JSON drops an undefined value), so a
+      // proposal acked after a restart left the project archived while auditing an
+      // unarchive; DynamoDB would have rejected the SET outright.
+      set: { version: project.version + 1 },
+      remove: ['archived'],
       guardAttr: 'version',
       guardValue: project.version,
     };

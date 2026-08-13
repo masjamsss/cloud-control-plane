@@ -9,6 +9,7 @@ import { exportAuditChain } from '../src/domain/auditQuery';
 import { accountsGsi, type AccountItem } from '../src/store/schema';
 import { runBackup } from '../scripts/backup';
 import { runRestore } from '../scripts/restore';
+import { parseSnapshotItems } from '../src/store/snapshot';
 
 /**
  * Task 3 — the operational answer to "what if the disk/host dies". A backup, a wiped
@@ -89,8 +90,10 @@ describe('restore fails closed on a bad backup', () => {
     await seedStore();
     await runBackup({ dataFile, out: backupFile, io: silent });
 
-    // Tamper one audit entry's hash → the chain no longer verifies.
-    const items = JSON.parse(readFileSync(backupFile, 'utf8')) as Array<Record<string, unknown>>;
+    // Tamper one audit entry's hash → the chain no longer verifies. DATA-16: the backup
+    // file is the (possibly enveloped) snapshot format, not necessarily a bare array —
+    // `parseSnapshotItems` reads either, the same parser `runRestore` itself uses.
+    const items = parseSnapshotItems(readFileSync(backupFile, 'utf8')) as Array<Record<string, unknown>>;
     const entry = items.find((it) => typeof it.PK === 'string' && /AUDIT#\d{6}$/.test(it.PK as string));
     expect(entry).toBeDefined();
     entry!.hash = 'deadbeef-tampered';

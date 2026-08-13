@@ -944,13 +944,18 @@ export function adminRoutes(
     const sessionBump = gainsSeniorCapacity || isAdminChanged;
 
     const set: Record<string, unknown> = {};
+    const remove: string[] = [];
     if (verbPresent) {
       // Write the canonical `roles` map and materialize away the legacy trio (this IS the
       // one-time per-row migration: the first admin write rewrites the account to the new shape).
+      //
+      // DATA-14 (3) — the legacy trio is REMOVEd, not set to `undefined`. That idiom did
+      // not survive being STORED: this apply is stashed verbatim on a pending proposal for
+      // the loosening path, `JSON.stringify` drops an undefined-valued key, and an ack
+      // after a restart therefore wrote the new `roles` map while leaving the legacy trio
+      // in place — a half-migrated row, from a proposal that looked identical on disk.
       set.roles = nextRoles;
-      set.role = undefined;
-      set.teamId = undefined;
-      set.projects = undefined;
+      remove.push("role", "teamId", "projects");
     }
     if (body.status) set.status = body.status;
     if (body.isAdmin !== undefined) set.isAdmin = body.isAdmin;
@@ -976,6 +981,7 @@ export function adminRoutes(
       pk: k.PK,
       sk: k.SK,
       set,
+      ...(remove.length > 0 ? { remove } : {}),
       guardAttr: "accountVersion",
       guardValue: acc.accountVersion,
     };
