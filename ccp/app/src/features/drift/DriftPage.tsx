@@ -12,6 +12,7 @@ import type {
 } from '@/types/drift';
 import { api } from '@/lib/api';
 import { attempt } from '@/lib/asyncGuard';
+import { findCurrentFinding } from '@/lib/driftEligibility';
 import { useActiveProjectId } from '@/lib/ProjectContext';
 import { useCurrentUser } from '@/lib/session';
 import { Badge, type BadgeColor } from '@/components/ui/Badge';
@@ -456,15 +457,19 @@ export function DriftPage(): JSX.Element {
 
   // The import drawer's own proposal/finding pair — a finding has no
   // Terraform address to key on (unlike a verdict), so the match runs on
-  // `arn` instead, the SAME identity findingProposalStateFor already keys
-  // on (driftProposalState.ts).
+  // the proposal's pinned import identity (`arn`/`tfType`/`liveId`)
+  // instead, via `findCurrentFinding` — the app's own port of the api's
+  // `findCurrentFinding` re-derivation (domain/driftProposals.ts). DOC-7:
+  // this used to key on a top-level `DriftProposal.arn` field the real api
+  // never served (only the mock did) — this lookup could never match
+  // anything against a real deployment before the fix.
   const openImportProposal =
     openImportDigest && status?.proposals
       ? status.proposals.find((p) => p.digest === openImportDigest)
       : undefined;
   const openImportFinding =
-    openImportProposal && status
-      ? status.report.sweep?.findings.find((f) => f.arn === openImportProposal.arn)
+    openImportProposal?.importPayload && status
+      ? findCurrentFinding(status.report.sweep?.findings ?? [], openImportProposal.importPayload)
       : undefined;
 
   // The restore drawer's own proposal/verdict pair — restore is

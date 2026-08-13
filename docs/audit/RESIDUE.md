@@ -327,6 +327,65 @@ Recorded here so the low floor reads as a measurement of a known gap rather than
 acceptable target — a floor nobody remembers the reason for is a floor that quietly becomes the
 ceiling.
 
+### R-77 · `ccp/shared` does not exist; the api still reaches into the app package
+*Residue on **ARCH-6**.*
+
+ARCH-6 asked for a real workspace package (permissions, policy, redact, dependsOn,
+planSummary, the shared types) installed by both CI jobs. What landed is the partial its own
+triage line blesses — an allowlist + a transitive dependency-free rule over the `@app-lib`
+closure, and a parity test pinning the `planSummary` copy. The alias and the copy remain.
+
+**Why it was not taken.** Not difficulty — blast radius, in a place where mistakes are quiet.
+The extraction moves files out of `ccp/app/src/lib/`, which ~55 feature components import; it
+needs a new package, two regenerated lockfiles, a changed `api/Dockerfile` vendoring step, and
+edits to the CI path filters, `verify:safety` and the publish-gate scan scopes. `B-O13` was
+concurrently working in `ccp/app/src/lib/`, so a file-moving refactor of that directory from
+the ARCH-6 lane would have collided with it head-on.
+
+**What the partial actually bought, so the deferral is judged on its merits.** The two failure
+modes that made the seam dangerous were both silent and are now loud: a package import
+anywhere in the api's transitive alias closure fails a test that names the file and the
+specifier (before, it collapsed the api's types to `any` while reporting errors only against a
+file in `ccp/app`), and any drift between the two `planSummary` copies fails (before, the only
+test loaded one of the two files and stayed green through every drift shape tried). The
+argument for extracting the package is now evolvability, not safety.
+
+**Not currently tracked by any finding id** — ARCH-6 is closed on its partial. A follow-up
+finding should be opened for the extraction, and it should also absorb **R-11** (the
+`requireToolchain.ts` duplication), which exists for the same reason: two packages, two
+`node_modules`, no shared home.
+
+### R-76 · The admin-editable approval policy no longer sizes anything
+*Residue on **ARCH-8**.*
+
+ARCH-8 asked for the mock's WHO rule to stop being a hand-mirrored copy (done: the api's
+`domain/eligibility.ts#canSignStep` now imports `lib/approvalLadder.ts#canSignApprovalStep`
+through the `@app-lib` seam, RULE B-allowlisted, same pattern as `permissions.ts`) and for the
+mock-vs-api behavioral gaps to be written down in one place (`ccp/README.md`'s "Mock mode vs.
+api mode" table). Writing that table surfaced a THIRD thing worth naming on its own: the
+approval-COUNT model has silently forked, not just been re-implemented.
+
+`ccp-api` still serves `GET`/`PUT /admin/policy` — a real deployment's Lead can still edit
+per-risk-tier approval counts (`low`/`medium`/`high`, plus a delete floor), the value is
+stored, versioned, and the version is stamped onto every request row (`policyVersion`). But
+`routes/requests.ts` computes `approvalsRequired` from `domain/exposure.ts#ladderFor(reviewTier,
+forcesReplace)` alone — a fixed two-level ladder keyed on exposure — and says so in its own
+comment: *"risk is display-only now — it no longer varies the count."* The mock's
+`lib/policy.ts`/`ApprovalPolicyAdmin.tsx` still implement and expose the OLD model, live, in
+both modes' UI — including against a real `ccp-api`, where the screen an admin uses to "raise
+the bar for high-risk changes" edits a number nothing downstream reads.
+
+**Why this was not fixed here.** Three defensible outcomes exist — remove the admin screen and
+endpoint (accept `policyVersion` becomes dead too), re-wire `ladderFor` to widen with `policy`
+(a real behavior change to what gates a request, needing its own review), or keep it as
+deliberate audit/versioning-only metadata and say so on the screen itself (the smallest change,
+but still a product decision about what the UI should tell an admin who edits it expecting an
+effect). None of those is "shrink the mock's surface" or "write a table" — ARCH-8's own two
+asks — so this is named rather than picked for them.
+
+**Not currently tracked by any finding id.** A follow-up finding should decide which of the
+three outcomes above, then update `ccp-api/src/routes/admin.ts`'s policy handler (or the ladder,
+or `ApprovalPolicyAdmin.tsx`'s copy) and this table's row accordingly.
 ### R-57 · The chain-write retry policy is named in one place but spent in sixteen
 *Residue on **PERF-11** and **PERF-8**.*
 

@@ -53,6 +53,32 @@ real `ccp-api` HTTP client behind the identical `ApiClient` interface
 (`app/src/lib/api.ts`, `app/src/lib/apiSession.ts::isApiMode`). Both modes render the same UI;
 only where state lives (and whether anything is actually enforced) changes.
 
+The seam is clean and mock mode is a deliberate product feature — but parity between the two
+sides is maintained by hand, and is already partial by design. Pure decision RULES are shared
+one way (the app defines them, `ccp-api` imports them read-only through the checked `@app-lib`
+boundary — see `ccp/api/test/appLibBoundary.test.ts`); everything else is two independent
+implementations that can drift, and reviewers need to know which one is the ground truth for
+a given behavior. This table is that answer, in one place, instead of scattered comments
+(ARCH-8):
+
+| Behavior | Mock (`ccp/app/src/lib/*`) | `ccp-api` | Authoritative |
+| --- | --- | --- | --- |
+| Approval ladder — WHO may sign a step | `lib/approvalLadder.ts#canSignApprovalStep` | same function, imported through `@app-lib/approvalLadder` | **shared** — one definition, not two that happen to agree |
+| Team scope / self-approval (SoD) | `lib/permissions.ts#canRequest`/`canApprove` | same functions, imported through `@app-lib/permissions` | **shared** |
+| Approval COUNT | `lib/policy.ts` — an admin-editable count per risk tier (`low`/`medium`/`high`, plus a `deleteMin` floor); the mock's submit/approve paths read it live | `domain/exposure.ts#ladderFor(reviewTier, forcesReplace)` — a fixed two-level ladder keyed on exposure, independent of risk tier. `ccp-api` still serves `GET`/`PUT /admin/policy` and stamps the edited value's version on every request row (`policyVersion`) — but nothing in the submit path reads the count back to size the ladder; the comment at `routes/requests.ts` says so directly ("risk is display-only now — it no longer varies the count") | **api** (`ladderFor`) for what actually gates a request; the policy admin screen edits a number a real deployment stores and versions but does not act on — see `docs/audit/RESIDUE.md` |
+| Quorum feasibility (can enough people sign?) | `lib/quorum.ts` — counts the LOCAL account directory (`localStorage` IS the directory in mock mode) | `domain/eligibility.ts#computeFeasibility` — project-bound, activated accounts only, per ladder step | **api** — `quorum.ts`'s own doc comment states the mock's count is legitimate ground truth only because the mock IS the directory; api-mode never calls it (see `lib/requestFeasibility.ts`) |
+| Accounts / password storage | `lib/accounts.ts` — salted PBKDF2-SHA256, browser `localStorage` | `auth/credentials.ts` — argon2id, server-side, httpOnly session cookies, TOTP required for privileged roles | **api** |
+| Audit log | `lib/audit.ts` — free-text actions, unchained, `localStorage`, per-browser | `domain/audit.ts` — hash-chained, tamper-evident, server-side | **api** |
+| Cooling-off / maintenance windows / scheduler / apply bundle / settlement | not implemented — a mock request has no analog past "approved" | `domain/cooling.ts`, `domain/schedule.ts`, `domain/apply/*` | **api only** — the mock intentionally stops where these begin |
+| Dual-control config changes | `lib/pendingChanges.ts` — a single local pending-change list; the ack/reject write is reachable only from its own UI, nothing else proposes into it | `domain/dualControl.ts` — proposer ≠ approver enforced server-side, chained | **api** — the mock's queue is a render-layer preview, not a working state machine (its own doc comment says so) |
+| Risk override (per-operation risk floor) | `lib/riskOverrides.ts` — local store | `domain/config.ts#resolveRisk` — server store | independent storage, same shape, **not wired to each other** |
+
+New pure decision rules belong on the LEFT column, defined once in `ccp/app/src/lib/`, with
+`ccp-api` importing them through `@app-lib` and an entry added to
+`appLibBoundary.test.ts`'s `ALLOWED_APP_MODULES` — the pattern `permissions.ts` and (as of
+ARCH-8) `approvalLadder.ts` already follow — rather than a second hand-written copy on either
+side.
+
 ## Prerequisites & install
 
 | Piece | Needs | Version | Install |

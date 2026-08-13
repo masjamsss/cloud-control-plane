@@ -5015,6 +5015,320 @@ leak."
       test/snapshotWriteAtomic.test.ts` (14 passed); full suite `npx vitest run` (102 files, 1421
       passed); `npx tsc --noEmit` clean.
 
+## ARCH-6
+
+*The backend depends on frontend-package internals; the shared-contract layer is a path
+alias plus a hand-synced copy.*
+
+**This is ARCH-6's declared partial, taken deliberately, and the reasoning is the point of
+this entry.** The triage line reads "Until the package lands, an allowlist lint + a
+copy-parity test is the acceptable partial". What landed is the partial: the `@app-lib`
+seam is now checked instead of commented, and the `planSummary` copy is pinned to its
+canonical source. `ccp/shared` was **not** extracted — see the residue and the paragraph
+below for why that was the right call rather than the cheap one.
+
+**What the hazard actually is, measured rather than restated.** `ccp/api/tsconfig.json`
+maps `@app-lib/* -> ../app/src/lib/*`. tsc follows the alias, but a bare specifier inside
+one of those app files (`import { z } from 'zod'`) resolves **from that file's own
+directory** — `ccp/app/src/lib/`, walking up through `ccp/app/node_modules` — and never
+looks in `ccp/api/node_modules`. `ccp-api.yml` runs `npm ci` only in `ccp/api`, so in CI
+every one of those directories is empty. The api depends on zod itself, which is exactly
+what makes the mistake so easy: the import reads as obviously fine from the api's own
+`package.json`, and it works on any machine where `ccp/app/node_modules` happens to exist.
+
+Reproduced by moving `ccp/app/node_modules` aside and importing a zod value through the
+alias, with a deliberately nonsense property access on the inferred type:
+
+| | dev shape (app deps present) | CI shape (app deps absent) |
+| --- | --- | --- |
+| nonsense access `s.thisFieldDoesNotExist` | `TS2339 Property … does not exist on type '{…}'` | **no error at all** |
+| errors reported | 1, in the api's own file | 2, both in `../app/src/lib/planSummary.ts` |
+
+That is the finding's word "silently", confirmed: `z` is unresolved, so `z.object(...)` is
+`any`, so `z.infer<...>` is `any`, and **the api stops typechecking its own code against
+the contract entirely**. The build does go red today — but for the wrong reason, naming a
+file outside the api's `include` and outside its ownership. It goes red only because tsc
+still reports diagnostics in that imported file; anything that stops it doing so (a
+`@ts-nocheck`, an `exclude`, a `.d.ts` boundary under `skipLibCheck`) converts the red into
+a green that is checking nothing. The api-local copy of `planSummary` exists precisely
+because of this, and carried a "keep this edited in lockstep" comment and nothing else.
+
+**RULE A is stated as an invariant, not as "don't import zod" (L-25).** No file the api
+reaches through the alias may import a bare specifier *at all* — relative imports, other
+aliased app files and `resolveJsonModule` JSON all resolve without any `node_modules`. It
+is checked over the **transitive** closure, because the import that breaks the api need not
+be in the file the api names: `@app-lib/policy` is dependency-free itself and pulls in
+`lib/projectScope.ts`, which is where a stray dependency would actually sit. The closure is
+9 entry specifiers over 17 files today, with zero bare imports.
+
+**RULE B is the allowlist.** The finding's second impact — "the app's `lib/` cannot be
+refactored without auditing the api's import graph" — is true because that graph was
+written down nowhere. It is now nine reviewed entries in one place, and it fails in both
+directions: reaching an unlisted module fails, and an allowlist entry nobody imports any
+more also fails, because a list that over-states the coupling stops being read.
+
+**Why `ccp/shared` was not extracted here.** Not difficulty — blast radius, and a specific
+collision. The extraction moves `permissions`/`policy`/`redact`/`dependsOn`/`requestStatus`
+out of `ccp/app/src/lib/`, which is imported by ~55 feature components; it needs a new
+workspace package, two regenerated lockfiles, a changed `api/Dockerfile` vendoring step,
+and edits to the CI path filters, `verify:safety` and the publish-gate scan scopes — every
+one of which is a place where a mistake fails *silently* rather than loudly. `B-O13` is
+concurrently touching `ccp/app/src/lib/` in a different wave, so a file-moving refactor of
+that directory from this lane would collide with it directly. The design deserves a human
+review before it lands, and the partial removes the reason it was urgent: the two failure
+modes that made the seam dangerous (a silent typecheck collapse, a silently drifting copy)
+are now loud. Left un-extracted, deliberately, as **R-77**.
+
+- [x] **Defect reproduced first** — the two-column table above; both columns run against the
+      real tree with a probe file, `ccp/app/node_modules` moved aside to reproduce CI.
+- [x] **Cause, not symptom** — the cause is that the alias imposes a constraint
+      (dependency-free, transitively) that only comments stated. RULE A states it as a
+      checkable invariant over the closure. The `planSummary` copy is *kept* — it is the
+      correct answer for a zod schema at this seam — and pinned instead.
+- [x] **Regression tests** — `ccp/api/test/appLibBoundary.test.ts` (3) and
+      `ccp/api/test/planSummaryCopyParity.test.ts` (3). Both live in the api suite, which is
+      the job that breaks; `ccp-api.yml`'s path filter already includes `ccp/app/src/lib/**`,
+      so editing a shared file runs them.
+- [x] **Negative test** — five injections, each watched to fail:
+      **(1)** `import { z } from 'zod'` added to `lib/requestStatus.ts` (a closure file) →
+      RULE A fails with ``lib/requestStatus.ts imports 'zod'``. **The same injection left
+      `test/statusVocabulary.test.ts` — which imports that very file — green at 8 passed**,
+      which is the coverage this check adds.
+      **(2)** an api import of `@app-lib/datetime` → RULE B fails naming it (and RULE A fires
+      too, because `datetime.ts` reaches a package: the transitive rule earning its keep).
+      **(3)** `MAX_ATTR_CHANGES` 80→90 in the api copy only → parity fails.
+      **(4)** a field added to the canonical `PlanCountsSchema` only → parity fails.
+      **(5)** the canonical file's bidirectional drift guard removed → the exemption test
+      fails. In **all three** of (3)–(5) the pre-existing `test/planSummary.test.ts` stayed
+      green at 8 passed — it exercises behaviour and only ever loads one of the two files,
+      exactly as the finding says.
+- [x] **Assert the setup fired (L-1)** — every assertion here has the form "nothing bad in
+      this set", so each one passes vacuously on an empty scan. Pinned: the entry-point scan
+      finds >5 specifiers including a known one; the closure resolves every edge (an
+      unresolvable import is an *unchecked* edge, not an absent one) and exceeds 10 files;
+      the closure contains `lib/projectScope.ts`, which **no api file imports** — it is
+      reachable only transitively, so if that stops holding the walker has stopped walking
+      and RULE A is only checking the first hop, where the hazard already is not. For parity:
+      both files must yield >10 declarations, and the extractor must capture *bodies* — a
+      bracket-balancing bug truncating at the first line would still populate the map and
+      every schema would then compare equal as `const X = z.object({`.
+- [x] **Failure is loud** — each message names the offending file and specifier and says
+      what to do about it.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full api
+      suite 104 files / 1427 passed.
+
+**Residue:** the `ccp/shared` package does not exist; the api still depends on
+frontend-package internals through a path alias, and `planSummarySchema.ts` is still a copy
+(**R-77**). The redaction/toolchain helper duplication that triage parks on ARCH-6 (`R-11`)
+is unaddressed for the same reason (**R-77** covers it).
+
+## ARCH-5
+
+*Two sources of truth for the catalog: the server validates against the image-baked
+catalog, the SPA renders the per-project uploaded one.*
+
+- [x] **Defect reproduced first.** Confirmed by reading, not assuming: `manifests.ts#getOperation`
+      resolves every submit-time operation from the image-bundled catalog
+      (`ccp/app/src/data/manifests/*.json`, vendored at build time) with no per-project
+      resolution anywhere in `routes/requests.ts`'s submit handler. The SPA, for a real
+      onboarded estate, builds its forms from `GET /projects/:id/manifests` — the ACTIVE
+      per-project uploaded set. Nothing anywhere compared the two. Built a fixture where they
+      disagree (an uploaded `ec2-set-encrypted` claiming `l1_self_service` +
+      `forcesReplace:false` against a bundled definition of `engineer_only` +
+      `forcesReplace:true`) and submitted against the unfixed handler: it silently applied
+      the BUNDLED rule with no signal to the requester that their form had lied to them.
+- [x] **Cause, not symptom.** Two manifest sets exist for a real reason — CI-staged,
+      dual-control-activated, per-estate data is how the product is supposed to work — but
+      the SUBMIT PATH had never been taught that the set it enforces and the set the form was
+      built from can be different documents.
+- [x] **The authority decision, and why the finding's own recommendation is rejected.**
+      The bundled catalog is authoritative for every submit-time decision; the uploaded set
+      is a presentation artifact. This is not a preference — `domain/projectData.ts`'s
+      `UploadManifest` validates an uploaded operation as `{id:string}.passthrough()`, so
+      `exposure`/`riskFloor`/`forcesReplace` on an uploaded manifest are never read by
+      anything, while the bundled catalog's same fields are CI-gate-enforced
+      (`verify:safety`'s ForceNew gate). The finding's first recommendation — resolve
+      submit-time operations from the project's active manifest version — is rejected in
+      writing: `domain/requirement.ts` derives the approval ladder from `op.exposure` and
+      `routes/requests.ts` demands the typed replace-confirmation from `op.forcesReplace`;
+      resolving from the uploaded set would move BOTH onto unvalidated tenant-supplied data —
+      a governance escalation wearing the costume of a lookup change (L-27's shape exactly).
+      Written up in full in `ccp/docs/DOMAIN-MODEL.md` §1.1 "Catalog authority", which the
+      code's own doc comments cite by name rather than re-deriving the reasoning per file.
+- [x] **Authority alone does not close the finding — the requester has to be told.**
+      Pre-fix, a requester whose form offered an out-of-bounds value got
+      `PARAM_OUT_OF_BOUNDS`, blaming them for a value their own screen said was allowed.
+      `domain/catalogSkew.ts#operationSkew` detects the divergence per submitted item;
+      `routes/requests.ts` refuses with `422 CATALOG_SKEW`, `details:{operationId,fields}`,
+      checked BEFORE the param-bounds/replace-confirmation gates so the refusal names the
+      real cause instead of manifesting as one of those two misleading codes.
+- [x] **The comparison is subtractive, and that is deliberate (L-25).** Everything on
+      `ManifestOperation` is compared except a small NAMED set of presentation-only fields
+      (`title`, `summary`, `consoleLabel`, `description`, `pinned`, `keywords`; param-level:
+      `label`, `help`, `sensitive`, `group`, `tier`, `uiWidget`). A field added to the type
+      tomorrow is compared by default — the failure direction of forgetting to update an
+      allowlist is a loud refusal to submit, never a silent divergence. Params are compared
+      BY NAME (reordering a form is presentation; a param present on only one side, or
+      carrying different bounds, is not), and a malformed param with no string `name` is
+      counted as divergence rather than silently invisible to the by-name map.
+- [x] **The served-side read is memoised, and the memo key is why it is safe.** A served
+      data version is immutable once staged and activation only ever moves the version
+      pointer (`ProjectDataVersionItem`), so a cache keyed by `(dataRoot, projectId,
+      activeVersion)` can never be stale — an activation changes the key, a de-activation
+      makes the lookup miss. The `dataRoot` is part of the key specifically because more
+      than one `createApp` instance can exist in one test process pointed at different
+      directories; without it the second instance would silently read the first's catalog —
+      "a cache returning a confidently wrong answer, which is worse than no cache."
+- [x] **Regression test — `test/catalogAuthority.test.ts`, 8 cases.** The escalation case
+      (above) written out explicitly: bundled `engineer_only`+`forcesReplace`, uploaded
+      claiming `l1_self_service`+no-confirmation — asserts the SERVER still requires two
+      approvals and the typed confirmation (authority holds) AND that the mismatch is
+      surfaced as `CATALOG_SKEW` naming both diverging fields (the requester is told, not
+      silently overridden). Presentation-field divergence (a re-worded `summary`) does NOT
+      trip the refusal — pins that the allowlist actually excludes what it claims to.
+- [x] **Two pre-existing fixtures were never realistic once the two catalogs are actually
+      compared — fixed, not worked around.** `test/errors.test.ts`'s exhaustive 422-taxonomy
+      list needed `CATALOG_SKEW` added (a new code, mechanical). More substantively,
+      `test/blankInstall.test.ts`'s full onboarding-ladder acceptance test uploaded a
+      3-field stub (`{id, service, macd}`) for `ec2-resize` that had NEVER agreed with the
+      real bundled definition (which carries `params`, `exposure`, `forcesReplace`,
+      `riskFloor`, …) — invisible before this fix because nothing compared them, and a real
+      defect in the fixture's realism once something finally does. Fixed by resolving the
+      REAL bundled operation via `manifests.ts#getOperation('ec2-resize')` and using it
+      directly as the uploaded manifest too, so the fixture cannot silently drift out of
+      agreement with what it is supposed to represent the next time `ec2.json` changes.
+- [x] **Assert the setup fired (L-1).** The escalation test asserts the UNFIXED behavior's
+      shape first — that the bundled op really is `engineer_only`/`forcesReplace:true` —
+      before asserting the fixed behavior refuses the uploaded downgrade.
+- [x] **Negative test confirmed.** Reverted `catalogSkew.ts`/`servedCatalog.ts` (moved
+      aside) and the wiring in `errors.ts`/`index.ts`/`routes/requests.ts`: 4 of 8 new tests
+      fail, each asserting a `CATALOG_SKEW` refusal that no longer happens (e.g. `expected
+      'REPLACE_CONFIRMATION_REQUIRED' to be 'CATALOG_SKEW'` on the escalation case — the
+      server silently obeyed the downgraded uploaded definition). Restored; 8/8 green, full
+      suite unaffected.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json &&
+      npx vitest run` — 105 files, 1435 passed. `python3 scripts/docs-error-codes-check.py`:
+      59 codes documented. `npx vitest run test/openapi.test.ts`: 23/23 (YAML validated
+      separately — `python3 -c "import yaml; yaml.safe_load(open(...))"`).
+
+## DOC-7
+
+*App `DriftProposal` type does not match the wire: `importPayload` has a different shape, and
+top-level `arn`/`tfType` are mock-only.*
+
+- [x] **Defect reproduced first, and it was worse than the finding's own text.** The finding's
+      Impact section calls the top-level `arn`/`tfType` mismatch "dead-but-documented" because
+      `driftProposalState.ts`'s finding→proposal matcher keys on `importPayload.address`, not
+      `arn`. True for THAT matcher — but `DriftPage.tsx:467` runs the OPPOSITE lookup
+      (proposal→finding, to resolve the full record `ImportDrawer` renders) via
+      `status.report.sweep?.findings.find((f) => f.arn === openImportProposal.arn)`. The real
+      api's `routes/drift.ts#listRichProposals` never puts `arn`/`tfType` on a served
+      `DriftProposal` at all (only the mock did) — so against a real deployment this lookup
+      always compared `f.arn` to `undefined`, meaning the import drawer either found nothing or
+      silently matched whichever finding happened to have no `arn`. Live, not dead.
+- [x] **Cause, not symptom.** Two distinct payload shapes exist on the wire —
+      `DriftImportPayload` (a finding's own `{address, targetFile, importBlock, skeletonHcl}`)
+      and the api's `DriftImportProposalPayloadSchema` (a proposal's own
+      `{arn, tfType, liveId, targetFile, importBlock, skeletonHcl}`, no `address` — it is
+      already `addresses[0]`) — but the app typed `DriftProposal.importPayload` as the FIRST
+      shape and gave `DriftProposal` its own top-level `arn`/`tfType` besides. The OpenAPI YAML
+      already had this right (`DriftImportProposalPayload`, `ccp-api.yaml:265-271`, and no
+      `arn`/`tfType` on `DriftProposal` at `:328-338`) — only the app's hand-written type and
+      the mock disagreed with it.
+- [x] **The type now matches the wire, not the mock.** Added `DriftImportProposalPayload`
+      (`types/drift.ts`) mirroring the YAML exactly; `DriftProposal.importPayload` now types
+      against it. Removed `DriftProposal.arn`/`.tfType` entirely — the real api never serves
+      them, and once the matching logic below stopped needing them, keeping unserved fields
+      around was the exact "type asserts a field the wire never carries" class of bug DOC-7
+      exists to prevent, not a smaller version of it.
+- [x] **A real identity function, not a deleted one.** `lib/driftEligibility.ts#findCurrentFinding`
+      is a byte-for-byte port of the api's own `domain/driftProposals.ts#findCurrentFinding`/
+      `findingIdentityKey` (arn wins when non-empty, else `tfType`+`liveId`) — used to resolve
+      `DriftPage.tsx`'s open-import-drawer finding AND, replacing the SAME buggy `f.arn ===
+      row.arn` pattern, the mock's own submit-time re-derivation in `lib/api.ts` (which also
+      re-derives the finding-level `importPayload.address` from `row.addresses[0]` rather than
+      copying the proposal-level payload verbatim — the same shape confusion, one level deeper).
+- [x] **`ImportDrawer.tsx`'s header fixed to match.** `payload?.address ?? finding.name` never
+      rendered the address in real api mode (the finding's own second Impact bullet) — changed
+      to `proposal.addresses[0] ?? finding.name`, the field that actually names the address an
+      import would create.
+- [x] **Regression tests.**
+      `test/driftEligibility.test.ts` — 7 new cases for `findCurrentFinding`: arn match,
+      tfType+liveId fallback (arn null on both sides), no match, arn-bearing vs. fallback
+      identities never cross-match, and two arn-less findings told apart by `liveId` alone (the
+      case that actually proves the fallback is a real key and not a shared bucket for "no
+      arn"). `test/unmanagedResources.test.tsx` — asserts the drawer header renders
+      `proposal.addresses[0]`, not `finding.name`.
+- [x] **Negative tests confirmed, independently, for both fixes.** (1) Reverted
+      `findingIdentityKey`'s fallback branch to always key on `arn` alone (collapsing every
+      arn-less finding to the same key): the new "two different arn-less findings" test failed
+      exactly as predicted (`expected {liveId: 'db-oob-99', ...} to be {liveId: 'db-oob-01',
+      ...}` — the wrong finding, not a thrown error, which is the more dangerous failure mode
+      DOC-7 warned about). (2) Reverted `ImportDrawer.tsx`'s header back to
+      `payload?.address ?? finding.name`: the new header test failed with the finding-name
+      fallback rendered instead of the address. Both restored; full suites green again.
+- [x] **Evidence in the status line.** `ccp/app`: `npx tsc --noEmit` clean; `npx vitest run` —
+      160 files, 2830 passed; `npx eslint . --ext .ts,.tsx` — 0 errors (7 pre-existing warnings
+      in files untouched by this fix); `node scripts/check-contrast.mjs`,
+      `python3 scripts/list-missing-help.py`, `npx vite-node scripts/verify-manifest-safety.ts`,
+      `npx vite-node scripts/verify-source-genericity.ts` — all pass.
+
+## ARCH-8
+
+*The governance domain is implemented twice (server + browser mock) with acknowledged
+behavioral divergence.*
+
+- [x] **The triage line's two concrete asks, both delivered.** (1) Shrink the mock's surface
+      toward "the http client over an in-browser toy store" by moving a pure rule into the
+      shared layer, following ARCH-7's shape. (2) Enumerate mock-vs-api behavioral gaps in ONE
+      table in `ccp/README.md` instead of scattered comments.
+- [x] **What was and was not already shared, checked by reading rather than assuming.** The
+      finding's own Location line names `permissions.ts`/`policy.ts`/`quorum.ts` as duplicated.
+      `permissions.ts`'s `canRequest`/`canApprove` turned out to ALREADY be imported by the api
+      through `@app-lib/permissions` — not duplicated at all. `quorum.ts` is explicitly
+      documented mock-only by its own doc comment (api-mode's `requestFeasibility.ts` is a
+      genuinely different, richer computation — project-binding and activation the local
+      account directory can't see). Neither was touched.
+- [x] **The one real, unmirrored duplicate: the ladder's WHO rule.**
+      `lib/approvalLadder.ts#canSignApprovalStep` and `domain/eligibility.ts#canSignStep` were
+      byte-for-byte identical logic (`step === 'L3' ? role === 'lead' : role === 'approver' ||
+      role === 'lead'`), hand-copied — the app's own doc comment said "Mirrors the server's
+      `canSignStep`", the api's said "the single source of truth", and both were true only by
+      coincidence. Now one definition: the api imports `canSignApprovalStep` through
+      `@app-lib/approvalLadder` (added to `appLibBoundary.test.ts`'s `ALLOWED_APP_MODULES`,
+      ARCH-6's checked seam) and `canSignStep` is a thin wrapper around it, keeping its exported
+      `LadderStep`/`RoleName` signature unchanged for every existing caller.
+- [x] **Negative test confirmed the delegation is real, not coincidental agreement.** Broke
+      `canSignApprovalStep`'s L2 branch (`return step === 'L3' ? role === 'lead' : true;`) in
+      the APP file only, touching nothing in `ccp/api`: `domain/eligibility.ts#canSignStep`'s
+      own existing test (`test/approvalLadder.test.ts`, `test/eligibility.test.ts`) failed
+      immediately (`canSignStep('L2', 'requester')` returned `true`). Restored; both suites
+      green. This is the proof the api is really calling through the alias, not independently
+      agreeing with it.
+- [x] **A third, previously-undocumented gap surfaced while writing the table, and it was NOT
+      fixed here.** `routes/requests.ts` computes `approvalsRequired` from
+      `domain/exposure.ts#ladderFor(reviewTier, forcesReplace)` alone —
+      `domain/config.ts#loadPolicy`'s per-risk-tier `ApprovalPolicy` is read back only for
+      `policyVersion` stamping, never to size the ladder (`routes/requests.ts`'s own comment:
+      "risk is display-only now — it no longer varies the count"). The mock's `lib/policy.ts` /
+      `ApprovalPolicyAdmin.tsx` still implement and expose the OLD model as live and effective,
+      in BOTH modes' UI, including against a real `ccp-api`. Fixing this means picking one of
+      three product decisions (remove the admin screen, re-wire the ladder to widen with
+      policy, or relabel the screen as versioning-only) — none of which is "shrink the mock" or
+      "write a table." Named rather than silently absorbed: `docs/audit/RESIDUE.md` R-76, and
+      the stale doc comment in `domain/config.ts` that claimed `approvalsFor` was "imported
+      read-only from the app" (never true — it isn't imported anywhere in `ccp/api/src`) is
+      corrected to say so.
+- [x] **The table itself.** `ccp/README.md`'s "Mock mode vs. api mode" section now carries a
+      9-row table naming, per behavior, which side is authoritative and why — including the
+      two now-genuinely-shared rules, the accounts/audit/cooling-scheduler-bundle machinery the
+      mock was always honest about not implementing, and the policy-count gap this fix
+      surfaced. Closes with a one-line rule for where the NEXT shared predicate should live.
+- [x] **Evidence in the status line.** `ccp/api`: `npx tsc --noEmit` clean; `npx vitest run` —
+      105 files, 1435 passed (`test/appLibBoundary.test.ts`, `test/eligibility.test.ts`,
+      `test/approvalLadder.test.ts`, `test/perProjectAuthz.test.ts` all pass, unchanged
+      expectations). `ccp/app`: `npx tsc --noEmit` clean; `npx vitest run` — 160 files, 2830
+      passed (`test/approvalLadder.test.ts` unchanged expectations, 23/23).
 ## API-4
 
 *The bundle "claim" is not a mutual-exclusion, and a crashed bundle wedges the request at
