@@ -5330,6 +5330,251 @@ Nothing was added there; re-testing it would have been duplication rather than c
       the table above; 37 new tests in total across the batch.
 - [x] **Evidence in the status line** — 106 files, 1,458 api tests pass (from 102 / 1,421);
       `npx tsc --noEmit` clean.
+## ERR-5
+
+*`TerraformExecutor.init()` caches a rejected promise: one transient init failure bricks the
+executor until restart.*
+
+- [x] **Defect reproduced first** — reproduced at HEAD with a stub `terraform` that fails
+      `init` exactly once and logs every subcommand it is handed. The first `replan()`
+      rejects (correct); the second rejects with the *same* error and the log shows only
+      ONE `init` invocation — the executor never tried again. `??=` on
+      `this.tf(['init'…]).then(…)` memoizes whatever the promise settles to, and a
+      rejection is a settlement. The loop constructs the executor once
+      (`loop.ts#maybeStartSchedulerLoop`), so the auto-apply lane stayed dead until the
+      process restarted while the scheduler re-raised the identical stale error every tick.
+- [x] **Cause, not symptom** — the rejection path clears the memo
+      (`.then(ok, e => { this.initDone = null; throw e; })`), so the next call re-enters
+      `tf(['init'…])` for real. The success path is untouched: init still runs at most once
+      per executor while it is succeeding, and concurrent callers still share the one
+      in-flight promise. The obvious over-correction — dropping the memo and running
+      `terraform init` per call — is explicitly tested against.
+- [x] **A regression test pins it** — new `test/terraformInitRetry.test.ts`, three cases:
+      the retry succeeds; a successful init is still memoized (exactly two inits across
+      three replans, not three); three concurrent callers share one init, all see the
+      failure, and the executor is not poisoned afterwards. The stub records its own
+      invocations, so "the retry re-ran init" is asserted rather than inferred (L-1) — a
+      passing retry that had somehow skipped init would fail on the invocation log.
+      **Negative test confirmed:** restoring the bare `.then(() => undefined)` fails all
+      three, the first with `terraform init failed: Error: Failed to query available
+      provider packages` re-raised from the cache — the defect verbatim.
+- [x] **Failure is loud** — the init error is surfaced unchanged (it was never swallowed);
+      what changed is that it stops being permanent. The test's failure message names the
+      exact invocation sequence, so a regression says which call was or was not made.
+- [x] **Evidence in the status line** — `fixed:` sha below; `npx tsc --noEmit` clean, full
+      api suite green.
+- [x] **Lesson** — nothing new. It is a plain instance of L-6 ("a retry that reuses stale
+      state is worse than no retry") read in the other direction: a memo that reuses a
+      stale *failure* is worse than no memo.
+
+## ERR-6
+
+*`executor.replan()` failures are an unmodeled halt: unbounded silent retry, and they abort
+the rest of the project's due list.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD. `executor.apply` was wrapped in
+      `tryApply` from the start; `executor.replan` was called bare one screen above it. A
+      throwing re-plan escaped `processOne`, escaped `runDueApplies` — so every LATER due
+      request in that project was skipped — and was swallowed by `loop.ts`'s per-project
+      `console.error`. Reproduced both halves: with three due requests and a re-plan that
+      throws for the first, `runDueApplies` REJECTED and requests two and three were never
+      touched, on that tick and on every tick after it.
+- [x] **Cause, not symptom** — two changes, deliberately separable so each can be
+      negative-tested on its own. `tryReplan` normalizes the throw into a value (the shape
+      `tryApply` always had), and a failed re-plan HOLDS the request in
+      `AWAITING_DEPLOY_APPROVAL` with one timeline event + audit entry + notification per
+      failure EPISODE. `perRequest` wraps each request's work — the lease sweep as well as
+      the due loop — so an unexpected throw becomes an `errored` outcome for that request
+      alone; `loop.ts` logs those, since `errored` is the one result with no timeline entry
+      behind it.
+- [x] **THE FINDING'S RECOMMENDATION IS REJECTED, IN WRITING** — it asks to "halt after N
+      consecutive failures (a new `REPLAN_FAILED` halt spec)". Two reasons not to.
+      **First**, a halt is exited only by cancel (deliberately — R-17), so halting means
+      throwing away an approved change and sending two humans back through the ladder for a
+      fault the change had no part in: a re-plan failure is evidence about the EXECUTOR (an
+      unreachable backend, a registry blip, ERR-5's cached init rejection), nothing has
+      been applied and nothing is half-landed. L-11's corollary states the rule — where the
+      safe answer is "not now", HOLD the row and say so in the timeline; save the terminal
+      state for evidence of damage. This is the same judgement API-3 already forced on this
+      file for an absent plan pin. **Second, the retry is already bounded**, which is the
+      part the finding missed: a request is due only while its window is open
+      (`isDue` → `windowOpen`), so the retries stop when the window closes and
+      `settleWindow` stamps `WINDOW_EXPIRED` on the next read — parked, with two exits
+      (rewindow, which KEEPS the approvals, or cancel). A halt would replace that
+      recoverable ending with an unrecoverable one. What was actually missing was evidence,
+      and that is what the fix adds. The last test in the file pins the bound rather than
+      asserting it in prose.
+- [x] **A regression test pins it** — new `test/schedulerReplanFailure.test.ts`, six cases:
+      the modelled hold (event + audit + notification, status unchanged); once-per-episode
+      recording (a second failing tick writes nothing, but a failure *after* other activity
+      on the row is recorded again); sibling isolation; an unexpected store throw isolated
+      as `errored` with a `tick-error` notification; a throwing notifier not taking the tick
+      down; and the window bound. Setup assertions throughout (L-1): the executor's call
+      log proves the second tick really re-ran and really failed rather than the scheduler
+      having stopped looking, and the sibling test asserts the failing request was first in
+      the due list so the siblings really were downstream of the throw.
+      **Negative test confirmed, each half separately:** restoring the bare
+      `executor.replan` fails 4 of 6; removing only the `perRequest` wrappers fails the
+      other 2 with the raw `store exploded` / `pager is down` escaping `runDueApplies`.
+- [x] **Failure is loud** — a re-plan failure now reaches all three channels this product
+      has: the request timeline, the hash-chained audit, and the injectable notifier. Before
+      it reached stdout only, which is why the portal made it look as though the scheduler
+      had never run.
+- [x] **Evidence in the status line** — `fixed:` sha below; full api suite green.
+- [x] **Residue** — see `R-83` (an error whose *text* changes between ticks is not
+      re-recorded within one episode).
+
+## CONC-10
+
+*Stuck `APPLYING` after a worker crash has no reclaim or operator path.*
+
+- [x] **Defect reproduced first — after verifying what was already closed.** The
+      verify-first instruction was right about most of it: API-2 stamps `applyClaimedAt`,
+      `runDueApplies` halts a claim past `APPLY_LEASE_MS`, and `CANCELLABLE_STATUSES`
+      accepts both halt statuses, all pinned end to end by
+      `test/schedulerStuckState.test.ts`. One gap survives, and it is the finding's own
+      defect: **`runDueApplies` has exactly one production caller, the `CCP_SCHEDULER=1`
+      timer**, so the release depends on the same subsystem whose worker just died still
+      being switched on. Arm the scheduler, have the process die mid-apply (crash,
+      container restart, self-update), disarm the scheduler while working out what landed —
+      the obvious first move — and no tick ever runs again. Reproduced at HEAD in
+      `test/applyClaimSettleOnRead.test.ts`: with a lease-expired claim and no tick, a GET
+      returns `APPLYING` unchanged and cancel answers `STATE_CONFLICT`, forever. That is
+      "requires store surgery", which is CONC-10's own wording.
+- [x] **Cause, not symptom** — `settleApplyClaim` releases the row on the next READ, the
+      doctrine every other lease in this codebase already follows (`settleCooling`,
+      `settleWindow`, `settleScanJobLease`, `settlePendingExpiry`), so the release happens
+      on the next read or the next tick, whichever comes first, with no operator verb to
+      remember and no dependency on a flag. It shares `halt()` with the sweep rather than
+      re-deriving the transition. Wired into the three read paths (`GET /requests/:id`, the
+      list, feasibility), screened by a synchronous predicate like the other settlers so a
+      list of rows that need nothing costs nothing. `now` stays a parameter — this module
+      still never reads the clock.
+- [x] **Deliberately NOT wired into cancel** — cancel already settles cooling and window
+      before its state check, so adding the claim there would have been consistent, and it
+      is still wrong: the halt exists to say *a human must confirm what landed*, and a
+      cancel that released the claim in the same call would stamp `CANCELLED` on a request
+      whose change may have half-applied without anyone having seen the halt — the API-5
+      shape. The row is one GET away from being cancellable, and the SPA reads before it
+      offers the verb. See `R-81`.
+- [x] **A regression test pins it** — new `test/applyClaimSettleOnRead.test.ts`, five
+      cases: a single GET releases the wedge and cancel then works; a LIVE claim is never
+      robbed by a read and stays uncancellable (the API-5 invariant, unchanged); the list
+      read settles it too; settling twice writes one halt; and a differential case that
+      settles the same wedge by tick and by read in two identical stores and compares
+      status, timeline events and audit actions — so the two paths cannot drift apart.
+      Setup assertions (L-1) pin the wedge before anything is claimed about it.
+      **Negative test confirmed:** with the three settle call sites removed, 4 of 5 fail
+      with `expected 'APPLYING' to be 'HALTED_APPLY_FAILED'`.
+- [x] **Failure is loud** — the release writes the same `apply_failed` timeline event and
+      `scheduler-apply-lease-expired` audit action the tick writes, whose message already
+      says a human must confirm what landed.
+- [x] **Evidence in the status line** — `fixed:` sha below; full api suite green.
+- [x] **Residue** — see `R-80` (a read can release a claim an apply that outlives the lease
+      still holds) and `R-81` (cancel alone does not release it).
+
+## PERF-14
+
+*Scheduler tick re-scans every project's full request collection every minute.*
+
+- [x] **Defect reproduced first, by measuring (L-26)** — a benchmark over a `MemoryStore`
+      seeded with 20 projects: at 500 requests each, one tick across all projects costs
+      **46 ms, of which ~44 ms is inside `queryGSI1`**; at 2000 each, **182 ms**. The cost
+      is the deep clone of every request row in each project's partition, every 60 s, to
+      find a due set that is almost always empty, and it grows linearly with history and
+      never comes back down. One correction to the finding's text: the read is NOT a full
+      store scan — `queryGSI1` resolves the project's REQ partition directly — so the ~200k
+      map iterations it describes are not what this costs. The clone-everything half is
+      exactly right and is the whole of it.
+- [x] **Cause, not symptom** — a due-set (`domain/apply/dueIndex.ts`) whose per-tick cost
+      tracks a project's OPEN work rather than its history: 46 ms → **1.8 ms** at 10k rows,
+      182 ms → **14 ms** at 40k. Membership is by EXISTENCE, not by transition — a row is
+      watched from the moment the index first sees it (walking the collection forward from
+      the highest sort key seen) and leaves only when a read of the row itself shows a
+      terminal status, derived from the shared vocabulary's not-terminal rule (ARCH-7) so a
+      parked `WINDOW_EXPIRED` row that gets re-windowed is still watched. The index caches
+      WHICH rows, never their contents: every tick re-reads each watched row, so decisions
+      are made on state exactly as fresh as the full scan gave.
+- [x] **THE FINDING'S SECOND SUGGESTION IS REJECTED, IN WRITING** — "maintain a small
+      windowed-&-approved side list updated on the transitions that create/destroy
+      eligibility" puts correctness in the hands of every write path that touches a request
+      status: submit, approve, cancel, rewindow, the cooling settler, the window settler,
+      the freeze-hold settler, the bundle, the scheduler. A transition that forgets to
+      update the list does not fail — it silently strands an approved change that then
+      never applies. Its first suggestion (a status index) is not available either: the
+      seam has ONE GSI and request rows already spend its partition key on the collection
+      the list endpoint pages through, so a status-scoped partition means changing the
+      store seam, which is `B-O3`'s file. Hence membership-by-existence, which needs no
+      cooperation from any write path.
+- [x] **Bounded, self-healing drift** — the index is a cache and is rebuilt from a full
+      scan every 30 ticks. That is what makes the design defensible rather than merely
+      clever: the sort keys are ULIDs, which order by creation millisecond with random low
+      bits *within* a millisecond, so an incremental walk can in principle miss a row
+      created in the same millisecond as its cursor. The re-seed bounds that (and any
+      future id-format surprise) to one interval instead of forever, and the test FORCES
+      the case rather than hoping against it.
+- [x] **A regression test pins it** — new `test/schedulerDueIndex.test.ts`, eight cases.
+      The cost test is written as a RULE, not a threshold (L-25): *the same open work must
+      cost the same per tick with 20 finished requests and with 400*. A millisecond budget
+      would be flaky and would need re-tuning; this states the actual property. The others
+      pin correctness, which matters more than the speed: a request that becomes eligible
+      later is still found, a request created after the seed is picked up, a
+      `WINDOW_EXPIRED` row stays watched, a finished row leaves the set, an out-of-order
+      row is recovered by the re-seed, and a scripted four-tick scenario (applies, a live
+      claim, a dead claim, a no-pin hold, a mid-run approval) produces identical outcomes
+      and identical end state indexed and unindexed — with a setup assertion that the
+      scenario really exercised four distinct outcome kinds, since an all-empty run would
+      compare equal and prove nothing. **Negative test confirmed:** with `opts.candidates`
+      ignored so the tick re-scans, the cost rule fails with `expected 401 to be 21`.
+- [x] **Failure is loud** — the index is an OPTION on `runDueApplies`, not a hidden
+      singleton: omitted, the tick behaves exactly as before, which is what every existing
+      caller and test still exercises. That is also what makes the differential test
+      possible at all.
+- [x] **Evidence in the status line** — `fixed:` sha below; full api suite green.
+- [x] **Residue** — see `R-82` (the local store's `after` still walks the partition keys,
+      so the indexed tick is O(partition) comparisons — no clones — in `MemoryStore` only).
+
+## API-8
+
+*Freeze-held `kind:'now'` requests dead-end in AWAITING_DEPLOY_APPROVAL after the freeze
+lifts.*
+
+- [x] **Defect reproduced first** — reproduced at HEAD through the real routes (submit,
+      approve to L2, freeze, approve to L3), not a hand-seeded row: the request lands
+      `AWAITING_DEPLOY_APPROVAL` with a `held_frozen` event, and after
+      `freeze.global = false` every subsequent read still returns
+      `AWAITING_DEPLOY_APPROVAL`. Confirmed each named exit is genuinely shut:
+      `settleWindow` returns immediately for a non-window schedule, `isDue` requires
+      `kind:'window'` (and the scheduler is off by default), `rewindow` refuses a
+      `kind:'now'` row with `STATE_CONFLICT` by design, and the bundle is disarmed by
+      default. Cancel was the only exit from a change every required human had approved.
+- [x] **Cause, not symptom** — the freeze DEFERRED a status decision and nothing ever
+      revisited it. `settleFrozenHold` is that missing half, written as the sibling of
+      `settleWindow` the finding suggests: write-on-read, guarded transact, idempotent
+      re-read, no background timer, wired into the same three read paths.
+- [x] **Three limits are deliberate and commented** — a `kind:'window'` row is NOT swept up
+      (a window is a wait the requester asked for, not one the freeze imposed; stamping it
+      APPLIED on unfreeze would record an apply outside the reviewed maintenance window);
+      the quorum is re-checked against the row's own `approvalsRequired` and fails closed;
+      and the schedule kind is matched exactly (`=== 'now'`, never `!== 'window'`) so a
+      future third kind must make its own decision rather than being swept into an APPLIED
+      stamp by a negation.
+- [x] **A regression test pins it** — new `test/frozenHoldSettle.test.ts`, six cases: still
+      frozen → still held; unfrozen → APPLIED with an audited `request-frozen-hold-applied`
+      entry and an event that says why; the list read settles it too and a second settle
+      writes nothing; a windowed row held by the same freeze is untouched and still belongs
+      to the scheduler; a cancelled row is never resurrected by a later settle; rewindow
+      still refuses. The held row is built through the real routes and the helper asserts
+      it really carries `held_frozen` before any claim is made about it (L-1).
+      **Negative test confirmed:** with the three settle call sites removed, the two settle
+      cases fail with `expected 'AWAITING_DEPLOY_APPROVAL' to be 'APPLIED'` while the four
+      guard cases keep passing — which is what says the fix is narrow.
+- [x] **Failure is loud** — the transition writes a timeline event naming the freeze lift
+      and an audit entry under `system:freeze-lifted`, so a status that changed with no
+      human acting is attributable.
+- [x] **Evidence in the status line** — `fixed:` sha below; full api suite green.
+- [x] **Residue** — see `R-84` (a held row in a project nobody reads stays held until
+      someone looks — the settle-on-read trade `R-19` already records for scan jobs).
 ## ARCH-6
 
 *The backend depends on frontend-package internals; the shared-contract layer is a path

@@ -40,6 +40,19 @@ them into one `checkSubmitRateLimit` — the bounded per-requester index (PERF-1
 count, and a gate row bumped in the SAME transact (CONC-12) makes that decision atomic. See
 `middleware/rateLimit.ts#checkSubmitRateLimit`'s doc comment for the combined contract.
 
+### R-10 · `transactWithAudit` cannot tell which condition failed
+*Recorded as residue on **CONC-2**.*
+
+A `ConditionError` from the domain write and one from audit-chain contention were
+indistinguishable to the caller. L-6 was the lesson this produced; the seam itself stayed
+unchanged for a long time.
+
+**Resolved by CONC-15**: `transactWithAudit` now re-reads the caller's own conditions after
+a refusal and reports a `DomainConditionError` (carrying the specific failed write) when one
+of them lost, reserving `CHAIN_CONTENTION` for a genuinely moved chain head — see
+`domain/audit.ts#failedDomainCondition`'s doc comment for exactly what it can and cannot
+prove (R-86 records the one remaining imprecision, accepted).
+
 ### R-1 · The legacy-row concurrency window
 *Recorded as residue on **CONC-1**, again on **CONC-2**, and a third time on **CONC-3**,
 which noted "it still has no finding".*
@@ -140,6 +153,25 @@ close honestly. Untracked: no open finding names it, and it wants either a findi
 deliberate "generic is good enough" decision — the audit's own habit of reading the smallest
 bucket applies, since the list of sites is short and enumerable from the `transactWithAudit`
 call sites that carry a condition.
+
+### R-82 · The local store's `after` still walks the partition keys
+*Residue on **PERF-14**.*
+
+PERF-14's due-set makes the steady-state tick read only the rows a project has OPEN, and the
+measurement bears that out (46 ms → 1.8 ms at 10k rows). What remains is that the
+incremental read — `queryGSI1(gsi, { after: cursor })` — is O(partition) *comparisons* in
+`MemoryStore`, because the implementation walks the partition's sorted keys and skips
+everything at or below the cursor. It clones nothing, which is where the cost was, so the
+residual is small: at 40k rows the indexed tick is 14 ms against 182 ms. But it is still a
+cost that grows with history, and it is why the improvement is 26x at 10k rows and 13x at
+40k rather than flat.
+
+**Not fixed here because the fix is in someone else's file.** A binary search over the
+cached sorted keys would make `after` O(log n), and `store/*` belongs to `B-O3`. It is also
+a LOCAL-ONLY cost: DynamoDB's `ExclusiveStartKey` starts the read at the key and never reads
+what precedes it, so the deployed shape does not have this residual at all. Recorded rather
+than folded in, because a seam whose local cost model differs from production is exactly
+what `API-17`/`DATA-14` exist to enumerate.
 
 ### R-25 · `ENGINEER_REVIEW_REQUIRED` is defined and emitted by nothing
 *Residue on **DOC-4**, **DOC-2** — both now closed, which is how this became untracked.*
@@ -252,13 +284,6 @@ The same gap covers `migrate-data.sh`: OPS-5's test drives step 11's decision, n
 ceremony. `DATA_ROOT`/`LEGACY_UPDATE_DIR` are now parameterised (the seam `install.sh`
 already has) so an end-to-end walk *could* be written against a throwaway tree. It has not
 been.
-
-### R-10 · `transactWithAudit` cannot tell which condition failed
-*Residue on **CONC-2**.*
-
-A `ConditionError` from the domain write and one from audit-chain contention are
-indistinguishable to the caller. L-6 is the lesson this produced; the seam itself is
-unchanged.
 
 ### R-11 · The redaction/toolchain helpers are duplicated across packages
 *Residue on **TEST-4**.*
@@ -607,6 +632,67 @@ store, and each attempt is idempotent (retro-register is `ifNotExists`, material
 any row that already has `roles`). If a deployment were ever found sitting in that window for
 long, the cause would be sustained contention on the `@control` chain — a different problem,
 with a different fix, and one this ledger entry is meant to make legible rather than mask.
+
+### R-80 · A read can release a claim an apply that outlives its lease still holds
+*Residue on **CONC-10**.*
+
+`settleApplyClaim` releases an `APPLYING` row on read once `APPLY_LEASE_MS` (one hour) has
+passed. The tick's own sweep could never rob a live worker — `loop.ts` refuses to overlap
+ticks, so in a single process no sweep runs while an apply is in flight. A READ has no such
+ordering, so an apply that genuinely runs for more than an hour can now be halted underneath
+itself.
+
+**Accepted, for three reasons.** The lease is deliberately far longer than any single apply
+(the terraform executor's own per-invocation timeout is 10 minutes and the bundle's longest
+step is 15); the outcome write is guarded on `ifEquals status = APPLYING`, so a worker that
+does come back cannot overwrite the halt and reports `skipped-moved` instead of corrupting
+the row; and `HALTED_APPLY_FAILED`'s message is already "the worker never reported back — a
+human must confirm what landed", which is the honest description of an apply that has been
+running for over an hour. The alternative — a second, longer lease for the read path — would
+put two numbers in the codebase for one question, and the sweep and the settle would answer
+it differently.
+
+### R-81 · `POST /cancel` alone does not release an expired claim
+*Residue on **CONC-10**.*
+
+Cancel settles cooling and window expiry before its state check, but deliberately does NOT
+settle the apply claim, so a direct `POST /requests/:id/cancel` against a lease-expired
+`APPLYING` row still answers `STATE_CONFLICT` until something reads the row.
+
+**Accepted, because the halt is the point.** `HALTED_APPLY_FAILED` says a human must confirm
+what landed; a cancel that released the claim in the same call would stamp `CANCELLED` on a
+request whose change may have half-applied, without the halt ever having been seen — the
+API-5 shape, one lane over. Any read releases it (the SPA reads the row before it offers the
+verb, and the list read releases it too), so the cost is one GET for a script that posts
+blind, not a wedge.
+
+### R-83 · A re-plan failure is recorded once per episode, not once per message
+*Residue on **ERR-6**.*
+
+The hold writes one timeline event + audit entry per failure EPISODE, de-duped on "the row's
+LAST event is already this one". A failure whose *text* changes between ticks — a backend
+error that becomes a lock error, say — is therefore not re-recorded while the episode
+continues; only the first message is kept, truncated to 300 characters.
+
+**Accepted.** The alternative, re-recording whenever the message differs, is unbounded by
+construction: an error text carrying a timestamp, a request id or a duration would append to
+the request row and the per-project audit chain every 60 seconds for as long as the window
+is open. The episode boundary is the right granularity — the fact worth recording is "the
+scheduler cannot re-plan this", not each phrasing of it — and any other write to the row
+(a rewindow, an approval, a settle) ends the episode so a later recurrence is recorded again.
+
+### R-84 · A freeze-held request in a project nobody reads stays held
+*Residue on **API-8**.*
+
+`settleFrozenHold` is write-on-read, like every other settler here. A `kind:'now'` row held
+by a freeze that has since lifted keeps its `AWAITING_DEPLOY_APPROVAL` status until someone
+reads it (a list read is enough), and its `applied` event is dated from that read rather
+than from the moment the freeze lifted.
+
+**Accepted — this is the same trade `R-19` records for scan-job leases**, and the reason is
+the same: an unobserved hold blocks nothing, and a background timer to date the transition
+more precisely would be the first one in this codebase. The audit entry names its actor
+`system:freeze-lifted`, so the record does not pretend a human acted at that moment.
 
 ### R-7 · A fix landed inside another finding's commit
 *Residue on **CONC-14**.*

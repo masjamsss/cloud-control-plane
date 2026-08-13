@@ -1,5 +1,5 @@
-import type { ConfigStore, Item, Key, TransactWrite } from '../store/configStore';
-import type { RequestItem } from '../store/schema';
+import type { ConfigStore, Item, TransactWrite } from '../store/configStore';
+import type { Key, RequestItem } from '../store/schema';
 import {
   SUBMIT_QUOTA_SK_PREFIX,
   requestCollectionGsi,
