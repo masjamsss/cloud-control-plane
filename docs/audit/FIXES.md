@@ -5015,6 +5015,321 @@ leak."
       test/snapshotWriteAtomic.test.ts` (14 passed); full suite `npx vitest run` (102 files, 1421
       passed); `npx tsc --noEmit` clean.
 
+## CONC-15
+
+*`transactWithAudit` conflates a caller's domain guard failure with chain contention,
+producing dead error paths and mislabeled conflicts.*
+
+The store reports a refused batch as one undifferentiated `ConditionError`: it says the
+transaction did not apply, never **by which condition**. `transactWithAudit` therefore
+guessed, from the *shape* of the domain writes — a value guard meant `STATE_CONFLICT`,
+anything else meant `CHAIN_CONTENTION` after burning a retry. The guess was wrong in both
+directions, and each direction had its own victim:
+
+- a caller whose own `ifNotExists` genuinely collided (a duplicate username, a lost
+  version-row race) was told *"the audit chain is busy; please retry"* about something no
+  retry can ever fix;
+- a value-guarded caller that merely lost the **chain head** — its own row untouched — was
+  told `STATE_CONFLICT`, *"this request is not in a state that allows that"*, about a state
+  that was perfectly fine.
+
+Both were live at HEAD, and the second was newer than the report: CONC-9's fix introduced
+the `guarded ? STATE_CONFLICT` arm, and in doing so it silently **broke `instance.ts`**,
+whose `catch` re-maps `CHAIN_CONTENTION` to ADR-0023's `INSTANCE_STALE`. From that commit
+on, a concurrent rename returned `STATE_CONFLICT` and the contract's own code became
+unreachable. That is the shape of this defect: a wrong answer here does not fail, it
+mislabels — the scan-job route's `catch (e instanceof ConditionError)` had been dead code
+for as long as it had existed, and nothing noticed.
+
+**The recommendation, and where it was taken.** The finding offers two shapes: re-check the
+guards on `ConditionError` (what `ackPending` hand-rolls), or return a discriminated result.
+Both are right, and the fix does both halves of the same thing — **ask the store which
+condition failed**, then hand the caller a distinguishable error:
+
+- `failedDomainCondition(store, writes)` re-evaluates every condition the caller carried
+  against the store as it stands, mirroring `ConfigStore.transact`'s phase-1 semantics
+  exactly, *including* its fail-closed rule for an `ifEquals` against a missing item.
+- A failed one becomes `DomainConditionError` (an `ApiError`, code `STATE_CONFLICT`)
+  carrying **the write that lost**, so a caller with several conditional writes maps the
+  right code for the right one. `admin.ts`'s `lostIfNotExistsOn` is keyed on the exact row
+  for that reason: mapping *any* domain failure to "duplicate" would report a concurrent
+  service move as a duplicate team name.
+- Only "every domain condition still holds" is reported as `CHAIN_CONTENTION`.
+
+**CONC-9's property is preserved deliberately.** A domain write is still never *replayed*:
+`domainWrites` was computed by the caller from a read taken before the call, so replaying a
+value-guarded write is exactly the CONC-1 lost update. On chain contention a guarded caller
+is now refused with the honest `CHAIN_CONTENTION` instead of the dishonest
+`STATE_CONFLICT` — refused either way, which is what CONC-9 leans on. Only the unguarded
+`ifNotExists`-on-a-fresh-key shape replays, which is what the helper was built for.
+
+Call sites brought into line, each because its local compensation was built around the
+conflation: `instance.ts` (→ `INSTANCE_STALE`, contract restored), `scanJobs.ts` (the dead
+`ConditionError` arm becomes a live `DomainConditionError` arm; a moved chain head now
+reaches the worker as the retryable code it is), `admin.ts` enroll and team-create (see
+API-14), and the two version-allocation loops in `projectData.ts` / `drift.ts`, which
+treated `CHAIN_CONTENTION` as "my `ifNotExists` lost" and now retry on either.
+
+- [x] **Write the rule, not the list (L-25)** — the regression table drives every condition
+      primitive `TransactWrite` carries, in every write kind that can carry it (put +
+      `ifNotExists`, put + `ifEquals`, update + `ifEquals`, delete + `ifEquals`, and
+      `ifEquals` against a missing row), not the four call sites the reports named. Backing
+      it, `domain/audit.ts` carries a **compile-time** assertion that those two primitives
+      are all of them: `Exclude<ConditionKey, 'ifNotExists'|'ifEquals'> extends never`.
+      Adding a third to the store seam breaks the build until the evaluator learns it —
+      which matters because forgetting fails *silently* (an unevaluated condition reads as
+      "still holds", and its failure is reported as chain contention all over again).
+      **Verified**: adding an `ifVersion?: number` to `TransactWrite`'s delete arm produced
+      `src/domain/audit.ts(243,7): error TS2322: Type 'true' is not assignable to type
+      'never'`; removed, typecheck clean.
+- [x] **Negative test** — restoring the pre-fix guess (`guarded ? STATE_CONFLICT :
+      CHAIN_CONTENTION`) fails **12 of the 18** tests in
+      `test/transactWithAuditConditions.test.ts`, with exactly the symptoms above:
+      `CHAIN_CONTENTION` for an `ifNotExists` duplicate, `STATE_CONFLICT` for four guard
+      failures, `STATE_CONFLICT` where `CHAIN_CONTENTION` is owed, and at the routes
+      `CHAIN_CONTENTION` instead of `DUPLICATE_USERNAME`/`DUPLICATE_TEAM`, `STATE_CONFLICT`
+      instead of `INSTANCE_STALE`, `STATE_CONFLICT` instead of `CHAIN_CONTENTION` for the
+      scan worker. The remaining 6 are controls and must pass either way.
+- [x] **Assert the setup fired (L-1)** — every race asserts its interleave. The **first**
+      draft of the team-create race needed that: hooked on the team-collection read, it
+      fired during first-boot *settlement* (which queries the same collection), so the
+      winner committed before the loser's handler had even looked and the loser took the
+      ordinary sequential duplicate path — green against unfixed code. Re-keyed to fire at
+      the **write**, it fails correctly. `test/helpers/racingStore.ts` documents that trap
+      next to the wrapper, because a read hook is the obvious thing to reach for.
+- [x] **Regression tests** — `test/transactWithAuditConditions.test.ts` (18): the condition
+      table, "nothing was written" (row and chain both untouched), the moved-head cases
+      including the no-replay assertion, the four route-level races, and controls proving
+      an uncontended guarded write still lands, an unguarded write still retries, the
+      store's own `ConditionError` is untouched, and a non-condition failure is still an
+      unhandled error rather than a conflict.
+- [x] **Evidence in the status line** — 106 files, 1,458 api tests pass; `npx tsc --noEmit`
+      clean.
+
+**Residue:** `R-85`, `R-86`.
+
+## API-14
+
+*Conditional-write collisions inside `transactWithAudit` surface as the wrong error.*
+
+The same defect as **CONC-15**, from the API report's angle — fixed once, in
+`domain/audit.ts`; see that entry for the mechanism, the rule-shaped test and the
+negative-test evidence. This entry records the half API-14 adds: the **routes** whose users
+saw it.
+
+API-14's worked example is admin enroll. The handler reads the account key and returns
+`DUPLICATE_USERNAME` if it is taken — a fast path, not a check: the row's `ifNotExists`
+inside the audited transaction is the real one. Two admins enrolling the same username
+concurrently both pass the read, and the loser used to receive `409 CHAIN_CONTENTION`. The
+retry that code invites cannot succeed, and the correct answer was already in the taxonomy.
+Team create is the same shape one level down: the duplicate-name check *and* the id
+de-collision loop both run against a snapshot, so two concurrent creates of one name derive
+the same id and one loses the row put.
+
+Both now map their own failed write to the domain-accurate code, and the general property
+is the one worth stating: **the concurrent answer is the sequential answer.** A race
+between two clients should produce the code a client would get if it had simply been
+second, not a different code describing the machinery.
+
+The finding's recommendation — "re-read the domain key after a `CHAIN_CONTENTION`, the
+instance route's pattern" — is right about the destination and wrong about the place. Done
+per route it is a workaround copied N times, and `instance.ts` is the proof: it *was* that
+workaround, and it silently stopped working when the helper's guess changed underneath it.
+The re-read belongs in the helper that knows which writes it submitted.
+
+- [x] **Negative test** — included in CONC-15's run above: with the pre-fix helper, enroll
+      returns `CHAIN_CONTENTION` where `DUPLICATE_USERNAME` is owed and team-create returns
+      `CHAIN_CONTENTION` where `DUPLICATE_TEAM` is owed.
+- [x] **Regression tests** — the `API-14 — the concurrent answer is the sequential answer`
+      block of `test/transactWithAuditConditions.test.ts`, each driving two real HTTP
+      requests through one store with the winner committing inside the loser's read/write
+      window, and each asserting the interleave fired.
+- [x] **Evidence in the status line** — as CONC-15.
+
+## CONC-12
+
+*The store-backed submit rate limiter is check-then-insert: concurrent submits breach both
+caps.*
+
+`checkSubmitRateLimit` counted the requester's rows and answered yes/no; the request row
+was written **later, in a different transaction**. So N concurrent submits by one requester
+each counted a snapshot that did not include the others, all N passed, and both
+`submissionsPerHour` and `maxOpen` could be exceeded by the concurrency factor. The check
+was right about a store that had stopped changing.
+
+Reproducing it showed the window was wider than "two requests arriving together". Every
+submit appends to the project's audit chain, so two concurrent submits **always** contend
+on the chain head — and the loser's `attempt === 0 → continue` retried the same domain
+writes against a fresh head **without re-running the rate check**. The count was not merely
+racy; it was structurally taken once and then re-used after the store had demonstrably
+moved.
+
+**The finding's suggestion is "a counter item updated in the submit transaction". That
+cannot work for `maxOpen`, and is why the fix is shaped differently.** A counter has to be
+*decremented* when a request stops occupying a slot — at every terminal transition, in
+every lane, forever — and any missed decrement silently locks a requester out. `maxOpen` is
+a property of the *current* rows, and the rows already are the count.
+
+What is missing is not a number but **serialisation between the count and the write**. So:
+a per-`(project, requester)` gate row holding one attribute, `seq`, read **before** the
+walk and bumped under `ifEquals` **inside the submit's own all-or-nothing batch**
+(`claimSubmitSlot`). A competing submit by the same requester either committed before the
+read — in which case the walk counts it — or commits after it and bumps `seq`, which aborts
+this batch and sends the caller back for a fresh count. There is no interleaving where two
+submits are both admitted on a count that saw neither. The read order is load-bearing and
+says so in the code: gate first, then the walk.
+
+The claim is derived **inside** the retry loop, which is the other half of the fix — a
+retry that reused attempt 0's claim would be the original check-then-insert with extra
+steps. All three submit paths carry it (`POST /requests` and both drift-proposal submits);
+leaving drift out would have reopened the hole through another door, since a drift submit
+that never bumps `seq` is invisible to a concurrent ordinary submit's guard.
+
+Two deliberate consequences. The gate row is **not** in `store/schema.ts` and is on no GSI:
+it is a limiter detail with no domain meaning, invisible to every collection query, one row
+per account per project, so it cannot grow with traffic. And in the drift lanes
+`RATE_LIMITED` now follows the schedule codes rather than preceding them — which is what
+those handlers' own comment ("same gates, **same order** as `routes/requests.ts`'s
+`POST /requests`") has always claimed and never matched; `requests.ts` validates the
+schedule first.
+
+- [x] **Negative test** — restoring HEAD's shape (count once, before the loop, nothing in
+      the batch) fails 2 of 8 in `test/submitQuotaRace.test.ts`: under `maxOpen: 1` and
+      under `submissionsPerHour: 1` the second concurrent submit returns **201 where 429 is
+      required**, leaving two rows where one cap allows one. The first attempt at this
+      negative run was itself wrong and had to be redone — reverting the *guard* left the
+      chain-head retry to refuse the loser anyway, so the tests passed and proved nothing;
+      the race hook was also keyed on the gate write, which only exists with the fix in
+      place. Re-keyed to the request row (present in both versions) and reverted at the
+      structure rather than the guard, it fails for the right reason.
+- [x] **Assert the setup fired (L-1)** — each race asserts both that the interleave fired
+      and that the competing submit actually returned 201.
+- [x] **Regression tests** — `test/submitQuotaRace.test.ts` (8): both caps under a genuine
+      route-level interleave; a loser **admitted** on its retry when the cap has room (so
+      "cannot breach a cap" is not satisfied by a limiter that refuses every concurrent
+      submit); per-requester independence; the seam-level CAS shape including two claims
+      taken from one pre-image being unable to both commit; and controls for the sequential
+      path, a zero cap, and a refused submit claiming nothing.
+- [x] **Evidence in the status line** — 106 files, 1,458 api tests pass, including
+      `rateLimit.test.ts` and the drift suites unchanged in behaviour.
+
+**Residue:** `R-87`, `R-88`.
+
+## CONC-13
+
+*Concurrent first-boot settlement can escape its own race handling and 500 early requests.*
+
+`runSettlement` states in a comment that two callers can both see "no marker" and both
+start, and wraps the pass in a `catch` so the loser is tolerated. The catch tested for
+`ConditionError` — which is what the **last** write of the pass throws, the marker's own
+`ifNotExists`, written directly through the store. The two writes **before** it —
+retro-registering the legacy project row and materializing each bare account row — go
+through `transactWithAudit`, which converts a refusal into an `ApiError`. A loser that lost
+at either of those escaped the very catch written to tolerate it.
+
+Settlement runs from the session middleware on **every** request until the marker lands, so
+the blast radius is the first traffic a cold instance sees. The finding titles this "500
+early requests"; measured at HEAD it is a spurious **409** (the escaping error is inside
+the taxonomy, so the app-wide handler renders it rather than letting it become a 500). The
+substance is unchanged and is what the test asserts: a race the code explicitly means to
+tolerate failed the user's request.
+
+**The finding's recommendation is "also catch `ApiError` with code `CHAIN_CONTENTION`", and
+taken literally that is incomplete in a way that trades one bug for a worse one.** The pass
+caches `confirmedSettled` on the way out. Widening only the catch would mean a pass that
+committed *nothing* — no marker, no rows — still marks the store settled, and
+`ensureSettlement` short-circuits on that cache for the rest of the process's life. The
+store stays half-settled with no marker for a restart to notice, and no request ever
+re-attempts. So the fix has two parts:
+
+1. **Recognise the race wherever in the pass it is lost** — `lostToConcurrentSettlement`
+   names all three shapes and why each means "another caller already did this work": the
+   marker's `ConditionError`, a `DomainConditionError` (CONC-15: the winner's row is
+   already there, or already materialized), and `CHAIN_CONTENTION`. `SettlementConfigError`
+   is deliberately excluded — it is a loud refusal about *configuration*, never a race.
+2. **Let the marker, not the error, decide whether to cache.** On a tolerated failure the
+   marker is re-read: present (the usual case — the winner stamped it microseconds ago) →
+   cache and return; absent → return **without** caching, so the next request re-attempts
+   and finishes the pass.
+
+- [x] **Negative test** — restoring the `ConditionError`-only catch fails 4 of 6 in
+      `test/settlementRace.test.ts`: both audited writes reject with `DomainConditionError`
+      instead of resolving, and the route-level case returns **409 where 200 is required**.
+- [x] **Assert the setup fired (L-1)** — the materialize race asserts the seeded rows are
+      genuinely bare *before* running (otherwise "it did not throw" is vacuous), the
+      retro-register race asserts no registry row exists yet, and every race asserts its
+      interleave fired.
+- [x] **Regression tests** — `test/settlementRace.test.ts` (6): the race lost at
+      materialize, the race lost at retro-register, the symptom through the HTTP surface, a
+      test that a pass which stamped no marker does **not** claim settled and the next pass
+      completes the work, and controls that an uncontended settlement still settles
+      everything exactly once and that a store which cannot write at all still fails loudly
+      rather than being mistaken for a lost race.
+- [x] **Evidence in the status line** — `settlement.test.ts` (21) and `blankInstall.test.ts`
+      (5) unchanged; full suite 1,458 pass.
+
+**Residue:** `R-89`.
+
+## TEST-6
+
+*No route-level concurrency/race tests; store-level concurrency only.*
+
+The gap was specific rather than general. `approveLostUpdate.test.ts` proves the store
+**primitive** works — a guarded whole-row put refuses a stale writer — and `audit.test.ts`
+exercises chain contention through a synthetic `FlakyStore`. Neither proves the *handler*
+uses them correctly, and the two failure modes are indistinguishable from outside: one
+signature in the ledger either way, whether because the guard refused the loser or because
+the loser silently overwrote the winner.
+
+The judgment TEST-6 asks for is **which** races to pin. The choice here: the race the
+finding names, plus every race this batch's fixes create or protect — so each test is tied
+to a specific branch of production code that can be deleted and watched to fail.
+
+| test file | race, at the HTTP surface |
+| --- | --- |
+| `routeApproveRace.test.ts` | two approvers on one request; the same approver twice in flight; an unrelated write moving the shared chain head |
+| `submitQuotaRace.test.ts` | two submits by one requester against each cap (CONC-12) |
+| `settlementRace.test.ts` | concurrent first-boot settlement, lost at each of its two audited writes (CONC-13) |
+| `transactWithAuditConditions.test.ts` | concurrent enroll, team create, instance rename, scan-job status report (CONC-15 / API-14) |
+
+The mechanism is the one the finding points at and the repo had already established —
+`sessionRevokeRace.test.ts` and `pendingChangeCas.test.ts`'s store wrapper committing a
+competing write between a read and a write. It is lifted into `test/helpers/racingStore.ts`
+so a route test can drive a whole second HTTP request through the inner store as the
+competitor, which is what makes these route races rather than store simulations. The helper
+carries the two traps in writing: delegate method by method (`{...store}` copies own
+properties only, so spreading a `MemoryStore` drops every prototype method and the app 500s
+instead of racing), and prefer the **write** hook when a read hook is ambiguous — the
+CONC-15 entry above records the team-create test that passed against unfixed code because
+its read hook fired during settlement.
+
+The approve tests assert the **quorum ledger**, not just the status code: which signatures
+the row holds and how many `request-approve` entries the chain carries. A ladder step is
+the governance record this product exists to keep, and a status code alone cannot tell a
+refused duplicate from a lost one.
+
+The finding's second recommendation — a FileStore test that pre-plants a stale
+`ccp.json.tmp-*` alongside a valid snapshot and asserts a clean boot — **already exists**,
+shipped with DATA-13: `test/fileStore.test.ts`'s "FileStore.open sweeps stale `<file>.tmp-*`
+left by a killed prior process" covers the single stale file, multiple stale files not
+blocking a normal open+write+restart, and a missing data directory as a clean no-op.
+Nothing was added there; re-testing it would have been duplication rather than coverage.
+
+- [x] **Negative test** — each branch of the approve handler was deleted in turn and the
+      suite watched to fail: removing the `ifEquals: {eventSeq}` guard fails 2 of 5 (both
+      racing approvals return 200; the ledger keeps one signature); removing the
+      per-approver dedupe **row** turns the double-click into `STATE_CONFLICT` where
+      `ALREADY_APPROVED` is owed; disabling the chain-contention retry fails the
+      "unrelated write does not cost an approval" test with 409 where 200 is owed. Merely
+      dropping `ifNotExists` from the dedupe write does **not** fail anything — the
+      `eventSeq` guard catches that case first — which is worth recording: the dedupe row's
+      job is the *code*, not the second signature.
+- [x] **Assert the setup fired (L-1)** — every race asserts its interleave fired and that
+      the competing request actually succeeded; the fixture submit asserts its own 201.
+- [x] **Regression tests** — `test/routeApproveRace.test.ts` (5) plus the three suites in
+      the table above; 37 new tests in total across the batch.
+- [x] **Evidence in the status line** — 106 files, 1,458 api tests pass (from 102 / 1,421);
+      `npx tsc --noEmit` clean.
 ## ERR-5
 
 *`TerraformExecutor.init()` caches a rejected promise: one transient init failure bricks the

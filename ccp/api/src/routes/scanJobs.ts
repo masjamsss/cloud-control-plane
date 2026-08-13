@@ -40,7 +40,7 @@ import {
   type FetchLike,
   type GithubAppConfig,
 } from "../domain/forgeCredentials";
-import { transactWithAudit } from "../domain/audit";
+import { DomainConditionError, transactWithAudit } from "../domain/audit";
 import { ApiError, apiError } from "../errors";
 import { nowIso } from "../clock";
 import { PROJECT_ID_RE } from "../projects";
@@ -429,11 +429,14 @@ export function scanJobRoutes(): Hono<AppEnv> {
         );
       } catch (e) {
         // Either another worker won the race (the ifEquals failed) or the
-        // project's audit chain head moved under us. transactWithAudit cannot
-        // tell them apart — and it does not need to: BOTH mean "not this job,
-        // not right now". The row is untouched, so it stays queued and the next
-        // poll (or the next row in this same pass) picks it up. Nothing is lost
-        // either way, which is why conflating them here is safe.
+        // project's audit chain head moved under us. Since CONC-15
+        // transactWithAudit CAN tell them apart (DomainConditionError vs
+        // CHAIN_CONTENTION) — this site simply does not need it to: BOTH mean
+        // "not this job, not right now". The row is untouched, so it stays
+        // queued and the next poll (or the next row in this same pass) picks it
+        // up. Nothing is lost either way, which is why treating them alike here
+        // is a choice rather than a limitation. `DomainConditionError` is an
+        // `ApiError`, so both arms below still cover it.
         if (e instanceof ConditionError || e instanceof ApiError) continue;
         throw e;
       }
@@ -594,7 +597,13 @@ export function scanJobRoutes(): Hono<AppEnv> {
         },
       );
     } catch (e) {
-      if (e instanceof ConditionError) return apiError(c, "STATE_CONFLICT");
+      // CONC-15: this arm used to test for `ConditionError`, which
+      // `transactWithAudit` has never thrown — so a genuinely lost transition
+      // (a concurrent report already moved the job off `from`) reached the
+      // worker as CHAIN_CONTENTION, "the audit chain is busy; please retry",
+      // inviting a retry of a transition that can never succeed again. The
+      // status guard losing IS a state conflict, and is now reported as one.
+      if (e instanceof DomainConditionError) return apiError(c, "STATE_CONFLICT");
       throw e;
     }
     return c.json({ jobId, status });

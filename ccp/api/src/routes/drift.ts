@@ -45,7 +45,7 @@ import { verifyPassword } from '../auth/credentials';
 import { toUser } from '../auth/account';
 import type { TransactWrite } from '../store/configStore';
 import { ConditionError } from '../store/configStore';
-import { recordIn, record, transactWithAudit } from '../domain/audit';
+import { DomainConditionError, recordIn, record, transactWithAudit } from '../domain/audit';
 import type { DriftFinding, DriftVerdict } from '../domain/drift';
 import {
   DriftEnvelope,
@@ -398,6 +398,11 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
       // handler with nothing yet staged in the store — no row, no pointer
       // move, nothing to compensate.
       await writeDriftReport(dataRoot, id, version, stored);
+      // ERR-14: the body goes to disk BEFORE anything commits. A failure
+      // here (disk full, permission error) throws straight out of the
+      // handler with nothing yet staged in the store — no row, no pointer
+      // move, nothing to compensate.
+      await writeDriftReport(dataRoot, id, version, stored);
       try {
         // Audit to the TARGET project's chain — this lane has no acting
         // scope (a Bearer token, not a session), same rule as project-data-upload.
@@ -417,13 +422,15 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
           },
         );
       } catch (e) {
-        // A lost version race surfaces as chain contention — re-read the
-        // tail and try the next number. The file just written above is now
-        // orphaned under a version number no row will ever claim; remove it
-        // (best-effort — a failure here is not worth failing the retry
-        // over, and an orphan left behind is inert, see the comment above
-        // this loop) before trying again.
-        if (e instanceof ApiError && e.code === 'CHAIN_CONTENTION' && attempt === 0) {
+        // A lost version race is the version row's OWN `ifNotExists` losing — since
+        // CONC-15 that is reported as such (`DomainConditionError`) rather than rounded
+        // up to chain contention. This loop wants a retry for both: re-read the tail
+        // (and the dedupe pointer) and try the next number. Either way the file just
+        // written above is now orphaned under a version number no row will ever claim;
+        // remove it (best-effort — a failure here is not worth failing the retry over,
+        // and an orphan left behind is inert, see the comment above this loop) before
+        // trying again.
+        if (e instanceof ApiError && (e instanceof DomainConditionError || e.code === 'CHAIN_CONTENTION') && attempt === 0) {
           removeDriftReport(dataRoot, id, version);
           continue;
         }
@@ -792,15 +799,14 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
     //    routes/requests.ts's POST /requests.
     if (await isFrozen(store, id)) return apiError(c, 'GLOBAL_FREEZE');
     // PERF-10: minted here so the submit-quota pointer can name it and ride the
-    // same transact as the request row.
+    // same transact as the request row. Admission itself is checked fresh inside
+    // the retry loop below (CONC-12) — see routes/requests.ts's POST /requests
+    // for the same pattern and why.
     const reqId = ulid();
-    const admission = await checkSubmitRateLimit(store, id, account.id, reqId);
-    if (!admission.ok) return apiError(c, 'RATE_LIMITED');
 
     const scheduleResult = validateSchedule(scheduleInput, nowMs());
     if (!scheduleResult.ok) return apiError(c, scheduleResult.code);
     const schedule = scheduleResult.schedule;
-
     const ladder = ladderFor(tier, false); // forcesReplace is structurally false for all four drift ops this route handles (§4.4/OOB spec §6/L29 §2.5)
     const approvalsRequired = ladder.length;
     const feasibility = await computeFeasibility(store, id, ladder, account.id);
@@ -874,8 +880,6 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
           ifEquals: { attr: 'status', value: 'open' },
         }),
       ),
-      // PERF-10 — the quota-index pointer, atomically with the request row.
-      ...admission.writes,
     ];
     const entry = {
       action: 'request-submit',
@@ -896,10 +900,13 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
 
     const hKey = chainHead(id);
     for (let attempt = 0; attempt < 2; attempt++) {
+      // Re-derived per attempt, exactly as POST /requests does (CONC-12).
+      const admission = await checkSubmitRateLimit(store, id, account.id, reqId);
+      if (!admission.ok) return apiError(c, 'RATE_LIMITED');
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
       const { writes: auditWrites } = recordIn(id, head, entry);
       try {
-        await store.transact([...domainWrites, ...auditWrites]);
+        await store.transact([...domainWrites, ...admission.writes, ...auditWrites]);
         break;
       } catch (e) {
         if (e instanceof ConditionError) {
@@ -1018,10 +1025,9 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
     // 9. THE NORMAL SUBMIT INTERNALS (§4.3) — same gates as the adopt/revert submit.
     if (await isFrozen(store, id)) return apiError(c, 'GLOBAL_FREEZE');
     // PERF-10: see the adopt/revert submit above — the id is minted before the
-    // limiter so the quota pointer and the request row land together.
+    // limiter so the quota pointer and the request row land together. Admission
+    // itself is checked fresh inside the retry loop below (CONC-12).
     const reqId = ulid();
-    const admission = await checkSubmitRateLimit(store, id, account.id, reqId);
-    if (!admission.ok) return apiError(c, 'RATE_LIMITED');
 
     const scheduleResult = validateSchedule(scheduleInput, nowMs());
     if (!scheduleResult.ok) return apiError(c, scheduleResult.code);
@@ -1071,17 +1077,35 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
     };
 
     // The revert proposal row is deliberately NOT touched (stays 'open') —
-    // only the new request is written, under the standard audit-chain
-    // transact (no dedupe-condition on a proposal row to race here, unlike
-    // submit, since nothing about the proposal changes).
-    await transactWithAudit(store, id, [{ kind: 'put', item: reqItem as never, ifNotExists: true }, ...admission.writes], {
-      action: 'drift-legitimize-requested',
-      actor: account.id,
-      targetType: 'request',
-      targetId: reqId,
-      requestId: reqId,
-      after: { digest, status, approvalsRequired, risk, exposure: op.exposure, reviewTier: tier, ...feasibility },
-    });
+    // only the new request (plus the submit-quota admission, PERF-10/CONC-12) is
+    // written, under the standard audit-chain transact (no dedupe-condition on a
+    // proposal row to race here, unlike submit, since nothing about the proposal
+    // changes).
+    //
+    // The loop is what the quota admission costs: carrying a value-guarded write
+    // makes `transactWithAudit` refuse to REPLAY the batch on contention
+    // (CONC-2/CONC-9) — it throws DomainConditionError instead of retrying
+    // internally — so the one retry this path always had has to re-derive the
+    // admission fresh and live out here, exactly like the adopt/revert submit above.
+    for (let attempt = 0; ; attempt++) {
+      const admission = await checkSubmitRateLimit(store, id, account.id, reqId);
+      if (!admission.ok) return apiError(c, 'RATE_LIMITED');
+      try {
+        await transactWithAudit(store, id, [{ kind: 'put', item: reqItem as never, ifNotExists: true }, ...admission.writes], {
+          action: 'drift-legitimize-requested',
+          actor: account.id,
+          targetType: 'request',
+          targetId: reqId,
+          requestId: reqId,
+          after: { digest, status, approvalsRequired, risk, exposure: op.exposure, reviewTier: tier, ...feasibility },
+        });
+        break;
+      } catch (e) {
+        const retryable = e instanceof ApiError && (e instanceof DomainConditionError || e.code === 'CHAIN_CONTENTION');
+        if (retryable && attempt === 0) continue;
+        throw e;
+      }
+    }
 
     return c.json(toChangeRequest(reqItem, id), 201);
   });

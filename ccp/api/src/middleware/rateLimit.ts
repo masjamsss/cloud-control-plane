@@ -1,5 +1,5 @@
 import type { ConfigStore, Item, TransactWrite } from '../store/configStore';
-import type { RequestItem } from '../store/schema';
+import type { Key, RequestItem } from '../store/schema';
 import {
   SUBMIT_QUOTA_SK_PREFIX,
   requestCollectionGsi,
@@ -43,6 +43,18 @@ import { occupiesQuotaSlot } from '@app-lib/requestStatus';
  * approve/reject eligibility — a request stops being approvable long before it stops
  * consuming requester quota.
  */
+
+/**
+ * The per-(project, requester) SUBMIT GATE row. It holds one attribute, `seq`, and its
+ * only job is to be the thing a concurrent submit by the same requester collides on
+ * (CONC-12) — see the gate-bump write in {@link checkSubmitRateLimit}. Deliberately NOT
+ * in `store/schema.ts` and NOT on any GSI: it is a limiter implementation detail with no
+ * domain meaning, invisible to every collection query, and there is exactly one per
+ * account per project, so it cannot grow with traffic.
+ */
+export function submitGateKey(projectId: string, requester: string): Key {
+  return { PK: `P#${projectId}#SUBMITGATE#${requester}`, SK: 'META' };
+}
 
 /**
  * One pointer row in a requester's submit-quota partition
@@ -100,6 +112,13 @@ export type SubmitAdmission =
  *
  * `requestId` is the id the caller is ABOUT to create, so admission and the
  * request are one atomic fact; see {@link SubmitAdmission}.
+ *
+ * CONC-12 — counting the index and deciding admission is still read-then-write on
+ * its own; what makes the WHOLE call atomic is the gate row bumped below, included
+ * in the SAME `writes` batch as the pointer. The caller MUST re-invoke this function
+ * fresh on every retry attempt (never reuse a prior call's `writes`) — see the gate
+ * write's own doc comment for why, and `routes/requests.ts`'s submit loop for the
+ * caller-side half of the contract.
  */
 export async function checkSubmitRateLimit(
   store: ConfigStore,
@@ -115,6 +134,13 @@ export async function checkSubmitRateLimit(
   // for a requester who has no rows to walk. Deciding it here keeps a zero cap
   // fail-CLOSED instead of silently admitting the first submission.
   if (limits.submissionsPerHour <= 0 || limits.maxOpen <= 0) return { ok: false };
+
+  // CONC-12: the gate is read before the index walk, same ordering discipline the
+  // full-scan design this replaced used — every read this call makes must be fresh
+  // for THIS attempt, because the gate-bump write below is guarded on this exact
+  // `seq` and the caller re-invokes this whole function on every retry.
+  const gk = submitGateKey(projectId, requester);
+  const gate = (await store.get(gk.PK, gk.SK)) as { seq?: number } | null;
 
   const marker = submitQuotaMarkerKey(projectId, requester);
   const materialized = (await store.get(marker.PK, marker.SK)) !== null;
@@ -165,13 +191,29 @@ export async function checkSubmitRateLimit(
     requestId,
     createdAt: nowIso(),
   };
+  // CONC-12 — this is what makes the admission decision atomic, not just the index
+  // fast. Two concurrent submits by the same requester can both read the same
+  // candidates/gate snapshot and both compute "admit" here — their pointer writes
+  // use DIFFERENT keys (this requester's two different requestIds) and so cannot
+  // collide with each other directly, which is exactly the check-then-insert gap
+  // the finding names. Guarding this write on the `seq` read above closes it: only
+  // one of the two transacts can win the CAS, and TransactWrite items commit
+  // all-or-nothing, so the loser's pointer write is rolled back with it — the
+  // caller sees a plain ConditionError and must re-invoke this function fresh
+  // (never reuse a prior attempt's admission), which re-counts against the
+  // now-updated index and correctly refuses if the winner filled the last slot.
+  // `ifNotExists` on a requester's first-ever submit; `ifEquals` on every one after.
+  const gateWrite: TransactWrite =
+    gate === null
+      ? { kind: 'put', item: { ...gk, seq: 1 }, ifNotExists: true }
+      : { kind: 'update', pk: gk.PK, sk: gk.SK, set: { seq: (gate.seq ?? 0) + 1 }, ifEquals: { attr: 'seq', value: gate.seq } };
   // The prunes and the backfill ride along with the admission. Both are pure index
   // maintenance over facts that are already settled, so they carry no conditions
   // and losing them (a refused submit, a lost contention retry) costs nothing but
   // repeating the work on the next attempt.
   return {
     ok: true,
-    writes: [...backfill, ...prune, { kind: 'put', item: pointer, ifNotExists: true }],
+    writes: [...backfill, ...prune, { kind: 'put', item: pointer, ifNotExists: true }, gateWrite],
   };
 }
 

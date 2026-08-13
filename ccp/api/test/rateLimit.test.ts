@@ -114,6 +114,8 @@ describe('a zero cap admits nothing (fail-closed)', () => {
   it('still admits a submission under a normal cap', async () => {
     const store = new MemoryStore();
     await seed(store);
+    // A claim, not a bare yes: the writes it carries (the quota pointer AND the
+    // gate-CAS bump, CONC-12) are what make the answer survive to the transact.
     const admission = await checkSubmitRateLimit(store, SAMPLE_PROJECT_ID, 'sari', ulid());
     expect(admission.ok).toBe(true);
   });

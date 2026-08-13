@@ -116,12 +116,12 @@ Unguarded full-row writes and lost updates. Largely one root cause — the store
 - [x] ERR-11 | medium | concurrency | fixed:09fb510 | 09-error-handling.md | The bundle idempotency claim guards on `status`, not `bundle.state`: concurrent applies can both run
 - [x] ERR-8 | medium | concurrency | fixed:aaf11c9; node as PID 1 + graceful drain (src/shutdown.ts) + boot failures exit non-zero; test/processLifecycle.test.ts | 09-error-handling.md | No process-level failure handling: no graceful shutdown, no rejection/exception handlers, npm-as-PID-1
 - [x] OPS-8 | medium | concurrency | fixed:aaf11c9; same defect as ERR-8, closed by it; adds stop_grace_period above the drain budget; test/processLifecycle.test.ts | 10-reliability-operations.md | No graceful shutdown: `npm` as PID 1, no SIGTERM handling, default 10 s grace on the api
-- [ ] TEST-6 | medium | concurrency | open | 12-testing-quality.md | No route-level concurrency/race tests; store-level concurrency only
-- [ ] API-14 | low | concurrency | open | 02-api-correctness.md | Conditional-write collisions inside `transactWithAudit` surface as the wrong error
-- [ ] CONC-12 | low | concurrency | open | 04-concurrency.md | The store-backed submit rate limiter is check-then-insert: concurrent submits breach both caps
-- [ ] CONC-13 | low | concurrency | open | 04-concurrency.md | Concurrent first-boot settlement can escape its own race handling and 500 early requests
+- [x] TEST-6 | medium | concurrency | fixed:c8420ce | 12-testing-quality.md | No route-level concurrency/race tests; store-level concurrency only
+- [x] API-14 | low | concurrency | fixed:c8420ce | 02-api-correctness.md | Conditional-write collisions inside `transactWithAudit` surface as the wrong error
+- [x] CONC-12 | low | concurrency | fixed:c8420ce | 04-concurrency.md | The store-backed submit rate limiter is check-then-insert: concurrent submits breach both caps
+- [x] CONC-13 | low | concurrency | fixed:c8420ce | 04-concurrency.md | Concurrent first-boot settlement can escape its own race handling and 500 early requests
 - [x] CONC-14 | low | concurrency | fixed:version guards on rename, set-services and stripFromOthers; test/teamWriteGuards.test.ts | 04-concurrency.md | Team CRUD writes bump `version` but never guard on it
-- [ ] CONC-15 | low | concurrency | open | 04-concurrency.md | `transactWithAudit` conflates a caller's domain guard failure with chain contention, producing dead error paths and mislabeled conflicts
+- [x] CONC-15 | low | concurrency | fixed:c8420ce | 04-concurrency.md | `transactWithAudit` conflates a caller's domain guard failure with chain contention, producing dead error paths and mislabeled conflicts
 - [x] REM-2 | low | concurrency | fixed:putSessionFieldGuarded narrows every SessionItem write to one guarded attribute (reauthAt, enrollSecretEnc+enrollOfferedAt); test/sessionFieldGuard.test.ts | 15-remediation.md | Session rows are still written with blind full-row puts
 
 ## contracts-docs
