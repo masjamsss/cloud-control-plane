@@ -158,7 +158,7 @@ components:
             at: {type: string, format: date-time} } }
         steps: { type: array, description: 'step log in execution order (sequential, stop-on-red)',
           items: { type: object, required: [step, ok, detail],
-            properties: { step: {type: string, enum: [prepare, gate, commit, trigger]}, ok: {type: boolean},
+            properties: { step: {type: string, enum: [prepare, gate, plan-digest, commit, trigger]}, ok: {type: boolean},
               detail: {type: string, description: 'captured stdout/stderr tail or the refusal reason — audit evidence'} } } }
     AuditExport:   # DOC-2 — GET /admin/audit/export, domain/auditQuery.ts#AuditExport
       type: object
@@ -611,7 +611,10 @@ paths:
         from session ONLY: the requester or a Lead/admin (a plain approver who is neither is 403
         CANCEL_FORBIDDEN). Idempotent-safe: a second cancel (or a cooling window/maintenance window that already
         elapsed) cleanly conflicts, never double-applies. Settles cooling then window-expiry first, same as GET
-        /requests/{id}',
+        /requests/{id}. A request whose apply bundle (POST /requests/{id}/apply) has a LIVE claim (bundle.state
+        running, within its lease) is also refused, 409 BUNDLE_RUNNING (API-5): the bundle may already be committing
+        to `main`, and cancelling the request record while that is irreversibly in flight would let the durable
+        record contradict reality. An EXPIRED claim (a crashed run ERR-2 would take over) does not block cancel.',
       parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }],
       responses: { '200': { description: 'Cancelled', content: { application/json: { schema: { $ref: '#/components/schemas/ChangeRequest' } } } },
         '401': { $ref: '#/components/responses/E401' }, '403': { $ref: '#/components/responses/E403' },
@@ -690,9 +693,13 @@ paths:
         satisfies; anyone else gets 403 APPLY_FORBIDDEN. Eligible statuses: AWAITING_CODE_REVIEW,
         AWAITING_DEPLOY_APPROVAL — a pre-quorum, cooling, terminal, or already-applied request is refused
         409 STATE_CONFLICT. A cooling window and an elapsed maintenance window are settled first.
-        Concurrency: the run is CLAIMED by a compare-and-swap on the observed status, so a lost race is
-        reported (409 STATE_CONFLICT) rather than double-run; an in-flight bundle answers 409 BUNDLE_RUNNING.
-        Audited as request-bundle, one chained entry carrying the full per-step evidence.'
+        Concurrency: the run is CLAIMED by a compare-and-swap on `eventSeq`, the attribute the claim itself
+        advances (ERR-11/API-4), so a lost race is reported (409 STATE_CONFLICT) rather than double-run; an
+        in-flight bundle answers 409 BUNDLE_RUNNING while its claim is LIVE (ERR-2 leases the claim, so a
+        crashed run is taken over rather than wedging the request forever).
+        Audited as request-bundle, one chained entry carrying the full per-step evidence. That entry is written
+        even when the request row refuses the outcome (CONC-6): a fired deploy is a fact, not a state
+        transition, and the caller is told so with 409 BUNDLE_OUTCOME_CONTENDED rather than CHAIN_CONTENTION.'
       parameters: [{ $ref: '#/components/parameters/id' }, { $ref: '#/components/parameters/client' }]
       responses:
         '200': { description: 'Bundle ran green — the commit landed and the CI apply gate was satisfied',
@@ -703,7 +710,9 @@ paths:
         '404': { description: Not found }
         '409': { description: 'BUNDLE_DISARMED (the bundle is not armed on this deployment) | BUNDLE_RUNNING
             (a bundle for this request is already in flight) | STATE_CONFLICT (status not bundle-eligible,
-            already triggered, or the claim lost its race) | CHAIN_CONTENTION',
+            already triggered, or the claim lost its race) | BUNDLE_OUTCOME_CONTENDED (the bundle RAN and its
+            outcome is in the audit chain, but the request row moved so its bundle state was not updated —
+            never retry blindly on this code) | CHAIN_CONTENTION',
           content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } }
         '423': { description: 'GLOBAL_FREEZE — the estate is frozen', content: { application/json: { schema: { $ref: '#/components/schemas/Err' } } } }
         '502': { description: 'A step failed — SAME body as 200 with ok:false; `steps` names the failing step',
