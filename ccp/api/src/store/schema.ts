@@ -1292,6 +1292,16 @@ export const DriftProposalItem = z.object({
   /** OOB provisioning-import spec §5.4 — additive, import-only, paired with
    * `arn` above. Absent on every adopt/revert row. */
   tfType: z.string().optional(),
+  /** API-18 — revert-flavor only, additive: the engineer-tier request the
+   * `/legitimize` route minted from this proposal, so a repeat call can find
+   * it instead of minting another. Deliberately NOT a status change on this
+   * row — legitimize never consumes the proposal (`row.status` stays
+   * `'open'`; both legitimize and revert remain visible, spec addendum A6) —
+   * and NOT cleared when the request finishes: `routes/drift.ts` re-checks
+   * the pointed-to request's OWN status (`occupiesQuotaSlot`) to decide
+   * whether a fresh legitimize is allowed again, so a rejected/cancelled
+   * attempt at converging the drift does not permanently block a retry. */
+  legitimizeRequestId: z.string().optional(),
 });
 export type DriftProposalItem = z.infer<typeof DriftProposalItem>;
 
@@ -1320,6 +1330,33 @@ export function sessionUserGsi(userId: string): string {
 export function projectKey(id: string): Key {
   return { PK: `PROJECT#${id}`, SK: "META" };
 }
+/**
+ * The RETIREMENT TOMBSTONE for a deregistered project id (API-9).
+ *
+ * Deregistration sweeps the whole `PROJECT#<id>` partition and then writes this
+ * row, so the partition is never empty again — and `POST /projects` refuses any
+ * id whose partition still holds a row. That is what makes "a new tenant
+ * inherits the previous tenant's state" unrepresentable rather than merely
+ * unlikely: the id is retired, not recycled.
+ *
+ * It carries no secret and no tenant data — only when the id was retired and by
+ * whom, so the refusal can say something true to the admin who hits it.
+ */
+export function projectRetirementKey(id: string): Key {
+  return { PK: `PROJECT#${id}`, SK: "RETIRED" };
+}
+export const ProjectRetirementItem = z.object({
+  PK: z.string(),
+  SK: z.string(), // 'RETIRED'
+  projectId: z.string(),
+  retiredAt: z.string(),
+  /** The acking admin — deregistration is always a two-admin envelope. */
+  retiredBy: z.string(),
+  /** How many satellite rows the deregister sweep removed. Evidence that the
+   * sweep ran, and the number the regression test asserts is non-zero. */
+  sweptRows: z.number().int().nonnegative(),
+});
+export type ProjectRetirementItem = z.infer<typeof ProjectRetirementItem>;
 /** The GLOBAL settlement-marker row (data-birth spec §9) — one per store. */
 export function settlementKey(): Key {
   return { PK: "SETTLEMENT", SK: "META" };

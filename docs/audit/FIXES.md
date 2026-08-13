@@ -5015,6 +5015,188 @@ leak."
       test/snapshotWriteAtomic.test.ts` (14 passed); full suite `npx vitest run` (102 files, 1421
       passed); `npx tsc --noEmit` clean.
 
+## API-9
+
+*Project deregistration leaves orphaned satellite rows; a reused id inherits the previous
+tenant's state.*
+
+- [x] **Defect reproduced first.** Deregistration deleted three hardcoded SK prefixes
+      (`UPLOADTOKEN#`, `ONBOARDTOKEN#`, `DATA#v`) while the `PROJECT#<id>` partition had grown
+      four more the cleanup never heard of: `FORGECRED`, `SCANJOB#`, `DRIFT#v…`/`DRIFT#latest`,
+      `DRIFTPROP#`. Registration checked only the `META` row, so an id whose `META` was gone but
+      whose satellites were not read as free.
+- [x] **This is a cross-tenant leak, not untidiness.** The scan-claim lane opens whatever
+      `FORGECRED` it finds under the acting project's partition — the next tenant to take a
+      reused id cloned their repository with the PREVIOUS operator's forge credential.
+- [x] **Fixed as two rules, not a longer prefix list (L-25).** (1) Deregistration deletes
+      whatever it FINDS under `PROJECT#<id>` — the whole partition, not an enumerated set — so a
+      satellite row kind added tomorrow is swept for free. (2) `POST /projects` may only claim an
+      id whose partition is EMPTY.
+- [x] **A sweep alone cannot make id reuse safe.** Project-scoped partitions
+      (`P#<id>#REQ…`/`#AUDIT…`/`#TEAM…`/`#POLICY`) are not under `PROJECT#<id>` and cannot be
+      enumerated through the store seam at all, and the audit chain must survive as evidence
+      regardless. The sweep writes a `RETIRED` tombstone LAST, so the id is retired rather than
+      recycled — rule (2) then enforces that for free, including against any row kind this build
+      has never heard of.
+- [x] **Regression test — `test/projectDeregisterSweep.test.ts` (new).**
+- [x] **Negative test confirmed.** Fix reverted, satellites seeded from the real key functions:
+      5 rows survive the ack (`['DRIFT#latest', …(5)]` where the rule expects `['RETIRED']`), and
+      re-registering the deregistered id returns 201 instead of 409.
+
+## FE-9
+
+*apiSession role resolution falls back to another scope's role when the user has no binding on
+the active project.*
+
+- [x] **Defect reproduced first.** `role: (binding?.role ?? a.role)` fired whenever the
+      per-project binding was missing — including when the `roles` map existed but simply had no
+      entry for the ACTIVE project — so switching to a project the user holds no role on resolved
+      whatever role the LOGIN scope happened to carry. An authz fail-OPEN: a requester with a
+      `lead` binding on one project could act as `lead` on a project they are not bound to at all.
+- [x] **The rule, stated once it is being read correctly.** A `roles` map, once present, is the
+      ONLY authority — the server-resolved scalar is read only when there is no map at all (the
+      legacy backend the fallback was originally written for). No binding on the active project
+      resolves to the FLOOR (requester, no team), which the existing downstream helpers already
+      read as deny.
+- [x] **Not a new fourth role.** Adding one to `Role` would make every existing switch/lookup
+      table over roles silently incomplete — the exact fail-open shape this finding is about, one
+      level down.
+- [x] **Regression test — `test/multiAccountSession.test.ts` (extended, +83 lines).**
+- [x] **Negative test confirmed.** Fix reverted: `canApprove` returns `true` for a user with no
+      binding on the active project, and the resolved role is the login scope's `'lead'`.
+
+## DATA-11
+
+*v1 migration writes rows that violate the store schemas, including an `id`≠`username` shape
+that breaks session resolution.*
+
+- [x] **Defect reproduced first, and it was three consequences of one shape.** The import
+      validated the v1 DOCUMENT against v1 shapes, then built store rows by CAST — nothing checked
+      what actually landed. `V1Policy` was unbounded `z.number()` while `PolicyItem` requires
+      integers 1..5, so `high: 0` or `deleteMin: 7.5` landed verbatim and drove the
+      `approvalsRequired` math out of contract. `V1Account.username` had no character
+      constraints, unlike enrolment's `^[a-z0-9._-]{2,32}$`, so arbitrary bytes reached
+      `accountKey()` and became a partition key. And the row was KEYED by username while keeping
+      the v1 document's own `id` — login finds an account by username and mints a session
+      carrying `userId = account.id`, and every later request resolves that through
+      `accountKey(userId)`. A row where the two disagree can authenticate and can never hold a
+      session, and no admin verb repairs it.
+- [x] **Fixed as a rule, not three field patches (L-25).** Every constructed row is parsed
+      through the STORE SCHEMA that governs it before anything is written; the whole document is
+      refused if any row fails. Covers two row kinds nobody reported (teams, risk overrides) and
+      enforces a store-schema constraint added tomorrow the day it is added. Validate-then-write,
+      no partial import — the import is not transactional (it spans the audit chain) and a
+      half-imported estate is not a state anyone can reason about.
+- [x] **The finding's recommendation is taken, and the alternative half is rejected in writing.**
+      "Normalize/enforce id = username (or reject mismatches loudly)" — rejecting is the right
+      half and the fix takes it: every v1 export this product ever produced has `id === username`,
+      so a document where they differ is corrupt or hostile, and silently rewriting an identity
+      during a one-shot migration cannot be undone by the admin who later finds audit actors and
+      request authorship pointing at the old value.
+- [x] **Rows already written get a repair pass, deliberately not marker-gated.** No operator is
+      in the loop for those. `runAccountIdentityRepair` realigns an account row's `id`/`username`
+      to the username its key encodes. A marker would make a repair that could not reach
+      everything never retry (R-12 is exactly that failure on REM-1's stamp) — this pass is one
+      GSI query over a set bounded by the number of humans, cheap enough to just run again.
+- [x] **Regression tests — new `import.test.ts`/repair coverage** (see commit `8482cb0`).
+- [x] **Negative test confirmed.** Validation neutered to the original cast, repair loop emptied:
+      the out-of-contract policy, the id mismatch, and the bad username all import `200` instead
+      of `422`, and the repair reports 0 rows. The pre-repair half of the repair test passes
+      either way — which is the point: it proves the broken row genuinely cannot resolve a
+      session before the fix ever touches it.
+
+## DATA-12
+
+*Crash between the version-row transact and the file write leaves an activatable orphan row in
+the upload lane.*
+
+- [x] **Defect reproduced first.** The upload lane allocates row-first (winning the metadata
+      row's `ifNotExists` put IS the version-number claim) and writes files second, deleting the
+      row only if the write THROWS. A crash in that window — or between the throw and the
+      compensating delete — leaves a durable, listed version row with no files, and its audit
+      entry claims a successful upload. Activation checked only that the row existed, so two
+      admins could take such a version live through the full two-admin ceremony and the
+      `dataActive` pointer would then serve 404s for everything.
+- [x] **Fixed at the fact, not the claim.** `projectDataVersionLanded` checks that the version
+      directory exists (`writeProjectDataVersion` renames a fully-written temp dir into place
+      atomically, so presence means the write completed) AND carries `inventory.json` (the one
+      file every bundle has, catching a dir damaged by something outside this lane). Cheap on
+      purpose (two `existsSync` calls) — this sits on the activate path, not the hot read path,
+      and a "files landed" flag written after the file write would just be a second write that
+      can crash in the same window, a proxy for the fact rather than the fact.
+- [x] **Checked at PROPOSE, not just ack.** A human is present at propose to be told, and it
+      stops the orphan from consuming a dual-control envelope at all.
+- [x] **Regression tests — `test/projectData.test.ts`, 3 new cases** (a full crash reproduction,
+      a partially-removed directory, and the control: a complete version still activates).
+- [x] **Negative test confirmed.** Reverting the guard: 2 of 3 new cases fail with
+      `expected 409 to be 202`; the control (a complete version still activates) keeps passing
+      either way, which is what says the guard is narrow rather than refusing everything.
+- [x] **Evidence in the status line.** `cd ccp/api && npx tsc --noEmit -p tsconfig.json && npx
+      vitest run` — 104 files, 1436 passed.
+
+## API-15
+
+*A dangling idempotency marker makes its key permanently unusable.*
+
+- [x] **Defect reproduced first.** If a marker exists but the request row it names does not
+      (partial deletion, manual surgery, or a future request-delete feature), the pre-check fell
+      through (`prior` null), the handler built a new request, and the transaction's marker
+      `ifNotExists` put failed. The recovery path re-read the marker, found the same dangling
+      `requestId`, got `prior === null` again, retried once more, and finally threw
+      `CHAIN_CONTENTION`. Every submit with that key 409s forever.
+- [x] **Fixed by re-deriving the marker's write MODE fresh, every attempt** — never trusted from
+      a prior attempt or the outer pre-check, which can go stale between the read and the write.
+      Three outcomes, decided from a read taken at the top of the SAME attempt that uses it: no
+      marker yet → `ifNotExists` (ordinary first submit); marker exists and its request is real →
+      genuine duplicate, short-circuit with it, no write attempted; marker exists but its request
+      is gone (dangling) → CAS-repair it atomically with this submit, guarded on the exact stale
+      value so a concurrent repair cannot be silently clobbered.
+- [x] **Both of the finding's suggested remedies are effectively taken.** "Overwrite the marker
+      (treat as stale)" is exactly what the CAS-repair does; "return a specific conflict naming
+      the stale marker" was rejected in favor of self-healing — a stale marker is a symptom no
+      operator caused and no operator needs to be paged for.
+- [x] **Regression test — `test/changeSet.test.ts`, "a dangling marker ... self-heals" (new).**
+      The crash is reproduced by its OUTCOME (deleting only the request row, leaving the marker)
+      rather than by any real delete path, since none exists in this codebase yet.
+- [x] **Negative test confirmed.** Reverting to the fixed-mode marker write reproduces the
+      finding's exact symptom verbatim: `expected 409 to be 201` on a resubmit after the request
+      row (not the marker) is removed.
+- [x] **Evidence in the status line.** `cd ccp/api && npx tsc --noEmit -p tsconfig.json && npx
+      vitest run` — 104 files, 1437 passed.
+
+## API-18
+
+*Legitimize endpoint mints unlimited duplicate engineer requests for the same digest.*
+
+- [x] **Defect reproduced first.** By design the revert proposal row is not consumed by
+      legitimize ("stays open; both paths remain visible") — but nothing else deduplicated
+      either. Repeated `POST /:id/drift/security/:digest/legitimize` calls each created a fresh
+      `NEEDS_ENGINEER` request bound to the same digest, only slowed by the submit rate limit.
+      The adopt/revert submit lane, by contrast, atomically flips the proposal to `submitted`
+      exactly once.
+- [x] **Fixed with a new `legitimizeRequestId` on the proposal row (additive, revert-only),
+      checked against the POINTED-TO request's own status, never trusted blindly.** Still open
+      (`occupiesQuotaSlot`, the same fail-closed "not terminal" vocabulary the rate limiter uses)
+      → surface the existing request (200), never mint another. Terminal
+      (rejected/cancelled/withdrawn) → a fresh legitimize is allowed again, so one failed attempt
+      to converge the drift does not permanently block a retry. The row's own `status` still
+      never changes — this is bookkeeping, not the state transition the route's own header
+      comment says legitimize deliberately avoids.
+- [x] **Stamped atomically with the new request, CAS-guarded.** The proposal-row update rides in
+      the SAME `transactWithAudit` call as the request-row put, guarded on the exact
+      `legitimizeRequestId` value read moments before — a race between two concurrent legitimize
+      calls resolves to whichever one actually won (the catch path re-reads and returns the
+      winner's request) rather than both succeeding.
+- [x] **Regression tests — `test/driftLegitimize.test.ts`, 2 new cases**: a repeat call while
+      open returns the SAME request (200), not a second one; a repeat call after the prior
+      request reaches a TERMINAL status creates a genuinely fresh one and repoints the row.
+- [x] **Negative test confirmed.** Reverting to the unguarded write reproduces both halves: a
+      second open-window call returns `201` (a second request) instead of `200`; a legitimize
+      issued after the prior request went terminal still shows the OLD request id on the
+      proposal row instead of repointing to the new one.
+- [x] **Evidence in the status line.** `cd ccp/api && npx tsc --noEmit -p tsconfig.json && npx
+      vitest run` — 104 files, 1439 passed; `ccp/app`: `npx tsc --noEmit && npx vitest run` —
+      160 files, 2828 passed.
 ## CTL-2
 
 *`moved_block` writes invalid or duplicate-resource HCL at exit 0: no identifier validation, no

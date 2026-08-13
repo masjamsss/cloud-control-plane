@@ -11,6 +11,7 @@ import { bootstrap, seedInstanceIdentity } from '../scripts/bootstrap';
 import { executorKind, maybeStartSchedulerLoop, schedulerEnabled } from './domain/apply/loop';
 import { runSettlement, SettlementConfigError } from './domain/settlement';
 import { runVersionStamp } from './domain/versionStamp';
+import { runAccountIdentityRepair } from './domain/accountIdentityRepair';
 import { installProcessErrorLogging, logServerError, markProcessServing } from './log';
 import { createShutdown } from './shutdown';
 
@@ -138,6 +139,19 @@ async function start(): Promise<void> {
   if (stamped && (stamped.requests || stamped.accounts || stamped.teams)) {
     console.log(
       `ccp-api: version-stamp — requests: ${stamped.requests}, accounts: ${stamped.accounts}, teams: ${stamped.teams}`,
+    );
+  }
+
+  // DATA-11 — an account row whose `id` disagrees with the username its key
+  // encodes can authenticate and can never hold a session: login finds it BY
+  // USERNAME, and every session it mints resolves through `accountKey(userId)`
+  // to a row that does not exist. The v1 import used to write exactly that shape;
+  // it now refuses to, which does nothing for a store where it already ran.
+  // Deliberately NOT marker-gated (unlike the stamp above) — see the module.
+  const repaired = await runAccountIdentityRepair(store);
+  if (repaired.repaired > 0) {
+    console.log(
+      `ccp-api: account-identity repair — ${repaired.repaired} row(s) realigned to their key: ${repaired.usernames.join(', ')}`,
     );
   }
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store/memoryStore';
 import type { AuditItem, RequestItem } from '../src/store/schema';
-import { requestKey } from '../src/store/schema';
+import { requestIdempotencyKey, requestKey } from '../src/store/schema';
 import { seed, seedAccount, sessionCookieFor, setSetting } from './helpers/seed';
 import { nowIso } from '../src/clock';
 
@@ -504,6 +504,44 @@ describe('change set — idempotent resubmit (same idempotencyKey)', () => {
     const putra = await (await submit(app, await sessionCookieFor(store, 'putra'), body)).json();
     expect(putra.id).toBeTruthy(); // putra's own submit genuinely succeeded (not masked by an unrelated 403)
     expect(putra.id).not.toBe(sari.id); // no cross-requester collision
+  });
+
+  /**
+   * API-15 — a DANGLING marker: it exists, but the request row it names does
+   * not (partial deletion, manual surgery, or any future request-delete
+   * feature). Reproduced by its OUTCOME rather than by any real delete path
+   * (none exists yet) — deleting only the request row leaves the marker
+   * exactly as durable state would look after one.
+   */
+  describe('a dangling marker (request row gone, marker still there) self-heals rather than 409ing forever', () => {
+    it('a resubmit with the same key creates a FRESH request instead of permanently refusing', async () => {
+      const { app, store } = await newApp();
+      const cookie = await sessionCookieFor(store, 'sari');
+      const body = { items: [selfServiceItem()], justification: JUST, schedule: { kind: 'now' }, idempotencyKey: 'dangling-1' };
+
+      const first = await (await submit(app, cookie, body)).json();
+      const rk = requestKey('sample', first.id);
+      expect(await store.get(rk.PK, rk.SK)).not.toBeNull(); // L-1: it really landed first
+      await store.delete(rk.PK, rk.SK); // ← the crash's/deletion's durable outcome: an orphaned marker
+
+      const mk = requestIdempotencyKey('sample', 'sari', 'dangling-1');
+      const markerBefore = await store.get(mk.PK, mk.SK);
+      expect(markerBefore?.requestId).toBe(first.id); // still pointing at the now-gone row
+
+      const second = await submit(app, cookie, body);
+      expect(second.status).toBe(201); // NOT a second-and-forever CHAIN_CONTENTION
+      const secondBody = await second.json();
+      expect(secondBody.id).not.toBe(first.id);
+
+      // The marker is REPAIRED to the new request, not left dangling or duplicated.
+      const markerAfter = await store.get(mk.PK, mk.SK);
+      expect(markerAfter?.requestId).toBe(secondBody.id);
+
+      // A THIRD submit with the same key now resolves the repaired marker normally.
+      const third = await submit(app, cookie, body);
+      expect(third.status).toBe(200);
+      expect((await third.json()).id).toBe(secondBody.id);
+    });
   });
 });
 

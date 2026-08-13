@@ -18,6 +18,7 @@ import {
   UploadBundle,
   bundleProblem,
   digestsOf,
+  projectDataVersionLanded,
   readProjectDataFile,
   rerunRedaction,
   writeProjectDataVersion,
@@ -369,6 +370,25 @@ export function projectDataRoutes(dataRoot: string): Hono<AppEnv> {
     const vKey = projectDataVersionKey(id, version);
     const row = (await store.get(vKey.PK, vKey.SK)) as ProjectDataVersionItem | null;
     if (!row) return c.json({ code: 'NOT_FOUND', reason: 'No such staged data version.' }, 404);
+    // DATA-12 — THE ROW IS A CLAIM; THE FILES ARE THE FACT.
+    //
+    // The upload lane allocates row-first and writes files second (winning the
+    // row's ifNotExists put IS the version-number claim), deleting the row if the
+    // write throws. A crash in that window — or between the throw and the
+    // compensating delete — leaves a durable, listed version row with no files,
+    // and its audit entry claims a successful upload. Activating checked only
+    // that the row existed, so two admins could take such a version live through
+    // the full two-admin ceremony and the `dataActive` pointer would then serve
+    // 404s for everything.
+    //
+    // Checked HERE, at propose time, rather than at the ack: this is where a
+    // human is present to be told, and it stops the orphan from consuming a
+    // dual-control envelope at all. Nothing between propose and ack removes a
+    // version's files — the only remover, deregistration, takes the whole project
+    // with it and fails the ack's own version guard first.
+    if (!projectDataVersionLanded(dataRoot, id, version)) {
+      return apiError(c, 'DATA_VERSION_INCOMPLETE', { version });
+    }
 
     const k = projectKey(id);
     const now = nowIso();

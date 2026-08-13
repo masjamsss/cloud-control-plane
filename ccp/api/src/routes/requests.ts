@@ -341,6 +341,12 @@ export function requestRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
         const rk = requestKey(projectId, String(marker.requestId));
         const prior = (await store.get(rk.PK, rk.SK)) as RequestItem | null;
         if (prior) return c.json(toChangeRequest(prior, projectId), 200);
+        // API-15: the marker exists but the request it names does not (partial
+        // deletion, manual surgery, or any future request-delete feature) — a
+        // DANGLING marker. Falling through here (not returning) is deliberate:
+        // this submit proceeds as an ordinary fresh one, and the write path
+        // below re-checks and REPAIRS the same marker atomically with it,
+        // rather than this read racing that repair.
       }
     }
 
@@ -580,7 +586,7 @@ export function requestRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
     };
     // Persist the request (+ the idempotency marker, if a key was supplied) and its audit entry
     // as ONE atomic batch. A fresh-ULID request put never collides, so the ONLY domain
-    // condition that can fail besides the chain head is the marker `ifNotExists` — a collision
+    // condition that can fail besides the chain head is the marker write — a collision on it
     // means a concurrent/duplicate submit already created THIS set, so we return that existing
     // request (idempotent) rather than a second copy. This is why submit hand-rolls the loop
     // instead of `transactWithAudit`: it must tell a marker duplicate apart from chain
@@ -600,6 +606,29 @@ export function requestRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
         : undefined;
     const hKey = chainHead(projectId);
     for (let attempt = 0; attempt < CHAIN_WRITE_ATTEMPTS; attempt++) {
+      // API-15: the marker's write MODE is re-derived from a FRESH read every
+      // attempt, never trusted from a prior attempt or the pre-check above — a
+      // marker seen dangling a moment ago could have been repaired, or reused
+      // by a concurrent writer, since. Three outcomes:
+      //  - no marker at this key yet → `ifNotExists` (the ordinary first submit);
+      //  - marker exists and its request is real → this IS a duplicate submit,
+      //    short-circuit with the existing request, no write attempted;
+      //  - marker exists but its request is gone (dangling — partial deletion,
+      //    manual surgery, or a future request-delete feature) → CAS-repair it
+      //    atomically with this submit, guarded on the exact stale value so a
+      //    concurrent repair can't be silently clobbered.
+      let markerWrite: TransactWrite | undefined;
+      if (marker) {
+        const current = (await store.get(marker.PK, marker.SK)) as { requestId?: unknown } | null;
+        if (!current) {
+          markerWrite = { kind: 'put', item: marker, ifNotExists: true };
+        } else {
+          const rk = requestKey(projectId, String(current.requestId));
+          const prior = (await store.get(rk.PK, rk.SK)) as RequestItem | null;
+          if (prior) return c.json(toChangeRequest(prior, projectId), 200);
+          markerWrite = { kind: 'put', item: marker, ifEquals: { attr: 'requestId', value: current.requestId } };
+        }
+      }
       // CONC-12: admission is derived INSIDE the loop and rides IN the batch below, so
       // the caps are decided by the same all-or-nothing write that creates the request
       // instead of by a count taken earlier against a store that then moved. A concurrent
@@ -613,7 +642,7 @@ export function requestRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
       const { writes: auditWrites } = recordIn(projectId, head, entry);
       const domain: TransactWrite[] = [
         { kind: 'put', item, ifNotExists: true },
-        ...(marker ? [{ kind: 'put' as const, item: marker, ifNotExists: true }] : []),
+        ...(markerWrite ? [markerWrite] : []),
         // PERF-10 + CONC-12: the requester's quota-index pointer and gate-CAS bump,
         // atomically with the row they admit. Never commit this separately — see
         // `SubmitAdmission`.
@@ -624,18 +653,12 @@ export function requestRoutes(opts: { dataRoot?: string } = {}): Hono<AppEnv> {
         return c.json(toChangeRequest(item, projectId), 201);
       } catch (e) {
         if (e instanceof ConditionError) {
-          // A duplicate submit (same key already committed) → return the existing request.
-          if (marker) {
-            const dup = (await store.get(marker.PK, marker.SK)) as { requestId?: unknown } | null;
-            if (dup) {
-              const rk = requestKey(projectId, String(dup.requestId));
-              const prior = (await store.get(rk.PK, rk.SK)) as RequestItem | null;
-              if (prior) return c.json(toChangeRequest(prior, projectId), 200);
-            }
-          }
-          // Chain contention OR the admission gate: re-read everything fresh and replay
-          // the whole batch, within budget. Either cause is answered the same way — a
-          // fresh read of whichever row moved — so there is nothing to branch on here.
+          // A marker write raced (a concurrent submit landed between the fresh
+          // read above and this transact), the quota admission's own guard lost,
+          // or it was chain contention — every case is answered the same way: back
+          // off and go round again with FRESH reads, including resolving a now-real
+          // duplicate to its request at the top of the next attempt rather than
+          // retrying blind or re-checking it here a second time.
           if (await chainBackoff(attempt)) continue;
           throw new ApiError('CHAIN_CONTENTION');
         }

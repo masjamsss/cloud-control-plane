@@ -54,9 +54,11 @@ Server side, the taxonomy in `ccp/api/src/errors.ts:10-71` is declared "the ONLY
 | `TEAM_NOT_EMPTY` | 409 | Move this team's members and services before deleting it. | errors.ts:38; ccp/api/src/routes/admin.ts:789 |
 | `BACKEND_NOT_EMPTY` | 409 | The backend already holds data. | errors.ts:39; ccp/api/src/routes/migrate.ts:60 |
 | `DUPLICATE_PROJECT` | 409 | That project id is already registered. | errors.ts:40; ccp/api/src/routes/projects.ts:227 |
+| `PROJECT_ID_RETIRED` | 409 | That project id was deregistered and cannot be reused — choose a different id. | (API-9) errors.ts:154; ccp/api/src/routes/projects.ts:751 — deregistration sweeps the whole `PROJECT#<id>` partition and writes a `RETIRED` tombstone last, so a reused id can never inherit a previous tenant's leftover satellite rows (e.g. a stale forge credential) |
 | `DRIFT_PROPOSAL_STALE` | 409 | This drift proposal is stale — superseded by a newer report, already submitted, or not from the latest snapshot. | (DOC-10) errors.ts:152 (drift-portal spec §4.3); ccp/api/src/routes/drift.ts:639,642,892,975 — a proposal not from the latest report, already submitted, or otherwise no longer 'open' is never submittable |
 | `INSTANCE_STALE` | 409 | The instance identity changed since you loaded it — reload and try again. | (DOC-10) errors.ts:159 (ADR-0023); ccp/api/src/routes/instance.ts:131 — the instance-identity row changed between the admin's read and this write (another admin renamed it concurrently) |
 | `SCANNER_DISABLED` | 409 | The built-in repository scanner is not enabled on this deployment. Run the scan from the repository's CI or locally instead. | (DOC-10) errors.ts:271 (ADR-0033); ccp/api/src/routes/projects.ts:909, routes/scanJobs.ts:264,398 — 409 rather than 404 so an operator who expected the feature learns it is disabled rather than mistyped |
+| `DATA_VERSION_INCOMPLETE` | 409 | That data version's files are missing — the upload did not complete. Re-upload it before activating. | (DATA-12) errors.ts:170; ccp/api/src/routes/projectData.ts:379 — the version ROW is a claim, the files are the fact; refused at propose time so a crash between the row-first allocation and the file write can never consume a dual-control envelope |
 
 ### 422
 
