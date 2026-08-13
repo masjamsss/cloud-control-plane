@@ -5015,6 +5015,225 @@ leak."
       test/snapshotWriteAtomic.test.ts` (14 passed); full suite `npx vitest run` (102 files, 1421
       passed); `npx tsc --noEmit` clean.
 
+## IMP-6
+
+*statediff's managed-set match assumes Terraform state `id` equals the discovery id;
+false-positive findings for id-divergent types (concrete: `aws_volume_attachment`).*
+
+- [x] **Defect reproduced first** — built the fixture capture the finding describes (a volume
+      attachment that IS managed by Terraform, whose prior_state row carries the provider's
+      synthesized `vai-1855526686` while discovery derives
+      `/dev/sdh:vol-…001:i-…002` from `id_format`) and ran the sweep unmodified: **7 findings,
+      one of them the managed attachment**, exactly the permanent false positive described.
+- [x] **Cause, not symptom** — the sweep's entire managed/unmanaged decision was one equality,
+      `discovery id == prior_state values.id`. That is not a property of Terraform; it is a
+      property of 42 of the 43 types. Where the provider synthesizes its own state id the
+      compare is *structurally incapable* of matching, and nothing in the output distinguishes
+      "checked and genuinely unmanaged" from "the check could not have succeeded" — L-1's shape
+      applied to a data comparison rather than a gate.
+- [x] **The rule, not the list (L-25)** — the fix is not a special case for
+      `aws_volume_attachment`. services.json now declares, per type, how Terraform identifies
+      it in prior_state: `state_id_format` (a `str.format` template over the prior_state
+      resource's `values`, rebuilding the discovery id) or `state_id_matches_discovery` +
+      `state_id_reason` (the verified opposite claim). The class that can contain the defect is
+      *types whose discovery id is synthesized* — i.e. those carrying `id_format` — and
+      statediff **refuses to sweep** if any such type declares neither. A future composite-id
+      type therefore cannot silently join the false-positive class; it has to make the decision.
+- [x] **Where the recommendation was followed and where it was not** — the finding offered
+      "match on a declared state attribute … *or* exclude such types from the sweep explicitly".
+      The second branch was rejected in writing: excluding the type would also stop reporting
+      genuinely unmanaged attachments, converting a false-positive problem into a false-negative
+      one in a tool whose entire premise is that gaps are loud. The first branch is what
+      shipped, generalised from "a declared attribute" to "a declared *identity mapping*" so it
+      composes with the composite ids that cause the problem in the first place.
+- [x] **The state id is still added, not replaced** — a declared mapping can only ever *add*
+      matches. No manifest row can collide with a `vai-<hash>`, so keeping both keys means the
+      new path cannot remove a match that already worked.
+- [x] **An unresolvable mapping refuses (IMP-4's discipline)** — if the declared template and
+      the provider's attributes part company (a renamed attribute, a provider major bump), the
+      failure mode of continuing is *precisely the defect being fixed*: every managed resource
+      of that type silently becomes a finding again. `REFUSE STATE_ID_UNRESOLVED` names the
+      missing attribute. An empty render refuses too — an empty key matches nothing, which is
+      the same silent restoration wearing different clothes.
+- [x] **Regression test** — `IdDivergentStateMatchTests` in
+      `importer/kit/tests/test_statediff.py`, driven by a new
+      `tests/fixtures/sweep-happy/ec2-volumes.json` and three new prior_state rows in
+      `plan-sweep-happy.json` (the fixture the finding itself asked for).
+      **Negative test confirmed:** with `statediff.py` and `services.json` reverted to HEAD and
+      the tests/fixtures kept, 6 tests fail —
+      `test_the_fixture_really_is_id_divergent`,
+      `test_managed_id_divergent_resource_is_not_a_finding`,
+      `test_unresolvable_state_id_format_refuses_rather_than_sweeping`,
+      `test_a_new_composite_id_type_must_declare_its_state_identity`,
+      `test_the_opposite_claim_needs_a_reason` and `test_deterministic_ordering` (which sees the
+      managed attachment reappear as a 7th finding). Fix restored, all 122 kit tests green.
+- [x] **Assert the setup fired (L-1)** — `test_the_fixture_really_is_id_divergent` pins every
+      precondition by *reading the files*, never assuming: services.json declares the mapping,
+      prior_state's own `id` set is exactly `{"vai-1855526686"}` and demonstrably does **not**
+      contain the discovery id, and the manifest really discovered both attachments. Without it
+      a fixture that quietly lost its volumes would make "is not a finding" pass vacuously.
+- [x] **Failure is loud, and the fix cannot be a suppression** — the fixture deliberately
+      carries a *second*, unmanaged attachment of the same type from the same capture file.
+      `test_unmanaged_id_divergent_resource_is_still_a_finding` fails if the fix ever degrades
+      into "ignore `aws_volume_attachment`", which is the cheap way to make this finding's
+      symptom disappear. `aws_ebs_volume` — same capture, plain-id match — pins that the new
+      path is additive.
+- [x] **Evidence in the status line** — `cd importer/kit/tests && python3 -m unittest discover
+      -s .` (122 tests, OK).
+
+## IMP-15
+
+*Coverage-sweep family granularity marks undiscoverable resources as "covered".*
+
+- [x] **Defect reproduced first** — a capture dir with one aliased KMS key and two swept KMS
+      key ARNs. `build` reported `coveredTypes: [{"family": "kms", "count": 2}]`,
+      `unrecognizedArnFamilies: []`, and discovered exactly one key. The unaliased key was
+      counted as covered and then vanished — the one mechanism built to catch discovery gaps
+      reporting the gap as covered, exactly as the finding describes.
+- [x] **Cause, not symptom** — "covered" was a claim about the ARN **family**, asserted on
+      behalf of every type inside it. `aws_kms_key`'s only lister is `kms list-aliases`, so a
+      key with no alias is structurally unreachable, yet family `kms` is covered by
+      construction because some type in it is discoverable. The bucket could not express
+      "reached this family, did not reach this type".
+- [x] **Where the recommendation was NOT followed, and why** — the finding recommends adding
+      `aws kms list-keys` as a real key lister. Rejected, in writing: `list-keys` returns
+      `{KeyId, KeyArn}` only, with no way to separate AWS-managed keys from customer keys
+      without a per-key `describe-key` — a per-resource call, which is precisely what
+      `services.json` `manual[]` exists for and what the single-list-call rule excludes. It
+      also carries no name, so the alias would still have to be joined back in, which the
+      one-capture-per-type data model cannot express. Shipping it would have replaced a
+      silent gap with a manifest full of unimportable AWS-managed keys — a different silent
+      failure. The finding's *second* suggestion (name the shadow) is the one that shipped,
+      made mechanical rather than documentary.
+- [x] **The rule, not the list (L-25)** — `services.json` grows an optional
+      `shadow: {arnResourceType, reason}` on any type whose lister cannot enumerate it.
+      `build` diffs the ids swept under that ARN resource-type token against the ids it
+      actually accounted for and reports the remainder **by id** in `coverage.shadowedTypes`,
+      repeats the shortfall on the covered row as `undiscovered`, and WARNs. Nothing is
+      special-cased to KMS; a second shadowed type is a data change.
+- [x] **No false precision** — the README's standing argument against parsing the ARN
+      resource token (inconsistent delimiters, sometimes absent) is correct and is preserved:
+      the token is parsed ONLY for a type that opted in by declaring one, so the default
+      bucketing rule stays coarse and always-correct.
+- [x] **"Accounted for" is discovered OR ignored-with-a-reason** — a record the kit skips on
+      purpose (the AWS-managed key behind `alias/aws/s3`) is in `manifest["ignored"]` with its
+      reason, which is the opposite of a shadow. Counting those as undiscovered would have
+      been a false positive this check manufactured for itself; the fixture pins that it does
+      not.
+- [x] **Anti-vacuity: `mappingMatched` (IMP-4's lesson)** — the dangerous outcome here is not
+      a wrong number, it is a **zero**: a mistyped `arnResourceType` produces
+      `undiscoveredCount: 0`, which reads as good news. `mappingMatched` records whether ANY
+      accounted-for id appeared among the swept ids, so a declaration that describes nothing
+      is visible in the artifact instead of being inferred from a comfortable zero. It is
+      reported, not raised, because the coverage sweep is a report by design (it must never
+      fail a build over an estate the kit does not recognise) — the test suite is where it
+      fails.
+- [x] **Regression test** — `ShadowedTypeCoverageTests` in `importer/kit/tests/test_discover.py`,
+      driven by four new ARNs in `testdata/capture-happy/coverage-resources.json`: the aliased
+      key (discovered), an unaliased key (the shadow), the AWS-managed key (ignored, must not
+      be a shadow) and an `alias/` ARN in the same family (proves the resource-type token is
+      load-bearing — without it the alias inflates the count and invents a phantom key).
+      **Negative test confirmed:** with `discover.py` and `services.json` reverted to HEAD and
+      the tests and fixture kept, 8 tests fail. The shadow row is resolved per-test rather
+      than in `setUpClass` precisely so its absence fails each assertion with its own message
+      — the first draft raised in `setUpClass` and collapsed the class into a single
+      uninformative error.
+- [x] **Assert the setup fired (L-1)** — `test_the_fixture_really_contains_an_undiscoverable_key`
+      recomputes the precondition from the fixtures: 3 swept key ARNs, and exactly one of them
+      absent from `kms-aliases.json`. If the fixture ever loses its unaliased key, that test
+      fails rather than the others passing vacuously.
+- [x] **Evidence in the status line** — `cd importer/kit/tests && python3 -m unittest discover
+      -s .` (130 tests, OK).
+
+**Residue:** the parity gap the finding names in passing — the Azure kit classifies coverage
+at full-type granularity while the AWS kit is family-coarse — is unchanged. This fix removes
+the *silent* consequence for a declared type; it does not make AWS coverage type-granular.
+See `R-56`.
+
+## IMP-8
+
+*Committed schemadump artifacts are not reproducible via the documented `gen.sh` pipeline;
+generated-catalog staleness detection is entirely manual.*
+
+- [x] **Defect reproduced first, in two parts.**
+  - `gen.sh` as documented did not reproduce the tree: `TYPES="${TYPES:-$TOOLDIR/types.txt}"`
+    treats an *empty* `TYPES` the same as an *unset* one, so there was no way through the
+    documented entry point to ask for the full-provider dump that is actually committed —
+    running `gen.sh` exactly as documented for either provider silently produced an artifact
+    scoped differently from the one in the tree (85 types for aws instead of the committed
+    1677; the 12-type spike for azurerm instead of the committed 1141). `types-azure.txt`'s own
+    header already said "regenerate with an empty `-types` filter" — an instruction the script
+    could not execute.
+  - Staleness detection was manual because no tool could tell you the artifacts were stale:
+    `gen-azure-ledger.mjs` had a single mode, unconditional write. Proven directly — staled
+    `catalog/azure-capability-ledger.json` (flipped one row's `family`), ran the **pre-fix**
+    script with `--check` (a flag it does not recognise): it silently regenerated, **overwrote
+    the staled row back to correct, exited 0, and reported nothing** — no error, no diff, no
+    indication a repair had even happened. Asking the old tool to verify does not fail loudly;
+    it fails by *fixing the evidence and calling it success*, which is worse than doing nothing.
+- [x] **Cause, not symptom.** Two independent gaps, same root: nothing about the pipeline was
+  a *checkable* claim. `gen.sh`'s `${TYPES:-file}` conflated "unset" with "explicitly empty"
+  so full-provider mode had no expressible spelling; `gen-azure-ledger.mjs` had no notion of
+  "compare instead of write" so there was no command that could answer "is the committed file
+  still what the dump produces" without a human diffing by hand.
+  - `gen.sh`: `TYPES="${TYPES-all}"` (unset default, not `:-`) — an explicitly empty `TYPES` and
+    the literal `all` both now mean "no `-types` filter", matching what the tool's own `-types
+    ""` contract already meant. An unreadable `TYPES` file is a hard error rather than a silent
+    fallback to full-provider — a typo'd path must not quietly produce a 1677-type artifact
+    where 85 were asked for (this finding, in reverse). `COMPRESS` defaults per provider to
+    match what is actually committed (`aws-*.json.gz`, `azurerm-*.json` uncompressed), and uses
+    `gzip -9 -n` — without `-n`, gzip embeds the source mtime/filename, so two runs over
+    byte-identical JSON produce different `.gz` bytes and reproducibility could never be
+    checked at all (the committed aws `.gz` was made without `-n`: its header carries a real
+    timestamp).
+  - `gen-azure-ledger.mjs --check`: regenerates in memory, diffs against the two committed
+    files, exits 1 on any difference. The shape guarded against is not a wrong verdict, it is a
+    **vacuous pass** — the same L-1 hazard IMP-4's own self-check nearly shipped with (a
+    `r.safe_op_classes`/`r.safeOpClasses` field-name typo produced a uniform zero that read as
+    an answer). So `--check` refuses on a MISSING artifact (the most stale an artifact can be,
+    never "skip"), an EMPTY one, a `expected` comparison list that is itself empty, and a
+    regenerated row count that does not match the dump's own type count — and a green run
+    prints what it actually compared (byte counts, row counts), so a reader never has to infer
+    "did this really run" from a bare checkmark. A `Generated: <now>` timestamp in the summary
+    header was itself part of the defect: it made every regeneration differ from the committed
+    file by construction, so a regenerate-and-compare check could never have been green twice
+    running. It is replaced by the dump's own provenance (provider, tag, commit, the dump's own
+    `generated_at`) — deterministic, and strictly more useful: it names the input, not the run.
+    A required provenance field that is absent refuses the write rather than interpolating the
+    literal string `"undefined"` into a committed artifact (the azurerm dump carries no
+    `source_provenance` block at all, unlike the aws one — the first draft of this header did
+    exactly that).
+- [x] **A check nobody calls is not a check (L-1, applied to CI wiring itself).** `--check` and
+  its selftest existed as code with no caller: `gate_generated()` was defined in `scripts/gate.sh`
+  but never reached from the `case "$MODE"` dispatch, and no GitHub workflow ran either script —
+  `importer.yml`'s `schemadump` job builds/vets/tests the Go source and stops; nothing anywhere
+  compares the committed catalog artifacts to what the dump produces. Fixed on both sides: `py`
+  and `all|full` modes now call `gate_generated`; `importer.yml`'s `schemadump` job runs the
+  selftest then `--check` after `go test`. The workflow's path filters are widened to `catalog/**`
+  and the new selftest script — the defect this check exists to catch (a *hand-edited* catalog
+  artifact) touches neither `importer/**` nor `tools/schemadump/**`, so the old filter would
+  never have triggered this job for exactly the case that matters.
+- [x] **Regression test — `scripts/ci/generated-catalog-selftest.sh`, five scenarios, written as
+  rules not a list (L-25):** a pristine tree passes AND reports a non-zero comparison count (a
+  silent pass is not evidence of a pass); an edited ledger row is caught; an edited summary line
+  is caught; a MISSING artifact fails rather than being treated as "nothing to compare"; an EMPTY
+  artifact fails. **Negative test confirmed directly against the pre-fix generator** (git-show'd
+  from `origin/main` into a scratch copy, run in place so its own path resolution is real): given
+  `--check` it does not recognise the flag, silently regenerates, and overwrites a staled row back
+  to correct with exit 0 and no diagnostic of any kind — proving the "manual only" claim in the
+  finding text rather than asserting it. `bash scripts/ci/generated-catalog-selftest.sh`: 5/5.
+- [x] **Assert the setup fired (L-1).** Scenario A does not just check exit 0 — it also asserts
+  the check's own stdout reports `N ledger rows compared` with `N != 0`, so a future rewrite that
+  accidentally compares two empty strings (the shape that bit the L-22/IMP-4 self-check) fails
+  loud instead of passing green.
+- [x] **Failure is loud.** `--check` exits non-zero and prints the first differing line with both
+  the committed and regenerated text side by side, plus the fix command — never a bare "stale",
+  never a partial write. `gen.sh`'s unreadable-`TYPES`-file case is a hard `exit 1`, not a silent
+  full-provider fallback.
+- [x] **Evidence in the status line.** `node tools/schemadump/gen-azure-ledger.mjs --check` — 2
+  artifacts, 1141 rows, PASS against the current committed tree. `bash
+  scripts/ci/generated-catalog-selftest.sh` — 5/5. `bash scripts/gate.sh py` — python suites (217
+  tests) + `gate_generated`, both green.
 ## CTL-5
 
 *`drift-edit` writes are neither atomic nor transactional: a mid-batch refusal leaves
