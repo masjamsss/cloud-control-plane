@@ -2,6 +2,7 @@ import type { ConfigStore, TransactWrite } from '../store/configStore';
 import { ConditionError } from '../store/configStore';
 import type { AuditEntryInput } from './audit';
 import { CHAIN_WRITE_ATTEMPTS, chainBackoff, recordIn } from './audit';
+import { isFrozen } from './config';
 import type { ChainHeadItem, RequestItem } from '../store/schema';
 import { chainHead, requestKey } from '../store/schema';
 import { ApiError } from '../errors';
@@ -344,6 +345,104 @@ export async function settleWindow(store: ConfigStore, projectId: string, req: R
         const fresh = (await store.get(k.PK, k.SK)) as RequestItem | null;
         if (fresh && fresh.status !== 'AWAITING_DEPLOY_APPROVAL') return fresh; // already settled/cancelled/rewound by someone else
         if (await chainBackoff(attempt)) continue; // chain contention (a DIFFERENT write) → retry
+        throw new ApiError('CHAIN_CONTENTION');
+      }
+      throw e;
+    }
+  }
+  return req;
+}
+
+/**
+ * `settleFrozenHold` (API-8) — the missing half of the quorum-met status decision.
+ *
+ * At ladder completion `routes/requests.ts` makes one of four decisions: WINDOW_EXPIRED
+ * for an already-dead window, AWAITING_DEPLOY_APPROVAL + `held_frozen` while a change
+ * freeze is on, AWAITING_DEPLOY_APPROVAL + `scheduled` for a window, and APPLIED for a
+ * `kind:'now'` schedule. The middle two look alike and are not: a `kind:'now'` request
+ * has nothing to wait for, so the freeze — and ONLY the freeze — is what stopped it being
+ * stamped APPLIED. Nothing ever revisited that decision.
+ *
+ * The result was that a fully-approved change's terminal fate depended on which side of
+ * the unfreeze its last signature landed: one minute later it was APPLIED instantly, one
+ * minute earlier it waited forever. {@link settleWindow} bails on a non-window schedule,
+ * the scheduler only considers windowed rows (and is off by default), `rewindow` refuses
+ * a `kind:'now'` row by design, and the bundle is disarmed by default — so cancel was the
+ * only exit from a change every required human had already approved.
+ *
+ * This settles that row the way the freeze deferred it: `AWAITING_DEPLOY_APPROVAL` →
+ * `APPLIED`, on the next read after the freeze lifts, with a timeline event and an audit
+ * entry that say why it moved now. Write-on-read like `settleCooling`/`settleWindow`,
+ * with the same guarded transact and the same idempotent re-read, and no background timer
+ * anywhere.
+ *
+ * THREE DELIBERATE LIMITS.
+ *  - `kind:'window'` is untouched. A window is a wait the requester ASKED for, not one
+ *    the freeze imposed; stamping it APPLIED on unfreeze would record an apply outside
+ *    the maintenance window that was reviewed. Windowed rows belong to
+ *    `domain/apply/scheduler.ts`.
+ *  - The quorum is re-checked against the row's own `approvalsRequired` rather than
+ *    inferred from the status. `AWAITING_DEPLOY_APPROVAL` already implies a completed
+ *    ladder; this is the same defense-in-depth the scheduler applies before an apply, and
+ *    it fails CLOSED — a row short of its quorum stays held rather than being applied.
+ *  - The schedule kind is matched EXACTLY (`=== 'now'`), never `!== 'window'`. A third
+ *    schedule kind must make its own decision about what unfreezing means for it; being
+ *    swept into an APPLIED stamp by a negation is how a status decision gets made by
+ *    accident.
+ */
+export function needsFrozenHoldSettlement(
+  req: Pick<RequestItem, 'status' | 'schedule' | 'approvals' | 'approvalsRequired'>,
+): boolean {
+  return (
+    req.status === 'AWAITING_DEPLOY_APPROVAL' &&
+    req.schedule.kind === 'now' &&
+    req.approvals.length >= req.approvalsRequired
+  );
+}
+
+export async function settleFrozenHold(store: ConfigStore, projectId: string, req: RequestItem): Promise<RequestItem> {
+  // The cheap synchronous screen first, so the freeze read below is paid only by rows
+  // that could actually move — a list endpoint settles every row it returns.
+  if (!needsFrozenHoldSettlement(req)) return req;
+  if (await isFrozen(store, projectId)) return req; // still frozen: the veto stands
+
+  const now = nowIso();
+  const events = [
+    ...req.events,
+    { at: now, type: 'applied', label: 'Change freeze lifted — fully approved and APPLIED', actor: 'system:freeze-lifted' },
+  ];
+  const entry: AuditEntryInput = {
+    action: 'request-frozen-hold-applied',
+    actor: 'system:freeze-lifted',
+    targetType: 'request',
+    targetId: req.id,
+    requestId: req.id,
+    before: { status: req.status, held: 'FROZEN' },
+    after: { status: 'APPLIED' },
+  };
+
+  const k = requestKey(projectId, req.id);
+  const hKey = chainHead(projectId);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
+    const { writes } = recordIn(projectId, head, entry);
+    const domain: TransactWrite[] = [
+      {
+        kind: 'update',
+        pk: k.PK,
+        sk: k.SK,
+        set: { status: 'APPLIED', updatedAt: now, events },
+        ifEquals: { attr: 'status', value: 'AWAITING_DEPLOY_APPROVAL' },
+      },
+    ];
+    try {
+      await store.transact([...domain, ...writes]);
+      return { ...req, status: 'APPLIED', updatedAt: now, events };
+    } catch (e) {
+      if (e instanceof ConditionError) {
+        const fresh = (await store.get(k.PK, k.SK)) as RequestItem | null;
+        if (fresh && fresh.status !== 'AWAITING_DEPLOY_APPROVAL') return fresh; // cancelled/claimed/settled by someone else
+        if (attempt === 0) continue; // chain contention (a DIFFERENT request's write) → retry once
         throw new ApiError('CHAIN_CONTENTION');
       }
       throw e;
