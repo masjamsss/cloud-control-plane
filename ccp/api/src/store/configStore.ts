@@ -79,6 +79,27 @@ export interface ConfigStore {
   query(pk: string, skPrefix?: string, opts?: QueryOptions): Promise<Item[]>;
   /** Query the single GSI1 by exact GSI1PK. GSI1SK-ascending unless `opts` says otherwise. */
   queryGSI1(gsi1pk: string, opts?: QueryOptions): Promise<Item[]>;
+  /**
+   * Fold over one GSI1 partition WITHOUT materializing it (PERF-10).
+   *
+   * `queryGSI1` deep-clones every matching row before returning it, which is
+   * correct — a caller that gets a row can keep it, and the returned object must
+   * not be a live handle into the store. But a caller that only wants to COUNT
+   * something pays that clone for every row and then throws them all away: the
+   * submit path cloned the entire global account directory on every submission
+   * to answer "how many of these could sign this request" (measured 7.1 ms at
+   * 5,000 accounts, on the request's critical path, twice per submit).
+   *
+   * `visit` receives a READ-ONLY view of the stored row and must not retain or
+   * mutate it — nothing but the accumulated result may escape this call. That
+   * restriction is what makes skipping the clone safe, and it is why this is a
+   * fold rather than a `queryProjected` returning references.
+   *
+   * OPTIONAL: a store that cannot do better than a full read simply omits it and
+   * callers fall back to `queryGSI1`, with identical semantics and the old cost.
+   * A DynamoDB implementation would express it as a projection expression.
+   */
+  foldGSI1?<T>(gsi1pk: string, initial: T, visit: (acc: T, item: Readonly<Item>) => T): Promise<T>;
   /** All-or-nothing batch. A failed condition throws ConditionError and applies NOTHING. */
   transact(writes: TransactWrite[]): Promise<void>;
   delete(pk: string, sk: string): Promise<void>;

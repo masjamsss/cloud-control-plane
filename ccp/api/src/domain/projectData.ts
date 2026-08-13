@@ -135,22 +135,148 @@ export type StoredDigests = { inventorySha256: string; blocksSha256: string; man
 
 const sha256 = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
 
-/** The documented digest rule: sha256 over the CANONICAL JSON (recursive
- * key-sorted, no whitespace — `domain/audit.ts#canonicalJson`) of the part. */
-export function partDigest(value: unknown): string {
-  return sha256(canonicalJson(value));
+/* ── cooperative ingest primitives (PERF-12) ───────────────────────────────────
+ *
+ * Ingest is the only path in this API that does estate-sized CPU work in one
+ * go: a 16 MiB bundle is up to 50k inventory resources and 100k block
+ * addresses, and every byte of it gets canonicalized, hashed and redacted. It
+ * runs on the same single thread that serves every interactive user, so the
+ * cost is not "the upload is slow" — it is "nobody gets an answer until the
+ * upload finishes". One CI push froze the server for ~1.1 s at 20k resources
+ * (measured: 313 ms + 398 ms + 372 ms across three full canonical passes).
+ *
+ * Two properties fix that, and they are separate: doing LESS work (one canonical
+ * pass instead of four), and not holding the loop while doing it.
+ */
+
+/** Hand the event loop back so a long CPU pass cannot monopolize it. `setImmediate`
+ *  (not `setTimeout(0)`) runs pending I/O callbacks first, which is exactly the
+ *  "let the other requests through" behaviour wanted here. */
+const yieldToEventLoop = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
+
+/** How many canonical fragments / redacted items between yields. Big enough that
+ *  the yield overhead stays in the noise, small enough that the loop is never
+ *  held for a perceptible slice. */
+const YIELD_EVERY = 500;
+
+/**
+ * sha256 of a value's CANONICAL JSON, computed WITHOUT ever materializing that
+ * JSON as one string, and yielding to the event loop as it goes.
+ *
+ * Byte-identical to `sha256(canonicalJson(value))` by construction — the
+ * fragments emitted here are the same fragments `canonicalJson` concatenates,
+ * in the same order — and `test/projectDataIngest.test.ts` pins that
+ * equivalence over a deliberately awkward corpus rather than trusting the
+ * claim. That test is the contract: the digest is a wire-visible value every
+ * uploader recomputes, so a divergence here would refuse every upload.
+ *
+ * Iterative, with an explicit stack: the recursive `canonicalJson` builds one
+ * string per nesting level and the whole 11 MiB result at the top, which is the
+ * allocation half of the cost the finding measured.
+ */
+export async function hashCanonical(value: unknown): Promise<string> {
+  const h = createHash('sha256');
+  // Work items are processed LIFO: either a literal fragment to emit, or a value
+  // still to be serialized.
+  type Work = { lit: string } | { val: unknown };
+  const stack: Work[] = [{ val: value }];
+  let sinceYield = 0;
+  while (stack.length > 0) {
+    const w = stack.pop()!;
+    if ('lit' in w) {
+      h.update(w.lit, 'utf8');
+    } else {
+      const v = w.val;
+      if (v === null || typeof v !== 'object') {
+        // Matches canonicalJson exactly, INCLUDING its `?? 'null'`: `undefined`
+        // and functions stringify to undefined and are written as `null`.
+        h.update(JSON.stringify(v) ?? 'null', 'utf8');
+      } else if (Array.isArray(v)) {
+        h.update('[', 'utf8');
+        stack.push({ lit: ']' });
+        for (let i = v.length - 1; i >= 0; i--) {
+          stack.push({ val: v[i] });
+          if (i > 0) stack.push({ lit: ',' });
+        }
+      } else {
+        const obj = v as Record<string, unknown>;
+        const keys = Object.keys(obj).sort();
+        h.update('{', 'utf8');
+        stack.push({ lit: '}' });
+        for (let i = keys.length - 1; i >= 0; i--) {
+          const k = keys[i]!;
+          stack.push({ val: obj[k] });
+          stack.push({ lit: `${JSON.stringify(k)}:` });
+          if (i > 0) stack.push({ lit: ',' });
+        }
+      }
+    }
+    if (++sinceYield >= YIELD_EVERY) {
+      sinceYield = 0;
+      await yieldToEventLoop();
+    }
+  }
+  return h.digest('hex');
 }
 
-export function digestsOf(bundle: {
+/** The documented digest rule: sha256 over the CANONICAL JSON (recursive
+ * key-sorted, no whitespace — `domain/audit.ts#canonicalJson`) of the part. */
+export async function partDigest(value: unknown): Promise<string> {
+  return hashCanonical(value);
+}
+
+export async function digestsOf(bundle: {
   inventory: unknown;
   blocks: unknown;
   manifests?: unknown;
-}): StoredDigests {
+}): Promise<StoredDigests> {
   return {
-    inventorySha256: partDigest(bundle.inventory),
-    blocksSha256: partDigest(bundle.blocks),
-    ...(bundle.manifests !== undefined ? { manifestsSha256: partDigest(bundle.manifests) } : {}),
+    inventorySha256: await partDigest(bundle.inventory),
+    blocksSha256: await partDigest(bundle.blocks),
+    ...(bundle.manifests !== undefined ? { manifestsSha256: await partDigest(bundle.manifests) } : {}),
   };
+}
+
+/**
+ * Structural equality for JSON values — the question `rerunRedaction` actually
+ * asks ("did the redactor change anything?").
+ *
+ * It used to ask it as `canonicalJson(a) !== canonicalJson(b)`: two full
+ * recursive key-sorting serializations, PER RESOURCE and PER viewOnly block,
+ * building two throwaway strings to compare them and discard both. At the 50k
+ * cap that is 100k serializations to answer 50k boolean questions. This walks
+ * the pair once, allocates nothing, and stops at the first difference — and the
+ * redactor returns the SAME string instance for every value it leaves alone, so
+ * the common (already-clean) bundle compares by identity nearly all the way
+ * down.
+ *
+ * Key-set equality is checked both ways round, so a key present on only one
+ * side is a difference regardless of which side carries it.
+ */
+export function sameJsonValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') {
+    // NaN is not a JSON value; every other primitive is settled by `===` above.
+    return false;
+  }
+  const aIsArr = Array.isArray(a);
+  if (aIsArr !== Array.isArray(b)) return false;
+  if (aIsArr) {
+    const x = a as unknown[];
+    const y = b as unknown[];
+    if (x.length !== y.length) return false;
+    for (let i = 0; i < x.length; i++) if (!sameJsonValue(x[i], y[i])) return false;
+    return true;
+  }
+  const x = a as Record<string, unknown>;
+  const y = b as Record<string, unknown>;
+  const xk = Object.keys(x);
+  if (xk.length !== Object.keys(y).length) return false;
+  for (const k of xk) {
+    if (!Object.prototype.hasOwnProperty.call(y, k)) return false;
+    if (!sameJsonValue(x[k], y[k])) return false;
+  }
+  return true;
 }
 
 export type BundleProblem = { field: string; problem: string };
@@ -202,6 +328,16 @@ export type RedactionResult = {
    * upload had not. The STORED (post-redaction) content is what gets served. */
   warnings: string[];
   problem: BundleProblem | null;
+  /**
+   * Did the re-run actually mask anything? FALSE means the stored bundle is
+   * structurally identical to the uploaded one, which is what lets the caller
+   * reuse the digests it has already computed instead of paying a second full
+   * canonical pass over the whole estate (PERF-12). It is deliberately NOT
+   * `warnings.length > 0`: the warnings are per-part prose that a future part
+   * could forget to add, whereas this is set by the comparison itself, at the
+   * one place that knows.
+   */
+  changed: boolean;
 };
 
 /**
@@ -215,10 +351,20 @@ export type RedactionResult = {
  * redactors are idempotent, so an already-clean CI upload passes through
  * byte-identical.
  */
-export function rerunRedaction(bundle: UploadBundle): RedactionResult {
+export async function rerunRedaction(bundle: UploadBundle): Promise<RedactionResult> {
   let maskedBlocks = 0;
   let maskedResources = 0;
   let maskedManifests = 0;
+  // Yield budget shared across all three passes: the loop must be handed back
+  // every YIELD_EVERY items of ingest work, not every YIELD_EVERY items of
+  // whichever pass happens to be running.
+  let sinceYield = 0;
+  const tick = async (): Promise<void> => {
+    if (++sinceYield >= YIELD_EVERY) {
+      sinceYield = 0;
+      await yieldToEventLoop();
+    }
+  };
 
   const chunks: UploadBundle['blocks']['chunks'] = {};
   for (const [name, chunk] of Object.entries(bundle.blocks.chunks)) {
@@ -233,10 +379,11 @@ export function rerunRedaction(bundle: UploadBundle): RedactionResult {
             bundle,
             warnings: [],
             problem: { field: 'blocks.chunks', problem: `viewOnly block "${address}" claims a JSON rendering but is not valid JSON` },
+            changed: false,
           };
         }
         const redacted = redactTfJson(parsed);
-        if (canonicalJson(redacted) !== canonicalJson(parsed)) {
+        if (!sameJsonValue(redacted, parsed)) {
           maskedBlocks += 1;
           out[address] = { ...block, source: JSON.stringify(redacted, null, 2) };
         } else {
@@ -247,30 +394,40 @@ export function rerunRedaction(bundle: UploadBundle): RedactionResult {
         if (source !== block.source) maskedBlocks += 1;
         out[address] = source === block.source ? block : { ...block, source };
       }
+      await tick();
     }
     chunks[name] = out;
   }
 
-  const resources = bundle.inventory.resources.map((r) => {
+  const resources: UploadBundle['inventory']['resources'] = [];
+  for (const r of bundle.inventory.resources) {
     const redacted = redactTfJson(r.attributes) as Record<string, string | number | boolean>;
-    if (canonicalJson(redacted) !== canonicalJson(r.attributes)) {
+    if (!sameJsonValue(redacted, r.attributes)) {
       maskedResources += 1;
-      return { ...r, attributes: redacted };
+      resources.push({ ...r, attributes: redacted });
+    } else {
+      resources.push(r);
     }
-    return r;
-  });
+    await tick();
+  }
 
   // Manifests: the whole (parsed) JSON of each one through the value-redactor —
   // structure is preserved (only string VALUES are ever masked), so the app's
   // deep re-parse at read time still sees the envelope it expects.
-  const manifests = bundle.manifests?.map((m) => {
-    const redacted = redactTfJson(m) as typeof m;
-    if (canonicalJson(redacted) !== canonicalJson(m)) {
-      maskedManifests += 1;
-      return redacted;
+  let manifests: UploadBundle['manifests'];
+  if (bundle.manifests !== undefined) {
+    manifests = [];
+    for (const m of bundle.manifests) {
+      const redacted = redactTfJson(m) as typeof m;
+      if (!sameJsonValue(redacted, m)) {
+        maskedManifests += 1;
+        manifests.push(redacted);
+      } else {
+        manifests.push(m);
+      }
+      await tick();
     }
-    return m;
-  });
+  }
 
   const warnings: string[] = [];
   if (maskedBlocks > 0) {
@@ -292,6 +449,9 @@ export function rerunRedaction(bundle: UploadBundle): RedactionResult {
     },
     warnings,
     problem: null,
+    // Every masking site above increments exactly one of these counters, so
+    // "nothing was masked" IS "the stored bundle equals the uploaded one".
+    changed: maskedBlocks > 0 || maskedResources > 0 || maskedManifests > 0,
   };
 }
 

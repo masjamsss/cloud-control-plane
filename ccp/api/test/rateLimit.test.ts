@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { Hono } from 'hono';
 import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store/memoryStore';
-import type { ConfigStore } from '../src/store/configStore';
+import type { ConfigStore, Item, QueryOptions } from '../src/store/configStore';
 import type { AppEnv } from '../src/appEnv';
 import { seed, seedRequests, sessionCookieFor, setSetting, SAMPLE_PROJECT_ID } from './helpers/seed';
+import { ulid } from 'ulid';
 import { checkSubmitRateLimit } from '../src/middleware/rateLimit';
+import { requestCollectionGsi, SUBMIT_QUOTA_SK_PREFIX, submitQuotaPk } from '../src/store/schema';
+import { DEFAULT_RATE_LIMITS } from '../src/domain/config';
 
 /**
  * maxOpen quota vs the request-status lifecycle (coordinator scope addition to
@@ -98,19 +101,101 @@ describe('a zero cap admits nothing (fail-closed)', () => {
     const store = new MemoryStore();
     await seed(store);
     await setSetting(store, SAMPLE_PROJECT_ID, 'rate.limits', { submissionsPerHour: 0 });
-    expect(await checkSubmitRateLimit(store, SAMPLE_PROJECT_ID, 'sari')).toEqual({ ok: false });
+    expect(await checkSubmitRateLimit(store, SAMPLE_PROJECT_ID, 'sari', ulid())).toEqual({ ok: false });
   });
 
   it('blocks with maxOpen: 0 and no prior requests', async () => {
     const store = new MemoryStore();
     await seed(store);
     await setSetting(store, SAMPLE_PROJECT_ID, 'rate.limits', { maxOpen: 0 });
-    expect(await checkSubmitRateLimit(store, SAMPLE_PROJECT_ID, 'sari')).toEqual({ ok: false });
+    expect(await checkSubmitRateLimit(store, SAMPLE_PROJECT_ID, 'sari', ulid())).toEqual({ ok: false });
   });
 
   it('still admits a submission under a normal cap', async () => {
     const store = new MemoryStore();
     await seed(store);
-    expect(await checkSubmitRateLimit(store, SAMPLE_PROJECT_ID, 'sari')).toEqual({ ok: true });
+    const admission = await checkSubmitRateLimit(store, SAMPLE_PROJECT_ID, 'sari', ulid());
+    expect(admission.ok).toBe(true);
+  });
+});
+
+/**
+ * PERF-10 — `checkSubmitRateLimit` used to read the project's ENTIRE request
+ * collection on every submit to count one requester's handful. These tests
+ * measure the read rather than describing it (the pattern this repo already
+ * uses for the same class of defect in `auditPaging.test.ts`'s PERF-8 tests),
+ * because "is this still O(project history)?" is not a question prose answers.
+ */
+describe('PERF-10 — the submit-path rate limiter reads a bounded amount, not the whole project history', () => {
+  /** Counts calls to queryGSI1 against the REQUEST-COLLECTION gsi1pk specifically —
+   *  the full-history scan the fix replaces with a per-requester index. Scoped to
+   *  that one key so an unrelated GSI1 read elsewhere on the submit path (there are
+   *  several) cannot be mistaken for the scan this finding is about. */
+  class CountingStore extends MemoryStore {
+    requestCollectionScans = 0;
+    override async queryGSI1(gsi1pk: string, opts?: QueryOptions): Promise<Item[]> {
+      const out = await super.queryGSI1(gsi1pk, opts);
+      if (gsi1pk === requestCollectionGsi(SAMPLE_PROJECT_ID)) this.requestCollectionScans += 1;
+      return out;
+    }
+  }
+
+  it('materializes the index once per requester, then never re-scans the request collection again', async () => {
+    const store = new CountingStore();
+    await seed(store);
+    // 300 requests for sari, all OLD (outside the hourly window) and TERMINAL
+    // (APPLIED releases the maxOpen slot) — a real deployment's history, none of
+    // it relevant to either cap, all of it costly to scan under the old code.
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    await seedRequests(store, SAMPLE_PROJECT_ID, 'sari', 300, { status: 'APPLIED', createdAt: old, updatedAt: old });
+    const app = createApp(store);
+    const sari = await sessionCookieFor(store, 'sari');
+
+    // L-1 — assert the fixture is big enough for the defect to be visible, and
+    // large enough relative to the default caps (50/hour, 20 open) that scanning
+    // it is a real cost and not noise.
+    expect(300).toBeGreaterThan(DEFAULT_RATE_LIMITS.submissionsPerHour + DEFAULT_RATE_LIMITS.maxOpen);
+
+    store.requestCollectionScans = 0;
+    const res1 = await submit(app, sari, DRAFT);
+    expect(res1.status).toBe(201);
+    // First submit for a never-before-seen requester MUST still scan once — an
+    // index that cannot tell "nothing indexed yet" from "nothing open" would
+    // silently stop enforcing maxOpen for exactly the requesters who already had
+    // open work (the fail-open this finding's fix explicitly guards against).
+    expect(store.requestCollectionScans).toBe(1);
+
+    // Old + terminal rows are pruned rather than carried forward forever: the
+    // requester's partition should hold the marker plus ONE pointer (just
+    // admitted), not the 300 that were scanned to get there.
+    const partitionRows = await store.query(submitQuotaPk(SAMPLE_PROJECT_ID, 'sari'), SUBMIT_QUOTA_SK_PREFIX);
+    expect(partitionRows).toHaveLength(1);
+
+    // Steady state: a second submit by the SAME requester must not re-scan the
+    // request collection at all. This is the property the finding is about.
+    store.requestCollectionScans = 0;
+    const res2 = await submit(app, sari, DRAFT);
+    expect(res2.status).toBe(201);
+    expect(store.requestCollectionScans).toBe(0);
+  });
+
+  it('a rate-limited submit leaves no orphan pointer — admission and the request row are one atomic fact', async () => {
+    const store = new CountingStore();
+    await seed(store);
+    await setSetting(store, SAMPLE_PROJECT_ID, 'rate.limits', { maxOpen: 1 });
+    await seedRequests(store, SAMPLE_PROJECT_ID, 'sari', 1, { status: 'AWAITING_CODE_REVIEW' });
+    const app = createApp(store);
+    const sari = await sessionCookieFor(store, 'sari');
+
+    const before = await store.query(submitQuotaPk(SAMPLE_PROJECT_ID, 'sari'), SUBMIT_QUOTA_SK_PREFIX);
+    const res = await submit(app, sari, DRAFT);
+    expect(res.status).toBe(429);
+    // A refused submit must not have written a pointer for a request that was
+    // never created — that would over-count and lock the requester out of a
+    // slot they never used. `SubmitAdmission`'s writes only ever ride the
+    // caller's own transact, so a 429 (returned before that transact runs)
+    // cannot have written anything.
+    const after = await store.query(submitQuotaPk(SAMPLE_PROJECT_ID, 'sari'), SUBMIT_QUOTA_SK_PREFIX);
+    expect(after).toEqual(before);
   });
 });
