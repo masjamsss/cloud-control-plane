@@ -55,12 +55,20 @@ var arityBaseline = map[string]bool{
 	"target-arity\tbackup-change-selection-plan":                      true,
 	"foreach-arity\tefs-add-mount-target":                             true,
 	"target-arity\tefs-add-mount-target":                              true,
-	"no-value-provider\tefs-disable-backup-policy":                    true,
-	"no-value-provider\tefs-enable-backup-policy":                     true,
-	"no-value-provider\tefs-mt-add-security-group":                    true,
-	"target-arity\tefs-mt-add-security-group":                         true,
-	"no-value-provider\tefs-mt-remove-security-group":                 true,
-	"target-arity\tefs-mt-remove-security-group":                      true,
+	// CTL-4: efs-add-mount-target is mismodeled at the concept level (its own
+	// terraformCapability says "+ create" — a whole new aws_efs_mount_target —
+	// while codemodOp says append_foreach_entry; that's the arity/target-arity
+	// debt already tracked above), so it ALSO trips foreach-local-target (no
+	// target.block). Pre-existing debt this rule surfaces a THIRD angle on, not
+	// a new defect this rule introduces — fixing the shape belongs with the
+	// arity fix, not here.
+	"foreach-local-target\tefs-add-mount-target":      true,
+	"no-value-provider\tefs-disable-backup-policy":    true,
+	"no-value-provider\tefs-enable-backup-policy":     true,
+	"no-value-provider\tefs-mt-add-security-group":    true,
+	"target-arity\tefs-mt-add-security-group":         true,
+	"no-value-provider\tefs-mt-remove-security-group": true,
+	"target-arity\tefs-mt-remove-security-group":      true,
 	// efs-mt-update-security-groups + rds-change-subnet-group-subnets FIXED (0036):
 	// their type:"list" value param now carries role:"reference"+refAttr, so it is a
 	// value provider AND no longer a bare inventory locator — both the no-value-provider
@@ -83,7 +91,10 @@ var arityBaseline = map[string]bool{
 	"target-arity\ts3-set-transition-date":                                       true,
 	"target-arity\tsecurity-groups-add-egress-rule-to-security-group":            true,
 	"target-arity\tsecurity-groups-add-ingress-rule-from-security-group":         true,
-	"foreach-arity\twaf-add-ip-set-entry":                                        true,
+	// waf-add-ip-set-entry's foreach-arity finding (CTL-3) was fixed, not
+	// grandfathered: the op now carries codemodOp "append_list_entry" (the
+	// implementation goldens already proved, testdata/golden/u5-append-list-entry),
+	// so it no longer trips this rule at all — removed, not left stale.
 	// multi-value-provider (surfaced, not fixed): a set_attribute op writes ONE
 	// attribute, so every value provider after the first is silently dropped at
 	// exit 0 with a diff that looks complete. These five are PRE-EXISTING and

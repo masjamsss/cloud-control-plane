@@ -206,9 +206,13 @@ justification: t
 }
 
 // TestCovrequestApprovedDigestMixedEmpty pins the empty-digest skip in
-// ApprovedDigest: approvals that carry no digest (pre-plan sign-offs) are ignored
-// rather than treated as a disagreeing value, so a quorum where only some approvers
-// bound a plan still yields that one digest.
+// ApprovedDigest: approve-decision entries that carry no digest (pre-plan sign-offs)
+// are ignored rather than treated as a disagreeing value, so a quorum where only some
+// approvers bound a plan still yields that one digest. Every entry here carries
+// Decision: DecisionApprove — CTL-9 made ApprovedDigest count only those, so a case
+// meant to test the digest-merge logic in isolation must opt every entry in
+// explicitly; TestCovrequestApprovedDigestDecisionFiltering below pins the
+// decision-filtering behavior itself.
 func TestCovrequestApprovedDigestMixedEmpty(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -217,28 +221,28 @@ func TestCovrequestApprovedDigestMixedEmpty(t *testing.T) {
 		wantOK     bool
 	}{
 		{"no approvals at all", nil, "", true},
-		{"all approvals digest-less", []Approval{{Approver: "a"}, {Approver: "b"}}, "", true},
+		{"all approvals digest-less", []Approval{{Approver: "a", Decision: DecisionApprove}, {Approver: "b", Decision: DecisionApprove}}, "", true},
 		{
 			name:       "leading empty digest is skipped",
-			approvals:  []Approval{{Approver: "a"}, {Approver: "b", Digest: "abc123"}},
+			approvals:  []Approval{{Approver: "a", Decision: DecisionApprove}, {Approver: "b", Decision: DecisionApprove, Digest: "abc123"}},
 			wantDigest: "abc123",
 			wantOK:     true,
 		},
 		{
 			name:       "trailing empty digest is skipped",
-			approvals:  []Approval{{Approver: "a", Digest: "abc123"}, {Approver: "b"}},
+			approvals:  []Approval{{Approver: "a", Decision: DecisionApprove, Digest: "abc123"}, {Approver: "b", Decision: DecisionApprove}},
 			wantDigest: "abc123",
 			wantOK:     true,
 		},
 		{
 			name:       "empty between two agreeing digests is skipped",
-			approvals:  []Approval{{Approver: "a", Digest: "abc123"}, {Approver: "b"}, {Approver: "c", Digest: "abc123"}},
+			approvals:  []Approval{{Approver: "a", Decision: DecisionApprove, Digest: "abc123"}, {Approver: "b", Decision: DecisionApprove}, {Approver: "c", Decision: DecisionApprove, Digest: "abc123"}},
 			wantDigest: "abc123",
 			wantOK:     true,
 		},
 		{
 			name:      "empty does not mask a real disagreement",
-			approvals: []Approval{{Approver: "a", Digest: "abc123"}, {Approver: "b"}, {Approver: "c", Digest: "def456"}},
+			approvals: []Approval{{Approver: "a", Decision: DecisionApprove, Digest: "abc123"}, {Approver: "b", Decision: DecisionApprove}, {Approver: "c", Decision: DecisionApprove, Digest: "def456"}},
 			wantOK:    false,
 		},
 	}
@@ -254,5 +258,72 @@ func TestCovrequestApprovedDigestMixedEmpty(t *testing.T) {
 				t.Fatalf("ApprovedDigest digest = %q, want %q", got, c.wantDigest)
 			}
 		})
+	}
+}
+
+// TestCovrequestApprovedDigestDecisionFiltering pins CTL-9's fix: an entry that is
+// not an approve decision — blank (no vote recorded) or an explicit reject — never
+// contributes its digest, so it can neither bind a quorum to a plan nor manufacture a
+// false split-brain disagreement against the real approvers.
+func TestCovrequestApprovedDigestDecisionFiltering(t *testing.T) {
+	cases := []struct {
+		name       string
+		approvals  []Approval
+		wantDigest string
+		wantOK     bool
+	}{
+		{
+			name:       "a blank-decision entry's digest is ignored, even though it disagrees",
+			approvals:  []Approval{{Approver: "a", Decision: DecisionApprove, Digest: "abc123"}, {Approver: "b", Digest: "def456"}},
+			wantDigest: "abc123",
+			wantOK:     true,
+		},
+		{
+			name:       "an explicit-reject entry's digest is ignored, even though it disagrees",
+			approvals:  []Approval{{Approver: "a", Decision: DecisionApprove, Digest: "abc123"}, {Approver: "b", Decision: "reject", Digest: "def456"}},
+			wantDigest: "abc123",
+			wantOK:     true,
+		},
+		{
+			name:       "all entries blank or rejected yields nothing to bind, not a disagreement",
+			approvals:  []Approval{{Approver: "a"}, {Approver: "b", Decision: "changes_requested", Digest: "def456"}},
+			wantDigest: "",
+			wantOK:     true,
+		},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			r := &Request{Approvals: c.approvals}
+			got, ok := r.ApprovedDigest()
+			if ok != c.wantOK {
+				t.Fatalf("ApprovedDigest ok = %v, want %v", ok, c.wantOK)
+			}
+			if got != c.wantDigest {
+				t.Fatalf("ApprovedDigest digest = %q, want %q", got, c.wantDigest)
+			}
+		})
+	}
+}
+
+// TestCovrequestApprovedEntriesAndRejection pins ApprovedEntries (only Decision ==
+// approve counts) and HasExplicitRejection (fires on a non-blank, non-approve
+// Decision; a blank one is "no vote yet", not a rejection) directly.
+func TestCovrequestApprovedEntriesAndRejection(t *testing.T) {
+	r := &Request{Approvals: []Approval{
+		{Approver: "a", Decision: DecisionApprove},
+		{Approver: "b"},
+		{Approver: "c", Decision: "reject"},
+	}}
+	entries := r.ApprovedEntries()
+	if len(entries) != 1 || entries[0].Approver != "a" {
+		t.Fatalf("ApprovedEntries = %+v, want just [a]", entries)
+	}
+	if !r.HasExplicitRejection() {
+		t.Fatalf("HasExplicitRejection = false, want true (c rejected)")
+	}
+	clean := &Request{Approvals: []Approval{{Approver: "a", Decision: DecisionApprove}, {Approver: "b"}}}
+	if clean.HasExplicitRejection() {
+		t.Fatalf("HasExplicitRejection = true, want false (blank is not a rejection)")
 	}
 }

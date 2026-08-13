@@ -81,8 +81,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	// --- approved-request contract (before any file is touched) ---
-	if len(req.Approvals) == 0 {
-		return cli.Refuse(stderr, "UNAPPROVED", fmt.Sprintf("%s carries no approvals — pr-prepare only turns approved requests into PRs", req.ID))
+	// CTL-9: decision-aware. An approvals list is not a raw headcount — an entry
+	// whose Decision is an explicit non-approve (reject, changes_requested, ...)
+	// refuses the whole request outright, and only Decision==approve entries count
+	// toward quorum at all, so a bundled PR can never carry a reviewer's "no".
+	if req.HasExplicitRejection() {
+		return cli.Refuse(stderr, "REJECTED", fmt.Sprintf("%s carries an approval entry with an explicit non-approve decision — pr-prepare refuses to bundle a request any reviewer voted against", req.ID))
+	}
+	if len(req.ApprovedEntries()) == 0 {
+		return cli.Refuse(stderr, "UNAPPROVED", fmt.Sprintf("%s carries no approve decisions — pr-prepare only turns approved requests into PRs", req.ID))
 	}
 	if _, ok := req.ApprovedDigest(); !ok {
 		return cli.Refuse(stderr, "DIGEST_DISAGREEMENT", fmt.Sprintf("%s approvals bind to different plan digests (split-brain quorum)", req.ID))

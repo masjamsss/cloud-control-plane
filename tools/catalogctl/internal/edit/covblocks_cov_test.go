@@ -189,23 +189,41 @@ func TestCovblocksForeachUnparseableLocatedBlock(t *testing.T) {
 }
 
 // The foreach verbs read key/value positionally out of the non-inventory params.
-// A manifest that does not supply them, or a request whose key is not a string, is
-// an internal error — never a guessed key.
+// A manifest that does not supply them is a mis-shaped manifest — CTL-3: a REFUSE
+// (FOREACH_ARITY, exit 2 via edit.go), not an internal error, since it's bad data
+// about the op, not catalogctl malfunctioning. A request whose key is not a string
+// (below) stays an internal error — never a guessed key.
 func TestCovblocksForeachParamShapeErrors(t *testing.T) {
 	t.Run("append needs key and value", func(t *testing.T) {
 		op := covblocksForeachOp("cov-foreach-1param", "tags")
 		op.Params = op.Params[:2] // inventory + key only
 		req := covblocksReq(covblocksForeachParams(map[string]any{"key": "Env"}))
-		_, _, _, err := appendForeachEntry(op, req, covblocksLoc(covblocksTagged))
-		covblocksWantErr(t, err, "append_foreach_entry needs key and value params")
+		_, code, reason, err := appendForeachEntry(op, req, covblocksLoc(covblocksTagged))
+		if err != nil {
+			t.Fatalf("err = %v, want nil (a refusal, not an internal error)", err)
+		}
+		if code != "FOREACH_ARITY" {
+			t.Fatalf("code = %q, want FOREACH_ARITY", code)
+		}
+		if !strings.Contains(reason, "append_foreach_entry needs key and value params") {
+			t.Fatalf("reason = %q, want it to contain the arity message", reason)
+		}
 	})
 
 	t.Run("remove needs a key", func(t *testing.T) {
 		op := covblocksForeachOp("cov-foreach-0param", "tags")
 		op.Params = op.Params[:1] // inventory only
 		req := covblocksReq(covblocksForeachParams(nil))
-		_, _, _, err := removeForeachEntry(op, req, covblocksLoc(covblocksTagged))
-		covblocksWantErr(t, err, "remove_foreach_entry needs a key param")
+		_, code, reason, err := removeForeachEntry(op, req, covblocksLoc(covblocksTagged))
+		if err != nil {
+			t.Fatalf("err = %v, want nil (a refusal, not an internal error)", err)
+		}
+		if code != "FOREACH_ARITY" {
+			t.Fatalf("code = %q, want FOREACH_ARITY", code)
+		}
+		if !strings.Contains(reason, "remove_foreach_entry needs a key param") {
+			t.Fatalf("reason = %q, want it to contain the arity message", reason)
+		}
 	})
 
 	t.Run("append key is not a string", func(t *testing.T) {

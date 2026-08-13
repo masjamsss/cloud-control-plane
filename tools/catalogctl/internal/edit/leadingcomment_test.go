@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclwrite"
 
+	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/hclobj"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/hclops"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/manifests"
 	"github.com/masjamsss/cloud-control-plane/tools/catalogctl/internal/request"
@@ -16,10 +17,10 @@ import (
 //
 // A single-line comment token CARRIES its own terminating newline ("# note\n" is
 // ONE token), so a full-line comment sitting on its own line ABOVE a map entry is
-// not a TokenNewline. parseObject's VALUE loop learned that (setattr.go, the
-// trailing-comment fix); its KEY loop did not, so the comment was appended into
-// keyToks and keyString yielded a key like "# owner of record\nPIC" instead of
-// "PIC". Every consumer then mis-identified the entry, at exit 0:
+// not a TokenNewline. The VALUE loop learned that (the trailing-comment fix); the
+// KEY loop did not, so the comment was appended into keyToks and keyString
+// yielded a key like "# owner of record\nPIC" instead of "PIC". Every consumer
+// then mis-identified the entry, at exit 0:
 //
 //	mergeMap             → requested key never matches → duplicate key appended
 //	appendForeachEntry   → KEY_CONFLICT guard blinded  → duplicate key appended
@@ -28,7 +29,10 @@ import (
 // HCL evaluates duplicate object keys last-one-wins, so terraform plan and
 // plan-check R1/R6 both pass on the corrupted file. Comments inside tags maps are
 // completely ordinary Terraform, and tag-map ops are the largest op family in the
-// shipped catalog.
+// shipped catalog. The parse/build walker itself (once setattr.go's own
+// unexported parseObject/buildObject) now lives in internal/hclobj (CTL-10) —
+// this file exercises it through mergeMap/appendForeachEntry/removeForeachEntry,
+// the same way it always did.
 //
 // Every test below FAILS against the unfixed key loop.
 
@@ -56,20 +60,20 @@ func parseBlock(t *testing.T, src string) *hclwrite.Block {
 // trivia so a rebuild is byte-preserving.
 func TestParseObjectLeadingFullLineCommentKeepsKeyClean(t *testing.T) {
 	block := parseBlock(t, commentedTagsBlock)
-	entries, ok := parseObject(block.Body().GetAttribute("tags").Expr().BuildTokens(nil))
+	entries, ok := hclobj.ParseObject(block.Body().GetAttribute("tags").Expr().BuildTokens(nil))
 	if !ok {
 		t.Fatal("parseObject not ok on a literal map with a full-line comment")
 	}
 	if len(entries) != 2 {
 		t.Fatalf("parsed %d entries, want 2", len(entries))
 	}
-	if entries[0].key != "PIC" || entries[1].key != "CostCenter" {
+	if entries[0].Key != "PIC" || entries[1].Key != "CostCenter" {
 		t.Fatalf("keys = %q,%q — want PIC,CostCenter (a full-line comment must not be absorbed into the key)",
-			entries[0].key, entries[1].key)
+			entries[0].Key, entries[1].Key)
 	}
-	if !strings.Contains(tokensString(entries[0].lead), "owner of record") {
+	if !strings.Contains(tokensString(entries[0].Lead), "owner of record") {
 		t.Fatalf("the full-line comment was dropped instead of kept as leading trivia: %q",
-			tokensString(entries[0].lead))
+			tokensString(entries[0].Lead))
 	}
 }
 
@@ -159,11 +163,11 @@ func TestRemoveForeachEntryLeadingCommentActuallyRemoves(t *testing.T) {
 // reorder the trivia, so an unrelated edit keeps comment-bearing siblings intact.
 func TestParseObjectLeadingCommentRoundTripsBytes(t *testing.T) {
 	block := parseBlock(t, commentedTagsBlock)
-	entries, ok := parseObject(block.Body().GetAttribute("tags").Expr().BuildTokens(nil))
+	entries, ok := hclobj.ParseObject(block.Body().GetAttribute("tags").Expr().BuildTokens(nil))
 	if !ok {
 		t.Fatal("parseObject not ok")
 	}
-	got := tokensString(buildObject(entries))
+	got := tokensString(hclobj.BuildObject(entries))
 	for _, want := range []string{"# owner of record", "PIC", "user05@example.com", "CostCenter"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("rebuilt map lost %q:\n%s", want, got)

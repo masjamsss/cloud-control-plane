@@ -1,0 +1,11 @@
+--- a/environments/prod/main.tf
++++ b/environments/prod/main.tf
+@@ -8,8 +8,6 @@
+ 
+     tags = {
+       Name = "app-root"
+-      # legacy tag, drop when host is decommissioned
+-      Role = "data"
+     }
+   }
+ 
