@@ -1,7 +1,7 @@
 import type { ConfigStore } from '../store/configStore';
 import type { AuditItem, ChainHeadItem } from '../store/schema';
 import { auditKey, chainHead } from '../store/schema';
-import { auditEntryHash, verifyChain, type ChainEntry, type VerifyResult } from './audit';
+import { auditEntryHash, ulidTimeMs, verifyChain, type ChainEntry, type VerifyResult } from './audit';
 import { nowDate } from '../clock';
 
 /**
@@ -115,13 +115,72 @@ export async function readAuditChronological(
 }
 
 /**
+ * The month partition an audit id belongs to, decoded from the id itself, or
+ * `null` if the id is not a well-formed ULID.
+ *
+ * This is the whole trick behind paging the chain without scanning it. The
+ * partition key is `yyyymm` of the entry's `at`, and `recordIn` mints the id from
+ * that SAME clock reading — so the id's leading 10 Crockford-base32 characters
+ * decode to the very millisecond the partition was named after. A cursor is
+ * therefore self-locating: given the id alone, the partition holding it is
+ * arithmetic, not a search.
+ */
+export function monthOfAuditId(id: string): string | null {
+  const ms = ulidTimeMs(id);
+  if (ms === null) return null;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Locate the partition holding `cursor`, or `null` when the chain does not contain
+ * it. A single POINT READ in the common case — decode the month from the id, `get`
+ * the exact key, done — with a bounded walk kept only as a fallback for an entry
+ * whose id and `at` were minted under different clock readings (possible only for
+ * rows written before the ids were seeded from the injected clock, or across a
+ * backward system-clock step at a month boundary).
+ *
+ * Returning `null` for an unknown cursor is what preserves the endpoint's
+ * deliberate semantics: an unrecognised cursor yields an EMPTY page, never a
+ * silent replay from the top of the chain. That property is why this resolves the
+ * cursor by EXISTENCE rather than by sort position — pushing `after: <cursor>`
+ * straight into the store would happily "resume" from a cursor that was never in
+ * the chain at all, and for an evidence surface a fabricated resume point that
+ * returns plausible rows is worse than an empty page.
+ */
+async function locateCursor(store: ConfigStore, projectId: string, cursor: string): Promise<string | null> {
+  const guess = monthOfAuditId(cursor);
+  if (guess !== null) {
+    const k = auditKey(projectId, guess, cursor);
+    if ((await store.get(k.PK, k.SK)) !== null) return guess;
+  }
+  // Fallback: the id did not decode, or the row is not where its id says it is.
+  // Probe partitions by POINT READ (never by materialising them) so even this path
+  // costs one small read per month rather than one clone per entry.
+  for (const monthPk of monthsBackward(projectId, nowDate())) {
+    const month = monthPk.slice(monthPk.lastIndexOf('#') + 1);
+    const k = auditKey(projectId, month, cursor);
+    if ((await store.get(k.PK, k.SK)) !== null) return month;
+  }
+  return null;
+}
+
+/**
  * One page of the chain, NEWEST first — the read behind `GET /admin/audit`.
  *
- * Bounded by construction: it walks month partitions newest-first and stops the
- * moment the page is full, so serving 50 rows costs 50 rows plus whatever
- * partition boundary it lands on. (The endpoint previously loaded the ENTIRE
- * chain, reversed it, and sliced 50 out of the front — a read that grew without
- * limit while the answer stayed the same size.)
+ * Bounded by construction, in BOTH dimensions the finding named:
+ *
+ *  - the walk starts at the partition the cursor lives in, found by decoding the
+ *    cursor's own id (see {@link monthOfAuditId}), so page N no longer re-reads
+ *    pages 1..N-1 to find where it left off; and
+ *  - each partition read carries `limit` and an exclusive `after`, so the store
+ *    hands back the page rather than the partition.
+ *
+ * Before this, every page cost O(total chain): the walk materialised whole month
+ * partitions from "now" backwards, cloning every entry, discarding the ones newer
+ * than the cursor, and keeping `limit` of them. Serving 50 rows out of a 600-entry
+ * chain read all 600 — measured, on every page.
  *
  * `cursor` is the `id` of the last entry of the previous page, and its semantics
  * are preserved exactly, including the deliberate one: a cursor that is not in the
@@ -137,23 +196,41 @@ export async function readAuditPage(
   const total = head?.count ?? 0;
   if (total === 0) return { items: [], hasMore: false };
 
-  const items: AuditItem[] = [];
   // Read one MORE than asked so `hasMore` is answered by the same walk rather than
   // by a second pass over the chain.
   const want = opts.limit + 1;
-  let found = opts.cursor === undefined;
-  let seen = 0;
+  const items: AuditItem[] = [];
 
-  for (const monthPk of monthsBackward(projectId, nowDate())) {
-    if (items.length >= want || seen >= total) break;
-    // Descending: newest entry of the month first (SK == ulid == creation order).
-    const chunk = (await store.query(monthPk, undefined, { forward: false })) as AuditItem[];
+  let from = nowDate();
+  if (opts.cursor !== undefined) {
+    const month = await locateCursor(store, projectId, opts.cursor);
+    if (month === null) return { items: [], hasMore: false }; // unknown cursor → empty page
+    // Enter the walk at the cursor's own partition. `monthsBackward` deliberately
+    // starts one month AHEAD of the date it is given, and that stays correct here:
+    // the extra partition is normally empty and costs one bounded read.
+    from = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(4, 6)) - 1, 1));
+  }
+
+  // Entries strictly older than the cursor, newest first. `after` is exclusive and
+  // direction-aware, so it skips the cursor itself and everything above it inside
+  // the cursor's partition; in older partitions every id already sorts below it, so
+  // the same bound is simply a no-op there.
+  const after = opts.cursor;
+  let seen = 0;
+  for (const monthPk of monthsBackward(projectId, from)) {
+    if (items.length >= want) break;
+    // With no cursor nothing is filtered out, so `seen` counts the chain exactly and
+    // the head's own `count` ends the walk the moment everything has been read. With
+    // a cursor the entries above it are invisible to this walk, so that bound cannot
+    // apply and `monthsBackward`'s own ceiling is what terminates it (R-52).
+    if (after === undefined && seen >= total) break;
+    const chunk = (await store.query(monthPk, undefined, {
+      forward: false, // newest entry of the month first (SK == ulid == creation order)
+      limit: want - items.length,
+      ...(after !== undefined ? { after } : {}),
+    })) as AuditItem[];
     seen += chunk.length;
     for (const e of chunk) {
-      if (!found) {
-        if (e.id === opts.cursor) found = true; // page resumes AFTER the cursor
-        continue;
-      }
       items.push(e);
       if (items.length >= want) break;
     }

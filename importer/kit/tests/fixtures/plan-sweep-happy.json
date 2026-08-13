@@ -26,6 +26,41 @@
             "provider_name": "registry.terraform.io/hashicorp/aws",
             "schema_version": 0,
             "values": { "id": "i-happy0000000000001" }
+          },
+          {
+            "address": "aws_ebs_volume.managed_a",
+            "mode": "managed",
+            "type": "aws_ebs_volume",
+            "name": "managed_a",
+            "provider_name": "registry.terraform.io/hashicorp/aws",
+            "schema_version": 0,
+            "values": { "id": "vol-happy0000000000001" }
+          },
+          {
+            "address": "aws_ebs_volume.managed_b",
+            "mode": "managed",
+            "type": "aws_ebs_volume",
+            "name": "managed_b",
+            "provider_name": "registry.terraform.io/hashicorp/aws",
+            "schema_version": 0,
+            "values": { "id": "vol-happy0000000000002" }
+          },
+          {
+            "address": "aws_volume_attachment.managed_attachment",
+            "mode": "managed",
+            "type": "aws_volume_attachment",
+            "name": "managed_attachment",
+            "provider_name": "registry.terraform.io/hashicorp/aws",
+            "schema_version": 0,
+            "_comment": "IMP-6: `id` is the provider's SYNTHESIZED vai-<hash>, which equals no discovery id anywhere. services.json's state_id_format rebuilds `/dev/sdh:vol-happy0000000000001:i-happy0000000000002` from the three attributes below.",
+            "values": {
+              "id": "vai-1855526686",
+              "device_name": "/dev/sdh",
+              "volume_id": "vol-happy0000000000001",
+              "instance_id": "i-happy0000000000002",
+              "force_detach": false,
+              "skip_destroy": false
+            }
           }
         ],
         "child_modules": [

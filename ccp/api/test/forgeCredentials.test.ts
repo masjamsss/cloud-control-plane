@@ -274,4 +274,42 @@ describe("minting an installation token", () => {
       `Basic ${Buffer.from("x-access-token:ghs_exampletoken").toString("base64")}`,
     );
   });
+
+  describe("transient vs permanent (ERR-9)", () => {
+    it("marks a 5xx from either call as transient — worth a retry", async () => {
+      const lookup = fakeGithub([{ status: 503, body: {} }]);
+      await expect(mintInstallationToken(REPO, cfg, lookup.fetch)).rejects.toMatchObject(
+        { transient: true },
+      );
+
+      const mint = fakeGithub([
+        { status: 200, body: { id: 42 } },
+        { status: 502, body: {} },
+      ]);
+      await expect(mintInstallationToken(REPO, cfg, mint.fetch)).rejects.toMatchObject(
+        { transient: true },
+      );
+    });
+
+    it("marks 404 (not installed) and other 4xx as permanent — retrying won't help", async () => {
+      const notInstalled = fakeGithub([{ status: 404, body: {} }]);
+      await expect(
+        mintInstallationToken(REPO, cfg, notInstalled.fetch),
+      ).rejects.toMatchObject({ transient: false });
+
+      const forbidden = fakeGithub([{ status: 403, body: {} }]);
+      await expect(
+        mintInstallationToken(REPO, cfg, forbidden.fetch),
+      ).rejects.toMatchObject({ transient: false });
+    });
+
+    it("marks a raw network throw (DNS failure, timeout) as transient", async () => {
+      const flaky: FetchLike = async () => {
+        throw new Error("fetch failed: ECONNRESET");
+      };
+      await expect(
+        mintInstallationToken(REPO, cfg, flaky),
+      ).rejects.toMatchObject({ transient: true });
+    });
+  });
 });

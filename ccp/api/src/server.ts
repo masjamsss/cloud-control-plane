@@ -5,7 +5,7 @@ import { createApp } from './index';
 import type { ConfigStore } from './store/configStore';
 import { MemoryStore } from './store/memoryStore';
 import { FileStore, ensureDataDir } from './store/fileStore';
-import { assertDeployable, DeployConfigError, isProduction, resolveDataFile } from './deploy';
+import { assertDeployable, DeployConfigError, deployWarnings, isProduction, resolveDataFile } from './deploy';
 import { ensureProjectDataRoot, resolveProjectDataRoot } from './domain/projectData';
 import { bootstrap, seedInstanceIdentity } from '../scripts/bootstrap';
 import { executorKind, maybeStartSchedulerLoop, schedulerEnabled } from './domain/apply/loop';
@@ -60,6 +60,12 @@ async function start(): Promise<void> {
     }
     throw e;
   }
+
+  // ARCH-11 — advisory, never fatal (unlike the preflight above): a sub-flag
+  // armed for a lane whose own gate is off, so nothing anywhere will ever
+  // consult it. Printed in every env, not just production — the same typo
+  // is just as silent in local dev.
+  for (const w of deployWarnings(process.env)) console.warn(`ccp-api: config warning — ${w}`);
 
   // A durable store needs its data directory. Create it eagerly in production so a bad
   // CCP_DATA_DIR fails at boot rather than on the first mutation. The per-project
