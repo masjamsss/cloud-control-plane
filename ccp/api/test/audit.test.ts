@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { MemoryStore } from '../src/store/memoryStore';
 import { ConditionError, type TransactWrite } from '../src/store/configStore';
 import { ApiError } from '../src/errors';
-import { auditEntryHash, canonicalJson, record, type AuditEntryInput } from '../src/domain/audit';
+import { auditEntryHash, canonicalJson, record, CHAIN_WRITE_ATTEMPTS, __setChainSleep, type AuditEntryInput } from '../src/domain/audit';
 import { verifyChain, type ChainEntry } from '../scripts/verify-audit-chain';
 import { generateGoldenItems } from './fixtures/gen-golden';
 import type { AuditItem } from '../src/store/schema';
@@ -58,7 +58,11 @@ describe('§7 hash-chained audit', () => {
     expect(verifyChain(entries, { head: 'not-the-head' }).code).toBe(2);
   });
 
-  it('(e) chain contention retries once then succeeds; persistent contention → 409 CHAIN_CONTENTION', async () => {
+  it('(e) chain contention retries within budget then succeeds; contention outlasting the budget → 409 CHAIN_CONTENTION', async () => {
+    // The back-off is real time, and this test loses every round on purpose — run it
+    // with the wait stubbed out so the budget, not the wall clock, is what is measured.
+    __setChainSleep(async () => {});
+
     // A store whose transact fails a fixed number of times, simulating a lost race.
     class FlakyStore extends MemoryStore {
       constructor(private failsLeft: number) {
@@ -83,8 +87,18 @@ describe('§7 hash-chained audit', () => {
     // July 2026. Derive it from the same clock the write used.
     expect(await onceFlaky.query(`P#sample#AUDIT#${nowIso().slice(0, 7).replace('-', '')}`)).toHaveLength(1);
 
-    const alwaysFlaky = new FlakyStore(2); // both attempts race → CHAIN_CONTENTION
-    await expect(record(alwaysFlaky, 'sample', entry)).rejects.toBeInstanceOf(ApiError);
-    await expect(record(new FlakyStore(2), 'sample', entry)).rejects.toMatchObject({ code: 'CHAIN_CONTENTION' });
+    // PERF-11 — the budget is a NAMED policy, not the literal 2 this test used to
+    // hardcode. Asserting against the constant is what makes this a rule: raising or
+    // lowering `CHAIN_WRITE_ATTEMPTS` keeps both halves meaningful instead of turning
+    // the boundary case into a stale magic number that silently stops testing anything.
+    const withinBudget = new FlakyStore(CHAIN_WRITE_ATTEMPTS - 1); // last attempt lands
+    await expect(record(withinBudget, 'sample', entry)).resolves.toBeTruthy();
+
+    const overBudget = new FlakyStore(CHAIN_WRITE_ATTEMPTS); // every attempt races → 409
+    await expect(record(overBudget, 'sample', entry)).rejects.toBeInstanceOf(ApiError);
+    await expect(record(new FlakyStore(CHAIN_WRITE_ATTEMPTS), 'sample', entry)).rejects.toMatchObject({
+      code: 'CHAIN_CONTENTION',
+    });
+    __setChainSleep(null);
   });
 });

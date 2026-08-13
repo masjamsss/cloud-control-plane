@@ -5015,6 +5015,226 @@ leak."
       test/snapshotWriteAtomic.test.ts` (14 passed); full suite `npx vitest run` (102 files, 1421
       passed); `npx tsc --noEmit` clean.
 
+## PERF-11
+
+*Per-project audit chain head serializes all writes and surfaces contention as user-facing
+409s after one retry.*
+
+- [x] **Defect reproduced first** — a store that yields the event loop inside `transact`
+      (the shape a real store's awaits give you) with **6 concurrent `record` calls on one
+      project**: 4 of the 6 rejected with `CHAIN_CONTENTION`. On the folded
+      `transactWithAudit` path, 3 of 5. That is not an exotic load — it is two approvers, a
+      lead, and the settle loop of somebody's `GET /requests` landing in the same window,
+      and the user's half of it is a 409 on an ordinary approve click.
+- [x] **Cause, not symptom** — every call site attempted **exactly twice**. One writer wins
+      each round, so with N concurrent writers the last of them needs N attempts: a
+      two-attempt budget begins failing real users at N=3. The budget, not the CAS, was the
+      defect. The CAS itself is correct and stays: the chain must not fork.
+- [x] **The fix is a named policy, applied at the sites the finding lists** —
+      `CHAIN_WRITE_ATTEMPTS = 8` and `chainBackoff(attempt)` now live in `domain/audit.ts`,
+      and `record`, `transactWithAudit`, `routes/requests.ts` (5 loops), `domain/cooling.ts`,
+      `domain/schedule.ts` and `domain/apply/scheduler.ts` all spend that budget instead of
+      hard-coding `< 2`. The back-off is **full jitter** — a uniform draw from `[0, ceiling)`,
+      doubling per lost round to a 64 ms cap. Fixed back-off would re-synchronise exactly the
+      writers that just collided; randomising the whole interval is what actually spreads
+      them, and is why a budget of 8 suffices.
+- [x] **What the fix deliberately does NOT do** — the expected result warns that "a fix that
+      drops entries under load is worse than the 409", and that is the tempting shape here:
+      make the audit append best-effort, or defer it, and the 409 disappears. Every retry in
+      this fix replays the **whole** transaction — domain writes *and* the audit append —
+      against a freshly read head, or reports failure. Nothing is ever written without its
+      evidence. The regression test asserts this directly rather than trusting it: it checks
+      the chain afterwards holds all N entries, from N distinct actors, still verifying.
+- [x] **A latent bug found while converting** — two of the `routes/requests.ts` loops
+      (cancel, re-window) ran their "did the row move?" re-read **only on attempt 0**. On a
+      later round a genuine state change was therefore indistinguishable from contention and
+      surfaced as a 409 instead of the `STATE_CONFLICT` it actually was. With a budget of 2
+      that window was one round wide and nearly unreachable; at 8 it would have been a real
+      bug the fix introduced. The re-read now runs on every lost round.
+- [x] **Not widened into B-O12's lane** — `transactWithAudit`'s `guarded → STATE_CONFLICT`
+      branch is untouched. Separating a caller's own guard failure from chain contention is
+      CONC-15/API-14, and CONC-9 leans on the current behaviour; this change alters only how
+      many times an *unguarded* contention loss is replayed.
+- [x] **Regression test** — new `test/auditContention.test.ts` (4 tests): concurrent appends
+      on both the standalone and folded paths, the budget boundary, and the jitter
+      distribution. `test/audit.test.ts`'s existing contention test was **pinning the
+      defect** — `FlakyStore(2)` asserted a 409 — and now asserts the rule against the
+      `CHAIN_WRITE_ATTEMPTS` constant instead of the literal 2, so tuning the policy cannot
+      leave a stale magic number silently testing nothing.
+- [x] **Setup asserted (L-1)** — the concurrency tests assert `conditionFailures > 0`: the
+      contention has to have actually happened. Without that assertion they would pass
+      against the unfixed code, against a build with no retry at all, and against a serial
+      test that never raced.
+- [x] **Negative test confirmed** — against the unfixed code: "expected [4 rejected] to have
+      a length of +0 but got 4" and the folded path "…got 3". All 4 new tests plus the
+      corrected `audit.test.ts` case fail; restored, all green.
+- [x] **Residue** — R-57 (the remaining hand-rolled loops).
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/auditContention.test.ts
+      test/audit.test.ts`; full suite 104 files / 1437 passed; `npx tsc --noEmit` clean.
+
+## PERF-8
+
+*Admin audit "pagination" materializes and re-sorts the whole chain per page; cursor lookup
+is a linear scan.*
+
+- [x] **Defect reproduced first, and it was PARTLY already fixed** — PERF-3's commit
+      (`813a6d9`) had already replaced the load-everything-then-slice endpoint with
+      `readAuditPage`, and had already added `limit`/`forward`/`after` to the `ConfigStore`
+      seam. Both halves the finding names were nevertheless still live, measured with a
+      counting store on a **600-entry chain served in 50-row pages**: every page read **600
+      rows**, page 1 included. `readAuditPage` walked month partitions from "now" with no
+      `limit`, cloning each partition whole, then discarded everything above the cursor.
+- [x] **Cause 1 — the partition read was unbounded.** The walk asked for
+      `store.query(monthPk, undefined, { forward: false })`. `forward` bounded the *order*;
+      nothing bounded the *size*. Now it passes `limit: want - items.length` and an exclusive
+      `after`, so the store hands back the page rather than the partition.
+- [x] **Cause 2 — `QueryOptions.after` was declared on the seam and honoured only by the
+      GSI.** `MemoryStore.query` (the primary index) silently ignored it: a caller that
+      passed it got every row from the top of the partition **and no error**. That is the
+      worst of the three possible behaviours — not a resume, not a refusal, but a silent
+      replay — and it is the same class as L-1. Fixed in `memoryStore.ts`, direction-aware,
+      identical to the `queryGSI1` implementation beside it. *(This is a `store/` file, which
+      is B-O3's lane. Noted rather than expanded on: it is four lines, it is required by this
+      finding, and API-17/DATA-14 in that batch are precisely "each named seam divergence
+      from DynamoDB is either fixed or documented as deliberate".)*
+- [x] **Cause 3 — the cursor was found by scanning.** The finding's recommendation is to
+      "resolve the cursor by its ULID's embedded month rather than `findIndex`", and that is
+      what this does — but the recommendation quietly assumes an invariant the code did not
+      have. The partition is `yyyymm(at)` while the id was minted from `Date.now()`, so under
+      any clock the two could disagree. `recordIn` now seeds the ULID from **the same clock
+      reading it stamps `at` with**, which makes "the id names its own partition" true by
+      construction, and `monthOfAuditId` decodes it. Cursor resolution is now a **point
+      read**.
+- [x] **Where the finding's recommendation is incomplete, and what was done instead** —
+      resolving the cursor purely by sort position (pushing `after: <cursor>` at the store and
+      trusting it) is the obvious reading, and it would have **broken a deliberate semantic**:
+      an unrecognised cursor currently yields an empty page, never a replay from the top. A
+      sort-position resume happily "resumes" from a cursor that was never in the chain and
+      serves plausible-looking rows — on an evidence surface that is strictly worse than
+      returning nothing. So the cursor is resolved by **existence** (`get` at the decoded
+      key), and an unknown cursor still yields an empty page. Pinned by a test that fabricates
+      a well-formed ULID sorting *inside* the chain.
+- [x] **The fast path has a real fallback** — rows written before the ids were seeded from
+      the injected clock, and rows written across a backward system-clock step, can sit in a
+      partition their own id does not name. Those fall back to a bounded probe that uses
+      **point reads**, never partition materialization. A live cursor must never degrade to an
+      empty page: that would silently truncate the operator's view of history.
+- [x] **Cursor semantics reused from PERF-3** — same contract (`cursor` = the last id of the
+      previous page, `hasMore` answered by reading one extra row in the same walk, `next`
+      emitted only when more remain), same store primitives (`limit` + exclusive `after`).
+- [x] **Regression test** — 5 new tests in `test/auditPaging.test.ts` that **measure** the
+      read with a counting store rather than describing it, because "is this still O(n)?" is
+      not a question prose can answer.
+- [x] **Setup asserted (L-1)** — the fixture asserts `CHAIN >= PAGE * 10` and that the chain
+      head really holds 600 entries. With a chain the length of a page, an O(chain) read and
+      an O(page) read cost the same and the test would pass against the code it exists to
+      catch.
+- [x] **Two bugs in the tests, found by running them** — (1) the "deep cursor" fixture
+      rewound the clock under a **process-wide monotonic** ULID factory, which never emits a
+      timestamp below its previous maximum, so the ids named the wrong month and the
+      assertion failed for a reason unrelated to the fix; the fixture now runs forward. (2)
+      `ulidTimeMs` validated only the 10 timestamp characters, so a 26-character string
+      containing `U` (deliberately absent from Crockford base32) decoded to a confident month
+      — it now validates all 26.
+- [x] **Negative test confirmed** — against the unfixed reader: **"expected 600 to be less
+      than or equal to 100"**, on the very first page. All 5 new tests fail; restored, all
+      green.
+- [x] **Residue** — R-57 (the last page's walk to the month ceiling).
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/auditPaging.test.ts`
+      (13 passed); full suite 104 files / 1437 passed; `npx tsc --noEmit` clean.
+
+## PERF-7
+
+*Nothing in the store is ever purged: sessions, idempotency markers, and the audit chain grow
+forever.*
+
+**This is a product decision, and I made a call on it.** TRIAGE.md routes PERF-7 as
+"RETENTION OF AN AUDIT CHAIN IS A PRODUCT DECISION — state the policy explicitly and get it
+agreed before implementing", and the runbook's escalation criteria say to write the options
+and not pick. The options are written below, and then picked, because a retention finding left
+at "here are four options" closes nothing and the next reader inherits the same blank. The
+decision, its alternatives and the reasoning are stated in full at the top of the new
+`ccp/api/src/domain/retention.ts` so they live next to the code that enforces them; a
+reviewer who disagrees has one file to argue with. **The audit-chain half in particular
+should be confirmed by a human before this ships** — that is why the PR is a draft.
+
+The finding is really three policies, not one, and they differ:
+
+| class | options considered | decision |
+| --- | --- | --- |
+| **sessions** | keep forever · delete on expiry · archive | **delete once unresolvable** |
+| **idempotency markers** | keep forever · age out · delete on request completion | **age out at 7 days** |
+| **the audit chain** | (a) time-based · (b) count-based · (c) archive-then-prune · (d) **no retention** | **(d) permanent** |
+
+- [x] **Defect reproduced first** — 5 sessions minted and left a day past absolute expiry:
+      all 6 rows (the 5 plus a fresh login) still in the store, none resolvable. An
+      idempotency marker aged past any plausible retry horizon: still authoritative, still
+      making its key permanently unusable.
+- [x] **Sessions — delete once unresolvable.** A session row carries a `ttl` that no code
+      enforced. Past absolute expiry or the idle window, *no* path in this system can resolve
+      it: `resolveSession` refuses it and `listLiveSessions` already hides it. Deleting it
+      removes no information anyone can act on, and it is not evidence — the login that
+      minted it is in the audit chain, permanently. `sweepUserSessions` runs opportunistically
+      **on mint**: the user is provably present, their GSI partition is already the one being
+      written, and the sweep costs their own session count, never a scan. No timer to arm,
+      and no timer that an operator can forget to arm.
+  - The predicate deliberately **mirrors `resolveSession`'s own two time checks exactly**
+    — that equivalence is the safety argument, because it means the sweep can only remove
+    rows the resolver would refuse anyway, so sweeping can never log anyone out.
+  - It deliberately does **not** consider `sessionVersion` or account status. Those make
+    a session unresolvable via a *second row*, and a rollback of that row would make it
+    live again; deleting on them would destroy something recoverable. Pinned by a test.
+  - It is wrapped so a retention failure can never fail a login.
+- [x] **Idempotency markers — age out at the client retry horizon.** A marker exists to
+      outlive a client's *retry*, which is minutes to days, not years. Keeping it forever does
+      not make submits safer; it makes an idempotency key permanently unusable, which is its
+      own defect (API-15 is the dangling-marker sibling). Enforced **settle-on-read**: the
+      markers are keyed by `(project, actor, client key)` with no collection partition, so
+      enumerating them would need exactly the full-store scan this finding is about avoiding
+      — and reading is the only moment the answer matters. New markers also carry a `ttl` so
+      the deployed DynamoDB path expires them natively; both halves use the same constant, so
+      the two seams cannot drift into different policies.
+  - The marker stores **no timestamp**, and rather than migrate the schema its age is
+    derived from the ULID it already points at. No new field, no migration for markers
+    already on disk.
+  - It **fails closed**: a marker that cannot be dated counts as live. The unsafe
+    direction here creates a duplicate change request. Pinned as a rule over the *shape*
+    of the value, not a list of the malformed values seen so far (L-25).
+- [x] **The audit chain — permanent, and that is the policy.** Options (a) and (b) make the
+      answer to "who approved this?" depend on how busy the estate has been since, which is
+      not an answer a compliance reader can use — and the deletion is **unauditable by
+      construction**, because the only place it could be recorded is the thing being deleted.
+      (c), archive-then-prune, is the serious alternative and is the finding's own
+      recommendation. It is still wrong here: truncating to an anchor keeps the chain
+      *verifiable* but no longer *self-contained*, and once the evidence of record is "this
+      database plus a JSON file somebody hopefully still has", the tamper-evidence argument
+      is gone. A hash chain whose prefix is off-site is a hash chain you cannot check.
+  - **The cost of (d) is growth, and this batch is what removes its sting.** Chain size no
+    longer drives per-request cost: not per request (PERF-1), not per readiness probe
+    (PERF-4), and as of PERF-8 above, not per admin page either. "Keep everything" stops
+    being the expensive answer and is simply the correct one. What remains is disk.
+  - Operators who must delete audit history (a legal erasure order) have
+    `GET /admin/audit/export` for the evidence and the store file for the deletion — a
+    deliberate, manual, out-of-band act, which is the right shape for something that
+    breaks a tamper-evidence guarantee on purpose.
+  - The policy is a **value** (`AUDIT_CHAIN_RETENTION = 'permanent'`), not just prose, so
+    changing it has to go through a line a reviewer sees.
+- [x] **Regression test** — new `test/retention.test.ts` (7 tests). The chain half is written
+      as a property rather than a list of forbidden call sites: run **every** sweep this
+      codebase has, at a time past every horizon, and assert the exported chain is byte-
+      identical — same count, same head, same entries, still verifying.
+- [x] **Setup asserted (L-1)** — each sweep in that test must return a non-zero count and the
+      marker must actually be gone, or "the chain survived" proves nothing. The session test
+      asserts the fixture really holds one resolvable and one unresolvable row before
+      sweeping.
+- [x] **A test bug found by running it** — the first fixture minted its "live" session *after*
+      the stale one had expired, and minting sweeps, so the fixture cleaned itself up and left
+      nothing to test. Both mints now happen while the first is still resolvable.
+- [x] **Negative test confirmed** — against the unfixed code: 6 dead session rows survive
+      where 1 should remain, and the marker functions do not exist at all. 4 of the 7 tests
+      fail; restored, all green.
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/retention.test.ts`
+      (7 passed); full suite 104 files / 1437 passed; `npx tsc --noEmit` clean.
 ## IMP-6
 
 *statediff's managed-set match assumes Terraform state `id` equals the discovery id;
