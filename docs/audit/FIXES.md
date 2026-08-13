@@ -5330,3 +5330,1866 @@ Nothing was added there; re-testing it would have been duplication rather than c
       the table above; 37 new tests in total across the batch.
 - [x] **Evidence in the status line** — 106 files, 1,458 api tests pass (from 102 / 1,421);
       `npx tsc --noEmit` clean.
+## ARCH-6
+
+*The backend depends on frontend-package internals; the shared-contract layer is a path
+alias plus a hand-synced copy.*
+
+**This is ARCH-6's declared partial, taken deliberately, and the reasoning is the point of
+this entry.** The triage line reads "Until the package lands, an allowlist lint + a
+copy-parity test is the acceptable partial". What landed is the partial: the `@app-lib`
+seam is now checked instead of commented, and the `planSummary` copy is pinned to its
+canonical source. `ccp/shared` was **not** extracted — see the residue and the paragraph
+below for why that was the right call rather than the cheap one.
+
+**What the hazard actually is, measured rather than restated.** `ccp/api/tsconfig.json`
+maps `@app-lib/* -> ../app/src/lib/*`. tsc follows the alias, but a bare specifier inside
+one of those app files (`import { z } from 'zod'`) resolves **from that file's own
+directory** — `ccp/app/src/lib/`, walking up through `ccp/app/node_modules` — and never
+looks in `ccp/api/node_modules`. `ccp-api.yml` runs `npm ci` only in `ccp/api`, so in CI
+every one of those directories is empty. The api depends on zod itself, which is exactly
+what makes the mistake so easy: the import reads as obviously fine from the api's own
+`package.json`, and it works on any machine where `ccp/app/node_modules` happens to exist.
+
+Reproduced by moving `ccp/app/node_modules` aside and importing a zod value through the
+alias, with a deliberately nonsense property access on the inferred type:
+
+| | dev shape (app deps present) | CI shape (app deps absent) |
+| --- | --- | --- |
+| nonsense access `s.thisFieldDoesNotExist` | `TS2339 Property … does not exist on type '{…}'` | **no error at all** |
+| errors reported | 1, in the api's own file | 2, both in `../app/src/lib/planSummary.ts` |
+
+That is the finding's word "silently", confirmed: `z` is unresolved, so `z.object(...)` is
+`any`, so `z.infer<...>` is `any`, and **the api stops typechecking its own code against
+the contract entirely**. The build does go red today — but for the wrong reason, naming a
+file outside the api's `include` and outside its ownership. It goes red only because tsc
+still reports diagnostics in that imported file; anything that stops it doing so (a
+`@ts-nocheck`, an `exclude`, a `.d.ts` boundary under `skipLibCheck`) converts the red into
+a green that is checking nothing. The api-local copy of `planSummary` exists precisely
+because of this, and carried a "keep this edited in lockstep" comment and nothing else.
+
+**RULE A is stated as an invariant, not as "don't import zod" (L-25).** No file the api
+reaches through the alias may import a bare specifier *at all* — relative imports, other
+aliased app files and `resolveJsonModule` JSON all resolve without any `node_modules`. It
+is checked over the **transitive** closure, because the import that breaks the api need not
+be in the file the api names: `@app-lib/policy` is dependency-free itself and pulls in
+`lib/projectScope.ts`, which is where a stray dependency would actually sit. The closure is
+9 entry specifiers over 17 files today, with zero bare imports.
+
+**RULE B is the allowlist.** The finding's second impact — "the app's `lib/` cannot be
+refactored without auditing the api's import graph" — is true because that graph was
+written down nowhere. It is now nine reviewed entries in one place, and it fails in both
+directions: reaching an unlisted module fails, and an allowlist entry nobody imports any
+more also fails, because a list that over-states the coupling stops being read.
+
+**Why `ccp/shared` was not extracted here.** Not difficulty — blast radius, and a specific
+collision. The extraction moves `permissions`/`policy`/`redact`/`dependsOn`/`requestStatus`
+out of `ccp/app/src/lib/`, which is imported by ~55 feature components; it needs a new
+workspace package, two regenerated lockfiles, a changed `api/Dockerfile` vendoring step,
+and edits to the CI path filters, `verify:safety` and the publish-gate scan scopes — every
+one of which is a place where a mistake fails *silently* rather than loudly. `B-O13` is
+concurrently touching `ccp/app/src/lib/` in a different wave, so a file-moving refactor of
+that directory from this lane would collide with it directly. The design deserves a human
+review before it lands, and the partial removes the reason it was urgent: the two failure
+modes that made the seam dangerous (a silent typecheck collapse, a silently drifting copy)
+are now loud. Left un-extracted, deliberately, as **R-77**.
+
+- [x] **Defect reproduced first** — the two-column table above; both columns run against the
+      real tree with a probe file, `ccp/app/node_modules` moved aside to reproduce CI.
+- [x] **Cause, not symptom** — the cause is that the alias imposes a constraint
+      (dependency-free, transitively) that only comments stated. RULE A states it as a
+      checkable invariant over the closure. The `planSummary` copy is *kept* — it is the
+      correct answer for a zod schema at this seam — and pinned instead.
+- [x] **Regression tests** — `ccp/api/test/appLibBoundary.test.ts` (3) and
+      `ccp/api/test/planSummaryCopyParity.test.ts` (3). Both live in the api suite, which is
+      the job that breaks; `ccp-api.yml`'s path filter already includes `ccp/app/src/lib/**`,
+      so editing a shared file runs them.
+- [x] **Negative test** — five injections, each watched to fail:
+      **(1)** `import { z } from 'zod'` added to `lib/requestStatus.ts` (a closure file) →
+      RULE A fails with ``lib/requestStatus.ts imports 'zod'``. **The same injection left
+      `test/statusVocabulary.test.ts` — which imports that very file — green at 8 passed**,
+      which is the coverage this check adds.
+      **(2)** an api import of `@app-lib/datetime` → RULE B fails naming it (and RULE A fires
+      too, because `datetime.ts` reaches a package: the transitive rule earning its keep).
+      **(3)** `MAX_ATTR_CHANGES` 80→90 in the api copy only → parity fails.
+      **(4)** a field added to the canonical `PlanCountsSchema` only → parity fails.
+      **(5)** the canonical file's bidirectional drift guard removed → the exemption test
+      fails. In **all three** of (3)–(5) the pre-existing `test/planSummary.test.ts` stayed
+      green at 8 passed — it exercises behaviour and only ever loads one of the two files,
+      exactly as the finding says.
+- [x] **Assert the setup fired (L-1)** — every assertion here has the form "nothing bad in
+      this set", so each one passes vacuously on an empty scan. Pinned: the entry-point scan
+      finds >5 specifiers including a known one; the closure resolves every edge (an
+      unresolvable import is an *unchecked* edge, not an absent one) and exceeds 10 files;
+      the closure contains `lib/projectScope.ts`, which **no api file imports** — it is
+      reachable only transitively, so if that stops holding the walker has stopped walking
+      and RULE A is only checking the first hop, where the hazard already is not. For parity:
+      both files must yield >10 declarations, and the extractor must capture *bodies* — a
+      bracket-balancing bug truncating at the first line would still populate the map and
+      every schema would then compare equal as `const X = z.object({`.
+- [x] **Failure is loud** — each message names the offending file and specifier and says
+      what to do about it.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full api
+      suite 104 files / 1427 passed.
+
+**Residue:** the `ccp/shared` package does not exist; the api still depends on
+frontend-package internals through a path alias, and `planSummarySchema.ts` is still a copy
+(**R-77**). The redaction/toolchain helper duplication that triage parks on ARCH-6 (`R-11`)
+is unaddressed for the same reason (**R-77** covers it).
+
+## ARCH-5
+
+*Two sources of truth for the catalog: the server validates against the image-baked
+catalog, the SPA renders the per-project uploaded one.*
+
+- [x] **Defect reproduced first.** Confirmed by reading, not assuming: `manifests.ts#getOperation`
+      resolves every submit-time operation from the image-bundled catalog
+      (`ccp/app/src/data/manifests/*.json`, vendored at build time) with no per-project
+      resolution anywhere in `routes/requests.ts`'s submit handler. The SPA, for a real
+      onboarded estate, builds its forms from `GET /projects/:id/manifests` — the ACTIVE
+      per-project uploaded set. Nothing anywhere compared the two. Built a fixture where they
+      disagree (an uploaded `ec2-set-encrypted` claiming `l1_self_service` +
+      `forcesReplace:false` against a bundled definition of `engineer_only` +
+      `forcesReplace:true`) and submitted against the unfixed handler: it silently applied
+      the BUNDLED rule with no signal to the requester that their form had lied to them.
+- [x] **Cause, not symptom.** Two manifest sets exist for a real reason — CI-staged,
+      dual-control-activated, per-estate data is how the product is supposed to work — but
+      the SUBMIT PATH had never been taught that the set it enforces and the set the form was
+      built from can be different documents.
+- [x] **The authority decision, and why the finding's own recommendation is rejected.**
+      The bundled catalog is authoritative for every submit-time decision; the uploaded set
+      is a presentation artifact. This is not a preference — `domain/projectData.ts`'s
+      `UploadManifest` validates an uploaded operation as `{id:string}.passthrough()`, so
+      `exposure`/`riskFloor`/`forcesReplace` on an uploaded manifest are never read by
+      anything, while the bundled catalog's same fields are CI-gate-enforced
+      (`verify:safety`'s ForceNew gate). The finding's first recommendation — resolve
+      submit-time operations from the project's active manifest version — is rejected in
+      writing: `domain/requirement.ts` derives the approval ladder from `op.exposure` and
+      `routes/requests.ts` demands the typed replace-confirmation from `op.forcesReplace`;
+      resolving from the uploaded set would move BOTH onto unvalidated tenant-supplied data —
+      a governance escalation wearing the costume of a lookup change (L-27's shape exactly).
+      Written up in full in `ccp/docs/DOMAIN-MODEL.md` §1.1 "Catalog authority", which the
+      code's own doc comments cite by name rather than re-deriving the reasoning per file.
+- [x] **Authority alone does not close the finding — the requester has to be told.**
+      Pre-fix, a requester whose form offered an out-of-bounds value got
+      `PARAM_OUT_OF_BOUNDS`, blaming them for a value their own screen said was allowed.
+      `domain/catalogSkew.ts#operationSkew` detects the divergence per submitted item;
+      `routes/requests.ts` refuses with `422 CATALOG_SKEW`, `details:{operationId,fields}`,
+      checked BEFORE the param-bounds/replace-confirmation gates so the refusal names the
+      real cause instead of manifesting as one of those two misleading codes.
+- [x] **The comparison is subtractive, and that is deliberate (L-25).** Everything on
+      `ManifestOperation` is compared except a small NAMED set of presentation-only fields
+      (`title`, `summary`, `consoleLabel`, `description`, `pinned`, `keywords`; param-level:
+      `label`, `help`, `sensitive`, `group`, `tier`, `uiWidget`). A field added to the type
+      tomorrow is compared by default — the failure direction of forgetting to update an
+      allowlist is a loud refusal to submit, never a silent divergence. Params are compared
+      BY NAME (reordering a form is presentation; a param present on only one side, or
+      carrying different bounds, is not), and a malformed param with no string `name` is
+      counted as divergence rather than silently invisible to the by-name map.
+- [x] **The served-side read is memoised, and the memo key is why it is safe.** A served
+      data version is immutable once staged and activation only ever moves the version
+      pointer (`ProjectDataVersionItem`), so a cache keyed by `(dataRoot, projectId,
+      activeVersion)` can never be stale — an activation changes the key, a de-activation
+      makes the lookup miss. The `dataRoot` is part of the key specifically because more
+      than one `createApp` instance can exist in one test process pointed at different
+      directories; without it the second instance would silently read the first's catalog —
+      "a cache returning a confidently wrong answer, which is worse than no cache."
+- [x] **Regression test — `test/catalogAuthority.test.ts`, 8 cases.** The escalation case
+      (above) written out explicitly: bundled `engineer_only`+`forcesReplace`, uploaded
+      claiming `l1_self_service`+no-confirmation — asserts the SERVER still requires two
+      approvals and the typed confirmation (authority holds) AND that the mismatch is
+      surfaced as `CATALOG_SKEW` naming both diverging fields (the requester is told, not
+      silently overridden). Presentation-field divergence (a re-worded `summary`) does NOT
+      trip the refusal — pins that the allowlist actually excludes what it claims to.
+- [x] **Two pre-existing fixtures were never realistic once the two catalogs are actually
+      compared — fixed, not worked around.** `test/errors.test.ts`'s exhaustive 422-taxonomy
+      list needed `CATALOG_SKEW` added (a new code, mechanical). More substantively,
+      `test/blankInstall.test.ts`'s full onboarding-ladder acceptance test uploaded a
+      3-field stub (`{id, service, macd}`) for `ec2-resize` that had NEVER agreed with the
+      real bundled definition (which carries `params`, `exposure`, `forcesReplace`,
+      `riskFloor`, …) — invisible before this fix because nothing compared them, and a real
+      defect in the fixture's realism once something finally does. Fixed by resolving the
+      REAL bundled operation via `manifests.ts#getOperation('ec2-resize')` and using it
+      directly as the uploaded manifest too, so the fixture cannot silently drift out of
+      agreement with what it is supposed to represent the next time `ec2.json` changes.
+- [x] **Assert the setup fired (L-1).** The escalation test asserts the UNFIXED behavior's
+      shape first — that the bundled op really is `engineer_only`/`forcesReplace:true` —
+      before asserting the fixed behavior refuses the uploaded downgrade.
+- [x] **Negative test confirmed.** Reverted `catalogSkew.ts`/`servedCatalog.ts` (moved
+      aside) and the wiring in `errors.ts`/`index.ts`/`routes/requests.ts`: 4 of 8 new tests
+      fail, each asserting a `CATALOG_SKEW` refusal that no longer happens (e.g. `expected
+      'REPLACE_CONFIRMATION_REQUIRED' to be 'CATALOG_SKEW'` on the escalation case — the
+      server silently obeyed the downgraded uploaded definition). Restored; 8/8 green, full
+      suite unaffected.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json &&
+      npx vitest run` — 105 files, 1435 passed. `python3 scripts/docs-error-codes-check.py`:
+      59 codes documented. `npx vitest run test/openapi.test.ts`: 23/23 (YAML validated
+      separately — `python3 -c "import yaml; yaml.safe_load(open(...))"`).
+
+## DOC-7
+
+*App `DriftProposal` type does not match the wire: `importPayload` has a different shape, and
+top-level `arn`/`tfType` are mock-only.*
+
+- [x] **Defect reproduced first, and it was worse than the finding's own text.** The finding's
+      Impact section calls the top-level `arn`/`tfType` mismatch "dead-but-documented" because
+      `driftProposalState.ts`'s finding→proposal matcher keys on `importPayload.address`, not
+      `arn`. True for THAT matcher — but `DriftPage.tsx:467` runs the OPPOSITE lookup
+      (proposal→finding, to resolve the full record `ImportDrawer` renders) via
+      `status.report.sweep?.findings.find((f) => f.arn === openImportProposal.arn)`. The real
+      api's `routes/drift.ts#listRichProposals` never puts `arn`/`tfType` on a served
+      `DriftProposal` at all (only the mock did) — so against a real deployment this lookup
+      always compared `f.arn` to `undefined`, meaning the import drawer either found nothing or
+      silently matched whichever finding happened to have no `arn`. Live, not dead.
+- [x] **Cause, not symptom.** Two distinct payload shapes exist on the wire —
+      `DriftImportPayload` (a finding's own `{address, targetFile, importBlock, skeletonHcl}`)
+      and the api's `DriftImportProposalPayloadSchema` (a proposal's own
+      `{arn, tfType, liveId, targetFile, importBlock, skeletonHcl}`, no `address` — it is
+      already `addresses[0]`) — but the app typed `DriftProposal.importPayload` as the FIRST
+      shape and gave `DriftProposal` its own top-level `arn`/`tfType` besides. The OpenAPI YAML
+      already had this right (`DriftImportProposalPayload`, `ccp-api.yaml:265-271`, and no
+      `arn`/`tfType` on `DriftProposal` at `:328-338`) — only the app's hand-written type and
+      the mock disagreed with it.
+- [x] **The type now matches the wire, not the mock.** Added `DriftImportProposalPayload`
+      (`types/drift.ts`) mirroring the YAML exactly; `DriftProposal.importPayload` now types
+      against it. Removed `DriftProposal.arn`/`.tfType` entirely — the real api never serves
+      them, and once the matching logic below stopped needing them, keeping unserved fields
+      around was the exact "type asserts a field the wire never carries" class of bug DOC-7
+      exists to prevent, not a smaller version of it.
+- [x] **A real identity function, not a deleted one.** `lib/driftEligibility.ts#findCurrentFinding`
+      is a byte-for-byte port of the api's own `domain/driftProposals.ts#findCurrentFinding`/
+      `findingIdentityKey` (arn wins when non-empty, else `tfType`+`liveId`) — used to resolve
+      `DriftPage.tsx`'s open-import-drawer finding AND, replacing the SAME buggy `f.arn ===
+      row.arn` pattern, the mock's own submit-time re-derivation in `lib/api.ts` (which also
+      re-derives the finding-level `importPayload.address` from `row.addresses[0]` rather than
+      copying the proposal-level payload verbatim — the same shape confusion, one level deeper).
+- [x] **`ImportDrawer.tsx`'s header fixed to match.** `payload?.address ?? finding.name` never
+      rendered the address in real api mode (the finding's own second Impact bullet) — changed
+      to `proposal.addresses[0] ?? finding.name`, the field that actually names the address an
+      import would create.
+- [x] **Regression tests.**
+      `test/driftEligibility.test.ts` — 7 new cases for `findCurrentFinding`: arn match,
+      tfType+liveId fallback (arn null on both sides), no match, arn-bearing vs. fallback
+      identities never cross-match, and two arn-less findings told apart by `liveId` alone (the
+      case that actually proves the fallback is a real key and not a shared bucket for "no
+      arn"). `test/unmanagedResources.test.tsx` — asserts the drawer header renders
+      `proposal.addresses[0]`, not `finding.name`.
+- [x] **Negative tests confirmed, independently, for both fixes.** (1) Reverted
+      `findingIdentityKey`'s fallback branch to always key on `arn` alone (collapsing every
+      arn-less finding to the same key): the new "two different arn-less findings" test failed
+      exactly as predicted (`expected {liveId: 'db-oob-99', ...} to be {liveId: 'db-oob-01',
+      ...}` — the wrong finding, not a thrown error, which is the more dangerous failure mode
+      DOC-7 warned about). (2) Reverted `ImportDrawer.tsx`'s header back to
+      `payload?.address ?? finding.name`: the new header test failed with the finding-name
+      fallback rendered instead of the address. Both restored; full suites green again.
+- [x] **Evidence in the status line.** `ccp/app`: `npx tsc --noEmit` clean; `npx vitest run` —
+      160 files, 2830 passed; `npx eslint . --ext .ts,.tsx` — 0 errors (7 pre-existing warnings
+      in files untouched by this fix); `node scripts/check-contrast.mjs`,
+      `python3 scripts/list-missing-help.py`, `npx vite-node scripts/verify-manifest-safety.ts`,
+      `npx vite-node scripts/verify-source-genericity.ts` — all pass.
+
+## ARCH-8
+
+*The governance domain is implemented twice (server + browser mock) with acknowledged
+behavioral divergence.*
+
+- [x] **The triage line's two concrete asks, both delivered.** (1) Shrink the mock's surface
+      toward "the http client over an in-browser toy store" by moving a pure rule into the
+      shared layer, following ARCH-7's shape. (2) Enumerate mock-vs-api behavioral gaps in ONE
+      table in `ccp/README.md` instead of scattered comments.
+- [x] **What was and was not already shared, checked by reading rather than assuming.** The
+      finding's own Location line names `permissions.ts`/`policy.ts`/`quorum.ts` as duplicated.
+      `permissions.ts`'s `canRequest`/`canApprove` turned out to ALREADY be imported by the api
+      through `@app-lib/permissions` — not duplicated at all. `quorum.ts` is explicitly
+      documented mock-only by its own doc comment (api-mode's `requestFeasibility.ts` is a
+      genuinely different, richer computation — project-binding and activation the local
+      account directory can't see). Neither was touched.
+- [x] **The one real, unmirrored duplicate: the ladder's WHO rule.**
+      `lib/approvalLadder.ts#canSignApprovalStep` and `domain/eligibility.ts#canSignStep` were
+      byte-for-byte identical logic (`step === 'L3' ? role === 'lead' : role === 'approver' ||
+      role === 'lead'`), hand-copied — the app's own doc comment said "Mirrors the server's
+      `canSignStep`", the api's said "the single source of truth", and both were true only by
+      coincidence. Now one definition: the api imports `canSignApprovalStep` through
+      `@app-lib/approvalLadder` (added to `appLibBoundary.test.ts`'s `ALLOWED_APP_MODULES`,
+      ARCH-6's checked seam) and `canSignStep` is a thin wrapper around it, keeping its exported
+      `LadderStep`/`RoleName` signature unchanged for every existing caller.
+- [x] **Negative test confirmed the delegation is real, not coincidental agreement.** Broke
+      `canSignApprovalStep`'s L2 branch (`return step === 'L3' ? role === 'lead' : true;`) in
+      the APP file only, touching nothing in `ccp/api`: `domain/eligibility.ts#canSignStep`'s
+      own existing test (`test/approvalLadder.test.ts`, `test/eligibility.test.ts`) failed
+      immediately (`canSignStep('L2', 'requester')` returned `true`). Restored; both suites
+      green. This is the proof the api is really calling through the alias, not independently
+      agreeing with it.
+- [x] **A third, previously-undocumented gap surfaced while writing the table, and it was NOT
+      fixed here.** `routes/requests.ts` computes `approvalsRequired` from
+      `domain/exposure.ts#ladderFor(reviewTier, forcesReplace)` alone —
+      `domain/config.ts#loadPolicy`'s per-risk-tier `ApprovalPolicy` is read back only for
+      `policyVersion` stamping, never to size the ladder (`routes/requests.ts`'s own comment:
+      "risk is display-only now — it no longer varies the count"). The mock's `lib/policy.ts` /
+      `ApprovalPolicyAdmin.tsx` still implement and expose the OLD model as live and effective,
+      in BOTH modes' UI, including against a real `ccp-api`. Fixing this means picking one of
+      three product decisions (remove the admin screen, re-wire the ladder to widen with
+      policy, or relabel the screen as versioning-only) — none of which is "shrink the mock" or
+      "write a table." Named rather than silently absorbed: `docs/audit/RESIDUE.md` R-76, and
+      the stale doc comment in `domain/config.ts` that claimed `approvalsFor` was "imported
+      read-only from the app" (never true — it isn't imported anywhere in `ccp/api/src`) is
+      corrected to say so.
+- [x] **The table itself.** `ccp/README.md`'s "Mock mode vs. api mode" section now carries a
+      9-row table naming, per behavior, which side is authoritative and why — including the
+      two now-genuinely-shared rules, the accounts/audit/cooling-scheduler-bundle machinery the
+      mock was always honest about not implementing, and the policy-count gap this fix
+      surfaced. Closes with a one-line rule for where the NEXT shared predicate should live.
+- [x] **Evidence in the status line.** `ccp/api`: `npx tsc --noEmit` clean; `npx vitest run` —
+      105 files, 1435 passed (`test/appLibBoundary.test.ts`, `test/eligibility.test.ts`,
+      `test/approvalLadder.test.ts`, `test/perProjectAuthz.test.ts` all pass, unchanged
+      expectations). `ccp/app`: `npx tsc --noEmit` clean; `npx vitest run` — 160 files, 2830
+      passed (`test/approvalLadder.test.ts` unchanged expectations, 23/23).
+## API-4
+
+*The bundle "claim" is not a mutual-exclusion, and a crashed bundle wedges the request at
+`running`.*
+
+**VERIFY-AND-CLOSE — no production code changed.** B-O1's instruction: "Both defects look
+closed already — ERR-11 made the claim guard `eventSeq` (which the claim advances), and ERR-2
+added the lease + takeover. Confirm against the code, add a regression test if none pins it."
+Both are indeed closed in the code. **One of them was closed and unprotected**, which is the
+part this entry exists to record.
+
+- [x] **Defect reproduced first** — both halves checked against the branch point (`e957eb7`),
+      then each one *re-broken* to see what the suite would say (L-29 + the runbook's negative
+      run, applied to a verify-first finding rather than to a fix):
+      - **Defect 1 (the claim is not exclusive).** Closed at `routes/requests.ts:1160`: the
+        claim CASes `ifEquals {attr:'eventSeq', value: req.eventSeq}` and itself sets
+        `eventSeq: claimSeq` at `:1157`. **But nothing pinned it.** Reverting that one guard to
+        the original `ifEquals {attr:'status', value: req.status}` — the exact pre-ERR-11 shape
+        the finding names — left **all 28 tests** in `bundleClaimLease.test.ts`,
+        `bundle.test.ts` and `applyLaneExclusion.test.ts` green. The two existing ERR-11 cases
+        assert only that the claim *advances* `eventSeq`, and one of them supplies its own
+        `ifEquals` rather than exercising the route's, so both pass unchanged against a route
+        guarded on `status`.
+      - **Defect 2 (a crashed bundle wedges `running` forever).** Closed at `:1126-1129`
+        (refuse only while `bundleClaimLive`) + `:1145-1147` (the takeover event), and it **is**
+        pinned: forcing `claimExpired = false` — the pre-ERR-2 "running is forever" shape —
+        failed 3 tests in the ERR-2 block ("the request must be appliable again", the
+        `bundle-claim-expired` timeline assertion, and the unparseable-timestamp case).
+- [x] **Cause, not symptom** — no production change, and deliberately none: re-fixing a closed
+      defect is the most expensive way to spend this batch. The cause of the *gap* was in the
+      test, not the route — a guard that no test discriminates is a guard nobody is protecting,
+      and the next person to touch this handler would have had nothing telling them why the
+      attribute is `eventSeq` and not the more obvious `status`.
+- [x] **Regression test** — new `describe('API-4 — a write between the read and the claim costs
+      the handler the claim')` in `test/bundleClaimLease.test.ts`. It pins the **property**, not
+      the attribute name (L-25): a request-row write landing between this handler's read and its
+      claim must cost the handler the claim. `status` cannot deliver that, because the claim
+      does not move `status`. The race is driven by a store wrapper — a route test cannot
+      otherwise produce the interleaving, since the two handlers would have to be suspended
+      between their read and their write — which lands one competing write (advancing `eventSeq`
+      and deliberately *not* `status`, exactly what a second apply's own claim does) at that
+      point. The assertion is on the **effects**: the gate command writes a marker file outside
+      the checkout (so it survives `cleanup(dir)`), and a handler that lost its claim must never
+      have spawned it.
+      **Negative test confirmed** — with the claim reverted to the `status` guard the race case
+      fails `a lost claim is reported, not run: expected 200 to be 409`, and a 200 there means
+      the bundle really did clone, run the gate, push and fire the trigger on a row that had
+      moved under it. Guard restored, re-verified green.
+- [x] **Failure is loud** — every assertion carries its own message naming what broke ("the gate
+      ran on a request this handler never claimed", "no claim was written"), and L-1 is pinned
+      explicitly: the test asserts `raced === true`, so a wrapper that silently stopped firing
+      turns into a failure instead of a race test that never raced. The `CONTROL` case runs the
+      same fixture with nothing racing and asserts the gate marker *is* written and the row
+      reaches `triggered` — so a broken marker, gate command or fixture cannot masquerade as the
+      defect being absent.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json` clean;
+      `npx vitest run test/bundleClaimLease.test.ts test/bundle.test.ts
+      test/applyLaneExclusion.test.ts` → 30 passed (up from 28).
+
+## CONC-6
+
+*The bundle claim has no crash/exception/race recovery: `bundle.state:'running'` can stick
+forever, and a raced outcome write loses the record of a fired deploy.*
+
+- [x] **Defect reproduced first** — both halves, through the real route:
+      - **The exception path.** `realSteps.prepare` opens its workspace with
+        `mkdtempSync(join(tmpdir(), …))`, so pointing `TMPDIR` at a path that does not exist
+        makes it throw `ENOENT` — the same shape as the `writeFileSync` ENOSPC the finding
+        names, and reachable end-to-end. Against the unfixed code `POST /:id/apply` answered
+        **500**, and the row kept the `bundle.state:'running'` claim the handler had written
+        moments earlier.
+      - **The raced outcome.** With a store wrapper landing a competing claim on the request
+        row while the bundle ran, the unfixed handler answered **`CHAIN_CONTENTION`** — after
+        the gate had run, a commit had landed on `main` and the CI apply had been triggered —
+        and the audit chain contained **no `request-bundle` entry at all**.
+- [x] **Cause, not symptom** — three changes, one idea: *a fired deploy is a fact, and a
+      fact is not a state transition.*
+      1. **`runBundle` is now TOTAL** (`domain/bundle.ts`). A throw at any stage is converted
+         into the failed outcome it actually is, attributed to the stage that raised it, with
+         every already-completed step still in the log — a partially-executed bundle's step
+         log is evidence, and worth more than an exception type. `cleanup` still runs, and a
+         `cleanup` that throws no longer turns a recorded outcome back into an exception. The
+         route keeps its own `try/catch` as defence in depth for everything outside that call,
+         because the one thing the handler must never do is return while holding the claim it
+         wrote.
+      2. **The outcome write re-reads and re-derives on every attempt**, and appends to the
+         timeline instead of replacing it. `events` is a full-array replacement, so deriving it
+         once from a pre-image read minutes earlier silently erased anything that landed while
+         the bundle ran. The CAS now guards the seq read *this iteration* ("nothing moved since
+         I looked a moment ago"); ownership of the run is established separately and explicitly
+         by comparing `bundle.at` against the claim this handler wrote. Splitting those two
+         meanings is what makes a lost race merely worth re-reading instead of unrecoverable.
+      3. **The audit entry is written even when the row refuses the transition**, marked
+         `requestRowUpdated:false` with the reason, and the caller gets the specific code
+         **`BUNDLE_OUTCOME_CONTENDED`** carrying `details:{bundle,steps}`. `CHAIN_CONTENTION`
+         said "the chain is busy; please retry" about a deploy that had already fired — an
+         answer that is both wrong and actively dangerous, since retrying re-runs the bundle.
+      **The finding's recommendation was partly unimplementable as written.** It suggests
+      recording the outcome "guarded on `bundle.state:'running'` (which cancel never touches)".
+      The store seam compares `ifEquals` with `!==` on a top-level attribute
+      (`memoryStore.ts`), and `bundle` is an object that is deep-cloned on read — so that
+      guard could never match, on any row, ever. The property it was reaching for is real, so
+      it is enforced as an explicit ownership check (`bundle.at` identifies the claim) rather
+      than as a CAS that would have silently failed 100% of the time.
+      One further deliberate choice: on the doubly-unlucky path where the chain is too busy to
+      attach the outcome, the handler writes the audit entry alone, then releases a still-held
+      claim to its terminal state with an **unaudited row write**. That write carries no fact
+      the chain does not already have — the entry for that exact outcome landed immediately
+      before it — and the alternative is leaving a fully-approved request wedged at `running`
+      for the length of ERR-2's lease over a transient jam.
+- [x] **Regression test** — new `test/bundleOutcomeRecord.test.ts`, 8 cases in three groups:
+      `runBundle` totality (a throw at each of the four stages becomes a failed outcome; the
+      partial step log survives; a post-commit throw still reports the landed sha; cleanup
+      still runs; a throwing cleanup does not resurrect the exception), the route's
+      terminal-state property (the `TMPDIR` reproduction above, asserting 502-not-500, a
+      `failed` bundle state, and — the consequence the finding is actually about — that the
+      *next* apply is no longer refused), and the contended-outcome property (the audit entry
+      lands, `requestRowUpdated:false`, the specific code, and the other run's claim left
+      untouched).
+      **Negative test confirmed** — reverting `domain/bundle.ts` and `routes/requests.ts` to
+      their pre-fix state fails **7 of the 8**, with exactly the finding's symptoms:
+      `expected 500 to be 502` on the route case and
+      `expected 'CHAIN_CONTENTION' to be 'BUNDLE_OUTCOME_CONTENDED'` on the raced one. Both
+      files restored, re-verified green.
+- [x] **Failure is loud** — every assertion names the property ("the claim must be released to
+      a terminal state", "a fired deploy must be in the audit chain", "not CHAIN_CONTENTION —
+      that says retry, and retrying re-runs the deploy"). L-1 is pinned in three places: the
+      throwing-step cases assert the throwing stage was actually *called*, the route case
+      asserts the run really died in `prepare` (rather than being refused for some unrelated
+      reason), and the race case asserts the takeover actually landed. The eighth test is a
+      CONTROL that runs the same fixture with nothing racing and asserts the outcome *does*
+      reach the row — so a fixture that could never record an outcome cannot masquerade as the
+      defect being absent.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json`
+      clean; full suite `npm test` → 103 files, 1431 passed (up from 1421).
+      `python3 scripts/docs-error-codes-check.py` passes with the new inline code documented;
+      `openapi/ccp-api.yaml`, `ccp/docs/ERROR-STATES.md` and `ccp/docs/API-SPEC.md` updated —
+      the last two also corrected a pre-existing contract inaccuracy, both still describing the
+      claim as "a CAS on the observed status", which ERR-11 changed to `eventSeq`.
+
+**Residue:** the outcome write can still lose a concurrent timeline entry in a
+microsecond-wide window, and a chain that stays contended still leaves the run's own claim to
+the lease. See `R-75`.
+
+## API-5
+
+*Cancel can race an in-flight bundle: the change applies but the request reads CANCELLED.*
+
+- [x] **Defect reproduced first.** `AWAITING_DEPLOY_APPROVAL` is in `CANCELLABLE_STATUSES`,
+      and the bundle claim (API-4) deliberately leaves `status` untouched — so a cancel
+      issued while a bundle is mid-flight satisfied `ifEquals status ==
+      AWAITING_DEPLOY_APPROVAL` unconditionally. Reproduced directly: seeded a request with
+      `bundle:{state:'running', at:<now>}`, called `POST /cancel` — before this fix it
+      returned 200 and set `status:'CANCELLED'` while the (simulated) bundle was still
+      landing a commit on `main` and firing the CI apply trigger.
+- [x] **Cause, not symptom.** Cancel checked only `status`, never `bundle`. The two are
+      independent attributes by design (API-4's whole point was that the claim must NOT
+      move `status`, so a concurrent read of the request during a bundle run still shows
+      the true pre-apply status) — but that independence is exactly what let cancel act as
+      though no bundle existed.
+- [x] **The fix shape was one of two the finding itself offered (refuse, or require
+      confirmation) — refuse, and here is why.** A confirmation dialog would still be built
+      from the SAME stale status this defect is about — by the time a lead sees "are you
+      sure?", the bundle may already have landed the commit. Refuse is the only shape that
+      hands the caller the CURRENT truth. Reuses `bundleClaimExpired`, the exact
+      live/expired distinction `/apply` already applies (ERR-2): a LIVE claim blocks
+      cancel with 409 `BUNDLE_RUNNING` (the same code `/apply`'s own non-reentrancy guard
+      already uses, not a new one — the same fact, "a bundle is in flight," told to two
+      different callers); an EXPIRED claim (a crashed run) does NOT block it, because
+      refusing on a claim nothing will ever finish would just move the wedge from
+      `bundle.state` (fixed by API-4/CONC-6) to `status`.
+- [x] **What this closes vs. what CONC-6 already closed.** The finding's second half — "on
+      the bundle's lost outcome write, record a standalone audit entry instead of
+      throwing" — was independently fixed by the parallel CONC-6 work in this same batch
+      (`BUNDLE_OUTCOME_CONTENDED` + the always-written audit entry). This entry closes only
+      the remaining half: stopping the race at its SOURCE rather than only recording it
+      better after the fact.
+- [x] **Regression test — `test/bundleCancelRace.test.ts`, 5 cases:** a live claim blocks
+      cancel with the specific code; the row is asserted UNCHANGED (not just the response
+      code) so the test cannot pass on a refusal that still let the write through; an
+      expired claim does NOT block cancel; no bundle claim at all cancels normally
+      (control); an already-`triggered` (terminal) bundle does not block cancel — this
+      guard is specifically about a claim still `running`.
+- [x] **Assert the setup fired (L-1).** The expired-claim test asserts the fixture's `at`
+      is actually past `BUNDLE_LEASE_MS` before relying on that gap mattering.
+- [x] **Negative test confirmed** — reverted the guard (`if (false && …)`), reran: the
+      live-claim test fails `expected 409 to be 200`, and the row-unchanged test fails
+      `expected 'CANCELLED' to be 'AWAITING_DEPLOY_APPROVAL'` — the exact defect. Restored;
+      5/5 green.
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/bundleCancelRace.test.ts`
+      (5 passed); full suite (below, shared with ERR-12); `openapi/ccp-api.yaml`,
+      `API-SPEC.md`, `ERROR-STATES.md` updated for `/cancel`'s new refusal.
+
+## ERR-12
+
+*Trigger failure after a landed commit: honest-but-dead-end half state, and spawn timeouts
+are indistinguishable from exit-1.*
+
+- [x] **Half of this finding was already fixed, verified rather than re-fixed.** The
+      "spawn timeouts indistinguishable from exit-1" half named `bundle.ts`'s old
+      `spawnSync`-based `sh()`/`git()`, which a prior fix (`domain/exec.ts#execCapture`,
+      closing API-1/CONC-5/OPS-3/PERF-2) replaced entirely. Read the current
+      implementation: a timeout resolves `status:124` with an explicit `` `timed out after
+      ${ms}ms` `` appended to the captured output, and a spawn error resolves `status:1`
+      with `` `spawn failed: ${e.message}` `` — exactly the finding's own recommendation
+      ("include `r.error?.message` and an explicit 'timed out after Nms'"), already
+      shipped. Confirmed live: `bundle.ts`'s `sh()` and `git()` both call `execCapture`, not
+      `spawnSync`. Nothing to fix here; closing with this evidence rather than a patch.
+- [x] **Defect reproduced first, the remaining half.** A landed commit whose trigger then
+      failed wrote `bundle.state:'failed'` with NO `sha` at the row level — identical to a
+      run that never got anywhere. Reproduced against a real git remote (the same harness
+      CONC-6's tests use): armed with a trigger command that always fails, called
+      `/apply` — the commit genuinely landed on the bare repo (confirmed by reading its
+      history), and the row/response both said plain `failed`, losing the landed commit's
+      identity. A same-request retry against the unfixed code re-cloned, re-gated, and hit
+      `commit failed (gate left no change?)` — technically true, actively misleading: the
+      change was already there.
+- [x] **Cause, not symptom.** The row-state mapping had exactly two outcomes (`triggered`
+      on success, `failed` on anything else), collapsing "never got anywhere" and "landed,
+      then something after commit went wrong" into the same bucket — even though
+      `runBundle`'s own outcome (via CONC-6's `sha` propagation) already knew the
+      difference internally.
+- [x] **The fix: a third state, and a resume path that uses it.**
+      `bundle.state:'landed-untriggered'` (schema.ts) carries the landed `sha`.
+      `domain/bundle.ts#retriggerBundle` fires ONLY the trigger step for a sha a previous
+      run already landed — deliberately not a re-run of prepare/gate/commit, because
+      re-attempting commit for a change already on the branch is the exact confusion this
+      finding is about (and, worse than misleading, a genuine risk of a second commit if
+      the branch moved). The route detects `bundle.state === 'landed-untriggered'` (or an
+      EXPIRED `running` claim that itself carries a `sha` — see next bullet) and calls
+      `retriggerBundle` instead of the full `runBundle`.
+- [x] **A second gap found while implementing the first, not left for someone else to
+      find.** The claim write unconditionally overwrote `bundle` with `{state:'running',
+      at:now}` on every attempt, INCLUDING a resume — so a crash mid-retrigger would leave
+      a `running` claim with no memory of the landed sha, and the next attempt, seeing
+      only an ordinary expired claim, would fall back to a full re-run and reintroduce the
+      exact defect this fix closes. Fixed by carrying `sha` forward into the claim
+      whenever the current attempt IS a resume, and by treating an EXPIRED `running` claim
+      that carries a `sha` as a resume candidate too, not only the more obvious
+      `landed-untriggered` state.
+- [x] **Regression test — `test/bundleOutcomeRecord.test.ts`, 3 new cases, against a REAL
+      git remote (not a mock trigger):** trigger failure reports `landed-untriggered` with
+      the sha, not `failed`; a retry with the trigger now fixed resumes and reports
+      `steps:[{step:'trigger',…}]` ONLY (proving prepare/gate/commit did not re-run) —
+      verified by reading the remote's own commit history before and after and asserting
+      it is IDENTICAL, not by trusting the response; and a simulated crash mid-retrigger
+      (the row forced back to a `running` claim carrying the sha, dated to force
+      expiry) still resumes correctly on the next attempt.
+- [x] **Assert the setup fired (L-1).** The "no second commit" test asserts the remote
+      really does hold the landed commit (2 commits: seed + the change) BEFORE the retry
+      runs, so "identical before and after" cannot pass because nothing was checked either
+      time.
+- [x] **Negative test confirmed** — reverted `bundle.ts`/`requests.ts`/`schema.ts` to HEAD
+      (post-CONC-6) with the new tests kept: all 3 new tests fail. The first:
+      `expected 'failed' to be 'landed-untriggered'`. The second: `expected [seed-commit]
+      to include undefined` — on unfixed code the failed-trigger response carries no `sha`
+      at all (the whole defect), so the test's own setup assertion ("the landed commit
+      must already be on the remote") is the first thing to catch it, before the
+      no-second-commit property is even reached. The third: `expected 502 to be 200` on
+      the crash-resume case. Restored; 11/11 green in that file, full suite 104 files /
+      1439 passed.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json &&
+      npx vitest run` — 104 files, 1439 passed; `python3 scripts/docs-error-codes-check.py`
+      passes (BUNDLE_RUNNING is reused on `/cancel`, not a new literal).
+## ERR-8
+
+*No process-level failure handling: no graceful shutdown, no rejection/exception handlers,
+npm-as-PID-1.* **Closes OPS-8, which is the same defect from the ops report.**
+
+Three defects sit behind one finding, and they compound: the first makes the second
+unreachable, and the third is a failure mode the previous fix in this area introduced.
+
+- [x] **The defect is reproduced first** — a probe signalled each launch chain the way
+      Docker signals PID 1 (the direct child only, in its own process group — *not* the
+      process group, which is what makes this reproduce at all), against the real
+      `src/server.ts` on a temp store:
+
+      | CMD chain | processes | result of `kill -TERM <pid 1>` |
+      | --- | --- | --- |
+      | `npm run start` *(shipped)* | 4 — `npm → sh → tsx → node` | npm exits **rc=143**, handler never runs, **`ccp.json.lock` survives**, **orphan still serving the port** |
+      | `tsx src/server.ts` *(the finding's recommendation)* | 2 — `tsx → node` | handler runs (tsx forwards), rc propagates |
+      | `node --import tsx src/server.ts` | 1 | handler runs, **rc=0**, lock released, listener gone |
+
+      The load-bearing observation is the third column of row one. **CONC-7's SIGTERM/SIGINT
+      writer-lock handback — real code, with a passing test — has never once executed in the
+      shipped container**, because the signal it waits for is delivered to npm. A unit test
+      that calls the handler directly cannot see this; only signalling PID 1 can.
+
+      The boot half was reproduced separately, against a corrupt-but-present store file (the
+      exact case the finding names, and neither a `DeployConfigError` nor a
+      `SettlementConfigError`, so it took the uncaught path):
+
+      ```
+      ccp-api ERROR unhandledRejection ? — SyntaxError: ... is not valid JSON
+          at FileStore.load (src/store/fileStore.ts:144:27)
+          at async start (src/server.ts:91:17)
+      RESULT: exited rc=0
+      ```
+
+      **A fatal boot failure reported success.** `void start()` had no catch; the rejection
+      reached OPS-2's deliberately non-exiting handler; the handler returned; and with no
+      listener bound there was nothing left to keep the event loop alive, so Node ran out of
+      work and exited *cleanly*. This is L-1 at the process level — a boot that could not
+      happen was indistinguishable from a boot that succeeded — and it is **worse than the
+      pre-OPS-2 behaviour**, where the same rejection crashed non-zero. Every consumer of
+      that exit code was misinformed: `docker run` with no restart policy, Kubernetes
+      `restartPolicy: OnFailure`, systemd `Restart=on-failure`, and `install.sh`'s
+      `compose up … || die`.
+
+- [x] **The fix addresses the cause, not the symptom** — three causes, three fixes.
+
+      **1. PID 1 (`api/Dockerfile`).** `CMD ["node", "--import", "tsx", "src/server.ts"]`.
+      **The finding's own recommendation — `CMD ["node_modules/.bin/tsx", "src/server.ts"]`
+      — is better but not right, and is not what shipped.** The tsx CLI spawns a child node
+      and stays resident as a supervisor, so PID 1 would still be a process that is not ours:
+      signal delivery would depend on tsx forwarding, and the container's exit code would be
+      tsx's translation of node's. `node --import tsx` is the documented tsx entrypoint,
+      installs the same loader, and leaves exactly one process — measured above. The
+      tsconfig `paths` aliases resolve identically under it, proved by booting the real
+      server this way and watching it serve, since `server.ts`'s import graph reaches
+      `@app-lib/redact` through `domain/projectData`.
+
+      **2. The drain (`src/shutdown.ts`, new; wired in `server.ts`).** Fixing PID 1 only
+      makes a handler *reachable* — CONC-7's handler called `process.exit(0)` synchronously,
+      which is right about the lock and cuts every in-flight request. The order is the whole
+      content: stop the scheduler first (nothing else can un-start a tick that would claim
+      work this process is about to stop being able to finish) → `server.close()` →
+      `closeIdleConnections()` → let in-flight requests finish under a deadline → **release
+      the writer lock last, on every path including the timeout**. Last, because in-flight
+      requests are still writing through it; on every path, because a lock left behind makes
+      the next boot clear one it cannot prove is dead. `closeIdleConnections()` is not
+      cosmetic: without it one idle keep-alive socket from the reverse proxy holds
+      `close()`'s callback until its own timeout, so every shutdown would burn the full
+      deadline and look like a drain failure. The handlers are now registered for **every**
+      store kind — the old block sat inside an `instanceof FileStore` guard, so a memory-store
+      deployment had no signal handling at all, though the in-flight HTTP requests the drain
+      protects exist either way.
+
+      A timed-out drain still exits **0**. It is a shutdown we were *asked* to perform, and a
+      failure code would make an on-failure supervisor restart a process an operator
+      deliberately stopped; the overrun is surfaced as a loud log line instead, which is the
+      part an operator can act on.
+
+      **3. The exit policy, phase-aware (`src/log.ts`, `server.ts`) — this is R-16's
+      resolution.** R-16 recorded that neither process handler exits, and gave the right
+      reason *for a serving process*: it is supervised with `restart: unless-stopped`, so
+      exiting on any stray throw is a restart loop that serves nothing, and staying up and
+      loud is the better failure mode. **That reasoning is kept unchanged for the serving
+      phase.** It does not survive being applied to boot, as the transcript above shows. So
+      the policy now splits on the one fact that distinguishes the two cases: **before the
+      listener is up a process-level fault is fatal and exits 1; after it, it is logged and
+      survived.** The invariant is the same on both sides — tell the supervisor the truth. A
+      process that has not bound a port will never serve this request or any other, and
+      non-zero is the only signal that says so. `void start()` becomes
+      `start().catch(…)`, which covers the store, settlement and version-stamp failures that
+      live inside it; the phase flag covers a fault that arrives outside that promise.
+
+      **4. Compose (`ccp/docker-compose.yml`).** `stop_grace_period: 30s` on the api —
+      Docker's default is 10s, which is *below* the 15s drain budget, so the process would be
+      SIGKILLed part-way through its own shutdown: the drain would look implemented and never
+      complete. The ordering is the invariant, and the regression test asserts the
+      relationship rather than the two numbers. `init: true` is added as well, for the
+      separate reason that the armed lanes spawn `docker run` children from inside this
+      container and a node at PID 1 does not reap orphaned grandchildren; the CMD fix stands
+      on its own, so an operator using plain `docker run` still gets correct signals.
+
+- [x] **A regression test pins it** — new `test/processLifecycle.test.ts` (11 tests), in
+      three sections matching the three defects. **Negative test confirmed: 6 of the 11
+      failed against the unfixed code** (`git stash` of the four changed files, run, restore)
+      — both CMD rules, both compose rules, the real-process SIGTERM drain, and the
+      boot-failure exit code.
+
+      The container rule is written as a rule, not a list (**L-25**): the check rejects *any*
+      process manager at the head of `CMD` (`npm`, `npx`, `yarn`, `pnpm`, `sh`, `bash`, …) and
+      rejects the shell form outright, rather than pinning the one `npm` spelling that was
+      there — a future `CMD ["sh", "-c", …]` reintroduces the identical defect and is caught.
+
+      The five drain-sequencer tests exercise a module that did not exist before, so a stash
+      cannot show them red. They were **mutation-tested instead — five wrong shutdowns
+      reintroduced one at a time, all five caught**: releasing the lock before the drain
+      instead of after; never hanging up idle sockets; skipping the lock handback on the
+      timeout path; making a second signal a no-op instead of an escape hatch; letting a
+      throwing `scheduler.stop()` abort the drain.
+
+- [x] **Assert the setup fired (L-1)** — and this is where the negative run earned its keep
+      twice over. The compose check originally grepped the whole file for
+      `stop_grace_period:` and **passed against the unfixed compose**, because it was
+      matching the `scanner` service's own `30s`, which has nothing to do with the api: a
+      green test protecting nothing, visible only because it was run against the code it was
+      meant to fail on. It now slices the `api:` block and asserts the slice really is that
+      block and really stopped before the next service. Separately, the first version of the
+      shell probe reported a *clean* result for the single-process chain that in fact came
+      from the npm chain's **orphan still holding the port** — the same lesson, in the
+      instrument rather than the test. The real-process tests now assert the api booted, and
+      that the writer lock **exists** before SIGTERM, so "the lock is gone afterwards" cannot
+      be vacuously true; the boot-failure test asserts the failure was the corrupt store we
+      planted, so a non-zero exit for some unrelated reason is not accepted as evidence.
+
+- [x] **The failure mode is loud** — a boot failure exits non-zero with an operator-grade
+      line naming boot as the phase; a drain overrun logs the deadline it passed; a failed
+      lock handback logs rather than hanging the exit.
+
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run
+      test/processLifecycle.test.ts` (11 passed); full suite `npx vitest run` (103 files,
+      1432 passed, 1 skipped); `npx tsc --noEmit` clean.
+
+**Residue: R-60** — no test drives `docker stop` against the built image; the shipped-artifact
+proof is CI's existing boot-and-probe step plus the static CMD rule.
+**Residue: R-61** — the drain does not await store writes that no HTTP connection is holding
+open.
+
+## OPS-8
+
+*No graceful shutdown: `npm` as PID 1, no SIGTERM handling, default 10 s grace on the api.*
+
+**Same defect as ERR-8, from the ops report rather than the error-handling one — fixed once,
+under [`ERR-8`](#err-8), which carries the reasoning, the measurements and the test.** OPS-8
+adds one detail ERR-8 does not name and it is fixed there: the default 10s
+`stop_grace_period`, which is *below* the drain budget and would have had Docker SIGKILL the
+process part-way through the very shutdown this closes.
+
+## OPS-6
+
+*Plain `compose up` (including every self-update cycle) silently strips the armed overlay.*
+
+- [x] **Defect reproduced first.** The documented way to arm the bundle/drift lanes was a
+      ONE-SHOT command: `docker compose -f docker-compose.yml -f docker-compose.armed.yml up
+      -d`. Reproduced with `docker compose config` (what the next `up` would actually
+      create): that command resolves ARMED (socket mounted); a PLAIN `docker compose up`
+      immediately afterwards, in the same directory, resolves DISARMED. Every scripted
+      re-up this repo ships — `self-update.sh` nightly at 03:17, an `install.sh` re-run, the
+      `migrate-data.sh` cutover, and (found while writing this fix's own regression test —
+      see below) `intranet-setup.sh`'s re-runnable wizard — runs exactly that plain form,
+      recreating the api with no docker socket, no `/data/scratch` bind and no `TMPDIR`. The
+      armed lanes then fail with a docker-cannot-connect error nothing on the host explains.
+- [x] **Cause, not symptom.** Arming was a property of the COMMAND, not of the DEPLOYMENT —
+      nothing on disk recorded that this host wants the overlay, so any later compose
+      invocation that doesn't repeat the `-f -f` flags reverts to the base file.
+- [x] **The fix shape was contested (refuse / warn / sticky) — made sticky, with a refusal
+      as the backstop for hosts already armed the old way.** `COMPOSE_FILE` in `.env`
+      (`docker-compose.yml:docker-compose.armed.yml`) is Docker Compose's own built-in
+      mechanism for exactly this — this repo already uses the identical pattern for
+      `COMPOSE_PROFILES=runner` ("the sticky opt-in, which also lets self-update.sh rebuild
+      it on code updates"), so arming now follows a precedent this codebase already trusts
+      rather than inventing a second one. Warn-only was rejected: a warning an operator can
+      ignore is what already happened here (nothing warned at all), and "sticky" alone is
+      not enough for a host that is ALREADY armed the old, non-sticky way — that host needs
+      to be told before its next re-up strips it. `ccp/scripts/lib/armed.sh` is the shared
+      DETECTOR: `armed_in_running_api` (what a running container actually has, mirroring
+      doctor.sh's existing check) vs. `armed_in_config` (what `docker compose config` would
+      create next) — drift between the two means the next `up` disarms silently.
+      `install.sh`, `migrate-data.sh`, `self-update.sh` and `intranet-setup.sh` all now
+      **refuse** (not re-arm automatically) when they detect that drift, and `doctor.sh`
+      reports it. Refusing rather than silently re-applying the overlay is deliberate: doing
+      that automatically would be a script deciding, on its own, to grant a container the
+      docker socket — root-equivalence on the host — with no operator involved, in a product
+      whose entire subject is who may authorize what.
+- [x] **A real gap found by this fix's own regression test, not guessed at.** The test's
+      setup assertion (below) derives which scripts re-up the api from the scripts
+      themselves rather than a hand-typed list, and it found `intranet-setup.sh` — documented
+      as explicitly re-runnable/idempotent against an existing host, and genuinely re-upping
+      the api and app via `docker compose up` — with NO guard at all. Fixed alongside the
+      three the finding named.
+- [x] **Regression test — `ccp/api/test/armedOverlay.test.ts`** (12 tests, `describe.runIf`
+      guarding the 3 that need a real `docker compose config` resolution — everything else
+      runs unconditionally):
+  - the overlay genuinely arms, and a plain `up` genuinely does not (setup assertions —
+    L-1 — so the rest of the suite is not vacuous either way);
+  - `COMPOSE_FILE` in `.env` makes a plain `up` resolve armed;
+  - **the rule, not the list (L-25):** derives the SET of scripts that re-up the deployed
+    api by scanning every shipped script for an actual compose-up invocation (excluding
+    text a script only PRINTS — a diagnostic line or a "here's the command" suggestion is
+    not this script executing it), and asserts that set equals exactly the four that carry
+    the guard — so a fifth re-upping script added later fails this test automatically
+    rather than silently escaping the rule;
+  - each of the four sources the shared guard rather than restating it (L-8);
+  - the guard refuses rather than silently re-arming (asserted on the library's own
+    exported shape);
+  - `doctor.sh` reports non-sticky arming;
+  - `.env.example` documents `COMPOSE_FILE` as the way to arm, and `go-live.md` no longer
+    instructs the one-shot `-f -f` form that teaches the defect.
+- [x] **Negative test confirmed, twice — once for the false positives, once for the real
+      gap.** The detector regex first over-matched: `doctor.sh` (which now REPORTS
+      `` `docker compose up` `` in a diagnostic string) and `setup.sh` (whose next-steps
+      banner SUGGESTS the command inside a heredoc) both tripped it, because a naive
+      quote-stripping first draft of the "don't count printed text" filter used a
+      multi-line `'[^']*'`/`"[^"]*"` regex, and an apostrophe in an unrelated English prose
+      comment ("operator's", "doesn't") paired with a LATER, unrelated apostrophe and ate
+      real code between them — including genuine invocations this test exists to find.
+      Replaced with a same-line quote-parity scan, which cannot cross a newline by
+      construction. Separately, and this is the actual defect this whole entry is about:
+      stashing away just `intranet-setup.sh`'s guard (keeping the test) reproduced the real
+      gap directly — 11 pass, 1 fails naming `intranet-setup.sh`. Both restored; 12/12
+      green.
+- [x] **Assert the setup fired (L-1).** The "the overlay really does arm" test exists
+      specifically so every other assertion in the suite is not trivially true against a
+      broken or neutered overlay.
+- [x] **Residue** — `R-65` (the sibling shell-suite-in-CI gap this test's own header notes,
+      and the two scripts this batch did NOT need to touch: `nginx-vhost.sh` and
+      `run-local.sh`, both correctly excluded by the rule above rather than a hand check).
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/armedOverlay.test.ts`
+      (12 passed); `bash -n` on all five touched/new shell scripts (clean); full api suite
+      green (below, shared with OPS-7).
+
+## OPS-7
+
+*No HTTP request logging and no request IDs anywhere in the api.*
+
+- [x] **Defect reproduced first.** Grepped `ccp/api/src` for `hono/logger` and any
+      request-id mechanism: none. The only runtime log lines were boot messages,
+      scheduler/drift `console.error`s, the bootstrap password, and OPS-2's server-error
+      log. Confirmed live: hitting `/healthz` through `createApp` produced no stdout at all
+      before this fix.
+- [x] **The privacy decision this finding asks for, made explicit and enforced in code, not
+      just described here.** Logged: method, path (no query string), status, latency, and a
+      per-request id. NEVER logged: the request/response body, the query string, headers, or
+      cookies. IN A GOVERNANCE PRODUCT this is not generic hygiene — the bodies this api
+      accepts ARE the governed content (change-request `params`, `justification` text, drift
+      payloads, TOTP codes, the scanner's bearer key), so a body-logging access logger would
+      put exactly what the audit chain exists to control into a plain-text operator log
+      stream, on every request rather than the ones an operator chose to record. `path` is
+      passed through the SAME `redactSecrets` the OPS-2 error logger already uses, on the
+      same reasoning: a route segment could in principle carry something URL- or
+      token-shaped. The decision lives in `middleware/requestLog.ts`'s doc comment, next to
+      the code that enforces it — the same move this batch's parallel PERF-7 fix (audit
+      chain retention) uses for its own contested policy call.
+- [x] **Why a hand-written middleware and not `hono/logger` (the finding's own
+      suggestion).** Hono's built-in logs method+path+status only by default, so the SHAPE
+      is compatible — but the decision above needs to be visible and enforced in THIS
+      repo's code, not inherited silently from a dependency's default that could change.
+      ~15 lines, reusing `redactSecrets` already written for OPS-2, cost less than auditing
+      and pinning a dependency's behaviour would have.
+- [x] **The id is minted server-side, never trusted from the client.** An unauthenticated
+      caller choosing its own `X-Request-Id` could poison an operator's log search or spoof
+      correlation with an unrelated request. Pinned directly: a request sent WITH that
+      header gets back a different one.
+- [x] **Threaded into the fault path (the finding's "log the ID in the error handler"),
+      without a wire-contract change.** `registerErrorHandler` reads the id off context and
+      passes it to `logServerError`/`formatServerError` (now accepting an optional
+      `requestId`), so an operator can go from "user reports it failed, here's the
+      `X-Request-Id` header they saw" straight to the matching stack trace. The id is a
+      RESPONSE HEADER only, never added to the JSON error body — `{code, reason, details?}`
+      is untouched, so this needed no OpenAPI/wire-contract change (see `B-S4`).
+      `registerErrorHandler` is generic over any Hono `Env`, reused by non-`AppEnv` test
+      apps, so the id is read defensively off `c.var` rather than typed through `c.get`,
+      and is simply absent (not a type or runtime error) for an app that never mounted
+      `withRequestLog`.
+- [x] **Mounted FIRST**, before CORS, so a CORS rejection is logged and correlated too — see
+      `createApp`'s updated middleware-order doc comment.
+- [x] **Regression test — `ccp/api/test/requestLog.test.ts`** (6 tests, through the REAL
+      `createApp`, not a stub): the header is present and UUID-shaped; two requests get two
+      different ids; a client-supplied id is ignored; a request WITH a secret-shaped query
+      string produces a log line that names method/path/status/latency/id and — asserted
+      directly, not just by omission — never contains the secret value or `token=` anywhere
+      in anything logged; a non-2xx (an unauthenticated `GET /requests`) is logged with its
+      real status, the exact case this finding says was previously invisible; and a
+      synthetic 500 produces an access-log line and a fault-log line carrying the SAME id —
+      the correlation property this finding is actually about, not just "a log line exists".
+- [x] **Assert the setup fired (L-1).** The query-string test asserts the secret is absent
+      from the ENTIRE captured log output, not merely that the one expected line matches a
+      pattern — a broken redaction that leaked the secret into a DIFFERENT line would still
+      have failed the format-match assertion for an unrelated reason otherwise.
+- [x] **Negative test confirmed.** With `middleware/requestLog.ts` moved aside and its
+      wiring in `index.ts`/`errors.ts`/`log.ts`/`appEnv.ts` reverted, the suite fails to
+      even load (`Failed to load url ../src/middleware/requestLog` — the module the test
+      imports no longer exists), which is as unambiguous a failure as a suite can produce.
+      Restored; 6/6 green, and the full api suite unaffected (105 files / 1450 passed).
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json &&
+      npx vitest run` — 105 files, 1450 passed, 1 skipped (unrelated).
+## PERF-10
+
+*Submit-path full scans: the rate-limit check and the feasibility check each re-scan whole
+collections per submission.*
+
+- [x] **Defect reproduced first, both halves.** `checkSubmitRateLimit` called
+      `queryGSI1(requestCollectionGsi(projectId))` — the WHOLE project's request history,
+      every row deep-cloned — on every submit, to count the handful belonging to one
+      requester. Measured: 0.009 ms empty, 28 ms at 5,000 requests, and the cost is the
+      project's entire lifetime because nothing is ever pruned from the collection.
+      `computeFeasibility` had the same shape one layer down: `eligibleApprovers` cloned the
+      ENTIRE global account directory to derive two integers (total signers, lead count),
+      7.1 ms at 5,000 accounts, on the same submit critical path — twice, since the finding
+      names both checks and they run back to back.
+- [x] **Cause, not symptom.** Neither check had an index scoped to the question it was
+      actually asking. The rate limiter's question is "how many of THIS requester's recent
+      or open requests are there", answerable from a partition of size `maxOpen +
+      submissionsPerHour`, not the project's history. The feasibility question is "how many
+      signers, and how many leads", two integers with no need for an intermediate array at
+      all.
+- [x] **The fix is two different shapes, because the two questions are different.**
+  - **Rate limit — a maintained per-requester index (`RQUOTA#<requester>` partition,
+    `store/schema.ts#submitQuotaKey`).** One pointer row per submit, not one counter row: a
+    shared mutable counter lets two concurrent submits by the same account both read N and
+    both write N+1, so the count drifts DOWN by one per collision and silently stops
+    limiting; two pointer rows at different SKs cannot lose each other's write. **Settle on
+    read**: a pointer whose request has gone terminal is pruned as it is discovered, so the
+    partition converges on "this requester's open work plus their last hour" regardless of
+    project history. **Materialize once per requester** (a `MATERIALIZED` marker row) — the
+    old full scan is deliberately still there, run exactly once, because an index that
+    cannot tell "nothing indexed yet" from "nothing open" would silently stop enforcing
+    `maxOpen` for every requester who already had open work on an existing deployment: the
+    fail-open this fix cannot afford to introduce while fixing a different cost problem.
+    Returned as writes (`SubmitAdmission`), never committed by the checker itself — they
+    ride the SAME transact as the request row they describe (`routes/requests.ts`,
+    `routes/drift.ts` x2), because a separately-committed pointer and request can disagree
+    in either direction (pointer with no request over-counts and locks a slot nobody used;
+    request with no pointer under-counts and stops limiting).
+  - **Feasibility — no index, a fold.** `eligibility.ts#countEligibleApprovers` uses a new
+    optional store primitive, `foldGSI1`, that visits each row in a partition WITHOUT
+    cloning it — only the accumulator escapes. Deliberately not a maintained
+    "eligible-approvers-per-project" cache: eligibility depends on per-project role, account
+    status, `mustChangePassword` and TOTP enrolment, so a cache would need updating from
+    admin, settlement, login, password-change and TOTP-enrolment — and a site that forgot
+    would understate the signer count, which reads to a requester as "this can never be
+    approved". A wrong count here is a governance-visible lie, so the answer stays derived;
+    only the copying is removed. A store without `foldGSI1` falls back to the old
+    `loadAccounts`-based path — same answer, old cost, never a hard dependency.
+- [x] **What the fix does NOT change.** The counting predicate is identical to
+      `eligibleApprovers`'s (same `isEligibleApprover`, same per-project `roleFor`), and
+      `computeFeasibility`'s existing test suite (`test/feasibility.test.ts`, unmodified)
+      exercises the new path end to end and is unchanged and green — the numbers it already
+      pinned did not move. `occupiesQuotaSlot`/`TERMINAL_STATUSES` — what "holds a slot" and
+      "is terminal forever" mean — are untouched; the index is built ON that existing
+      contract, not a new one.
+- [x] **Left for CONC-12, on purpose.** `checkSubmitRateLimit` is still read-then-write: two
+      concurrent submits by the same requester can both read the partition below the cap and
+      both admit. That overshoot is bounded (by at most the number of true concurrent
+      racers) and self-correcting (the index stays exact once both writes land) — closing it
+      is a check-then-insert redesign, which is CONC-12's finding, not this one's. Noted, not
+      widened into.
+- [x] **Regression test — `test/rateLimit.test.ts`, new describe block, 2 tests measuring
+      the read rather than describing it** (the pattern this repo already uses for the same
+      defect class — see `auditPaging.test.ts`'s PERF-8 tests): a `CountingStore` counts
+      calls to `queryGSI1` against the request-collection key specifically. 300 old,
+      terminal seeded requests for one requester; first submit materializes (exactly one
+      scan, and the fixture is large enough — bigger than `submissionsPerHour + maxOpen` —
+      for the cost to be real); the partition prunes down to one live pointer, not 300; a
+      SECOND submit by the same requester triggers **zero** further scans. A second test
+      pins that a 429 (refused before the caller's transact ever runs) leaves no orphan
+      pointer.
+- [x] **Assert the setup fired (L-1).** The fixture size is asserted against the default
+      caps before the scan-count assertions run, so the test cannot pass by coincidence on a
+      fixture too small to make the old cost visible.
+- [x] **Negative test confirmed** — reverted `middleware/rateLimit.ts`, `routes/requests.ts`,
+      `routes/drift.ts`, `store/configStore.ts` and `store/memoryStore.ts` to `main` (kept
+      the new `schema.ts` key helpers, since the test needs them to exist to import at all)
+      and reran: **"expected [] to have a length of 1 but got +0"** — the old checker never
+      wrote a pointer at all, because it has no index to write one into. Restored; 10/10
+      green.
+- [x] **Failure is loud.** A scan-count regression fails with the exact call count
+      (`expect(store.requestCollectionScans).toBe(0)` reports what it actually was), not a
+      bare pass/fail.
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/rateLimit.test.ts`
+      (10 passed); full suite `npx vitest run` (103 files, 1433 passed); `npx tsc --noEmit`
+      clean.
+
+## PERF-12
+
+*Upload ingest does 4+ full canonical-JSON passes over the 16 MiB bundle synchronously on the
+event loop.*
+
+- [x] **Defect reproduced first.** Ingest ran, back to back, synchronously: `digestsOf` over
+      the uploaded bundle (one canonical pass per part), then `rerunRedaction` serializing
+      EVERY resource and viewOnly block TWICE just to ask "did the redactor change this"
+      (`canonicalJson(redacted) !== canonicalJson(original)`), then `digestsOf` again over
+      the (usually identical) result. Measured at 20k resources: 313 ms + 398 ms + 372 ms
+      across three of those passes, on the single thread that serves every interactive
+      request — a ~1.1 s window where the server answers nobody, not "the upload is slow".
+- [x] **Cause, not symptom.** Two independent costs, and the fix is two independent
+      changes because they do not share a mechanism.
+  - The redundant-comparison cost: `canonicalJson(a) !== canonicalJson(b)` builds TWO full
+    strings to answer a boolean, per resource, per block, per manifest. The actual question
+    is structural equality, which needs no string at all.
+  - The blocking cost: even a minimal single pass over a 16 MiB bundle is tens of
+    milliseconds of synchronous CPU, and nothing handed the event loop back during it —
+    every other request queues behind the whole upload regardless of how cheap the pass is
+    made.
+- [x] **The fix, matched to each cause.**
+  - **`sameJsonValue`** (`domain/projectData.ts`) — walks two JSON values in parallel,
+    allocates nothing, stops at the first difference. `rerunRedaction`'s three masking sites
+    (blocks, resources, manifests) all switched to it. The redactor returns the SAME string
+    instance for every value it leaves alone, so an already-clean bundle (the ordinary case
+    — CI redacts before upload, and every redactor is idempotent) compares by reference
+    nearly all the way down.
+  - **`hashCanonical`** (streaming sha256, iterative with an explicit stack rather than
+    `canonicalJson`'s recursive one-string-per-level-then-concatenate) replaces
+    `sha256(canonicalJson(v))` in `partDigest`/`digestsOf`. Byte-identical BY CONSTRUCTION —
+    it emits the same fragments `canonicalJson` would concatenate, in the same order,
+    including `canonicalJson`'s `?? 'null'` handling of `undefined`/functions — and never
+    materializes the full string (the allocation half of the 16 MiB cost).
+  - **`RedactionResult.changed`** — set by the comparison itself (not derived from
+    `warnings.length`, which is prose a future part could forget to add), and used by the
+    route: when redaction masked nothing, the stored bundle is structurally identical to the
+    uploaded one, so the SECOND `digestsOf` pass is skipped and the first pass's digests are
+    reused. This is sound only because `sameJsonValue` is a real equality check, not a
+    heuristic — `test/projectDataIngest.test.ts` pins the equivalence directly rather than
+    asserting it in a comment.
+  - **Cooperative yielding** (`yieldToEventLoop` via `setImmediate`, every `YIELD_EVERY`
+    (500) items of work, budget SHARED across all three masking passes so the loop is
+    handed back on a cadence tied to total ingest work rather than to whichever pass happens
+    to be running) — `setImmediate` specifically, not `setTimeout(0)`, because it runs
+    pending I/O callbacks first, which is the actual "let another request through"
+    behaviour wanted here.
+- [x] **Where an easier fix was rejected.** Moving ingest to a worker thread would remove
+      the blocking cost without touching the redundant-comparison one, and trades a
+      synchronous cost for IPC/serialization overhead on every 16 MiB payload — a bigger
+      architectural change for a problem cooperative yielding already solves within the
+      existing single-process model this codebase commits to elsewhere (ERR-8/OPS-8 in the
+      parallel B-O6 batch).
+- [x] **Regression test — `test/projectDataIngest.test.ts` (new file, three properties,
+      because two of the three optimizations are only safe if the third holds):**
+  1. `hashCanonical` agrees with `sha256(canonicalJson(v))` — the pre-existing implementation
+     kept as a literal oracle — over a 21-value corpus built for awkward cases (unicode,
+     escapes, non-finite numbers, an explicit `undefined` property, unsorted keys, deep
+     nesting), asserting the corpus actually produces 21 DISTINCT digests (L-1 — a broken
+     hash agreeing with itself 21 times on `null` would look identical to 21 real passes).
+  2. `redaction.changed` correctly predicts whether `digestsOf` on the stored vs. uploaded
+     bundle agree, in both directions (a clean bundle AND a bundle the redactor has to
+     mask), with the fixture asserted to actually trip the redactor before trusting either
+     branch.
+  3. `sameJsonValue` agrees with `canonicalJson(a) === canonicalJson(b)` pairwise across the
+     full corpus, PLUS a dedicated event-loop-hold measurement: an 8,000-resource bundle is
+     ingested while a 1 ms interval timer watches for the longest gap between its own fires
+     (the longest span the loop was held). Asserted as a RATIO (longest block < 50% of total
+     ingest time), deliberately not a millisecond ceiling (L-25 — the rule, not a number tied
+     to one machine's speed) — before the fix the whole ingest ran as one uninterrupted span,
+     so the ratio was ~1.0.
+- [x] **Assert the setup fired (L-1).** The event-loop test asserts the fixture really
+      produced 8,000 resources and a well-formed digest, and that the total ingest time
+      exceeded 40 ms — a measurement of "was the loop held" is meaningless if the work
+      measured was too small to hold it for a detectable interval.
+- [x] **Negative test confirmed.** `hashCanonical`/`sameJsonValue` are new code compared
+      directly against the existing `canonicalJson` oracle in every assertion above, so
+      disagreement IS the failure mode, not a reverted-and-reran step. For the event-loop
+      property specifically: first tried removing only `rerunRedaction`'s three `tick()`
+      calls — the test still PASSED, because `hashCanonical`'s own yields (inside
+      `digestsOf`, called before and, when nothing needed re-hashing, not again after) were
+      by themselves enough to keep this fixture's ratio under 50%. That is a real result, not
+      a failure of the test: it shows the property is about TOTAL yielding across the whole
+      ingest, which is exactly what the shared `sinceYield` budget in `rerunRedaction` is for
+      (see the fix above) rather than a per-function guarantee. Removed BOTH yield mechanisms
+      (`hashCanonical`'s `yieldToEventLoop()` call and `rerunRedaction`'s `tick()`) and
+      reran: **"ingest held the event loop for 1539ms of 1538ms total"** — effectively 100%,
+      confirming the un-yielded shape the fix replaces. Both restored; 10/10 green.
+- [x] **Failure is loud.** The corpus test names which shape disagreed
+      (`` `hashCanonical disagrees with the reference for: ${name}` ``); the event-loop test
+      reports the actual held time against the actual total, not a bare threshold miss.
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/projectDataIngest.test.ts`
+      (10 passed); full suite `npx vitest run` (103 files, 1433 passed); `npx tsc --noEmit`
+      clean.
+## PERF-11
+
+*Per-project audit chain head serializes all writes and surfaces contention as user-facing
+409s after one retry.*
+
+- [x] **Defect reproduced first** — a store that yields the event loop inside `transact`
+      (the shape a real store's awaits give you) with **6 concurrent `record` calls on one
+      project**: 4 of the 6 rejected with `CHAIN_CONTENTION`. On the folded
+      `transactWithAudit` path, 3 of 5. That is not an exotic load — it is two approvers, a
+      lead, and the settle loop of somebody's `GET /requests` landing in the same window,
+      and the user's half of it is a 409 on an ordinary approve click.
+- [x] **Cause, not symptom** — every call site attempted **exactly twice**. One writer wins
+      each round, so with N concurrent writers the last of them needs N attempts: a
+      two-attempt budget begins failing real users at N=3. The budget, not the CAS, was the
+      defect. The CAS itself is correct and stays: the chain must not fork.
+- [x] **The fix is a named policy, applied at the sites the finding lists** —
+      `CHAIN_WRITE_ATTEMPTS = 8` and `chainBackoff(attempt)` now live in `domain/audit.ts`,
+      and `record`, `transactWithAudit`, `routes/requests.ts` (5 loops), `domain/cooling.ts`,
+      `domain/schedule.ts` and `domain/apply/scheduler.ts` all spend that budget instead of
+      hard-coding `< 2`. The back-off is **full jitter** — a uniform draw from `[0, ceiling)`,
+      doubling per lost round to a 64 ms cap. Fixed back-off would re-synchronise exactly the
+      writers that just collided; randomising the whole interval is what actually spreads
+      them, and is why a budget of 8 suffices.
+- [x] **What the fix deliberately does NOT do** — the expected result warns that "a fix that
+      drops entries under load is worse than the 409", and that is the tempting shape here:
+      make the audit append best-effort, or defer it, and the 409 disappears. Every retry in
+      this fix replays the **whole** transaction — domain writes *and* the audit append —
+      against a freshly read head, or reports failure. Nothing is ever written without its
+      evidence. The regression test asserts this directly rather than trusting it: it checks
+      the chain afterwards holds all N entries, from N distinct actors, still verifying.
+- [x] **A latent bug found while converting** — two of the `routes/requests.ts` loops
+      (cancel, re-window) ran their "did the row move?" re-read **only on attempt 0**. On a
+      later round a genuine state change was therefore indistinguishable from contention and
+      surfaced as a 409 instead of the `STATE_CONFLICT` it actually was. With a budget of 2
+      that window was one round wide and nearly unreachable; at 8 it would have been a real
+      bug the fix introduced. The re-read now runs on every lost round.
+- [x] **Not widened into B-O12's lane** — `transactWithAudit`'s `guarded → STATE_CONFLICT`
+      branch is untouched. Separating a caller's own guard failure from chain contention is
+      CONC-15/API-14, and CONC-9 leans on the current behaviour; this change alters only how
+      many times an *unguarded* contention loss is replayed.
+- [x] **Regression test** — new `test/auditContention.test.ts` (4 tests): concurrent appends
+      on both the standalone and folded paths, the budget boundary, and the jitter
+      distribution. `test/audit.test.ts`'s existing contention test was **pinning the
+      defect** — `FlakyStore(2)` asserted a 409 — and now asserts the rule against the
+      `CHAIN_WRITE_ATTEMPTS` constant instead of the literal 2, so tuning the policy cannot
+      leave a stale magic number silently testing nothing.
+- [x] **Setup asserted (L-1)** — the concurrency tests assert `conditionFailures > 0`: the
+      contention has to have actually happened. Without that assertion they would pass
+      against the unfixed code, against a build with no retry at all, and against a serial
+      test that never raced.
+- [x] **Negative test confirmed** — against the unfixed code: "expected [4 rejected] to have
+      a length of +0 but got 4" and the folded path "…got 3". All 4 new tests plus the
+      corrected `audit.test.ts` case fail; restored, all green.
+- [x] **Residue** — R-57 (the remaining hand-rolled loops).
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/auditContention.test.ts
+      test/audit.test.ts`; full suite 104 files / 1437 passed; `npx tsc --noEmit` clean.
+
+## PERF-8
+
+*Admin audit "pagination" materializes and re-sorts the whole chain per page; cursor lookup
+is a linear scan.*
+
+- [x] **Defect reproduced first, and it was PARTLY already fixed** — PERF-3's commit
+      (`813a6d9`) had already replaced the load-everything-then-slice endpoint with
+      `readAuditPage`, and had already added `limit`/`forward`/`after` to the `ConfigStore`
+      seam. Both halves the finding names were nevertheless still live, measured with a
+      counting store on a **600-entry chain served in 50-row pages**: every page read **600
+      rows**, page 1 included. `readAuditPage` walked month partitions from "now" with no
+      `limit`, cloning each partition whole, then discarded everything above the cursor.
+- [x] **Cause 1 — the partition read was unbounded.** The walk asked for
+      `store.query(monthPk, undefined, { forward: false })`. `forward` bounded the *order*;
+      nothing bounded the *size*. Now it passes `limit: want - items.length` and an exclusive
+      `after`, so the store hands back the page rather than the partition.
+- [x] **Cause 2 — `QueryOptions.after` was declared on the seam and honoured only by the
+      GSI.** `MemoryStore.query` (the primary index) silently ignored it: a caller that
+      passed it got every row from the top of the partition **and no error**. That is the
+      worst of the three possible behaviours — not a resume, not a refusal, but a silent
+      replay — and it is the same class as L-1. Fixed in `memoryStore.ts`, direction-aware,
+      identical to the `queryGSI1` implementation beside it. *(This is a `store/` file, which
+      is B-O3's lane. Noted rather than expanded on: it is four lines, it is required by this
+      finding, and API-17/DATA-14 in that batch are precisely "each named seam divergence
+      from DynamoDB is either fixed or documented as deliberate".)*
+- [x] **Cause 3 — the cursor was found by scanning.** The finding's recommendation is to
+      "resolve the cursor by its ULID's embedded month rather than `findIndex`", and that is
+      what this does — but the recommendation quietly assumes an invariant the code did not
+      have. The partition is `yyyymm(at)` while the id was minted from `Date.now()`, so under
+      any clock the two could disagree. `recordIn` now seeds the ULID from **the same clock
+      reading it stamps `at` with**, which makes "the id names its own partition" true by
+      construction, and `monthOfAuditId` decodes it. Cursor resolution is now a **point
+      read**.
+- [x] **Where the finding's recommendation is incomplete, and what was done instead** —
+      resolving the cursor purely by sort position (pushing `after: <cursor>` at the store and
+      trusting it) is the obvious reading, and it would have **broken a deliberate semantic**:
+      an unrecognised cursor currently yields an empty page, never a replay from the top. A
+      sort-position resume happily "resumes" from a cursor that was never in the chain and
+      serves plausible-looking rows — on an evidence surface that is strictly worse than
+      returning nothing. So the cursor is resolved by **existence** (`get` at the decoded
+      key), and an unknown cursor still yields an empty page. Pinned by a test that fabricates
+      a well-formed ULID sorting *inside* the chain.
+- [x] **The fast path has a real fallback** — rows written before the ids were seeded from
+      the injected clock, and rows written across a backward system-clock step, can sit in a
+      partition their own id does not name. Those fall back to a bounded probe that uses
+      **point reads**, never partition materialization. A live cursor must never degrade to an
+      empty page: that would silently truncate the operator's view of history.
+- [x] **Cursor semantics reused from PERF-3** — same contract (`cursor` = the last id of the
+      previous page, `hasMore` answered by reading one extra row in the same walk, `next`
+      emitted only when more remain), same store primitives (`limit` + exclusive `after`).
+- [x] **Regression test** — 5 new tests in `test/auditPaging.test.ts` that **measure** the
+      read with a counting store rather than describing it, because "is this still O(n)?" is
+      not a question prose can answer.
+- [x] **Setup asserted (L-1)** — the fixture asserts `CHAIN >= PAGE * 10` and that the chain
+      head really holds 600 entries. With a chain the length of a page, an O(chain) read and
+      an O(page) read cost the same and the test would pass against the code it exists to
+      catch.
+- [x] **Two bugs in the tests, found by running them** — (1) the "deep cursor" fixture
+      rewound the clock under a **process-wide monotonic** ULID factory, which never emits a
+      timestamp below its previous maximum, so the ids named the wrong month and the
+      assertion failed for a reason unrelated to the fix; the fixture now runs forward. (2)
+      `ulidTimeMs` validated only the 10 timestamp characters, so a 26-character string
+      containing `U` (deliberately absent from Crockford base32) decoded to a confident month
+      — it now validates all 26.
+- [x] **Negative test confirmed** — against the unfixed reader: **"expected 600 to be less
+      than or equal to 100"**, on the very first page. All 5 new tests fail; restored, all
+      green.
+- [x] **Residue** — R-57 (the last page's walk to the month ceiling).
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/auditPaging.test.ts`
+      (13 passed); full suite 104 files / 1437 passed; `npx tsc --noEmit` clean.
+
+## PERF-7
+
+*Nothing in the store is ever purged: sessions, idempotency markers, and the audit chain grow
+forever.*
+
+**This is a product decision, and I made a call on it.** TRIAGE.md routes PERF-7 as
+"RETENTION OF AN AUDIT CHAIN IS A PRODUCT DECISION — state the policy explicitly and get it
+agreed before implementing", and the runbook's escalation criteria say to write the options
+and not pick. The options are written below, and then picked, because a retention finding left
+at "here are four options" closes nothing and the next reader inherits the same blank. The
+decision, its alternatives and the reasoning are stated in full at the top of the new
+`ccp/api/src/domain/retention.ts` so they live next to the code that enforces them; a
+reviewer who disagrees has one file to argue with. **The audit-chain half in particular
+should be confirmed by a human before this ships** — that is why the PR is a draft.
+
+The finding is really three policies, not one, and they differ:
+
+| class | options considered | decision |
+| --- | --- | --- |
+| **sessions** | keep forever · delete on expiry · archive | **delete once unresolvable** |
+| **idempotency markers** | keep forever · age out · delete on request completion | **age out at 7 days** |
+| **the audit chain** | (a) time-based · (b) count-based · (c) archive-then-prune · (d) **no retention** | **(d) permanent** |
+
+- [x] **Defect reproduced first** — 5 sessions minted and left a day past absolute expiry:
+      all 6 rows (the 5 plus a fresh login) still in the store, none resolvable. An
+      idempotency marker aged past any plausible retry horizon: still authoritative, still
+      making its key permanently unusable.
+- [x] **Sessions — delete once unresolvable.** A session row carries a `ttl` that no code
+      enforced. Past absolute expiry or the idle window, *no* path in this system can resolve
+      it: `resolveSession` refuses it and `listLiveSessions` already hides it. Deleting it
+      removes no information anyone can act on, and it is not evidence — the login that
+      minted it is in the audit chain, permanently. `sweepUserSessions` runs opportunistically
+      **on mint**: the user is provably present, their GSI partition is already the one being
+      written, and the sweep costs their own session count, never a scan. No timer to arm,
+      and no timer that an operator can forget to arm.
+  - The predicate deliberately **mirrors `resolveSession`'s own two time checks exactly**
+    — that equivalence is the safety argument, because it means the sweep can only remove
+    rows the resolver would refuse anyway, so sweeping can never log anyone out.
+  - It deliberately does **not** consider `sessionVersion` or account status. Those make
+    a session unresolvable via a *second row*, and a rollback of that row would make it
+    live again; deleting on them would destroy something recoverable. Pinned by a test.
+  - It is wrapped so a retention failure can never fail a login.
+- [x] **Idempotency markers — age out at the client retry horizon.** A marker exists to
+      outlive a client's *retry*, which is minutes to days, not years. Keeping it forever does
+      not make submits safer; it makes an idempotency key permanently unusable, which is its
+      own defect (API-15 is the dangling-marker sibling). Enforced **settle-on-read**: the
+      markers are keyed by `(project, actor, client key)` with no collection partition, so
+      enumerating them would need exactly the full-store scan this finding is about avoiding
+      — and reading is the only moment the answer matters. New markers also carry a `ttl` so
+      the deployed DynamoDB path expires them natively; both halves use the same constant, so
+      the two seams cannot drift into different policies.
+  - The marker stores **no timestamp**, and rather than migrate the schema its age is
+    derived from the ULID it already points at. No new field, no migration for markers
+    already on disk.
+  - It **fails closed**: a marker that cannot be dated counts as live. The unsafe
+    direction here creates a duplicate change request. Pinned as a rule over the *shape*
+    of the value, not a list of the malformed values seen so far (L-25).
+- [x] **The audit chain — permanent, and that is the policy.** Options (a) and (b) make the
+      answer to "who approved this?" depend on how busy the estate has been since, which is
+      not an answer a compliance reader can use — and the deletion is **unauditable by
+      construction**, because the only place it could be recorded is the thing being deleted.
+      (c), archive-then-prune, is the serious alternative and is the finding's own
+      recommendation. It is still wrong here: truncating to an anchor keeps the chain
+      *verifiable* but no longer *self-contained*, and once the evidence of record is "this
+      database plus a JSON file somebody hopefully still has", the tamper-evidence argument
+      is gone. A hash chain whose prefix is off-site is a hash chain you cannot check.
+  - **The cost of (d) is growth, and this batch is what removes its sting.** Chain size no
+    longer drives per-request cost: not per request (PERF-1), not per readiness probe
+    (PERF-4), and as of PERF-8 above, not per admin page either. "Keep everything" stops
+    being the expensive answer and is simply the correct one. What remains is disk.
+  - Operators who must delete audit history (a legal erasure order) have
+    `GET /admin/audit/export` for the evidence and the store file for the deletion — a
+    deliberate, manual, out-of-band act, which is the right shape for something that
+    breaks a tamper-evidence guarantee on purpose.
+  - The policy is a **value** (`AUDIT_CHAIN_RETENTION = 'permanent'`), not just prose, so
+    changing it has to go through a line a reviewer sees.
+- [x] **Regression test** — new `test/retention.test.ts` (7 tests). The chain half is written
+      as a property rather than a list of forbidden call sites: run **every** sweep this
+      codebase has, at a time past every horizon, and assert the exported chain is byte-
+      identical — same count, same head, same entries, still verifying.
+- [x] **Setup asserted (L-1)** — each sweep in that test must return a non-zero count and the
+      marker must actually be gone, or "the chain survived" proves nothing. The session test
+      asserts the fixture really holds one resolvable and one unresolvable row before
+      sweeping.
+- [x] **A test bug found by running it** — the first fixture minted its "live" session *after*
+      the stale one had expired, and minting sweeps, so the fixture cleaned itself up and left
+      nothing to test. Both mints now happen while the first is still resolvable.
+- [x] **Negative test confirmed** — against the unfixed code: 6 dead session rows survive
+      where 1 should remain, and the marker functions do not exist at all. 4 of the 7 tests
+      fail; restored, all green.
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/retention.test.ts`
+      (7 passed); full suite 104 files / 1437 passed; `npx tsc --noEmit` clean.
+## IMP-6
+
+*statediff's managed-set match assumes Terraform state `id` equals the discovery id;
+false-positive findings for id-divergent types (concrete: `aws_volume_attachment`).*
+
+- [x] **Defect reproduced first** — built the fixture capture the finding describes (a volume
+      attachment that IS managed by Terraform, whose prior_state row carries the provider's
+      synthesized `vai-1855526686` while discovery derives
+      `/dev/sdh:vol-…001:i-…002` from `id_format`) and ran the sweep unmodified: **7 findings,
+      one of them the managed attachment**, exactly the permanent false positive described.
+- [x] **Cause, not symptom** — the sweep's entire managed/unmanaged decision was one equality,
+      `discovery id == prior_state values.id`. That is not a property of Terraform; it is a
+      property of 42 of the 43 types. Where the provider synthesizes its own state id the
+      compare is *structurally incapable* of matching, and nothing in the output distinguishes
+      "checked and genuinely unmanaged" from "the check could not have succeeded" — L-1's shape
+      applied to a data comparison rather than a gate.
+- [x] **The rule, not the list (L-25)** — the fix is not a special case for
+      `aws_volume_attachment`. services.json now declares, per type, how Terraform identifies
+      it in prior_state: `state_id_format` (a `str.format` template over the prior_state
+      resource's `values`, rebuilding the discovery id) or `state_id_matches_discovery` +
+      `state_id_reason` (the verified opposite claim). The class that can contain the defect is
+      *types whose discovery id is synthesized* — i.e. those carrying `id_format` — and
+      statediff **refuses to sweep** if any such type declares neither. A future composite-id
+      type therefore cannot silently join the false-positive class; it has to make the decision.
+- [x] **Where the recommendation was followed and where it was not** — the finding offered
+      "match on a declared state attribute … *or* exclude such types from the sweep explicitly".
+      The second branch was rejected in writing: excluding the type would also stop reporting
+      genuinely unmanaged attachments, converting a false-positive problem into a false-negative
+      one in a tool whose entire premise is that gaps are loud. The first branch is what
+      shipped, generalised from "a declared attribute" to "a declared *identity mapping*" so it
+      composes with the composite ids that cause the problem in the first place.
+- [x] **The state id is still added, not replaced** — a declared mapping can only ever *add*
+      matches. No manifest row can collide with a `vai-<hash>`, so keeping both keys means the
+      new path cannot remove a match that already worked.
+- [x] **An unresolvable mapping refuses (IMP-4's discipline)** — if the declared template and
+      the provider's attributes part company (a renamed attribute, a provider major bump), the
+      failure mode of continuing is *precisely the defect being fixed*: every managed resource
+      of that type silently becomes a finding again. `REFUSE STATE_ID_UNRESOLVED` names the
+      missing attribute. An empty render refuses too — an empty key matches nothing, which is
+      the same silent restoration wearing different clothes.
+- [x] **Regression test** — `IdDivergentStateMatchTests` in
+      `importer/kit/tests/test_statediff.py`, driven by a new
+      `tests/fixtures/sweep-happy/ec2-volumes.json` and three new prior_state rows in
+      `plan-sweep-happy.json` (the fixture the finding itself asked for).
+      **Negative test confirmed:** with `statediff.py` and `services.json` reverted to HEAD and
+      the tests/fixtures kept, 6 tests fail —
+      `test_the_fixture_really_is_id_divergent`,
+      `test_managed_id_divergent_resource_is_not_a_finding`,
+      `test_unresolvable_state_id_format_refuses_rather_than_sweeping`,
+      `test_a_new_composite_id_type_must_declare_its_state_identity`,
+      `test_the_opposite_claim_needs_a_reason` and `test_deterministic_ordering` (which sees the
+      managed attachment reappear as a 7th finding). Fix restored, all 122 kit tests green.
+- [x] **Assert the setup fired (L-1)** — `test_the_fixture_really_is_id_divergent` pins every
+      precondition by *reading the files*, never assuming: services.json declares the mapping,
+      prior_state's own `id` set is exactly `{"vai-1855526686"}` and demonstrably does **not**
+      contain the discovery id, and the manifest really discovered both attachments. Without it
+      a fixture that quietly lost its volumes would make "is not a finding" pass vacuously.
+- [x] **Failure is loud, and the fix cannot be a suppression** — the fixture deliberately
+      carries a *second*, unmanaged attachment of the same type from the same capture file.
+      `test_unmanaged_id_divergent_resource_is_still_a_finding` fails if the fix ever degrades
+      into "ignore `aws_volume_attachment`", which is the cheap way to make this finding's
+      symptom disappear. `aws_ebs_volume` — same capture, plain-id match — pins that the new
+      path is additive.
+- [x] **Evidence in the status line** — `cd importer/kit/tests && python3 -m unittest discover
+      -s .` (122 tests, OK).
+
+## IMP-15
+
+*Coverage-sweep family granularity marks undiscoverable resources as "covered".*
+
+- [x] **Defect reproduced first** — a capture dir with one aliased KMS key and two swept KMS
+      key ARNs. `build` reported `coveredTypes: [{"family": "kms", "count": 2}]`,
+      `unrecognizedArnFamilies: []`, and discovered exactly one key. The unaliased key was
+      counted as covered and then vanished — the one mechanism built to catch discovery gaps
+      reporting the gap as covered, exactly as the finding describes.
+- [x] **Cause, not symptom** — "covered" was a claim about the ARN **family**, asserted on
+      behalf of every type inside it. `aws_kms_key`'s only lister is `kms list-aliases`, so a
+      key with no alias is structurally unreachable, yet family `kms` is covered by
+      construction because some type in it is discoverable. The bucket could not express
+      "reached this family, did not reach this type".
+- [x] **Where the recommendation was NOT followed, and why** — the finding recommends adding
+      `aws kms list-keys` as a real key lister. Rejected, in writing: `list-keys` returns
+      `{KeyId, KeyArn}` only, with no way to separate AWS-managed keys from customer keys
+      without a per-key `describe-key` — a per-resource call, which is precisely what
+      `services.json` `manual[]` exists for and what the single-list-call rule excludes. It
+      also carries no name, so the alias would still have to be joined back in, which the
+      one-capture-per-type data model cannot express. Shipping it would have replaced a
+      silent gap with a manifest full of unimportable AWS-managed keys — a different silent
+      failure. The finding's *second* suggestion (name the shadow) is the one that shipped,
+      made mechanical rather than documentary.
+- [x] **The rule, not the list (L-25)** — `services.json` grows an optional
+      `shadow: {arnResourceType, reason}` on any type whose lister cannot enumerate it.
+      `build` diffs the ids swept under that ARN resource-type token against the ids it
+      actually accounted for and reports the remainder **by id** in `coverage.shadowedTypes`,
+      repeats the shortfall on the covered row as `undiscovered`, and WARNs. Nothing is
+      special-cased to KMS; a second shadowed type is a data change.
+- [x] **No false precision** — the README's standing argument against parsing the ARN
+      resource token (inconsistent delimiters, sometimes absent) is correct and is preserved:
+      the token is parsed ONLY for a type that opted in by declaring one, so the default
+      bucketing rule stays coarse and always-correct.
+- [x] **"Accounted for" is discovered OR ignored-with-a-reason** — a record the kit skips on
+      purpose (the AWS-managed key behind `alias/aws/s3`) is in `manifest["ignored"]` with its
+      reason, which is the opposite of a shadow. Counting those as undiscovered would have
+      been a false positive this check manufactured for itself; the fixture pins that it does
+      not.
+- [x] **Anti-vacuity: `mappingMatched` (IMP-4's lesson)** — the dangerous outcome here is not
+      a wrong number, it is a **zero**: a mistyped `arnResourceType` produces
+      `undiscoveredCount: 0`, which reads as good news. `mappingMatched` records whether ANY
+      accounted-for id appeared among the swept ids, so a declaration that describes nothing
+      is visible in the artifact instead of being inferred from a comfortable zero. It is
+      reported, not raised, because the coverage sweep is a report by design (it must never
+      fail a build over an estate the kit does not recognise) — the test suite is where it
+      fails.
+- [x] **Regression test** — `ShadowedTypeCoverageTests` in `importer/kit/tests/test_discover.py`,
+      driven by four new ARNs in `testdata/capture-happy/coverage-resources.json`: the aliased
+      key (discovered), an unaliased key (the shadow), the AWS-managed key (ignored, must not
+      be a shadow) and an `alias/` ARN in the same family (proves the resource-type token is
+      load-bearing — without it the alias inflates the count and invents a phantom key).
+      **Negative test confirmed:** with `discover.py` and `services.json` reverted to HEAD and
+      the tests and fixture kept, 8 tests fail. The shadow row is resolved per-test rather
+      than in `setUpClass` precisely so its absence fails each assertion with its own message
+      — the first draft raised in `setUpClass` and collapsed the class into a single
+      uninformative error.
+- [x] **Assert the setup fired (L-1)** — `test_the_fixture_really_contains_an_undiscoverable_key`
+      recomputes the precondition from the fixtures: 3 swept key ARNs, and exactly one of them
+      absent from `kms-aliases.json`. If the fixture ever loses its unaliased key, that test
+      fails rather than the others passing vacuously.
+- [x] **Evidence in the status line** — `cd importer/kit/tests && python3 -m unittest discover
+      -s .` (130 tests, OK).
+
+**Residue:** the parity gap the finding names in passing — the Azure kit classifies coverage
+at full-type granularity while the AWS kit is family-coarse — is unchanged. This fix removes
+the *silent* consequence for a declared type; it does not make AWS coverage type-granular.
+See `R-56`.
+
+## IMP-8
+
+*Committed schemadump artifacts are not reproducible via the documented `gen.sh` pipeline;
+generated-catalog staleness detection is entirely manual.*
+
+- [x] **Defect reproduced first, in two parts.**
+  - `gen.sh` as documented did not reproduce the tree: `TYPES="${TYPES:-$TOOLDIR/types.txt}"`
+    treats an *empty* `TYPES` the same as an *unset* one, so there was no way through the
+    documented entry point to ask for the full-provider dump that is actually committed —
+    running `gen.sh` exactly as documented for either provider silently produced an artifact
+    scoped differently from the one in the tree (85 types for aws instead of the committed
+    1677; the 12-type spike for azurerm instead of the committed 1141). `types-azure.txt`'s own
+    header already said "regenerate with an empty `-types` filter" — an instruction the script
+    could not execute.
+  - Staleness detection was manual because no tool could tell you the artifacts were stale:
+    `gen-azure-ledger.mjs` had a single mode, unconditional write. Proven directly — staled
+    `catalog/azure-capability-ledger.json` (flipped one row's `family`), ran the **pre-fix**
+    script with `--check` (a flag it does not recognise): it silently regenerated, **overwrote
+    the staled row back to correct, exited 0, and reported nothing** — no error, no diff, no
+    indication a repair had even happened. Asking the old tool to verify does not fail loudly;
+    it fails by *fixing the evidence and calling it success*, which is worse than doing nothing.
+- [x] **Cause, not symptom.** Two independent gaps, same root: nothing about the pipeline was
+  a *checkable* claim. `gen.sh`'s `${TYPES:-file}` conflated "unset" with "explicitly empty"
+  so full-provider mode had no expressible spelling; `gen-azure-ledger.mjs` had no notion of
+  "compare instead of write" so there was no command that could answer "is the committed file
+  still what the dump produces" without a human diffing by hand.
+  - `gen.sh`: `TYPES="${TYPES-all}"` (unset default, not `:-`) — an explicitly empty `TYPES` and
+    the literal `all` both now mean "no `-types` filter", matching what the tool's own `-types
+    ""` contract already meant. An unreadable `TYPES` file is a hard error rather than a silent
+    fallback to full-provider — a typo'd path must not quietly produce a 1677-type artifact
+    where 85 were asked for (this finding, in reverse). `COMPRESS` defaults per provider to
+    match what is actually committed (`aws-*.json.gz`, `azurerm-*.json` uncompressed), and uses
+    `gzip -9 -n` — without `-n`, gzip embeds the source mtime/filename, so two runs over
+    byte-identical JSON produce different `.gz` bytes and reproducibility could never be
+    checked at all (the committed aws `.gz` was made without `-n`: its header carries a real
+    timestamp).
+  - `gen-azure-ledger.mjs --check`: regenerates in memory, diffs against the two committed
+    files, exits 1 on any difference. The shape guarded against is not a wrong verdict, it is a
+    **vacuous pass** — the same L-1 hazard IMP-4's own self-check nearly shipped with (a
+    `r.safe_op_classes`/`r.safeOpClasses` field-name typo produced a uniform zero that read as
+    an answer). So `--check` refuses on a MISSING artifact (the most stale an artifact can be,
+    never "skip"), an EMPTY one, a `expected` comparison list that is itself empty, and a
+    regenerated row count that does not match the dump's own type count — and a green run
+    prints what it actually compared (byte counts, row counts), so a reader never has to infer
+    "did this really run" from a bare checkmark. A `Generated: <now>` timestamp in the summary
+    header was itself part of the defect: it made every regeneration differ from the committed
+    file by construction, so a regenerate-and-compare check could never have been green twice
+    running. It is replaced by the dump's own provenance (provider, tag, commit, the dump's own
+    `generated_at`) — deterministic, and strictly more useful: it names the input, not the run.
+    A required provenance field that is absent refuses the write rather than interpolating the
+    literal string `"undefined"` into a committed artifact (the azurerm dump carries no
+    `source_provenance` block at all, unlike the aws one — the first draft of this header did
+    exactly that).
+- [x] **A check nobody calls is not a check (L-1, applied to CI wiring itself).** `--check` and
+  its selftest existed as code with no caller: `gate_generated()` was defined in `scripts/gate.sh`
+  but never reached from the `case "$MODE"` dispatch, and no GitHub workflow ran either script —
+  `importer.yml`'s `schemadump` job builds/vets/tests the Go source and stops; nothing anywhere
+  compares the committed catalog artifacts to what the dump produces. Fixed on both sides: `py`
+  and `all|full` modes now call `gate_generated`; `importer.yml`'s `schemadump` job runs the
+  selftest then `--check` after `go test`. The workflow's path filters are widened to `catalog/**`
+  and the new selftest script — the defect this check exists to catch (a *hand-edited* catalog
+  artifact) touches neither `importer/**` nor `tools/schemadump/**`, so the old filter would
+  never have triggered this job for exactly the case that matters.
+- [x] **Regression test — `scripts/ci/generated-catalog-selftest.sh`, five scenarios, written as
+  rules not a list (L-25):** a pristine tree passes AND reports a non-zero comparison count (a
+  silent pass is not evidence of a pass); an edited ledger row is caught; an edited summary line
+  is caught; a MISSING artifact fails rather than being treated as "nothing to compare"; an EMPTY
+  artifact fails. **Negative test confirmed directly against the pre-fix generator** (git-show'd
+  from `origin/main` into a scratch copy, run in place so its own path resolution is real): given
+  `--check` it does not recognise the flag, silently regenerates, and overwrites a staled row back
+  to correct with exit 0 and no diagnostic of any kind — proving the "manual only" claim in the
+  finding text rather than asserting it. `bash scripts/ci/generated-catalog-selftest.sh`: 5/5.
+- [x] **Assert the setup fired (L-1).** Scenario A does not just check exit 0 — it also asserts
+  the check's own stdout reports `N ledger rows compared` with `N != 0`, so a future rewrite that
+  accidentally compares two empty strings (the shape that bit the L-22/IMP-4 self-check) fails
+  loud instead of passing green.
+- [x] **Failure is loud.** `--check` exits non-zero and prints the first differing line with both
+  the committed and regenerated text side by side, plus the fix command — never a bare "stale",
+  never a partial write. `gen.sh`'s unreadable-`TYPES`-file case is a hard `exit 1`, not a silent
+  full-provider fallback.
+- [x] **Evidence in the status line.** `node tools/schemadump/gen-azure-ledger.mjs --check` — 2
+  artifacts, 1141 rows, PASS against the current committed tree. `bash
+  scripts/ci/generated-catalog-selftest.sh` — 5/5. `bash scripts/gate.sh py` — python suites (217
+  tests) + `gate_generated`, both green.
+## CTL-5
+
+*`drift-edit` writes are neither atomic nor transactional: a mid-batch refusal leaves
+earlier edits in the checkout.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `runDriftEditAdopt`/
+      `runDriftEditImport` interleaved a data-driven gate check with the actual write for EACH
+      item in a batch, so item 2's digest mismatch (say) refused the request AFTER item 1's
+      `ApplyAdopt`/`appendImportBlock` had already written to disk — a real, non-atomic
+      side effect from a request the server ultimately reported as refused. Separately,
+      `ApplyAdopt`/`appendImportBlock` wrote via a bare `os.WriteFile`, not the temp-file+
+      rename discipline `internal/edit`'s `atomicWrite` already used elsewhere in this same
+      tool — a second, independently-reimplemented copy, the exact CTL-10-class defect this
+      audit already found and fixed once this session for a different utility.
+- [x] **Cause, not symptom** — two fixes, not one:
+      (1) `internal/edit`'s unexported `atomicWrite` moved to a new exported
+      `hclops.AtomicWrite`, with `edit.atomicWrite` reduced to a one-line delegating wrapper;
+      `driftpropose.ApplyAdopt`/`appendImportBlock` now call it directly instead of
+      `os.WriteFile`.
+      (2) `runDriftEditAdopt`/`runDriftEditImport` restructured into two phases: phase 1
+      runs every data-driven refusal check (digest cross-check, re-derived eligibility,
+      watchlist screen, payload prescan) across the WHOLE batch first, writing nothing; only
+      once every item clears every phase-1 gate does phase 2 apply the writes. The one class
+      of check that stays in phase 2 is genuinely checkout-state-dependent (does an address
+      still resolve, is a map missing, does an address already exist) — `ApplyAdopt`/
+      `appendImportBlock` deliberately re-read disk fresh per item so two items touching the
+      SAME file in one batch compose correctly, and moving that check earlier would break
+      that composition; documented in code rather than silently left unstated.
+- [x] **Regression test** — two new cross-item tests in `covdrifted_cov_test.go`
+      (`TestCovdriftedDriftEditImportGatesWholeBatchBeforeAnyWrite`,
+      `TestCovdriftedDriftEditAdoptGatesWholeBatchBeforeAnyWrite`): a 2-item batch, item 0
+      fully valid (would write on its own), item 1 with a deliberately wrong
+      `ProposalDigest`, asserting exit 2 AND that item 0's write never happened.
+      **Negative test confirmed** — backed up the fixed source files, reverted the three
+      tracked source files to pre-fix `HEAD` while keeping the new test file changes, ran the
+      new tests and watched both fail exactly as expected (item 0's file existed with the
+      write applied), then restored the fix and re-verified green. Also discovered and
+      pinned a real, understood, net-safer behavior change: `os.Rename` REPLACES whatever
+      sits at the destination path — a regular file OR a dangling symlink — rather than
+      following the symlink into a possibly-broken target the way the old `os.WriteFile`
+      did; the old dangling-symlink-into-a-missing-directory failure test no longer applies
+      (removed) and a new `TestCovdriftedDriftEditImportThroughDanglingSymlinkSucceeds`
+      documents the new behavior instead of silently dropping coverage.
+- [x] **Failure is loud** — the phase-1 refusal names the exact item and digest mismatch;
+      the atomic-write failure path is unchanged (still surfaces the underlying OS error).
+- [x] **Evidence in the status line** — `cd tools/catalogctl && go build ./... && go vet
+      ./... && gofmt -l .` clean; `go test ./...` all 17 packages green.
+
+## ERR-9
+
+*GitHub App credential fetches have no timeout, and any failure terminally fails the scan
+job with no retry.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `realAppFetch` (routes/scanJobs.ts)
+      called `fetch()` with no `AbortSignal`, so a hung GitHub API response could hang the
+      claim handler (and the worker polling it) indefinitely. `mintInstallationToken`
+      (domain/forgeCredentials.ts) classified every failure identically — a passing 503, a
+      dropped connection, and a genuine 404 (App not installed) all became the same bare
+      `ForgeCredentialError`, and the claim handler's `failClaimed` terminally failed the
+      job for all of them alike, with no retry and no way to tell "GitHub blipped" from
+      "an operator must fix this."
+- [x] **Cause, not symptom** — `ForgeCredentialError` gains a `transient: boolean` field
+      (default `false`, so every pre-existing call site keeps its permanent meaning
+      unchanged); `mintInstallationToken` classifies a thrown network error and any 5xx
+      response as transient, 404/other 4xx as permanent, exact messages unchanged.
+      `realAppFetch`'s real `fetch()` call gains `AbortSignal.timeout(20_000)` — the
+      `FetchLike` interface itself is untouched, so test-injected fakes are unaffected.
+      `resolveCloneAuth`'s mint call goes through a new
+      `mintInstallationTokenWithRetry`: on a transient failure, wait a fixed 500ms and retry
+      the whole two-call sequence exactly once; a permanent failure is never retried. A new
+      `releaseClaimed` mirrors `failClaimed`'s CAS shape but reverses it (`claimed` ->
+      `queued`, restores the queue GSI, drops `startedAt`) for a transient failure that
+      survives the retry, so the job gets a fresh attempt on the next poll instead of being
+      terminally failed over an outage that may already be over. New
+      `safeFailClaimed`/`safeReleaseClaimed` wrappers catch and log a secondary failure from
+      `failClaimed`/`releaseClaimed` themselves (chain contention) instead of letting it
+      escape the route as a bare 500 and strand the job in `claimed` forever; all three call
+      sites in the claim handler go through one of these wrappers, with the
+      `resolveCloneAuth` catch branching on `e.transient` between the two.
+- [x] **Regression test** — new transient/permanent classification cases in
+      `forgeCredentials.test.ts` (5xx, 404/4xx, a raw network throw) and new end-to-end
+      cases in `forgeCredentialRoutes.test.ts`: the retry succeeding on the second attempt
+      (both for a 5xx and a thrown network error), the claim being released back to
+      `queued` — not failed — when the transient failure survives the retry (and is
+      genuinely re-claimable afterward), and a permanent 404 still never retried and still
+      failing the job. **Negative test confirmed** — all six new
+      `forgeCredentials.test.ts`/`forgeCredentialRoutes.test.ts` cases verified failing
+      against the pre-fix source, then passing against the fix.
+- [x] **Failure is loud** — a permanent failure's reason (e.g. "App not installed") is
+      unchanged and still recorded on the job; a transient release logs nothing new
+      user-visible (by design — the job just re-queues) but the compensating-write wrappers
+      `console.error`-log any secondary failure rather than swallowing it silently.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1447 passed, up from 1430 before this fix).
+
+## ERR-14
+
+*Drift-upload compensation is non-transactional best-effort.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `PUT /projects/:id/drift` wrote the
+      version row + pointer FIRST (one audited transact), then the report body to disk; on a
+      body-write failure it compensated with two separate, unguarded store calls (delete the
+      version row, restore-or-delete the pointer). Reproduced with a store double whose
+      `delete` itself throws once armed: the row and pointer were left committed with no file
+      behind them — a permanently pointer-claimed "ghost" version, `GET` failing closed to
+      `report:null` forever, and the next upload dedup-checking against a digest an honest
+      upload can never reproduce.
+- [x] **Cause, not symptom** — the report body now writes to disk FIRST; the version-row +
+      pointer transact is the actual commit point (the same ordering `reconcileProposals`
+      already uses for proposal bodies, driftProposals.ts). A body-write failure now throws
+      before anything is staged in the store, so there is nothing to compensate. The
+      existing CHAIN_CONTENTION retry (a concurrent upload wins the version-row race) cleans
+      up its own just-written, now-orphaned file on a best-effort basis before trying the
+      next version number — every reader (listDriftVersions, the pointer-driven GET,
+      pruneDriftVersions) keys off the stored rows, never a directory scan, so a leftover
+      orphan was always inert; the cleanup just avoids the small, bounded disk waste.
+- [x] **Regression test** — two new cases in `drift.test.ts`'s F10 describe block. The
+      first reproduces the actual defect with the delete-throws store double described
+      above. The second pins the CHAIN_CONTENTION retry's orphan-file cleanup.
+      **Negative test confirmed** — the first case verified failing against the pre-fix code
+      (row + pointer left committed, no compensation completes); the second verified failing
+      when just the one cleanup line is removed; both pass against the fix.
+- [x] **Failure is loud** — n/a for the fix itself (the write-ordering change has no new
+      caller-visible error path); the CHAIN_CONTENTION retry path is unchanged apart from the
+      added best-effort cleanup, which never throws.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1458 passed).
+
+## FE-6
+
+*Api-mode submit gates read the advisory localStorage settings, not the server's — the
+freeze preview is dead and a stale local freeze silently blocks valid submits.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `RequestForm`/`BulkRequestForm`/
+      `ResourceDetail`'s freeze/disabled-op submit gates (both the pre-submit check and the
+      "live" preview banner) called `isChangeFrozen()`/`isOpDisabled()`/`useSettings()`
+      directly against `lib/settings.ts`'s project-scoped localStorage store, unconditionally
+      — in api mode that store is never written to by the server, so a server freeze never
+      shows in the live preview (the requester only learns at submit, via the server's own
+      FROZEN rejection) and a stale local flag (leftover from mock use on the same origin)
+      silently blocks a submit the server would have allowed, without ever asking it.
+- [x] **Cause, not symptom** — a new shared hook, `features/request/effectiveSettingsFlow.ts`'s
+      `useEffectiveSettings()`, applies `settingsFlow.ts`'s existing authoritative/advisory
+      split (already proven in `SettingsAdmin.tsx`) to the READ side of these three gates.
+      When this deployment serves `settings` (`can('settings')`), the local store is never
+      consulted — server settings are fetched once per mount (the same one-shot shape
+      `SettingsAdmin`'s own `refresh()` already uses) and default to "nothing blocked" while
+      that fetch is in flight, never fail-closed-frozen (this is a UX pre-check only; the
+      server re-enforces the real rule at submit regardless). Otherwise (mock mode) behavior
+      is byte-identical to before. The source-of-truth decision is pulled into a pure
+      `deriveEffectiveSettings()` function (the same split `useServerInfo`/
+      `serverInfoToState` already use) so it is unit-testable without jsdom.
+- [x] **Regression test** — new `effectiveSettingsFlow.test.ts` exercises
+      `deriveEffectiveSettings()` directly: not authoritative (local wins, server ignored),
+      authoritative+unresolved ("nothing blocked"), authoritative+resolved-clean (a stale
+      local freeze/disabled-op fully ignored — the over-block direction), and
+      authoritative+resolved-frozen (the server's freeze surfaces even though the local
+      store is clean — the under-warn/dead-preview direction). **Negative test confirmed** —
+      3 of 6 cases verified failing against a stubbed "always return local" pre-fix
+      behavior, confirming they catch both directions of the actual bug.
+- [x] **Failure is loud** — n/a; this is a client-side UX pre-check, and the server's own
+      FROZEN/OP_DISABLED rejection (unchanged) remains the actual authority either way.
+- [x] **Evidence in the status line** — `cd ccp/app && npx tsc --noEmit -p .` clean;
+      `npx eslint . --ext .ts,.tsx` clean, no new warnings; full suite `npx vitest run`
+      (161 files, 2829 passed).
+
+**Residue:** the same class of issue survives, deliberately out of scope (not cited by the
+finding, lower stakes — a display filter, not a submit gate): `ResourceDetail`'s top-level
+ops-list filter and `ServiceConsole`'s action pickers still read the local store directly
+for `isOpDisabled`, as does `lib/beyondCatalog.ts`'s freeze pre-check (a plain async
+function, not a component, so it cannot use `useEffectiveSettings()` as-is). **R-52.**
+
+## ARCH-11
+
+*Arming-flag sprawl with no whole-config validation.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `deployProblems`/`assertDeployable`
+      validated only store/cookies/CORS/TOTP; nothing reasoned about a sub-flag armed for a
+      lane whose own gate stays off. Verified three concrete, evidence-backed dead
+      combinations by reading the one call site that ever consults each sub-flag: (1)
+      `CCP_DRIFT_PROPOSALS`/`CCP_DRIFT_IMPORT`/`CCP_DRIFT_RESTORE=1` without `CCP_DRIFT=1` —
+      each is consulted only from the report-upload route, which refuses `DRIFT_DISARMED`
+      before any of them are checked; (2) `CCP_EXECUTOR=terraform` without
+      `CCP_SCHEDULER=1` — `CCP_EXECUTOR` is read in exactly one place, the scheduler
+      loop's executor selection, which never starts without the scheduler armed; (3) a
+      GitHub App configured without the scanner armed — `githubAppConfig()` has exactly one
+      call site, inside the scanner worker's claim route, unreachable while the scanner is
+      disarmed. Also found, by reading `domain/bundle.ts#bundleArmed`, that
+      `CCP_BUNDLE=1` with either command var missing leaves the bundle lane silently, fully
+      disarmed rather than partially live — correct runtime behavior, but an easy typo to
+      never notice.
+- [x] **Cause, not symptom** — new `deployWarnings(env)` in `deploy.ts`, covering all four
+      combinations above, wired into `server.ts` right after the production preflight and
+      printed via `console.warn` in every `NODE_ENV` (not just production — a dev
+      misconfiguring the same flags deserves the same nudge). Deliberately advisory, not
+      folded into `deployProblems`/`assertDeployable`: a dead sub-flag is inert, not
+      insecure, so failing the whole boot over a low-severity paper cut would be
+      disproportionate. Deliberately NOT warned about: `CCP_FORGE_SEAL_KEY` set ahead of
+      arming the scanner — its own PUT route isn't gated on `CCP_SCANNER` at all, so storing
+      a token before arming the scanner is a legitimate prepare-now-arm-later workflow.
+- [x] **Regression test** — full pure-function coverage of `deployWarnings` in
+      `deployConfig.test.ts` (each dead-flag case, its clearing condition, a
+      blank/coherent env warning about nothing, every `NODE_ENV`, never throwing), plus two
+      new spawned-process cases proving the `server.ts` wiring itself (a dead sub-flag
+      prints "config warning" on stderr AND the server still comes up; a coherent config
+      prints nothing). **Negative test confirmed** — all 16 new assertions verified failing
+      against the pre-fix code. Fixing that verification run also surfaced and fixed a real
+      test-harness bug: `PORT=0` does not pick a random port in this app (`Number(env.PORT)
+      || 8801` treats `0` as falsy), so two spawned test servers reusing it raced for the
+      same port; the harness now gives each spawn its own explicit port.
+- [x] **Failure is loud** — each warning names the exact flag(s) involved and the fix
+      (set the missing flag, or unset the dead one).
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1461 passed).
+
+## DATA-10
+
+*Backup/restore covers only the store JSON; the on-disk project-data/drift root it
+references is out of scope, with no consistency check.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `backup.ts`/`restore.ts` only ever
+      touched the FileStore JSON snapshot; the project-data/drift directory tree the
+      snapshot's rows (`ProjectItem.dataActive`, `DriftPointerItem`) point into was never
+      captured or restored. Nothing at boot or in `/readyz` cross-checked that an active
+      version's files actually exist — serves fail closed to 404/`report:null`, so this
+      degrades rather than corrupts, but silently, behind a green readiness probe.
+- [x] **Cause, not symptom** — `backup.ts` now also copies the project-data root into a
+      companion `<out>.projects/` directory alongside the JSON snapshot, atomically (new
+      `copyTreeAtomic` in `store/snapshot.ts`, the same temp+fsync+rename discipline as the
+      existing `writeFileAtomic`, extended to a directory tree — shared by both scripts
+      rather than duplicated). `restore.ts` finds that directory by convention and REPLACES
+      the live project-data root wholesale (never merged), under the SAME DATA-9 writer
+      lock the JSON restore already takes. A backup with no companion directory (predates
+      this feature, or `--skip-project-data`) still installs the store and WARNS loudly
+      rather than refusing outright or silently leaving now-possibly-inconsistent served
+      files. `/readyz` gains a cheap, stat-only presence cross-check (new
+      `projectDataVersionExists`/`driftReportExists`): for every known project, a
+      `dataActive`/drift pointer whose referenced file is missing on disk is NOT ready, with
+      a specific reason — deliberately a stat, never a digest recompute, since this probe
+      runs on a tight timer.
+- [x] **Regression test** — `backupRestore.test.ts` gets 6 new cases (the round-trip
+      restoring both stores from one backup, wholesale-replace semantics, the
+      no-companion-directory warn-don't-fail path at both backup and restore time,
+      `--skip-project-data` on both ends, an empty-but-present root still getting copied);
+      `readyz.test.ts` gets 5 new cases covering both cross-checks, missing and present.
+      **Negative test confirmed** — the 7 assertions that could actually distinguish old
+      from new behavior verified failing against the pre-fix code.
+- [x] **Failure is loud** — a missing companion backup at restore time is a `console.error`
+      WARNING naming the exact path checked; a missing active file at readiness time is a
+      specific, per-project `/readyz` reason.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1458 passed).
+
+**Residue:** the readiness cross-check is deliberately existence-only, never a digest
+comparison — re-hashing every active project's whole served bundle on every `/readyz` poll
+would reintroduce the same steady per-probe CPU tax ARCH-9 already flags for the
+audit-chain re-verification this same probe does. A digest-level check (catching a
+file that exists but is byte-different from what the row recorded — e.g. restored from a
+different backup generation than the store JSON) is a real, narrower gap left
+deliberately unclosed. **R-53.**
+
+## ARCH-9
+
+*Single-process, single-file scaling ceiling with in-process singletons the planned
+DynamoDB path would silently break.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `FileStore`'s own single-writer
+      lock (CONC-7/DATA-9) already structurally refuses a second process against the same
+      data file today, but four OTHER in-process singletons have no such protection and
+      never appeared in one place a deployer would see: the known-projects routing cache
+      (`projects.ts`), the upload-lane rate-limit buckets (`middleware/rateLimit.ts`), the
+      drift-check/drift-generation in-flight guards (`domain/driftCheck.ts`,
+      `domain/driftProposals.ts`'s `genState`), and the scheduler tick reentrancy flag
+      (`domain/apply/loop.ts`). The store seam's own doc comment says a DynamoDB
+      implementation is planned behind the SAME `ConfigStore` interface, and DynamoDB is
+      explicitly multi-writer-safe at the row level — so it would not carry the FileStore
+      lock's protection over automatically, and nothing said what would then start silently
+      diverging.
+- [x] **Cause, not symptom** — a new "Scaling & the single-process invariant" section in
+      `ccp/api/README.md` names each of the five (the lock included, for contrast), cites
+      exactly where it lives, states what breaks under a second process today (nothing, for
+      the lock; everything, for the other four, once anything besides the lock is what's
+      preventing a second process) and what each would need before that's safe.
+      Audit-chain archival — the finding's OTHER recommendation — is recorded as a
+      documented prerequisite for that future migration, not implemented here (see Residue).
+      `/readyz` gains `storeItemCount` — the total row count the store holds, via a new
+      optional `ConfigStore.approxItemCount()` (O(1) in `MemoryStore`, inherited by
+      `FileStore`; optional exactly like the existing `durabilityFault()`, so a future
+      DynamoDB store can leave it unimplemented and answer from CloudWatch metrics
+      instead) — purely informational, never folded into `reasons`/`ready`.
+- [x] **Regression test** — new describe block in `readyz.test.ts`:
+      `approxItemCount` tracks puts/deletes exactly (including a same-key overwrite NOT
+      counting as a new row), `storeItemCount` grows as the store grows via a real `/readyz`
+      round-trip, and is `null` (never thrown, never a fault) for a store that doesn't
+      implement it. **Negative test confirmed** — all 3 new assertions verified failing
+      against the pre-fix code.
+- [x] **Failure is loud** — n/a; `storeItemCount` is informational telemetry by design,
+      never a readiness reason.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1461 passed).
+
+**Residue:** audit-chain archival/compaction (so `storeItemCount` stops growing unbounded —
+month-partitioned keys already anticipate this) is real design work belonging to whichever
+change actually introduces a second process or the DynamoDB backend, recorded as a known
+prerequisite rather than guessed at here. **R-54.**
+
+## TEST-7
+
+*The SPA has no DOM/interaction testing; ~25 test files pin UI by source-string
+inspection.*
+
+- [x] **Defect reproduced first** — confirmed the finding's own cited example
+      (`fullCoverage.test.ts:141-153`, since renamed to
+      `provisionTileCompleteness.test.ts` by TEST-5): two tests asserting
+      `expect(src).toContain('provisionPathFor(primaryType)')`-style source-text matches
+      against `ServiceCard.tsx`. Demonstrated the weakness directly: deliberately broke
+      `ServiceCard`'s op-less wiring (always resolving to the resource-console path) while
+      leaving both matched strings intact elsewhere in the file — the old-style check would
+      have passed vacuously against a real regression.
+- [x] **Cause, not symptom, on the recorded-decision half** — the recommendation offers two
+      paths (introduce jsdom+RTL, or a written decision plus converting what can be
+      converted); introducing jsdom silently, mid-batch, would reverse a decision already
+      stated repeatedly elsewhere in the code (`azureCatalogFlow.test.ts`, `routeConfig.tsx`'s
+      own doc comment, several `*.test.tsx` files) without the scoped review
+      TRIAGE.md's own note says it needs. `standalone.test.ts` — the file R-22/TEST-7
+      already cite as this repo's testing-philosophy anchor — gets a full written record:
+      the two-layer strategy already in place, exactly what `renderToStaticMarkup` cannot
+      reach and why, the three reasons against introducing jsdom+RTL in this pass, and a
+      standing requirement that every remaining source-pinned test name, in its own
+      comment, why it can't be converted without either jsdom or a component-splitting
+      refactor.
+- [x] **Cause, not symptom, on the conversion half** — `ServiceCard`'s two source-pinning
+      tests in `provisionTileCompleteness.test.ts` converted to real `renderToStaticMarkup`
+      assertions against the actual rendered `<a href>`/CTA text (plus a third new case, a
+      with-ops control, the old test never had). `ServiceConsole`'s sibling test in the same
+      file stays source-pinned — genuinely unreachable via SSR, since its op-less branch
+      sits behind its own `useEffect`-driven fetch and there is no pure prop-driven view to
+      render instead — now carrying the file-specific "why this one can't move" comment the
+      new standing requirement asks for, as the worked example for future conversions.
+- [x] **Regression test** — `provisionTileCompleteness.test.ts`'s 3 new `ServiceCard`
+      cases ARE the regression test for this fix. **Negative test confirmed** — verified
+      above (the deliberately-broken `ServiceCard` reproduction): the new tests failed
+      correctly against the injected bug; restored and re-verified green.
+- [x] **Failure is loud** — n/a; this is a testing-infrastructure finding, not a runtime
+      behavior change.
+- [x] **Evidence in the status line** — `cd ccp/app && npx tsc --noEmit -p .` clean;
+      `npx eslint . --ext .ts,.tsx` clean, no new warnings; full suite `npx vitest run`
+      (161 files, 2831 passed).
+
+**Residue:** ~19 of the ~25 originally-cited source-pinned test files remain unconverted,
+and most predate the new standing "say why" requirement so do not yet carry the
+per-file justification comment it asks for — only the one file touched this session
+(`provisionTileCompleteness.test.ts`) does. Retiring the rest file-by-file, and
+back-filling the justification comment on the files staying source-pinned for a real
+structural reason, is real ongoing work this fix starts but does not finish. Separately,
+R-51 (TEST-5's function-coverage-floor residue, previously "Tracked by: TEST-7") is now
+**untracked**, not resolved — TEST-7 closing here is a documented decision plus a partial
+conversion, not the DOM/interaction-testing lane that would actually move the coverage
+floor; RESIDUE.md's R-51 entry is updated in the same commit to say so, rather than left
+pointing at a closed finding. **R-55.**

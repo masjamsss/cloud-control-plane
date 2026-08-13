@@ -38,6 +38,7 @@ import {
   mintInstallationToken,
   openForgeTokenHeader,
   type FetchLike,
+  type GithubAppConfig,
 } from "../domain/forgeCredentials";
 import { DomainConditionError, transactWithAudit } from "../domain/audit";
 import { ApiError, apiError } from "../errors";
@@ -104,6 +105,20 @@ const CLAIM_SCAN_LIMIT = 25;
 /** The worker's own actor string in the audit chain — it is not a person, and
  * must never be attributable to the admin who queued the job. */
 const WORKER_ACTOR = "scanner-worker";
+
+/** Bounds a single GitHub App API call (ERR-9). Comfortably inside GitHub's
+ * own usual response time, and short enough that the one retry below still
+ * finishes well within a worker's poll interval. */
+const GITHUB_APP_FETCH_TIMEOUT_MS = 20_000;
+
+/** Fixed backoff before the one retry on a transient credential failure —
+ * long enough to clear a passing blip, short enough not to make the worker
+ * (and the operator watching the claim) wait noticeably longer. */
+const CREDENTIAL_RETRY_DELAY_MS = 500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 const StatusBody = z
   .object({
@@ -179,11 +194,96 @@ async function failClaimed(
 }
 
 /**
+ * Undo a claim after a TRANSIENT failure — a GitHub blip that survived the
+ * one retry `resolveCloneAuth` already gave it — instead of terminally
+ * failing the job over an outage that may already be over. Mirrors
+ * `failClaimed`'s CAS shape exactly but reverses it: `claimed` back to
+ * `queued`, restoring the queue GSI and dropping `startedAt`, so the row
+ * looks exactly like one that was never claimed and the next poll (this
+ * worker's next pass, or another worker's) gets a fresh attempt.
+ */
+async function releaseClaimed(
+  store: ConfigStore,
+  job: ProjectScanJobItem,
+): Promise<void> {
+  const jobKey = scanJobKey(job.projectId, job.jobId);
+  await transactWithAudit(
+    store,
+    job.projectId,
+    [
+      {
+        kind: "update",
+        ...toPkSk(jobKey),
+        set: {
+          status: "queued",
+          GSI1PK: scanJobQueueGsi(),
+          startedAt: undefined,
+        },
+        ifEquals: { attr: "status", value: "claimed" },
+      },
+    ],
+    {
+      action: "scan-job-status",
+      actor: WORKER_ACTOR,
+      targetType: "project",
+      targetId: job.projectId,
+      after: { jobId: job.jobId, status: "queued" },
+    },
+  );
+}
+
+/**
+ * `failClaimed` and `releaseClaimed` are themselves CAS-guarded audited
+ * writes and can throw exactly like the claim step they undo does —
+ * `ConditionError` on a lost race, `ApiError` on a chain-head conflict (see
+ * the identical race-handling comment on the claim's own try/catch above).
+ * Unwrapped, that throw would escape this route as a bare 500 while the job
+ * stays stuck in `claimed` forever, which is the one thing this whole
+ * handler exists to avoid. Every call site below goes through one of these
+ * two wrappers instead of calling `failClaimed`/`releaseClaimed` directly.
+ */
+async function safeFailClaimed(
+  store: ConfigStore,
+  job: ProjectScanJobItem,
+  reason: string,
+): Promise<void> {
+  try {
+    await failClaimed(store, job, reason);
+  } catch (e) {
+    console.error(
+      `scan-jobs: failClaimed failed for ${job.projectId}/${job.jobId}:`,
+      e instanceof Error ? e.message : e,
+    );
+  }
+}
+
+/** See {@link safeFailClaimed} — same wrapping, for `releaseClaimed`. */
+async function safeReleaseClaimed(
+  store: ConfigStore,
+  job: ProjectScanJobItem,
+): Promise<void> {
+  try {
+    await releaseClaimed(store, job);
+  } catch (e) {
+    console.error(
+      `scan-jobs: releaseClaimed failed for ${job.projectId}/${job.jobId}:`,
+      e instanceof Error ? e.message : e,
+    );
+  }
+}
+
+/**
  * The network seam for the GitHub App broker, overridable in tests so the whole
  * credential path is exercised without reaching github.com.
  */
 const realAppFetch: FetchLike = async (url, init) => {
-  const res = await fetch(url, init as RequestInit);
+  const res = await fetch(url, {
+    ...(init as RequestInit),
+    // Bounded so a hung GitHub API call fails the credential fetch (and, via
+    // the retry-once wrapper below, gets one more try) instead of leaving the
+    // claim handler — and the worker polling it — hanging indefinitely.
+    signal: AbortSignal.timeout(GITHUB_APP_FETCH_TIMEOUT_MS),
+  });
   return { status: res.status, json: () => res.json() as Promise<unknown> };
 };
 let appFetch: FetchLike = realAppFetch;
@@ -226,8 +326,33 @@ async function resolveCloneAuth(
   if (!githubAppCanServe(repo)) return null;
   const cfg = githubAppConfig();
   if (cfg === null) return null;
-  const minted = await mintInstallationToken(repo, cfg, appFetch);
+  const minted = await mintInstallationTokenWithRetry(repo, cfg, appFetch);
   return githubAppAuthHeader(minted.token);
+}
+
+/**
+ * `mintInstallationToken`, retried exactly ONCE, and only on a `transient`
+ * {@link ForgeCredentialError} — a GitHub blip or network hiccup, per its own
+ * classification (domain/forgeCredentials.ts). A permanent failure (404 not
+ * installed, any other 4xx, a malformed response) is never retried: it will
+ * fail exactly the same way a second time, and retrying it would just make
+ * the operator wait longer to see the fix-it-yourself message. The retry
+ * redoes the WHOLE two-call sequence rather than just the call that failed,
+ * since a fresh JWT/lookup pair is cheap and simpler than threading partial
+ * state back in.
+ */
+async function mintInstallationTokenWithRetry(
+  repo: RepoRef,
+  cfg: GithubAppConfig,
+  fetchLike: FetchLike,
+): Promise<{ token: string; expiresAt: string }> {
+  try {
+    return await mintInstallationToken(repo, cfg, fetchLike);
+  } catch (e) {
+    if (!(e instanceof ForgeCredentialError) || !e.transient) throw e;
+    await sleep(CREDENTIAL_RETRY_DELAY_MS);
+    return await mintInstallationToken(repo, cfg, fetchLike);
+  }
 }
 
 export function scanJobRoutes(): Hono<AppEnv> {
@@ -324,7 +449,7 @@ export function scanJobRoutes(): Hono<AppEnv> {
         // Queued while pre-trust, claimed after it moved on (or was archived):
         // scanning now would upload a first-scan artifact into a window that has
         // closed. Fail the job and look for other work.
-        await failClaimed(
+        await safeFailClaimed(
           store,
           claimed,
           "The project is no longer awaiting its first scan.",
@@ -338,7 +463,7 @@ export function scanJobRoutes(): Hono<AppEnv> {
         ? buildCloneUrl(repo, process.env, extraHosts)
         : { ok: false as const };
       if (!repo || !target.ok) {
-        await failClaimed(
+        await safeFailClaimed(
           store,
           claimed,
           "This project's repository host is not one this deployment is allowed to clone from.",
@@ -347,19 +472,27 @@ export function scanJobRoutes(): Hono<AppEnv> {
       }
 
       // The forge credential for a PRIVATE repo, resolved fresh per job — a
-      // per-job GitHub App installation token, or the operator's sealed token
-      // opened in memory. Null for a public repo. A failure here fails THIS job
-      // with the reason (a misinstalled App is the operator's fix, and a job
-      // hanging in `claimed` would tell them nothing).
+      // per-job GitHub App installation token (already retried once on a
+      // transient blip inside resolveCloneAuth), or the operator's sealed
+      // token opened in memory. Null for a public repo. A PERMANENT failure
+      // here fails THIS job with the reason (a misinstalled App is the
+      // operator's fix, and a job hanging in `claimed` would tell them
+      // nothing); a failure still marked TRANSIENT after the retry releases
+      // the claim instead, so the job gets a fresh attempt rather than being
+      // terminally failed by an outage that may already be over.
       let cloneAuthHeader: string | null;
       try {
         cloneAuthHeader = await resolveCloneAuth(store, row.projectId, repo);
       } catch (e) {
         if (e instanceof ForgeCredentialError) {
-          await failClaimed(store, claimed, e.message);
+          if (e.transient) {
+            await safeReleaseClaimed(store, claimed);
+          } else {
+            await safeFailClaimed(store, claimed, e.message);
+          }
           continue;
         }
-        await failClaimed(
+        await safeFailClaimed(
           store,
           claimed,
           "Could not obtain repository access.",

@@ -25,7 +25,7 @@ import { getCurrentUser } from '@/lib/session';
 import { getOperation } from '@/lib/interpreter';
 import { generateDiff, isAttributeLevelOp, isSubBlockOp } from '@/lib/diff';
 import { combinedRequirement, reviewTierForExposure } from '@/lib/changeSet';
-import { classifyDrift, classifyFinding, isSecurityPosture } from '@/lib/driftEligibility';
+import { classifyDrift, classifyFinding, findCurrentFinding, isSecurityPosture } from '@/lib/driftEligibility';
 import {
   SYSTEM_DRIFT_ADOPT,
   SYSTEM_DRIFT_IMPORT,
@@ -948,9 +948,19 @@ function seedImportProposals(sweep: DriftSweep): DriftProposal[] {
       lastSeenReportVersion: 1,
       diff: null,
       attrs: [],
-      arn: f.arn,
-      tfType: f.tfType ?? undefined,
-      importPayload: payload,
+      // DOC-7: the PROPOSAL-level import payload — {@link
+      // DriftImportProposalPayload}, distinct from the finding's own
+      // `payload` above (no `address`, carries the reviewed identity
+      // instead) — mirrors what the real api's generator actually pins
+      // (domain/driftProposals.ts's `DriftImportProposalPayloadSchema`).
+      importPayload: {
+        arn: f.arn ?? null,
+        tfType: f.tfType,
+        liveId: f.liveId ?? '',
+        targetFile: payload.targetFile,
+        importBlock: payload.importBlock,
+        skeletonHcl: payload.skeletonHcl,
+      },
     });
   }
   return out;
@@ -1329,10 +1339,17 @@ export function createMockApiClient(): ApiClient {
       // sweep, not from anything cached on the proposal row (the same
       // "current stored data, not the pinned proposal's own say-so"
       // doctrine legitimizeDriftSecurity already applies above) — a finding
-      // the sweep no longer carries at all cannot be submitted.
+      // the sweep no longer carries at all cannot be submitted. Matched by
+      // `findCurrentFinding` (DOC-7's `arn`/`tfType`/`liveId` identity,
+      // mirroring the api's own `domain/driftProposals.ts`), never by a
+      // top-level `DriftProposal.arn` — this proposal type never carries
+      // one; only `importPayload` does.
+      const currentImportFindings = new Map<string, DriftFinding>();
       if (primary.flavor === 'import') {
         for (const row of rows) {
-          const current = driftReport.sweep?.findings.find((f) => f.arn === row.arn);
+          const current = row.importPayload
+            ? findCurrentFinding(driftReport.sweep?.findings ?? [], row.importPayload)
+            : undefined;
           if (!current) {
             return {
               ok: false,
@@ -1341,6 +1358,7 @@ export function createMockApiClient(): ApiClient {
                 'This import proposal’s finding is no longer present in the current drift report.',
             };
           }
+          currentImportFindings.set(row.digest, current);
         }
       }
 
@@ -1363,11 +1381,20 @@ export function createMockApiClient(): ApiClient {
         // "pinned params" contract) — a different shape from adopt/revert's
         // {attrs, proposalDigest, reportVersion}, since an import carries no
         // attribute edits at all, only a whole new resource block.
+        // `importPayload` here re-derives the FINDING-level 4-field shape
+        // (mirrors routes/drift.ts's own submit handler exactly) — the
+        // stored PROPOSAL-level payload (`row.importPayload`, DOC-7) has no
+        // `address`; `targetAddress` above is that address.
         params:
           primary.flavor === 'import'
             ? {
-                finding: driftReport.sweep?.findings.find((f) => f.arn === row.arn),
-                importPayload: row.importPayload,
+                finding: currentImportFindings.get(row.digest),
+                importPayload: {
+                  address: row.addresses[0]!,
+                  targetFile: row.importPayload!.targetFile,
+                  importBlock: row.importPayload!.importBlock,
+                  skeletonHcl: row.importPayload!.skeletonHcl,
+                },
                 diff: null,
                 proposalDigest: row.digest,
                 reportVersion: row.lastSeenReportVersion,

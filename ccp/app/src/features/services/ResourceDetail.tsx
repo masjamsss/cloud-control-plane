@@ -11,7 +11,7 @@ import type {
 import { api } from '@/lib/api';
 import { attempt } from '@/lib/asyncGuard';
 import { useActiveProjectId } from '@/lib/ProjectContext';
-import { isChangeFrozen, isOpDisabled, useSettings } from '@/lib/settings';
+import { isOpDisabled, useSettings } from '@/lib/settings';
 import { getServiceMeta } from '@/lib/serviceMeta';
 import { resolveRisk } from '@/lib/riskOverrides';
 import { actionHref, isResourceScopedAdd, isScopedAction } from '@/lib/actionPicker';
@@ -35,6 +35,7 @@ import {
 } from '@/lib/resourceEdits';
 import { ReplaceConfirmGate, replaceConfirmMet } from '@/features/request/ReplaceConfirmGate';
 import { SchedulePicker } from '@/features/request/SchedulePicker';
+import { useEffectiveSettings } from '@/features/request/effectiveSettingsFlow';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { Badge } from '@/components/ui/Badge';
 import { RiskBadge } from '@/components/ui/RiskBadge';
@@ -626,6 +627,9 @@ function ReviewPanel({
   const [replaceConfirmation, setReplaceConfirmation] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [blocked, setBlocked] = useState<string | null>(null);
+  // FE-6: the server's settings in api mode, never the advisory local store
+  // there — see effectiveSettingsFlow.ts.
+  const settings = useEffectiveSettings();
 
   const requirement = cartRequirement(cart);
   const justificationOk = justification.trim().length >= MIN_JUSTIFICATION;
@@ -638,13 +642,13 @@ function ReviewPanel({
 
   const onSubmit = (): void => {
     // Live admin gates re-checked at submit; the server re-enforces both, atomically.
-    if (isChangeFrozen()) {
+    if (settings.changeFreeze) {
       setBlocked(
         'Change requests are frozen by an administrator right now. Try again once the freeze is lifted.',
       );
       return;
     }
-    if (cart.some((e) => isOpDisabled(e.opId))) {
+    if (cart.some((e) => settings.disabledOps.includes(e.opId))) {
       setBlocked('One of these changes uses an operation an administrator has disabled.');
       return;
     }

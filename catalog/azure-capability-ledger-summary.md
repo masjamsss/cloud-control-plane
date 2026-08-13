@@ -1,6 +1,9 @@
 # Azure Capability Coverage Ledger
 
-Generated: 2026-07-28T05:38:20.318Z
+Generated from `tools/schemadump/azurerm-v4.81.0-schema.json`
+(hashicorp/azurerm v4.81.0, dumped 2026-07-18T04:19:28Z).
+Regenerate with `node tools/schemadump/gen-azure-ledger.mjs`; verify with `--check`.
+Do not hand-edit — this file and the ledger JSON are derived, and CI diffs them.
 
 **Total resource types: 1141** (all 1,141 Azure resource types accounted for)
 

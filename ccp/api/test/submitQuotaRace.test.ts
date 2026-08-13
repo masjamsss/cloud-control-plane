@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Hono } from 'hono';
+import { ulid } from 'ulid';
 import { createApp } from '../src/index';
 import { MemoryStore } from '../src/store/memoryStore';
 import type { AppEnv } from '../src/appEnv';
+import type { TransactWrite } from '../src/store/configStore';
 import type { RequestItem } from '../src/store/schema';
 import { requestCollectionGsi } from '../src/store/schema';
-import { claimSubmitSlot, submitGateKey } from '../src/middleware/rateLimit';
+import { checkSubmitRateLimit, submitGateKey } from '../src/middleware/rateLimit';
 import { seed, seedRequests, sessionCookieFor, setSetting } from './helpers/seed';
 import { writeRacingStore } from './helpers/racingStore';
 
@@ -47,6 +49,12 @@ const submit = async (app: Hono<AppEnv>, cookie: string, body: unknown = DRAFT):
 
 const rowsFor = async (store: MemoryStore, requester: string): Promise<RequestItem[]> =>
   ((await store.queryGSI1(requestCollectionGsi('sample'))) as RequestItem[]).filter((r) => r.requester === requester);
+
+/** Pick the gate-CAS write out of `checkSubmitRateLimit`'s returned batch — the rest
+ *  (index backfill, prunes, the quota pointer) are not what these tests are about. */
+function gateWriteFrom(writes: TransactWrite[], gk: { PK: string; SK: string }): TransactWrite | undefined {
+  return writes.find((w) => (w.kind === 'put' ? w.item.PK === gk.PK && w.item.SK === gk.SK : w.pk === gk.PK && w.sk === gk.SK));
+}
 
 /**
  * A store whose FIRST submit transaction is preceded by a whole competing submit through
@@ -169,16 +177,16 @@ describe('CONC-12 — the claim itself', () => {
     await seed(store);
     const gk = submitGateKey('sample', 'sari');
 
-    const first = await claimSubmitSlot(store, 'sample', 'sari');
+    const first = await checkSubmitRateLimit(store, 'sample', 'sari', ulid());
     expect(first.ok).toBe(true);
     // No row yet → the claim IS the row's creation, because `ifEquals` is fail-closed
     // against a missing item and could never stand in for it.
-    expect(first.ok && first.write).toEqual({ kind: 'put', item: { ...gk, seq: 1 }, ifNotExists: true });
+    expect(first.ok && gateWriteFrom(first.writes, gk)).toEqual({ kind: 'put', item: { ...gk, seq: 1 }, ifNotExists: true });
 
-    await store.transact([first.ok ? first.write : { kind: 'put', item: gk }]);
+    await store.transact(first.ok ? first.writes : [{ kind: 'put', item: gk }]);
 
-    const second = await claimSubmitSlot(store, 'sample', 'sari');
-    expect(second.ok && second.write).toEqual({
+    const second = await checkSubmitRateLimit(store, 'sample', 'sari', ulid());
+    expect(second.ok && gateWriteFrom(second.writes, gk)).toEqual({
       kind: 'update',
       pk: gk.PK,
       sk: gk.SK,
@@ -188,15 +196,15 @@ describe('CONC-12 — the claim itself', () => {
 
     // Two claims taken from the same pre-image cannot both commit — that is the whole
     // property, at the seam.
-    const third = await claimSubmitSlot(store, 'sample', 'sari');
-    await store.transact([second.ok ? second.write : { kind: 'put', item: gk }]);
-    await expect(store.transact([third.ok ? third.write : { kind: 'put', item: gk }])).rejects.toThrow();
+    const third = await checkSubmitRateLimit(store, 'sample', 'sari', ulid());
+    await store.transact(second.ok ? second.writes : [{ kind: 'put', item: gk }]);
+    await expect(store.transact(third.ok ? third.writes : [{ kind: 'put', item: gk }])).rejects.toThrow();
   });
 
   it('a zero cap still admits nothing, and claims nothing', async () => {
     const store = new MemoryStore();
     await seed(store);
     await setSetting(store, 'sample', 'rate.limits', { submissionsPerHour: 0 });
-    expect(await claimSubmitSlot(store, 'sample', 'sari')).toEqual({ ok: false });
+    expect(await checkSubmitRateLimit(store, 'sample', 'sari', ulid())).toEqual({ ok: false });
   });
 });
