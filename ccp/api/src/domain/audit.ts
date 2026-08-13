@@ -5,7 +5,7 @@ import { ConditionError } from '../store/configStore';
 import type { AuditItem, ChainHeadItem } from '../store/schema';
 import { auditKey, chainHead, yyyymm } from '../store/schema';
 import { ApiError } from '../errors';
-import { nowIso } from '../clock';
+import { nowIso, nowMs } from '../clock';
 
 /**
  * Hash-chained, tamper-evident audit. Every entry links to the previous
@@ -35,6 +35,40 @@ export type RecordOpts = { idFn?: () => string; nowFn?: () => string };
  * walks entries by SK). Plain ulid() can reorder within the same millisecond.
  */
 const ulid = monotonicFactory();
+
+/** Crockford base32, the ULID alphabet — a character's index in this string IS its value. */
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+/** ULID layout: 10 timestamp characters, then 16 of randomness. */
+const ULID_TIME_LEN = 10;
+const ULID_LEN = 26;
+
+/**
+ * The millisecond timestamp encoded in a ULID's first 10 characters, or `null`
+ * when the string is not a well-formed ULID.
+ *
+ * Every id this system mints for a durable row — audit entries, requests — is a
+ * ULID, which means each of those rows already carries its own creation time in
+ * its key. Reading it costs no storage, no schema change and no extra row: it is
+ * the difference between "when was this written?" being a lookup and being an
+ * unanswerable question. Both the audit reader (to find a cursor's month
+ * partition without scanning for it) and the retention policy (to age a marker
+ * that stores no timestamp of its own) rely on exactly this.
+ */
+export function ulidTimeMs(id: string): number | null {
+  if (id.length !== ULID_LEN) return null;
+  let ms = 0;
+  // Validate ALL 26 characters, not just the 10 that carry the timestamp. Only the
+  // first 10 affect the answer, so stopping there is tempting and wrong: it would
+  // accept a string that is not a ULID, hand back a confident timestamp, and let a
+  // malformed cursor look like a well-formed one. The callers use this to decide
+  // WHERE to look, and "somewhere plausible" is the answer that costs a scan.
+  for (let i = 0; i < ULID_LEN; i++) {
+    const digit = CROCKFORD.indexOf(id[i]!.toUpperCase());
+    if (digit < 0) return null;
+    if (i < ULID_TIME_LEN) ms = ms * 32 + digit;
+  }
+  return Number.isFinite(ms) ? ms : null;
+}
 
 /** Recursive key-sorted, no-whitespace JSON. Arrays keep order; only objects sort. */
 export function canonicalJson(v: unknown): string {
@@ -119,6 +153,69 @@ export function verifyChain(entries: ChainEntry[], opts?: { head?: string }): Ve
   return { code: 0, message: `ok: ${entries.length} entries intact` };
 }
 
+/* ── chain-head contention policy (PERF-11) ───────────────────────────────── */
+
+/**
+ * How many times a chain-head CAS may be attempted before the caller is told the
+ * write did not land.
+ *
+ * Every mutation in a project CASes the SAME `CHAINHEAD` row — that is the
+ * integrity choice that stops the hash chain forking, and it is not negotiable.
+ * What IS negotiable is the budget. Every site used to attempt exactly twice, so
+ * a writer that lost two coin-flips surfaced `CHAIN_CONTENTION` (HTTP 409) on an
+ * ordinary approve click. With N writers live on one project, one writer wins each
+ * round, so the LAST of them needs N attempts to get through: a two-attempt budget
+ * starts failing real users at N=3, which the finding measured and this repo's own
+ * repro reproduces (4 concurrent appends → 2 × 409).
+ *
+ * The budget therefore has to exceed the plausible number of concurrent writers on
+ * a single project, not the plausible number of collisions. Eight covers a lead, a
+ * couple of approvers, the settle loop of someone's `GET /requests`, the scheduler
+ * tick and a scanner callback all landing in the same window, with room over.
+ *
+ * WHAT THIS DELIBERATELY IS NOT: a fix that drops or defers entries under load.
+ * The chain is the product's evidence store, so "shed the audit append and keep
+ * the domain write" is strictly worse than the 409 it would hide — every retry
+ * here replays the FULL transaction (domain writes + audit append) against a
+ * freshly read head, or reports failure. Nothing is written without its evidence.
+ */
+export const CHAIN_WRITE_ATTEMPTS = 8;
+
+/** First back-off ceiling, doubling per lost round up to {@link CHAIN_BACKOFF_CAP_MS}. */
+const CHAIN_BACKOFF_BASE_MS = 2;
+/** Ceiling on one back-off wait, so a long-lived queue cannot stall a request for seconds. */
+const CHAIN_BACKOFF_CAP_MS = 64;
+
+let chainSleep: (ms: number) => Promise<void> = (ms) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Test hook: replace the back-off wait (pass `null` to restore real timers).
+ * Kept local rather than added to `clock.ts` because this is a *delay*, not a
+ * reading of the clock — `nowMs()` is frozen by tests that must not also freeze
+ * their own back-off into an infinite wait.
+ */
+export function __setChainSleep(fn: ((ms: number) => Promise<void>) | null): void {
+  chainSleep = fn ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
+}
+
+/**
+ * Wait out one lost chain-head CAS. Returns `true` when another attempt remains
+ * (the caller should re-read the head and retry), `false` when the budget is spent
+ * (the caller should surface `CHAIN_CONTENTION`).
+ *
+ * The wait is FULL JITTER — a uniform draw from `[0, ceiling)` rather than the
+ * ceiling itself. Fixed back-off re-synchronises the very writers that just
+ * collided: they lose together, sleep the same duration, and collide again on the
+ * same millisecond. Randomising the whole interval is what actually spreads them,
+ * and it is why the budget can be small.
+ */
+export async function chainBackoff(attempt: number, attempts: number = CHAIN_WRITE_ATTEMPTS): Promise<boolean> {
+  if (attempt + 1 >= attempts) return false;
+  const ceiling = Math.min(CHAIN_BACKOFF_CAP_MS, CHAIN_BACKOFF_BASE_MS * 2 ** attempt);
+  await chainSleep(Math.random() * ceiling);
+  return true;
+}
+
 function buildAuditItem(
   projectId: string,
   id: string,
@@ -156,8 +253,18 @@ export function recordIn(
   entry: AuditEntryInput,
   opts?: RecordOpts,
 ): { writes: TransactWrite[]; newHash: string; id: string } {
-  const id = (opts?.idFn ?? (() => ulid()))();
   const at = (opts?.nowFn ?? (() => nowIso()))();
+  // SEED THE ULID FROM THE SAME CLOCK READING AS `at` (PERF-8). The id and the
+  // month partition are two encodings of one instant: the partition is
+  // `yyyymm(at)`, and the id's leading 10 characters are that same timestamp in
+  // Crockford base32. Minting the id from `Date.now()` while stamping `at` from
+  // the injected clock made the two disagree by however far a test (or a stepped
+  // system clock) had moved time — which is exactly the invariant the paged read
+  // now relies on to find a cursor's partition without scanning for it. Same
+  // reading for both, so `monthOfAuditId(id)` is the partition, by construction.
+  const atMs = Date.parse(at);
+  const seed = Number.isFinite(atMs) ? atMs : nowMs();
+  const id = (opts?.idFn ?? (() => ulid(seed)))();
   const prevHash = head?.hash ?? '';
   const count = head?.count ?? 0;
   const hash = auditEntryHash(prevHash, { id, at, ...entry });
@@ -171,8 +278,9 @@ export function recordIn(
 
 /**
  * Standalone append (login and other single-mutation callers). Reads CHAINHEAD,
- * appends in one transact; a chain-contention ConditionError retries ONCE, then
- * throws 409 CHAIN_CONTENTION. Signature is unchanged from the Task-4 placeholder.
+ * appends in one transact; a chain-contention ConditionError re-reads the head and
+ * retries within {@link CHAIN_WRITE_ATTEMPTS}, then throws 409 CHAIN_CONTENTION.
+ * Signature is unchanged from the Task-4 placeholder.
  */
 export async function record(
   store: ConfigStore,
@@ -181,7 +289,7 @@ export async function record(
   opts?: RecordOpts,
 ): Promise<{ id: string; hash: string }> {
   const hKey = chainHead(projectId);
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < CHAIN_WRITE_ATTEMPTS; attempt++) {
     const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
     const { writes, newHash, id } = recordIn(projectId, head, entry, opts);
     try {
@@ -189,7 +297,10 @@ export async function record(
       return { id, hash: newHash };
     } catch (e) {
       if (e instanceof ConditionError) {
-        if (attempt === 0) continue; // one retry against the fresh head
+        // The whole append is recomputed against the FRESH head on the next pass —
+        // a lost round replays nothing stale, so retrying is safe here for as long
+        // as the budget allows.
+        if (await chainBackoff(attempt)) continue;
         throw new ApiError('CHAIN_CONTENTION');
       }
       throw e;
@@ -216,7 +327,7 @@ export async function transactWithAudit(
 ): Promise<{ id: string; hash: string }> {
   const hKey = chainHead(projectId);
   const guarded = domainWrites.some((w) => 'ifEquals' in w && w.ifEquals !== undefined);
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < CHAIN_WRITE_ATTEMPTS; attempt++) {
     const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
     const { writes, newHash, id } = recordIn(projectId, head, entry, opts);
     try {
@@ -236,7 +347,7 @@ export async function transactWithAudit(
         // helper was built for, and if the key now exists it is a genuine duplicate that
         // the second attempt reports correctly.
         if (guarded) throw new ApiError('STATE_CONFLICT');
-        if (attempt === 0) continue;
+        if (await chainBackoff(attempt)) continue;
         throw new ApiError('CHAIN_CONTENTION');
       }
       throw e;
