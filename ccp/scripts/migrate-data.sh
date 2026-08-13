@@ -169,7 +169,17 @@ compose config --services 2>/dev/null | grep -qx api \
   || { err "compose project has no 'api' service — wrong directory, or docker-compose.yml changed shape"; exit 1; }
 docker volume inspect "$VOLUME" >/dev/null 2>&1 \
   || { err "old volume '$VOLUME' not found — nothing to migrate (override with --volume NAME if your compose project name differs)"; exit 1; }
-ok "guards passed: docker+compose present, /data ready, api service found, old volume '$VOLUME' exists"
+# OPS-6 — the cutover below re-ups the api from the resolved compose config. On a host
+# armed with the old one-shot `-f … -f docker-compose.armed.yml up`, that recreate strips
+# the socket/scratch overlay, so a migration would silently disarm the bundle/drift lanes
+# on top of moving the store. Same guard and fix as self-update.sh (lib/armed.sh).
+# shellcheck source=lib/armed.sh
+. "$CCP_DIR/scripts/lib/armed.sh"
+if armed_drift_detected; then
+  err "the RUNNING api is armed (docker socket mounted) but the resolved compose config is NOT — the cutover would silently DISARM the bundle/drift lanes on top of migrating the store. $(armed_fix_hint)"
+  exit 1
+fi
+ok "guards passed: docker+compose present, /data ready, api service found, old volume '$VOLUME' exists, arming (if any) survives a re-up"
 
 # ---- step 2: write the rollback override (RUN mode only) ---------------------
 # --check never writes anything, including this — the escape hatch every
