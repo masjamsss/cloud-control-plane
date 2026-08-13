@@ -339,15 +339,24 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
     //    EVERY attempt — a concurrent identical upload that loses the
     //    version-row race (attempt 0 ⇒ CHAIN_CONTENTION) must see the
     //    WINNER's just-staged version on its retry and dedupe against it,
-    //    never stage a second, duplicate version. (This also fixes the
-    //    stale-`currentPointer` rollback bug the old pre-loop-single-read
-    //    had: a retry's rollback now restores the pointer value THAT
-    //    ATTEMPT actually observed, not a snapshot from before a
-    //    concurrent winner moved it.) Otherwise stage as the next version +
-    //    advance the pointer in the SAME audited transaction (no separate
-    //    activation step, unlike project data). ROW-FIRST allocation:
-    //    winning the version row's `ifNotExists` put IS the version claim
-    //    (one retry on CHAIN_CONTENTION, exactly the projectData loop).
+    //    never stage a second, duplicate version (the old pre-loop
+    //    single-read compared every retry against a snapshot from before a
+    //    concurrent winner moved the pointer). Otherwise stage as the next
+    //    version + advance the pointer in the SAME audited transaction (no separate
+    //    activation step, unlike project data). FILE-FIRST allocation
+    //    (ERR-14): the report body is written to disk BEFORE the row
+    //    transacts, the same ordering discipline `reconcileProposals` uses
+    //    for proposal bodies (driftProposals.ts's "File written BEFORE the
+    //    row transacts" comment) — a row can only exist once its body is
+    //    safely on disk, so the transact below IS the commit point and
+    //    there is nothing left to compensate on its own failure. Winning
+    //    the version row's `ifNotExists` put is still the version claim
+    //    (one retry on CHAIN_CONTENTION, exactly the projectData loop); a
+    //    lost race's already-written file is simply abandoned under a
+    //    version number no row ever claims — inert, since every reader
+    //    (listDriftVersions, the pointer-driven GET, pruneDriftVersions)
+    //    keys off the STORED ROWS, never a directory scan — and is removed
+    //    on a best-effort basis right where the race is detected below.
     const pKeyObj = driftPointerKey(id);
     const uploadedVia = `upload-token:${tokenId}`;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -384,6 +393,11 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
         securityCount: counts.security,
         unmanagedCount: counts.unmanaged,
       };
+      // ERR-14: the body goes to disk BEFORE anything commits. A failure
+      // here (disk full, permission error) throws straight out of the
+      // handler with nothing yet staged in the store — no row, no pointer
+      // move, nothing to compensate.
+      await writeDriftReport(dataRoot, id, version, stored);
       try {
         // Audit to the TARGET project's chain — this lane has no acting
         // scope (a Bearer token, not a session), same rule as project-data-upload.
@@ -404,17 +418,15 @@ export function driftRoutes(dataRoot: string): Hono<AppEnv> {
         );
       } catch (e) {
         // A lost version race surfaces as chain contention — re-read the
-        // tail and try the next number.
-        if (e instanceof ApiError && e.code === 'CHAIN_CONTENTION' && attempt === 0) continue;
-        throw e;
-      }
-      try {
-        await writeDriftReport(dataRoot, id, version, stored);
-      } catch (e) {
-        // Nothing half-exists: undo the row AND the pointer advance together.
-        await store.delete(versionItem.PK, versionItem.SK);
-        if (currentPointer) await store.put(currentPointer as never);
-        else await store.delete(pKeyObj.PK, pKeyObj.SK);
+        // tail and try the next number. The file just written above is now
+        // orphaned under a version number no row will ever claim; remove it
+        // (best-effort — a failure here is not worth failing the retry
+        // over, and an orphan left behind is inert, see the comment above
+        // this loop) before trying again.
+        if (e instanceof ApiError && e.code === 'CHAIN_CONTENTION' && attempt === 0) {
+          removeDriftReport(dataRoot, id, version);
+          continue;
+        }
         throw e;
       }
       if (warnings.length > 0) {

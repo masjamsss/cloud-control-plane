@@ -14,6 +14,7 @@ import { scanJobRoutes } from './routes/scanJobs';
 import { instanceAdminRoutes, instancePublicRoutes } from './routes/instance';
 import { corsOrigins } from './deploy';
 import { readiness } from './domain/readiness';
+import { resolveProjectDataRoot } from './domain/projectData';
 
 // Allowed credentialed-CORS origins live in the deploy-config surface (deploy.ts),
 // read at request time so a deploy sets CCP_CORS_ORIGIN without a rebuild and
@@ -68,10 +69,13 @@ export function createApp(store: ConfigStore, opts: CreateAppOptions = {}): Hono
   app.get('/healthz', (c) => c.json({ ok: true }));
 
   // Readiness that does not lie: reports store-loaded + account-count + audit-chain
-  // verification, so an emptied/corrupt store is visibly NOT ready (503). Unauthenticated
-  // infra probe — no session required (the middleware above is non-rejecting for GET).
+  // verification + (DATA-10) served-file presence, so an emptied/corrupt store OR a
+  // disk-death restore that lost/mismatched the project-data root is visibly NOT ready
+  // (503). Unauthenticated infra probe — no session required (the middleware above is
+  // non-rejecting for GET). Same root the serve routes use (opts.projectDataRoot ??
+  // the real deploy resolution), so a test's temp root and the readiness probe agree.
   app.get('/readyz', async (c) => {
-    const r = await readiness(c.get('store'));
+    const r = await readiness(c.get('store'), opts.projectDataRoot ?? resolveProjectDataRoot());
     return c.json(r, r.ready ? 200 : 503);
   });
 

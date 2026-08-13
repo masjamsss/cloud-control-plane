@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { manifests } from '@/data/manifests';
 import { deriveServiceCatalog, type ServiceSummary } from '@/lib/catalog';
@@ -10,6 +13,7 @@ import azureCatalogIndex from '@/data/provider-catalog-azure/index.json';
 import { AWS_SERVICES } from '@/lib/awsServiceMap';
 import { AZURE_SERVICES } from '@/lib/azureServiceMap';
 import type { CloudProvider } from '@/lib/providerDisplay';
+import { ServiceCard } from '@/features/catalog/ServiceCard';
 
 /**
  * Full provisionable coverage. The catalog browses EVERY top-level provisionable
@@ -132,18 +136,62 @@ describe('every op-less service is a working Provision deep-link (never a dead t
 });
 
 /**
- * The repo has no jsdom/RTL (see azureCatalogFlow.test.ts), so the tile/console
- * UX is pinned by source inspection — the same technique azureProjectFixture uses
- * for ServiceCatalog's not-loaded branch.
+ * TEST-7: ServiceCard is a plain, prop-driven leaf component (no useEffect, no
+ * data fetch of its own — `summariesFor` above already hands it a fully-derived
+ * `ServiceSummary`), so its op-less wiring renders for REAL here via SSR
+ * (`react-dom/server`, this repo's only rendering surface — see
+ * standalone.test.ts's dependency-allowlist test and TEST-7's own note there
+ * for why jsdom/RTL is not simply added). This replaced a source-text
+ * assertion (`expect(src).toContain('provisionPathFor(primaryType)')`) that
+ * would have kept passing if the branch were renamed to something that quietly
+ * stopped linking anywhere — the rendered `href` is the actual behavior; the
+ * source string was only ever a proxy for it.
  */
-describe('op-less UX wiring (source-pinned)', () => {
-  it('ServiceCard links an op-less tile to the /provision deep-link, not the console', () => {
-    const src = readFileSync(join(SRC, 'features/catalog/ServiceCard.tsx'), 'utf8');
-    expect(src).toContain('summary.operations.length === 0');
-    expect(src).toContain('provisionPathFor(primaryType)');
+describe('ServiceCard — op-less tile wiring (rendered, not source-pinned)', () => {
+  const asg = summariesFor('azure').find((s) => s.service === 'app-security-group')!;
+
+  function render(summary: ServiceSummary): string {
+    return renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(ServiceCard, { summary })));
+  }
+
+  it('an op-less tile links to its /provision deep-link, not a resource console', () => {
+    expect(asg.operations).toHaveLength(0); // the precondition this test is actually about
+    const html = render(asg);
+    expect(html).toContain('href="/provision/app-security-group?type=azurerm_application_security_group"');
+    expect(html).not.toContain('href="/services/app-security-group"');
   });
 
-  it('ServiceConsole renders a known op-less service as a Provision CTA, never a "no service" dead-end', () => {
+  it('an op-less tile renders the "Provision +" call-to-action, not the risk-mix/resource-count console preview', () => {
+    const html = render(asg);
+    expect(html).toContain('Provision +');
+    expect(html).not.toContain('service-card__count'); // the with-ops branch's resource-count figure
+  });
+
+  it('a WITH-ops tile links to its resource console instead, as the control', () => {
+    const withOps = summariesFor('aws').find((s) => s.operations.length > 0)!;
+    const html = render(withOps);
+    expect(html).toContain(`href="/services/${withOps.service}"`);
+    expect(html).not.toContain('Provision +');
+  });
+});
+
+/**
+ * TEST-7's OTHER half: ServiceConsole is a top-level ROUTE component whose
+ * op-less branch is gated behind its OWN `useEffect`-driven manifest/inventory
+ * fetch (`api.listManifests()`/`api.getInventory()`) — under
+ * `renderToStaticMarkup`, that effect never fires (SSR does not run effects at
+ * all), so `manifests` stays `null` forever and this branch is structurally
+ * unreachable no matter what is rendered. There is no pure, prop-driven view
+ * to render instead (unlike RequestForm/BulkRequestForm, ServiceConsole has
+ * never been split into a `*View` component — see submitFlow.ts's peers for
+ * that pattern where it DOES exist). Reaching this branch for real needs
+ * either that extraction (a real refactor, not a test change) or jsdom + a
+ * mocked fetch + waiting out the effect (the RTL lane TEST-7 recommends
+ * introducing, not yet taken — see standalone.test.ts). Source-pinned as a
+ * deliberate, named stopgap, not an oversight.
+ */
+describe('ServiceConsole — op-less service CTA (source-pinned; see the doc comment above)', () => {
+  it('renders a known op-less service as a Provision CTA, never a "no service" dead-end', () => {
     const src = readFileSync(join(SRC, 'features/services/ServiceConsole.tsx'), 'utf8');
     // A known named service with no manifest gets the provision CTA branch…
     expect(src).toContain('hasServiceMeta(slug)');

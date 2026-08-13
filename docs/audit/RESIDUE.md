@@ -309,17 +309,139 @@ wrongly, and this one is *narrow* wrongly, for the same underlying reason — a 
 answers "did the inputs change", and neither the calendar nor a runner image is an input.
 
 ### R-51 · The app's function coverage is recorded, not fixed
-*Residue on **TEST-5**. **Tracked by: TEST-7.***
+*Residue on **TEST-5**. Previously "Tracked by: TEST-7" — updated below; TEST-7 has since
+closed without moving this.*
 
 Measuring put a number on the SPA's testing gap — **54.62% of functions** — and a floor stops
 it eroding, but neither moves it. The cause is TEST-7's: ~25 app test files assert on component
 source strings rather than rendering, so the functions they "cover" are never executed. Raising
-this floor means writing DOM/interaction tests, which is TEST-7's body of work and is still
-open.
+this floor means writing DOM/interaction tests — a real jsdom+RTL lane, which TEST-7's own fix
+explicitly decided NOT to introduce in that pass (see standalone.test.ts's recorded decision).
+TEST-7 closing there — a written decision plus converting the one file it could reach without
+that lane — does not move this floor; the finding that was going to cover it closed for
+reasons that do not include "the gap is gone", which is exactly the disappearing-residue
+failure mode this ledger exists to catch. **Genuinely untracked now — no open finding covers
+raising this floor.**
 
 Recorded here so the low floor reads as a measurement of a known gap rather than as an
 acceptable target — a floor nobody remembers the reason for is a floor that quietly becomes the
 ceiling.
+
+### R-57 · The chain-write retry policy is named in one place but spent in sixteen
+*Residue on **PERF-11** and **PERF-8**.*
+
+Two related leftovers, both bounded, both recorded rather than guessed at.
+
+**The retry budget reaches the sites PERF-11 names, and no further.** `CHAIN_WRITE_ATTEMPTS`
+and `chainBackoff` live in `domain/audit.ts`, and the loops PERF-11 lists — `record`,
+`transactWithAudit`, `routes/requests.ts`, `domain/cooling.ts`, `domain/schedule.ts`,
+`domain/apply/scheduler.ts` — now spend that budget. Six further hand-rolled
+`for (attempt < 2)` loops still exist with the old two-attempt budget:
+`domain/dualControl.ts` (×2), `domain/scanJobLease.ts`, `routes/drift.ts` (×2) and
+`routes/projectData.ts`. None is named by PERF-11, each sits in another batch's files
+(B-S7, B-O7/B-O11, B-O13), and converting them is a two-line change per site now that the
+policy is a named import — so this is a lane boundary, not a design gap. Anyone opening those
+files should take the import with them.
+
+The deeper version is worth stating because the next person will meet it: the reason there
+are sixteen loops at all is that each caller needs to tell its OWN condition failure apart
+from chain contention, which the store cannot currently report (R-10, and CONC-15/API-14 are
+the finding-shaped version). Once that separation exists, all sixteen collapse into one
+helper and this residue disappears with them.
+
+**A page walk that finds no more entries runs to the month ceiling.** `readAuditPage` used
+`seen >= total` to stop once it had read the whole chain. With a cursor, the entries above it
+are filtered out at the store, so `seen` no longer counts the chain and that bound cannot
+apply — the walk instead terminates on `monthsBackward`'s own `MAX_MONTHS_WALKED` ceiling
+(1200). This costs nothing on the store that ships: an absent partition is one map lookup
+returning an empty array, and the walk only reaches the ceiling on the FINAL page of a paging
+session, since any earlier page fills and breaks out. Measured at well under a millisecond;
+the whole 13-test file runs in 68 ms.
+
+On a real DynamoDB it would be up to 1200 queries on that last page, which is not acceptable
+and is why this is recorded rather than accepted. The fix is to give the walk a floor it can
+know: the chain head would have to carry the genesis month (or the oldest partition would
+have to be discoverable in O(1)), which is an additive change to `ChainHeadItem` that every
+existing chain would need backfilled. That is a store-schema decision, so it belongs with
+B-O3's `DATA-16` (the snapshot format/version marker) rather than being smuggled in here.
+### R-56 · AWS coverage is still family-coarse; only declared shadows are type-granular
+*Residue on **IMP-15**.*
+
+IMP-15 removed the *silent* half of the family-granularity limit: a type whose lister cannot
+enumerate it now declares a `shadow` in `services.json`, and `discover.py` names the resources
+the sweep saw but discovery never accounted for. What it did **not** do is make AWS coverage
+type-granular the way `kit-azure/discover.py` already is — the AWS sweep still buckets by ARN
+service family, and a type that has no `shadow` declared still contributes its resources to a
+family that reads as covered.
+
+That is the deliberate half of the trade the kit README has always stated, and it is still the
+right default: parsing every ARN's resource-type token means many fragile, service-specific
+rules where AWS's delimiters are inconsistent and sometimes absent. The residue is that the
+*declaration* is now the only thing standing between a new undiscoverable type and the old
+silent behaviour, and nothing enumerates which types ought to carry one — the finding names
+`aws_kms_key` and gestures at "any ec2-family type not among the 16 ec2-backed entries" without
+resolving it.
+
+Closing it properly is a sweep of all 43 types asking "can this lister reach every instance?",
+which is estate-informed judgement per type rather than a code change, so it is recorded rather
+than guessed at. The parity gap with the Azure kit's full-type classification is the same item
+seen from the other side.
+### R-52 · Api-mode local-store submit gates survive outside FE-6's three fixed components
+*Residue on **FE-6**.*
+
+`ResourceDetail`'s top-level ops-list filter and `ServiceConsole`'s action pickers still call
+`isOpDisabled()` against the advisory local `lib/settings.ts` store even in api mode (the same
+class of defect FE-6 fixed for the three cited submit gates), and `lib/beyondCatalog.ts`'s
+freeze pre-check does too — but as a plain async function rather than a component, it cannot
+use FE-6's `useEffectiveSettings()` hook without its own, differently-shaped fix. None of the
+three is a submit gate in the sense FE-6 was scoped to (the first two are display filters that
+hide/show a picker option; a submit past them still hits the server's real enforcement), so the
+stakes are lower than the fixed cases, but the underlying wrongness — reading a store the
+server never writes to, in the one mode where that store is not the truth — is identical.
+
+**Genuinely untracked** — no open finding currently names these three call sites.
+
+### R-53 · DATA-10's readiness cross-check is existence-only, never a digest comparison
+*Residue on **DATA-10**.*
+
+`/readyz`'s new presence check (`projectDataVersionExists`/`driftReportExists`) proves a
+`dataActive`/drift-pointer's referenced file EXISTS on disk, never that its BYTES match what
+the row recorded. A restore from a different backup generation than the store JSON — the file
+is present, just stale or from a different point in time — passes this check silently. A full
+digest recompute on every poll was deliberately rejected (the same steady per-probe CPU tax
+ARCH-9 flags for the audit-chain re-verification this same endpoint already does), but nothing
+cheaper (a stored content hash compared without re-reading the whole file, say) was designed
+either.
+
+**Genuinely untracked** — no open finding covers closing this narrower gap.
+
+### R-54 · Audit-chain archival/compaction is a named prerequisite, not a plan
+*Residue on **ARCH-9**.*
+
+The store has no compaction or archival — `storeItemCount` (ARCH-9's own new telemetry) can
+only ever go up. The finding's recommendation named archival design as a prerequisite for the
+DynamoDB migration the store seam anticipates; ARCH-9's fix records that it IS a prerequisite,
+in the README, but does not design it — real work (what gets archived, where, how a restore
+reaches into archived history, how the month-partitioned keys the store already uses factor
+in) that belongs to whichever change actually introduces a second process or the DynamoDB
+backend.
+
+**Genuinely untracked** — no open finding covers designing archival.
+
+### R-55 · Most of TEST-7's cited source-pinned test files are still source-pinned
+*Residue on **TEST-7**.*
+
+TEST-7's fix converted exactly one file's worth of source-pinning to rendered-output
+assertions (`provisionTileCompleteness.test.ts`'s `ServiceCard` cases — the finding's own
+cited example) and established a standing requirement that every REMAINING source-pinned test
+name, in its own comment, why it cannot be converted without jsdom or a component-splitting
+refactor. Of the ~25 originally-cited files, roughly 19 are untouched by this pass: neither
+converted nor yet carrying the new justification comment. The template exists
+(`ServiceConsole`'s sibling case in the same file, and `uiRobustnessFocus.test.ts`'s
+pre-existing `RequestForm` case, are the two worked examples) but has not been applied
+file-by-file.
+
+**Genuinely untracked** — no open finding covers the remaining conversions.
 
 ## accepted — deliberately permanent
 

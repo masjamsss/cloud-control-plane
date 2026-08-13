@@ -172,3 +172,94 @@ export function assertDeployable(env: Env = process.env): void {
   const problems = deployProblems(env);
   if (problems.length > 0) throw new DeployConfigError(problems);
 }
+
+/**
+ * ARCH-11 — ARMING-FLAG COMBINATION WARNINGS.
+ *
+ * Every one of the ~35 `CCP_*` arming flags across this codebase is individually
+ * fail-closed (a genuine strength: an unset flag never half-enables its lane), but
+ * nothing anywhere reasons about a flag set in a COMBINATION that can never do
+ * anything — a sub-flag armed for a lane whose gate is off, so the code path that
+ * would ever consult it is unreachable. That silence is exactly how an operator
+ * ends up debugging "why doesn't drift-proposal generation ever run" with every
+ * individual flag correctly spelled.
+ *
+ * This is deliberately advisory, not a `deployProblems` entry: unlike the
+ * production security preflight above (an insecure config is refused outright),
+ * a dead sub-flag is inert, not unsafe — nothing here can accidentally admit an
+ * unauthenticated caller or serve a session over plaintext, so failing the whole
+ * boot over it would be a disproportionate response to a `low`-severity paper cut.
+ * Printed at boot (any NODE_ENV — a local dev misconfiguring the same flags
+ * deserves the same nudge) alongside the scheduler/settlement banners
+ * server.ts already logs, never thrown.
+ *
+ * Each case below was verified by reading the ONE call site that ever consults
+ * the sub-flag's value, and confirming that call site is unreachable while the
+ * flag it depends on is unset — this is not a speculative "these seem related"
+ * list. A flag combination that legitimately has two independent, valid uses
+ * (e.g. `CCP_FORGE_SEAL_KEY` set ahead of arming the scanner later — the
+ * credential's own PUT route is not gated on `CCP_SCANNER` at all) is
+ * deliberately NOT included here; warning about a legitimate "prepare now, arm
+ * later" workflow would just teach operators to ignore this list.
+ */
+export function deployWarnings(env: Env = process.env): string[] {
+  const warnings: string[] = [];
+
+  const driftArmed = env.CCP_DRIFT === '1';
+  if (!driftArmed) {
+    // Every consumer of these three sub-flags is reached only from
+    // routes/drift.ts's PUT /:id/drift handler, which refuses DRIFT_DISARMED
+    // before any of them are checked, generation.ts's own doc comment.
+    if (env.CCP_DRIFT_PROPOSALS === '1') {
+      warnings.push(
+        'CCP_DRIFT_PROPOSALS=1 is set, but CCP_DRIFT is not — drift-proposal generation is triggered only from the report-upload route, which refuses every upload (DRIFT_DISARMED) while CCP_DRIFT is unset. Set CCP_DRIFT=1 as well, or unset CCP_DRIFT_PROPOSALS.',
+      );
+    }
+    if (env.CCP_DRIFT_IMPORT === '1') {
+      warnings.push(
+        'CCP_DRIFT_IMPORT=1 is set, but CCP_DRIFT is not — the import-flavor submit gate is checked only after the top-level CCP_DRIFT arming, which refuses the request first. Set CCP_DRIFT=1 as well, or unset CCP_DRIFT_IMPORT.',
+      );
+    }
+    if (env.CCP_DRIFT_RESTORE === '1') {
+      warnings.push(
+        'CCP_DRIFT_RESTORE=1 is set, but CCP_DRIFT is not — the restore-flavor submit gate is checked only after the top-level CCP_DRIFT arming, which refuses the request first. Set CCP_DRIFT=1 as well, or unset CCP_DRIFT_RESTORE.',
+      );
+    }
+  }
+
+  // CCP_EXECUTOR is read in exactly one place, apply/loop.ts's selectExecutor,
+  // itself constructed only when the timer-driven scheduler starts
+  // (CCP_SCHEDULER=1). It has no effect on the bundle lane (CCP_BUNDLE), which
+  // runs its own separate CCP_BUNDLE_TRIGGER_CMD shell command instead.
+  if (env.CCP_EXECUTOR === 'terraform' && env.CCP_SCHEDULER !== '1') {
+    warnings.push(
+      'CCP_EXECUTOR=terraform is set, but CCP_SCHEDULER is not — CCP_EXECUTOR only selects the auto-apply SCHEDULER lane\'s executor, which never starts without CCP_SCHEDULER=1. If you meant the approval-bundle lane to run terraform, that is governed separately by CCP_BUNDLE_TRIGGER_CMD.',
+    );
+  }
+
+  // The bundle lane requires ALL THREE of CCP_BUNDLE + CCP_BUNDLE_GATE_CMD +
+  // CCP_BUNDLE_TRIGGER_CMD (domain/bundle.ts's bundleArmed) — missing any one
+  // leaves it silently, fully disarmed rather than partially live, which is
+  // the right runtime behavior but an easy typo to never notice.
+  if (env.CCP_BUNDLE === '1' && !(env.CCP_BUNDLE_GATE_CMD && env.CCP_BUNDLE_TRIGGER_CMD)) {
+    const missing = [
+      !env.CCP_BUNDLE_GATE_CMD && 'CCP_BUNDLE_GATE_CMD',
+      !env.CCP_BUNDLE_TRIGGER_CMD && 'CCP_BUNDLE_TRIGGER_CMD',
+    ].filter((v): v is string => v !== false);
+    warnings.push(
+      `CCP_BUNDLE=1 is set, but ${missing.join(' and ')} ${missing.length > 1 ? 'are' : 'is'} not — the bundle lane requires all three (CCP_BUNDLE + CCP_BUNDLE_GATE_CMD + CCP_BUNDLE_TRIGGER_CMD) and stays fully disarmed until every one is set.`,
+    );
+  }
+
+  // githubAppConfig() (domain/forgeCredentials.ts) has exactly one call site,
+  // resolveCloneAuth in routes/scanJobs.ts, reached only from the scanner
+  // worker's /claim route behind its own CCP_SCANNER + CCP_SCANNER_KEY gate.
+  const scannerArmed = env.CCP_SCANNER === '1' && !!env.CCP_SCANNER_KEY && env.CCP_SCANNER_KEY.length >= 32;
+  if (!scannerArmed && (env.CCP_GITHUB_APP_ID || env.CCP_GITHUB_APP_KEY || env.CCP_GITHUB_APP_KEY_FILE)) {
+    warnings.push(
+      'A GitHub App is configured (CCP_GITHUB_APP_ID/KEY), but the scanner is not armed (CCP_SCANNER=1 + a >=32-char CCP_SCANNER_KEY) — the App credential is only ever consulted from the scanner worker\'s claim route, which stays closed without both.',
+    );
+  }
+
+  return warnings;
+}

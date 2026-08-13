@@ -21,7 +21,8 @@ import type { ManifestOperation } from '@/types';
 import { isSystemDriftOp } from '../domain/systemOps';
 import { disabledOps, isFrozen, loadPolicy, loadTeams, resolveRisk } from '../domain/config';
 import { checkSubmitRateLimit } from '../middleware/rateLimit';
-import { recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
+import { CHAIN_WRITE_ATTEMPTS, chainBackoff, recordIn, transactWithAudit, type AuditEntryInput } from '../domain/audit';
+import { IDEMPOTENCY_RETENTION_MS, readLiveIdempotencyMarker } from '../domain/retention';
 import { bundleArmed, bundleClaimLive, bundleConfig, realSteps, retriggerBundle, runBundle, type BundleOutcome } from '../domain/bundle';
 import { resolveLaneRemote, type LaneProject } from '../domain/laneRepo';
 import { resolveKnob } from '../domain/deploymentSettings';
@@ -309,7 +310,12 @@ export function requestRoutes(): Hono<AppEnv> {
     // race; this read is the common sequential-resubmit path.
     if (draft.idempotencyKey !== undefined) {
       const mk = requestIdempotencyKey(projectId, account.id, draft.idempotencyKey);
-      const marker = await store.get(mk.PK, mk.SK);
+      // PERF-7 — read the marker through the retention horizon. A marker exists to
+      // outlive a client's RETRY, not to reserve its key for the lifetime of the
+      // estate; past the horizon it is deleted here and the submit proceeds as
+      // fresh, which is both the retention story and the fix for a key that was
+      // otherwise unusable forever.
+      const marker = await readLiveIdempotencyMarker(store, mk, nowMs());
       if (marker) {
         const rk = requestKey(projectId, String(marker.requestId));
         const prior = (await store.get(rk.PK, rk.SK)) as RequestItem | null;
@@ -535,10 +541,19 @@ export function requestRoutes(): Hono<AppEnv> {
     // contention. Without a key, this is byte-identical to the previous single-write submit.
     const marker =
       draft.idempotencyKey !== undefined
-        ? { ...requestIdempotencyKey(projectId, account.id, draft.idempotencyKey), requestId: id }
+        ? {
+            ...requestIdempotencyKey(projectId, account.id, draft.idempotencyKey),
+            requestId: id,
+            // PERF-7 — the DynamoDB-native half of the marker's retention story.
+            // `readLiveIdempotencyMarker` enforces the horizon on the local store
+            // (which has no TTL machinery); on the deployed table this attribute
+            // makes the row expire without anyone reading it. Both halves use the
+            // same constant, so the two seams cannot drift into different policies.
+            ttl: Math.floor((nowMs() + IDEMPOTENCY_RETENTION_MS) / 1000),
+          }
         : undefined;
     const hKey = chainHead(projectId);
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < CHAIN_WRITE_ATTEMPTS; attempt++) {
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
       const { writes: auditWrites } = recordIn(projectId, head, entry);
       const domain: TransactWrite[] = [
@@ -559,7 +574,8 @@ export function requestRoutes(): Hono<AppEnv> {
               if (prior) return c.json(toChangeRequest(prior, projectId), 200);
             }
           }
-          if (attempt === 0) continue; // else it was chain contention → retry once
+          // Chain contention: re-read the head and replay the whole batch, within budget.
+          if (await chainBackoff(attempt)) continue;
           throw new ApiError('CHAIN_CONTENTION');
         }
         throw e;
@@ -817,7 +833,7 @@ export function requestRoutes(): Hono<AppEnv> {
     };
 
     const hKey = chainHead(projectId);
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < CHAIN_WRITE_ATTEMPTS; attempt++) {
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
       const { writes: auditWrites } = recordIn(projectId, head, entry);
       const domain: TransactWrite[] = [
@@ -841,7 +857,8 @@ export function requestRoutes(): Hono<AppEnv> {
           // and re-submits against the state that actually landed.
           const fresh = (await store.get(k.PK, k.SK)) as RequestItem | null;
           if (!fresh || fresh.eventSeq !== req.eventSeq) return apiError(c, 'STATE_CONFLICT');
-          if (attempt === 0) continue; // chain contention only → retry once, still fresh
+          // Chain contention only — the batch is still fresh, so replay within budget.
+          if (await chainBackoff(attempt)) continue;
           throw new ApiError('CHAIN_CONTENTION');
         }
         throw e;
@@ -1331,7 +1348,10 @@ export function requestRoutes(): Hono<AppEnv> {
 
     let recordedRow = false;
     let claimLost = false;
-    for (let attempt = 0; attempt < OUTCOME_ATTEMPTS && !recordedRow; attempt++) {
+    // PERF-11: the wider, shared chain-write budget (not the 3-attempt OUTCOME_ATTEMPTS
+    // below, which bounds the separate audit-only fallback loop) — a claim this run still
+    // holds should not give up on the chain after only a couple of lost CAS rounds.
+    for (let attempt = 0; attempt < CHAIN_WRITE_ATTEMPTS && !recordedRow; attempt++) {
       // Re-read on EVERY attempt, and re-derive everything from what is read. `events` is
       // a full-array replacement, so deriving it once from the pre-image silently erases
       // whatever landed while the bundle ran — a cancel's own timeline entry, a window
@@ -1369,7 +1389,15 @@ export function requestRoutes(): Hono<AppEnv> {
       } catch (e) {
         if (!(e instanceof ConditionError)) throw e;
         // Either the row moved or the chain head did. Both are answered by going round
-        // again with FRESH reads — never by retrying a stale guard.
+        // again with FRESH reads — never by retrying a stale guard. Full-jitter backoff
+        // (PERF-11) between attempts spreads writers that just collided instead of
+        // re-synchronising them; its own budget check is redundant with the loop's,
+        // so its return value is intentionally unused here. Unlike the record()/
+        // transactWithAudit() retry loops, this one does not throw CHAIN_CONTENTION on
+        // exhaustion — a lost claim or a spent budget both fall through to the
+        // audit-only fallback below, because the deploy already fired and losing that
+        // evidence entirely is the worse failure this handler exists to prevent.
+        await chainBackoff(attempt);
       }
     }
 
@@ -1501,7 +1529,7 @@ export function requestRoutes(): Hono<AppEnv> {
     // this verb now has more than one valid prior status.
     const priorStatus = req.status;
     const hKey = chainHead(projectId);
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < CHAIN_WRITE_ATTEMPTS; attempt++) {
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
       const { writes } = recordIn(projectId, head, entry);
       const domain: TransactWrite[] = [
@@ -1515,11 +1543,15 @@ export function requestRoutes(): Hono<AppEnv> {
           // Idempotent-safe: a losing race (a concurrent cancel/rewindow, or a
           // window elapsing and settling underneath us) is reported honestly,
           // never double-applied.
-          if (attempt === 0) {
-            const fresh = (await store.get(k.PK, k.SK)) as RequestItem | null;
-            if (fresh && fresh.status !== priorStatus) return apiError(c, 'STATE_CONFLICT');
-            continue; // else it was chain contention (a DIFFERENT request) → retry once
-          }
+          // Whose condition failed? Ask the row. A status that moved is this caller's
+          // own guard losing — never retry that, it would replay a stale decision.
+          // Anything else is chain contention, replayable within the budget. The
+          // re-read runs on EVERY lost round, not just the first: the row can move
+          // on any of them, and only checking once made a later move look like
+          // contention and surface as a 409 instead of the STATE_CONFLICT it was.
+          const fresh = (await store.get(k.PK, k.SK)) as RequestItem | null;
+          if (fresh && fresh.status !== priorStatus) return apiError(c, 'STATE_CONFLICT');
+          if (await chainBackoff(attempt)) continue;
           throw new ApiError('CHAIN_CONTENTION');
         }
         throw e;
@@ -1605,7 +1637,7 @@ export function requestRoutes(): Hono<AppEnv> {
     };
 
     const hKey = chainHead(projectId);
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < CHAIN_WRITE_ATTEMPTS; attempt++) {
       const head = (await store.get(hKey.PK, hKey.SK)) as ChainHeadItem | null;
       const { writes } = recordIn(projectId, head, entry);
       const domain: TransactWrite[] = [
@@ -1622,11 +1654,15 @@ export function requestRoutes(): Hono<AppEnv> {
         return c.json(toChangeRequest(updated, projectId));
       } catch (e) {
         if (e instanceof ConditionError) {
-          if (attempt === 0) {
-            const fresh = (await store.get(k.PK, k.SK)) as RequestItem | null;
-            if (fresh && fresh.status !== priorStatus) return apiError(c, 'STATE_CONFLICT');
-            continue; // else it was chain contention (a DIFFERENT request) → retry once
-          }
+          // Whose condition failed? Ask the row. A status that moved is this caller's
+          // own guard losing — never retry that, it would replay a stale decision.
+          // Anything else is chain contention, replayable within the budget. The
+          // re-read runs on EVERY lost round, not just the first: the row can move
+          // on any of them, and only checking once made a later move look like
+          // contention and surface as a 409 instead of the STATE_CONFLICT it was.
+          const fresh = (await store.get(k.PK, k.SK)) as RequestItem | null;
+          if (fresh && fresh.status !== priorStatus) return apiError(c, 'STATE_CONFLICT');
+          if (await chainBackoff(attempt)) continue;
           throw new ApiError('CHAIN_CONTENTION');
         }
         throw e;

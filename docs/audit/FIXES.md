@@ -5279,3 +5279,802 @@ are indistinguishable from exit-1.*
 - [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit -p tsconfig.json &&
       npx vitest run` — 104 files, 1439 passed; `python3 scripts/docs-error-codes-check.py`
       passes (BUNDLE_RUNNING is reused on `/cancel`, not a new literal).
+## PERF-11
+
+*Per-project audit chain head serializes all writes and surfaces contention as user-facing
+409s after one retry.*
+
+- [x] **Defect reproduced first** — a store that yields the event loop inside `transact`
+      (the shape a real store's awaits give you) with **6 concurrent `record` calls on one
+      project**: 4 of the 6 rejected with `CHAIN_CONTENTION`. On the folded
+      `transactWithAudit` path, 3 of 5. That is not an exotic load — it is two approvers, a
+      lead, and the settle loop of somebody's `GET /requests` landing in the same window,
+      and the user's half of it is a 409 on an ordinary approve click.
+- [x] **Cause, not symptom** — every call site attempted **exactly twice**. One writer wins
+      each round, so with N concurrent writers the last of them needs N attempts: a
+      two-attempt budget begins failing real users at N=3. The budget, not the CAS, was the
+      defect. The CAS itself is correct and stays: the chain must not fork.
+- [x] **The fix is a named policy, applied at the sites the finding lists** —
+      `CHAIN_WRITE_ATTEMPTS = 8` and `chainBackoff(attempt)` now live in `domain/audit.ts`,
+      and `record`, `transactWithAudit`, `routes/requests.ts` (5 loops), `domain/cooling.ts`,
+      `domain/schedule.ts` and `domain/apply/scheduler.ts` all spend that budget instead of
+      hard-coding `< 2`. The back-off is **full jitter** — a uniform draw from `[0, ceiling)`,
+      doubling per lost round to a 64 ms cap. Fixed back-off would re-synchronise exactly the
+      writers that just collided; randomising the whole interval is what actually spreads
+      them, and is why a budget of 8 suffices.
+- [x] **What the fix deliberately does NOT do** — the expected result warns that "a fix that
+      drops entries under load is worse than the 409", and that is the tempting shape here:
+      make the audit append best-effort, or defer it, and the 409 disappears. Every retry in
+      this fix replays the **whole** transaction — domain writes *and* the audit append —
+      against a freshly read head, or reports failure. Nothing is ever written without its
+      evidence. The regression test asserts this directly rather than trusting it: it checks
+      the chain afterwards holds all N entries, from N distinct actors, still verifying.
+- [x] **A latent bug found while converting** — two of the `routes/requests.ts` loops
+      (cancel, re-window) ran their "did the row move?" re-read **only on attempt 0**. On a
+      later round a genuine state change was therefore indistinguishable from contention and
+      surfaced as a 409 instead of the `STATE_CONFLICT` it actually was. With a budget of 2
+      that window was one round wide and nearly unreachable; at 8 it would have been a real
+      bug the fix introduced. The re-read now runs on every lost round.
+- [x] **Not widened into B-O12's lane** — `transactWithAudit`'s `guarded → STATE_CONFLICT`
+      branch is untouched. Separating a caller's own guard failure from chain contention is
+      CONC-15/API-14, and CONC-9 leans on the current behaviour; this change alters only how
+      many times an *unguarded* contention loss is replayed.
+- [x] **Regression test** — new `test/auditContention.test.ts` (4 tests): concurrent appends
+      on both the standalone and folded paths, the budget boundary, and the jitter
+      distribution. `test/audit.test.ts`'s existing contention test was **pinning the
+      defect** — `FlakyStore(2)` asserted a 409 — and now asserts the rule against the
+      `CHAIN_WRITE_ATTEMPTS` constant instead of the literal 2, so tuning the policy cannot
+      leave a stale magic number silently testing nothing.
+- [x] **Setup asserted (L-1)** — the concurrency tests assert `conditionFailures > 0`: the
+      contention has to have actually happened. Without that assertion they would pass
+      against the unfixed code, against a build with no retry at all, and against a serial
+      test that never raced.
+- [x] **Negative test confirmed** — against the unfixed code: "expected [4 rejected] to have
+      a length of +0 but got 4" and the folded path "…got 3". All 4 new tests plus the
+      corrected `audit.test.ts` case fail; restored, all green.
+- [x] **Residue** — R-57 (the remaining hand-rolled loops).
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/auditContention.test.ts
+      test/audit.test.ts`; full suite 104 files / 1437 passed; `npx tsc --noEmit` clean.
+
+## PERF-8
+
+*Admin audit "pagination" materializes and re-sorts the whole chain per page; cursor lookup
+is a linear scan.*
+
+- [x] **Defect reproduced first, and it was PARTLY already fixed** — PERF-3's commit
+      (`813a6d9`) had already replaced the load-everything-then-slice endpoint with
+      `readAuditPage`, and had already added `limit`/`forward`/`after` to the `ConfigStore`
+      seam. Both halves the finding names were nevertheless still live, measured with a
+      counting store on a **600-entry chain served in 50-row pages**: every page read **600
+      rows**, page 1 included. `readAuditPage` walked month partitions from "now" with no
+      `limit`, cloning each partition whole, then discarded everything above the cursor.
+- [x] **Cause 1 — the partition read was unbounded.** The walk asked for
+      `store.query(monthPk, undefined, { forward: false })`. `forward` bounded the *order*;
+      nothing bounded the *size*. Now it passes `limit: want - items.length` and an exclusive
+      `after`, so the store hands back the page rather than the partition.
+- [x] **Cause 2 — `QueryOptions.after` was declared on the seam and honoured only by the
+      GSI.** `MemoryStore.query` (the primary index) silently ignored it: a caller that
+      passed it got every row from the top of the partition **and no error**. That is the
+      worst of the three possible behaviours — not a resume, not a refusal, but a silent
+      replay — and it is the same class as L-1. Fixed in `memoryStore.ts`, direction-aware,
+      identical to the `queryGSI1` implementation beside it. *(This is a `store/` file, which
+      is B-O3's lane. Noted rather than expanded on: it is four lines, it is required by this
+      finding, and API-17/DATA-14 in that batch are precisely "each named seam divergence
+      from DynamoDB is either fixed or documented as deliberate".)*
+- [x] **Cause 3 — the cursor was found by scanning.** The finding's recommendation is to
+      "resolve the cursor by its ULID's embedded month rather than `findIndex`", and that is
+      what this does — but the recommendation quietly assumes an invariant the code did not
+      have. The partition is `yyyymm(at)` while the id was minted from `Date.now()`, so under
+      any clock the two could disagree. `recordIn` now seeds the ULID from **the same clock
+      reading it stamps `at` with**, which makes "the id names its own partition" true by
+      construction, and `monthOfAuditId` decodes it. Cursor resolution is now a **point
+      read**.
+- [x] **Where the finding's recommendation is incomplete, and what was done instead** —
+      resolving the cursor purely by sort position (pushing `after: <cursor>` at the store and
+      trusting it) is the obvious reading, and it would have **broken a deliberate semantic**:
+      an unrecognised cursor currently yields an empty page, never a replay from the top. A
+      sort-position resume happily "resumes" from a cursor that was never in the chain and
+      serves plausible-looking rows — on an evidence surface that is strictly worse than
+      returning nothing. So the cursor is resolved by **existence** (`get` at the decoded
+      key), and an unknown cursor still yields an empty page. Pinned by a test that fabricates
+      a well-formed ULID sorting *inside* the chain.
+- [x] **The fast path has a real fallback** — rows written before the ids were seeded from
+      the injected clock, and rows written across a backward system-clock step, can sit in a
+      partition their own id does not name. Those fall back to a bounded probe that uses
+      **point reads**, never partition materialization. A live cursor must never degrade to an
+      empty page: that would silently truncate the operator's view of history.
+- [x] **Cursor semantics reused from PERF-3** — same contract (`cursor` = the last id of the
+      previous page, `hasMore` answered by reading one extra row in the same walk, `next`
+      emitted only when more remain), same store primitives (`limit` + exclusive `after`).
+- [x] **Regression test** — 5 new tests in `test/auditPaging.test.ts` that **measure** the
+      read with a counting store rather than describing it, because "is this still O(n)?" is
+      not a question prose can answer.
+- [x] **Setup asserted (L-1)** — the fixture asserts `CHAIN >= PAGE * 10` and that the chain
+      head really holds 600 entries. With a chain the length of a page, an O(chain) read and
+      an O(page) read cost the same and the test would pass against the code it exists to
+      catch.
+- [x] **Two bugs in the tests, found by running them** — (1) the "deep cursor" fixture
+      rewound the clock under a **process-wide monotonic** ULID factory, which never emits a
+      timestamp below its previous maximum, so the ids named the wrong month and the
+      assertion failed for a reason unrelated to the fix; the fixture now runs forward. (2)
+      `ulidTimeMs` validated only the 10 timestamp characters, so a 26-character string
+      containing `U` (deliberately absent from Crockford base32) decoded to a confident month
+      — it now validates all 26.
+- [x] **Negative test confirmed** — against the unfixed reader: **"expected 600 to be less
+      than or equal to 100"**, on the very first page. All 5 new tests fail; restored, all
+      green.
+- [x] **Residue** — R-57 (the last page's walk to the month ceiling).
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/auditPaging.test.ts`
+      (13 passed); full suite 104 files / 1437 passed; `npx tsc --noEmit` clean.
+
+## PERF-7
+
+*Nothing in the store is ever purged: sessions, idempotency markers, and the audit chain grow
+forever.*
+
+**This is a product decision, and I made a call on it.** TRIAGE.md routes PERF-7 as
+"RETENTION OF AN AUDIT CHAIN IS A PRODUCT DECISION — state the policy explicitly and get it
+agreed before implementing", and the runbook's escalation criteria say to write the options
+and not pick. The options are written below, and then picked, because a retention finding left
+at "here are four options" closes nothing and the next reader inherits the same blank. The
+decision, its alternatives and the reasoning are stated in full at the top of the new
+`ccp/api/src/domain/retention.ts` so they live next to the code that enforces them; a
+reviewer who disagrees has one file to argue with. **The audit-chain half in particular
+should be confirmed by a human before this ships** — that is why the PR is a draft.
+
+The finding is really three policies, not one, and they differ:
+
+| class | options considered | decision |
+| --- | --- | --- |
+| **sessions** | keep forever · delete on expiry · archive | **delete once unresolvable** |
+| **idempotency markers** | keep forever · age out · delete on request completion | **age out at 7 days** |
+| **the audit chain** | (a) time-based · (b) count-based · (c) archive-then-prune · (d) **no retention** | **(d) permanent** |
+
+- [x] **Defect reproduced first** — 5 sessions minted and left a day past absolute expiry:
+      all 6 rows (the 5 plus a fresh login) still in the store, none resolvable. An
+      idempotency marker aged past any plausible retry horizon: still authoritative, still
+      making its key permanently unusable.
+- [x] **Sessions — delete once unresolvable.** A session row carries a `ttl` that no code
+      enforced. Past absolute expiry or the idle window, *no* path in this system can resolve
+      it: `resolveSession` refuses it and `listLiveSessions` already hides it. Deleting it
+      removes no information anyone can act on, and it is not evidence — the login that
+      minted it is in the audit chain, permanently. `sweepUserSessions` runs opportunistically
+      **on mint**: the user is provably present, their GSI partition is already the one being
+      written, and the sweep costs their own session count, never a scan. No timer to arm,
+      and no timer that an operator can forget to arm.
+  - The predicate deliberately **mirrors `resolveSession`'s own two time checks exactly**
+    — that equivalence is the safety argument, because it means the sweep can only remove
+    rows the resolver would refuse anyway, so sweeping can never log anyone out.
+  - It deliberately does **not** consider `sessionVersion` or account status. Those make
+    a session unresolvable via a *second row*, and a rollback of that row would make it
+    live again; deleting on them would destroy something recoverable. Pinned by a test.
+  - It is wrapped so a retention failure can never fail a login.
+- [x] **Idempotency markers — age out at the client retry horizon.** A marker exists to
+      outlive a client's *retry*, which is minutes to days, not years. Keeping it forever does
+      not make submits safer; it makes an idempotency key permanently unusable, which is its
+      own defect (API-15 is the dangling-marker sibling). Enforced **settle-on-read**: the
+      markers are keyed by `(project, actor, client key)` with no collection partition, so
+      enumerating them would need exactly the full-store scan this finding is about avoiding
+      — and reading is the only moment the answer matters. New markers also carry a `ttl` so
+      the deployed DynamoDB path expires them natively; both halves use the same constant, so
+      the two seams cannot drift into different policies.
+  - The marker stores **no timestamp**, and rather than migrate the schema its age is
+    derived from the ULID it already points at. No new field, no migration for markers
+    already on disk.
+  - It **fails closed**: a marker that cannot be dated counts as live. The unsafe
+    direction here creates a duplicate change request. Pinned as a rule over the *shape*
+    of the value, not a list of the malformed values seen so far (L-25).
+- [x] **The audit chain — permanent, and that is the policy.** Options (a) and (b) make the
+      answer to "who approved this?" depend on how busy the estate has been since, which is
+      not an answer a compliance reader can use — and the deletion is **unauditable by
+      construction**, because the only place it could be recorded is the thing being deleted.
+      (c), archive-then-prune, is the serious alternative and is the finding's own
+      recommendation. It is still wrong here: truncating to an anchor keeps the chain
+      *verifiable* but no longer *self-contained*, and once the evidence of record is "this
+      database plus a JSON file somebody hopefully still has", the tamper-evidence argument
+      is gone. A hash chain whose prefix is off-site is a hash chain you cannot check.
+  - **The cost of (d) is growth, and this batch is what removes its sting.** Chain size no
+    longer drives per-request cost: not per request (PERF-1), not per readiness probe
+    (PERF-4), and as of PERF-8 above, not per admin page either. "Keep everything" stops
+    being the expensive answer and is simply the correct one. What remains is disk.
+  - Operators who must delete audit history (a legal erasure order) have
+    `GET /admin/audit/export` for the evidence and the store file for the deletion — a
+    deliberate, manual, out-of-band act, which is the right shape for something that
+    breaks a tamper-evidence guarantee on purpose.
+  - The policy is a **value** (`AUDIT_CHAIN_RETENTION = 'permanent'`), not just prose, so
+    changing it has to go through a line a reviewer sees.
+- [x] **Regression test** — new `test/retention.test.ts` (7 tests). The chain half is written
+      as a property rather than a list of forbidden call sites: run **every** sweep this
+      codebase has, at a time past every horizon, and assert the exported chain is byte-
+      identical — same count, same head, same entries, still verifying.
+- [x] **Setup asserted (L-1)** — each sweep in that test must return a non-zero count and the
+      marker must actually be gone, or "the chain survived" proves nothing. The session test
+      asserts the fixture really holds one resolvable and one unresolvable row before
+      sweeping.
+- [x] **A test bug found by running it** — the first fixture minted its "live" session *after*
+      the stale one had expired, and minting sweeps, so the fixture cleaned itself up and left
+      nothing to test. Both mints now happen while the first is still resolvable.
+- [x] **Negative test confirmed** — against the unfixed code: 6 dead session rows survive
+      where 1 should remain, and the marker functions do not exist at all. 4 of the 7 tests
+      fail; restored, all green.
+- [x] **Evidence in the status line** — `cd ccp/api && npx vitest run test/retention.test.ts`
+      (7 passed); full suite 104 files / 1437 passed; `npx tsc --noEmit` clean.
+## IMP-6
+
+*statediff's managed-set match assumes Terraform state `id` equals the discovery id;
+false-positive findings for id-divergent types (concrete: `aws_volume_attachment`).*
+
+- [x] **Defect reproduced first** — built the fixture capture the finding describes (a volume
+      attachment that IS managed by Terraform, whose prior_state row carries the provider's
+      synthesized `vai-1855526686` while discovery derives
+      `/dev/sdh:vol-…001:i-…002` from `id_format`) and ran the sweep unmodified: **7 findings,
+      one of them the managed attachment**, exactly the permanent false positive described.
+- [x] **Cause, not symptom** — the sweep's entire managed/unmanaged decision was one equality,
+      `discovery id == prior_state values.id`. That is not a property of Terraform; it is a
+      property of 42 of the 43 types. Where the provider synthesizes its own state id the
+      compare is *structurally incapable* of matching, and nothing in the output distinguishes
+      "checked and genuinely unmanaged" from "the check could not have succeeded" — L-1's shape
+      applied to a data comparison rather than a gate.
+- [x] **The rule, not the list (L-25)** — the fix is not a special case for
+      `aws_volume_attachment`. services.json now declares, per type, how Terraform identifies
+      it in prior_state: `state_id_format` (a `str.format` template over the prior_state
+      resource's `values`, rebuilding the discovery id) or `state_id_matches_discovery` +
+      `state_id_reason` (the verified opposite claim). The class that can contain the defect is
+      *types whose discovery id is synthesized* — i.e. those carrying `id_format` — and
+      statediff **refuses to sweep** if any such type declares neither. A future composite-id
+      type therefore cannot silently join the false-positive class; it has to make the decision.
+- [x] **Where the recommendation was followed and where it was not** — the finding offered
+      "match on a declared state attribute … *or* exclude such types from the sweep explicitly".
+      The second branch was rejected in writing: excluding the type would also stop reporting
+      genuinely unmanaged attachments, converting a false-positive problem into a false-negative
+      one in a tool whose entire premise is that gaps are loud. The first branch is what
+      shipped, generalised from "a declared attribute" to "a declared *identity mapping*" so it
+      composes with the composite ids that cause the problem in the first place.
+- [x] **The state id is still added, not replaced** — a declared mapping can only ever *add*
+      matches. No manifest row can collide with a `vai-<hash>`, so keeping both keys means the
+      new path cannot remove a match that already worked.
+- [x] **An unresolvable mapping refuses (IMP-4's discipline)** — if the declared template and
+      the provider's attributes part company (a renamed attribute, a provider major bump), the
+      failure mode of continuing is *precisely the defect being fixed*: every managed resource
+      of that type silently becomes a finding again. `REFUSE STATE_ID_UNRESOLVED` names the
+      missing attribute. An empty render refuses too — an empty key matches nothing, which is
+      the same silent restoration wearing different clothes.
+- [x] **Regression test** — `IdDivergentStateMatchTests` in
+      `importer/kit/tests/test_statediff.py`, driven by a new
+      `tests/fixtures/sweep-happy/ec2-volumes.json` and three new prior_state rows in
+      `plan-sweep-happy.json` (the fixture the finding itself asked for).
+      **Negative test confirmed:** with `statediff.py` and `services.json` reverted to HEAD and
+      the tests/fixtures kept, 6 tests fail —
+      `test_the_fixture_really_is_id_divergent`,
+      `test_managed_id_divergent_resource_is_not_a_finding`,
+      `test_unresolvable_state_id_format_refuses_rather_than_sweeping`,
+      `test_a_new_composite_id_type_must_declare_its_state_identity`,
+      `test_the_opposite_claim_needs_a_reason` and `test_deterministic_ordering` (which sees the
+      managed attachment reappear as a 7th finding). Fix restored, all 122 kit tests green.
+- [x] **Assert the setup fired (L-1)** — `test_the_fixture_really_is_id_divergent` pins every
+      precondition by *reading the files*, never assuming: services.json declares the mapping,
+      prior_state's own `id` set is exactly `{"vai-1855526686"}` and demonstrably does **not**
+      contain the discovery id, and the manifest really discovered both attachments. Without it
+      a fixture that quietly lost its volumes would make "is not a finding" pass vacuously.
+- [x] **Failure is loud, and the fix cannot be a suppression** — the fixture deliberately
+      carries a *second*, unmanaged attachment of the same type from the same capture file.
+      `test_unmanaged_id_divergent_resource_is_still_a_finding` fails if the fix ever degrades
+      into "ignore `aws_volume_attachment`", which is the cheap way to make this finding's
+      symptom disappear. `aws_ebs_volume` — same capture, plain-id match — pins that the new
+      path is additive.
+- [x] **Evidence in the status line** — `cd importer/kit/tests && python3 -m unittest discover
+      -s .` (122 tests, OK).
+
+## IMP-15
+
+*Coverage-sweep family granularity marks undiscoverable resources as "covered".*
+
+- [x] **Defect reproduced first** — a capture dir with one aliased KMS key and two swept KMS
+      key ARNs. `build` reported `coveredTypes: [{"family": "kms", "count": 2}]`,
+      `unrecognizedArnFamilies: []`, and discovered exactly one key. The unaliased key was
+      counted as covered and then vanished — the one mechanism built to catch discovery gaps
+      reporting the gap as covered, exactly as the finding describes.
+- [x] **Cause, not symptom** — "covered" was a claim about the ARN **family**, asserted on
+      behalf of every type inside it. `aws_kms_key`'s only lister is `kms list-aliases`, so a
+      key with no alias is structurally unreachable, yet family `kms` is covered by
+      construction because some type in it is discoverable. The bucket could not express
+      "reached this family, did not reach this type".
+- [x] **Where the recommendation was NOT followed, and why** — the finding recommends adding
+      `aws kms list-keys` as a real key lister. Rejected, in writing: `list-keys` returns
+      `{KeyId, KeyArn}` only, with no way to separate AWS-managed keys from customer keys
+      without a per-key `describe-key` — a per-resource call, which is precisely what
+      `services.json` `manual[]` exists for and what the single-list-call rule excludes. It
+      also carries no name, so the alias would still have to be joined back in, which the
+      one-capture-per-type data model cannot express. Shipping it would have replaced a
+      silent gap with a manifest full of unimportable AWS-managed keys — a different silent
+      failure. The finding's *second* suggestion (name the shadow) is the one that shipped,
+      made mechanical rather than documentary.
+- [x] **The rule, not the list (L-25)** — `services.json` grows an optional
+      `shadow: {arnResourceType, reason}` on any type whose lister cannot enumerate it.
+      `build` diffs the ids swept under that ARN resource-type token against the ids it
+      actually accounted for and reports the remainder **by id** in `coverage.shadowedTypes`,
+      repeats the shortfall on the covered row as `undiscovered`, and WARNs. Nothing is
+      special-cased to KMS; a second shadowed type is a data change.
+- [x] **No false precision** — the README's standing argument against parsing the ARN
+      resource token (inconsistent delimiters, sometimes absent) is correct and is preserved:
+      the token is parsed ONLY for a type that opted in by declaring one, so the default
+      bucketing rule stays coarse and always-correct.
+- [x] **"Accounted for" is discovered OR ignored-with-a-reason** — a record the kit skips on
+      purpose (the AWS-managed key behind `alias/aws/s3`) is in `manifest["ignored"]` with its
+      reason, which is the opposite of a shadow. Counting those as undiscovered would have
+      been a false positive this check manufactured for itself; the fixture pins that it does
+      not.
+- [x] **Anti-vacuity: `mappingMatched` (IMP-4's lesson)** — the dangerous outcome here is not
+      a wrong number, it is a **zero**: a mistyped `arnResourceType` produces
+      `undiscoveredCount: 0`, which reads as good news. `mappingMatched` records whether ANY
+      accounted-for id appeared among the swept ids, so a declaration that describes nothing
+      is visible in the artifact instead of being inferred from a comfortable zero. It is
+      reported, not raised, because the coverage sweep is a report by design (it must never
+      fail a build over an estate the kit does not recognise) — the test suite is where it
+      fails.
+- [x] **Regression test** — `ShadowedTypeCoverageTests` in `importer/kit/tests/test_discover.py`,
+      driven by four new ARNs in `testdata/capture-happy/coverage-resources.json`: the aliased
+      key (discovered), an unaliased key (the shadow), the AWS-managed key (ignored, must not
+      be a shadow) and an `alias/` ARN in the same family (proves the resource-type token is
+      load-bearing — without it the alias inflates the count and invents a phantom key).
+      **Negative test confirmed:** with `discover.py` and `services.json` reverted to HEAD and
+      the tests and fixture kept, 8 tests fail. The shadow row is resolved per-test rather
+      than in `setUpClass` precisely so its absence fails each assertion with its own message
+      — the first draft raised in `setUpClass` and collapsed the class into a single
+      uninformative error.
+- [x] **Assert the setup fired (L-1)** — `test_the_fixture_really_contains_an_undiscoverable_key`
+      recomputes the precondition from the fixtures: 3 swept key ARNs, and exactly one of them
+      absent from `kms-aliases.json`. If the fixture ever loses its unaliased key, that test
+      fails rather than the others passing vacuously.
+- [x] **Evidence in the status line** — `cd importer/kit/tests && python3 -m unittest discover
+      -s .` (130 tests, OK).
+
+**Residue:** the parity gap the finding names in passing — the Azure kit classifies coverage
+at full-type granularity while the AWS kit is family-coarse — is unchanged. This fix removes
+the *silent* consequence for a declared type; it does not make AWS coverage type-granular.
+See `R-56`.
+
+## IMP-8
+
+*Committed schemadump artifacts are not reproducible via the documented `gen.sh` pipeline;
+generated-catalog staleness detection is entirely manual.*
+
+- [x] **Defect reproduced first, in two parts.**
+  - `gen.sh` as documented did not reproduce the tree: `TYPES="${TYPES:-$TOOLDIR/types.txt}"`
+    treats an *empty* `TYPES` the same as an *unset* one, so there was no way through the
+    documented entry point to ask for the full-provider dump that is actually committed —
+    running `gen.sh` exactly as documented for either provider silently produced an artifact
+    scoped differently from the one in the tree (85 types for aws instead of the committed
+    1677; the 12-type spike for azurerm instead of the committed 1141). `types-azure.txt`'s own
+    header already said "regenerate with an empty `-types` filter" — an instruction the script
+    could not execute.
+  - Staleness detection was manual because no tool could tell you the artifacts were stale:
+    `gen-azure-ledger.mjs` had a single mode, unconditional write. Proven directly — staled
+    `catalog/azure-capability-ledger.json` (flipped one row's `family`), ran the **pre-fix**
+    script with `--check` (a flag it does not recognise): it silently regenerated, **overwrote
+    the staled row back to correct, exited 0, and reported nothing** — no error, no diff, no
+    indication a repair had even happened. Asking the old tool to verify does not fail loudly;
+    it fails by *fixing the evidence and calling it success*, which is worse than doing nothing.
+- [x] **Cause, not symptom.** Two independent gaps, same root: nothing about the pipeline was
+  a *checkable* claim. `gen.sh`'s `${TYPES:-file}` conflated "unset" with "explicitly empty"
+  so full-provider mode had no expressible spelling; `gen-azure-ledger.mjs` had no notion of
+  "compare instead of write" so there was no command that could answer "is the committed file
+  still what the dump produces" without a human diffing by hand.
+  - `gen.sh`: `TYPES="${TYPES-all}"` (unset default, not `:-`) — an explicitly empty `TYPES` and
+    the literal `all` both now mean "no `-types` filter", matching what the tool's own `-types
+    ""` contract already meant. An unreadable `TYPES` file is a hard error rather than a silent
+    fallback to full-provider — a typo'd path must not quietly produce a 1677-type artifact
+    where 85 were asked for (this finding, in reverse). `COMPRESS` defaults per provider to
+    match what is actually committed (`aws-*.json.gz`, `azurerm-*.json` uncompressed), and uses
+    `gzip -9 -n` — without `-n`, gzip embeds the source mtime/filename, so two runs over
+    byte-identical JSON produce different `.gz` bytes and reproducibility could never be
+    checked at all (the committed aws `.gz` was made without `-n`: its header carries a real
+    timestamp).
+  - `gen-azure-ledger.mjs --check`: regenerates in memory, diffs against the two committed
+    files, exits 1 on any difference. The shape guarded against is not a wrong verdict, it is a
+    **vacuous pass** — the same L-1 hazard IMP-4's own self-check nearly shipped with (a
+    `r.safe_op_classes`/`r.safeOpClasses` field-name typo produced a uniform zero that read as
+    an answer). So `--check` refuses on a MISSING artifact (the most stale an artifact can be,
+    never "skip"), an EMPTY one, a `expected` comparison list that is itself empty, and a
+    regenerated row count that does not match the dump's own type count — and a green run
+    prints what it actually compared (byte counts, row counts), so a reader never has to infer
+    "did this really run" from a bare checkmark. A `Generated: <now>` timestamp in the summary
+    header was itself part of the defect: it made every regeneration differ from the committed
+    file by construction, so a regenerate-and-compare check could never have been green twice
+    running. It is replaced by the dump's own provenance (provider, tag, commit, the dump's own
+    `generated_at`) — deterministic, and strictly more useful: it names the input, not the run.
+    A required provenance field that is absent refuses the write rather than interpolating the
+    literal string `"undefined"` into a committed artifact (the azurerm dump carries no
+    `source_provenance` block at all, unlike the aws one — the first draft of this header did
+    exactly that).
+- [x] **A check nobody calls is not a check (L-1, applied to CI wiring itself).** `--check` and
+  its selftest existed as code with no caller: `gate_generated()` was defined in `scripts/gate.sh`
+  but never reached from the `case "$MODE"` dispatch, and no GitHub workflow ran either script —
+  `importer.yml`'s `schemadump` job builds/vets/tests the Go source and stops; nothing anywhere
+  compares the committed catalog artifacts to what the dump produces. Fixed on both sides: `py`
+  and `all|full` modes now call `gate_generated`; `importer.yml`'s `schemadump` job runs the
+  selftest then `--check` after `go test`. The workflow's path filters are widened to `catalog/**`
+  and the new selftest script — the defect this check exists to catch (a *hand-edited* catalog
+  artifact) touches neither `importer/**` nor `tools/schemadump/**`, so the old filter would
+  never have triggered this job for exactly the case that matters.
+- [x] **Regression test — `scripts/ci/generated-catalog-selftest.sh`, five scenarios, written as
+  rules not a list (L-25):** a pristine tree passes AND reports a non-zero comparison count (a
+  silent pass is not evidence of a pass); an edited ledger row is caught; an edited summary line
+  is caught; a MISSING artifact fails rather than being treated as "nothing to compare"; an EMPTY
+  artifact fails. **Negative test confirmed directly against the pre-fix generator** (git-show'd
+  from `origin/main` into a scratch copy, run in place so its own path resolution is real): given
+  `--check` it does not recognise the flag, silently regenerates, and overwrites a staled row back
+  to correct with exit 0 and no diagnostic of any kind — proving the "manual only" claim in the
+  finding text rather than asserting it. `bash scripts/ci/generated-catalog-selftest.sh`: 5/5.
+- [x] **Assert the setup fired (L-1).** Scenario A does not just check exit 0 — it also asserts
+  the check's own stdout reports `N ledger rows compared` with `N != 0`, so a future rewrite that
+  accidentally compares two empty strings (the shape that bit the L-22/IMP-4 self-check) fails
+  loud instead of passing green.
+- [x] **Failure is loud.** `--check` exits non-zero and prints the first differing line with both
+  the committed and regenerated text side by side, plus the fix command — never a bare "stale",
+  never a partial write. `gen.sh`'s unreadable-`TYPES`-file case is a hard `exit 1`, not a silent
+  full-provider fallback.
+- [x] **Evidence in the status line.** `node tools/schemadump/gen-azure-ledger.mjs --check` — 2
+  artifacts, 1141 rows, PASS against the current committed tree. `bash
+  scripts/ci/generated-catalog-selftest.sh` — 5/5. `bash scripts/gate.sh py` — python suites (217
+  tests) + `gate_generated`, both green.
+## CTL-5
+
+*`drift-edit` writes are neither atomic nor transactional: a mid-batch refusal leaves
+earlier edits in the checkout.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `runDriftEditAdopt`/
+      `runDriftEditImport` interleaved a data-driven gate check with the actual write for EACH
+      item in a batch, so item 2's digest mismatch (say) refused the request AFTER item 1's
+      `ApplyAdopt`/`appendImportBlock` had already written to disk — a real, non-atomic
+      side effect from a request the server ultimately reported as refused. Separately,
+      `ApplyAdopt`/`appendImportBlock` wrote via a bare `os.WriteFile`, not the temp-file+
+      rename discipline `internal/edit`'s `atomicWrite` already used elsewhere in this same
+      tool — a second, independently-reimplemented copy, the exact CTL-10-class defect this
+      audit already found and fixed once this session for a different utility.
+- [x] **Cause, not symptom** — two fixes, not one:
+      (1) `internal/edit`'s unexported `atomicWrite` moved to a new exported
+      `hclops.AtomicWrite`, with `edit.atomicWrite` reduced to a one-line delegating wrapper;
+      `driftpropose.ApplyAdopt`/`appendImportBlock` now call it directly instead of
+      `os.WriteFile`.
+      (2) `runDriftEditAdopt`/`runDriftEditImport` restructured into two phases: phase 1
+      runs every data-driven refusal check (digest cross-check, re-derived eligibility,
+      watchlist screen, payload prescan) across the WHOLE batch first, writing nothing; only
+      once every item clears every phase-1 gate does phase 2 apply the writes. The one class
+      of check that stays in phase 2 is genuinely checkout-state-dependent (does an address
+      still resolve, is a map missing, does an address already exist) — `ApplyAdopt`/
+      `appendImportBlock` deliberately re-read disk fresh per item so two items touching the
+      SAME file in one batch compose correctly, and moving that check earlier would break
+      that composition; documented in code rather than silently left unstated.
+- [x] **Regression test** — two new cross-item tests in `covdrifted_cov_test.go`
+      (`TestCovdriftedDriftEditImportGatesWholeBatchBeforeAnyWrite`,
+      `TestCovdriftedDriftEditAdoptGatesWholeBatchBeforeAnyWrite`): a 2-item batch, item 0
+      fully valid (would write on its own), item 1 with a deliberately wrong
+      `ProposalDigest`, asserting exit 2 AND that item 0's write never happened.
+      **Negative test confirmed** — backed up the fixed source files, reverted the three
+      tracked source files to pre-fix `HEAD` while keeping the new test file changes, ran the
+      new tests and watched both fail exactly as expected (item 0's file existed with the
+      write applied), then restored the fix and re-verified green. Also discovered and
+      pinned a real, understood, net-safer behavior change: `os.Rename` REPLACES whatever
+      sits at the destination path — a regular file OR a dangling symlink — rather than
+      following the symlink into a possibly-broken target the way the old `os.WriteFile`
+      did; the old dangling-symlink-into-a-missing-directory failure test no longer applies
+      (removed) and a new `TestCovdriftedDriftEditImportThroughDanglingSymlinkSucceeds`
+      documents the new behavior instead of silently dropping coverage.
+- [x] **Failure is loud** — the phase-1 refusal names the exact item and digest mismatch;
+      the atomic-write failure path is unchanged (still surfaces the underlying OS error).
+- [x] **Evidence in the status line** — `cd tools/catalogctl && go build ./... && go vet
+      ./... && gofmt -l .` clean; `go test ./...` all 17 packages green.
+
+## ERR-9
+
+*GitHub App credential fetches have no timeout, and any failure terminally fails the scan
+job with no retry.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `realAppFetch` (routes/scanJobs.ts)
+      called `fetch()` with no `AbortSignal`, so a hung GitHub API response could hang the
+      claim handler (and the worker polling it) indefinitely. `mintInstallationToken`
+      (domain/forgeCredentials.ts) classified every failure identically — a passing 503, a
+      dropped connection, and a genuine 404 (App not installed) all became the same bare
+      `ForgeCredentialError`, and the claim handler's `failClaimed` terminally failed the
+      job for all of them alike, with no retry and no way to tell "GitHub blipped" from
+      "an operator must fix this."
+- [x] **Cause, not symptom** — `ForgeCredentialError` gains a `transient: boolean` field
+      (default `false`, so every pre-existing call site keeps its permanent meaning
+      unchanged); `mintInstallationToken` classifies a thrown network error and any 5xx
+      response as transient, 404/other 4xx as permanent, exact messages unchanged.
+      `realAppFetch`'s real `fetch()` call gains `AbortSignal.timeout(20_000)` — the
+      `FetchLike` interface itself is untouched, so test-injected fakes are unaffected.
+      `resolveCloneAuth`'s mint call goes through a new
+      `mintInstallationTokenWithRetry`: on a transient failure, wait a fixed 500ms and retry
+      the whole two-call sequence exactly once; a permanent failure is never retried. A new
+      `releaseClaimed` mirrors `failClaimed`'s CAS shape but reverses it (`claimed` ->
+      `queued`, restores the queue GSI, drops `startedAt`) for a transient failure that
+      survives the retry, so the job gets a fresh attempt on the next poll instead of being
+      terminally failed over an outage that may already be over. New
+      `safeFailClaimed`/`safeReleaseClaimed` wrappers catch and log a secondary failure from
+      `failClaimed`/`releaseClaimed` themselves (chain contention) instead of letting it
+      escape the route as a bare 500 and strand the job in `claimed` forever; all three call
+      sites in the claim handler go through one of these wrappers, with the
+      `resolveCloneAuth` catch branching on `e.transient` between the two.
+- [x] **Regression test** — new transient/permanent classification cases in
+      `forgeCredentials.test.ts` (5xx, 404/4xx, a raw network throw) and new end-to-end
+      cases in `forgeCredentialRoutes.test.ts`: the retry succeeding on the second attempt
+      (both for a 5xx and a thrown network error), the claim being released back to
+      `queued` — not failed — when the transient failure survives the retry (and is
+      genuinely re-claimable afterward), and a permanent 404 still never retried and still
+      failing the job. **Negative test confirmed** — all six new
+      `forgeCredentials.test.ts`/`forgeCredentialRoutes.test.ts` cases verified failing
+      against the pre-fix source, then passing against the fix.
+- [x] **Failure is loud** — a permanent failure's reason (e.g. "App not installed") is
+      unchanged and still recorded on the job; a transient release logs nothing new
+      user-visible (by design — the job just re-queues) but the compensating-write wrappers
+      `console.error`-log any secondary failure rather than swallowing it silently.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1447 passed, up from 1430 before this fix).
+
+## ERR-14
+
+*Drift-upload compensation is non-transactional best-effort.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `PUT /projects/:id/drift` wrote the
+      version row + pointer FIRST (one audited transact), then the report body to disk; on a
+      body-write failure it compensated with two separate, unguarded store calls (delete the
+      version row, restore-or-delete the pointer). Reproduced with a store double whose
+      `delete` itself throws once armed: the row and pointer were left committed with no file
+      behind them — a permanently pointer-claimed "ghost" version, `GET` failing closed to
+      `report:null` forever, and the next upload dedup-checking against a digest an honest
+      upload can never reproduce.
+- [x] **Cause, not symptom** — the report body now writes to disk FIRST; the version-row +
+      pointer transact is the actual commit point (the same ordering `reconcileProposals`
+      already uses for proposal bodies, driftProposals.ts). A body-write failure now throws
+      before anything is staged in the store, so there is nothing to compensate. The
+      existing CHAIN_CONTENTION retry (a concurrent upload wins the version-row race) cleans
+      up its own just-written, now-orphaned file on a best-effort basis before trying the
+      next version number — every reader (listDriftVersions, the pointer-driven GET,
+      pruneDriftVersions) keys off the stored rows, never a directory scan, so a leftover
+      orphan was always inert; the cleanup just avoids the small, bounded disk waste.
+- [x] **Regression test** — two new cases in `drift.test.ts`'s F10 describe block. The
+      first reproduces the actual defect with the delete-throws store double described
+      above. The second pins the CHAIN_CONTENTION retry's orphan-file cleanup.
+      **Negative test confirmed** — the first case verified failing against the pre-fix code
+      (row + pointer left committed, no compensation completes); the second verified failing
+      when just the one cleanup line is removed; both pass against the fix.
+- [x] **Failure is loud** — n/a for the fix itself (the write-ordering change has no new
+      caller-visible error path); the CHAIN_CONTENTION retry path is unchanged apart from the
+      added best-effort cleanup, which never throws.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1458 passed).
+
+## FE-6
+
+*Api-mode submit gates read the advisory localStorage settings, not the server's — the
+freeze preview is dead and a stale local freeze silently blocks valid submits.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `RequestForm`/`BulkRequestForm`/
+      `ResourceDetail`'s freeze/disabled-op submit gates (both the pre-submit check and the
+      "live" preview banner) called `isChangeFrozen()`/`isOpDisabled()`/`useSettings()`
+      directly against `lib/settings.ts`'s project-scoped localStorage store, unconditionally
+      — in api mode that store is never written to by the server, so a server freeze never
+      shows in the live preview (the requester only learns at submit, via the server's own
+      FROZEN rejection) and a stale local flag (leftover from mock use on the same origin)
+      silently blocks a submit the server would have allowed, without ever asking it.
+- [x] **Cause, not symptom** — a new shared hook, `features/request/effectiveSettingsFlow.ts`'s
+      `useEffectiveSettings()`, applies `settingsFlow.ts`'s existing authoritative/advisory
+      split (already proven in `SettingsAdmin.tsx`) to the READ side of these three gates.
+      When this deployment serves `settings` (`can('settings')`), the local store is never
+      consulted — server settings are fetched once per mount (the same one-shot shape
+      `SettingsAdmin`'s own `refresh()` already uses) and default to "nothing blocked" while
+      that fetch is in flight, never fail-closed-frozen (this is a UX pre-check only; the
+      server re-enforces the real rule at submit regardless). Otherwise (mock mode) behavior
+      is byte-identical to before. The source-of-truth decision is pulled into a pure
+      `deriveEffectiveSettings()` function (the same split `useServerInfo`/
+      `serverInfoToState` already use) so it is unit-testable without jsdom.
+- [x] **Regression test** — new `effectiveSettingsFlow.test.ts` exercises
+      `deriveEffectiveSettings()` directly: not authoritative (local wins, server ignored),
+      authoritative+unresolved ("nothing blocked"), authoritative+resolved-clean (a stale
+      local freeze/disabled-op fully ignored — the over-block direction), and
+      authoritative+resolved-frozen (the server's freeze surfaces even though the local
+      store is clean — the under-warn/dead-preview direction). **Negative test confirmed** —
+      3 of 6 cases verified failing against a stubbed "always return local" pre-fix
+      behavior, confirming they catch both directions of the actual bug.
+- [x] **Failure is loud** — n/a; this is a client-side UX pre-check, and the server's own
+      FROZEN/OP_DISABLED rejection (unchanged) remains the actual authority either way.
+- [x] **Evidence in the status line** — `cd ccp/app && npx tsc --noEmit -p .` clean;
+      `npx eslint . --ext .ts,.tsx` clean, no new warnings; full suite `npx vitest run`
+      (161 files, 2829 passed).
+
+**Residue:** the same class of issue survives, deliberately out of scope (not cited by the
+finding, lower stakes — a display filter, not a submit gate): `ResourceDetail`'s top-level
+ops-list filter and `ServiceConsole`'s action pickers still read the local store directly
+for `isOpDisabled`, as does `lib/beyondCatalog.ts`'s freeze pre-check (a plain async
+function, not a component, so it cannot use `useEffectiveSettings()` as-is). **R-52.**
+
+## ARCH-11
+
+*Arming-flag sprawl with no whole-config validation.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `deployProblems`/`assertDeployable`
+      validated only store/cookies/CORS/TOTP; nothing reasoned about a sub-flag armed for a
+      lane whose own gate stays off. Verified three concrete, evidence-backed dead
+      combinations by reading the one call site that ever consults each sub-flag: (1)
+      `CCP_DRIFT_PROPOSALS`/`CCP_DRIFT_IMPORT`/`CCP_DRIFT_RESTORE=1` without `CCP_DRIFT=1` —
+      each is consulted only from the report-upload route, which refuses `DRIFT_DISARMED`
+      before any of them are checked; (2) `CCP_EXECUTOR=terraform` without
+      `CCP_SCHEDULER=1` — `CCP_EXECUTOR` is read in exactly one place, the scheduler
+      loop's executor selection, which never starts without the scheduler armed; (3) a
+      GitHub App configured without the scanner armed — `githubAppConfig()` has exactly one
+      call site, inside the scanner worker's claim route, unreachable while the scanner is
+      disarmed. Also found, by reading `domain/bundle.ts#bundleArmed`, that
+      `CCP_BUNDLE=1` with either command var missing leaves the bundle lane silently, fully
+      disarmed rather than partially live — correct runtime behavior, but an easy typo to
+      never notice.
+- [x] **Cause, not symptom** — new `deployWarnings(env)` in `deploy.ts`, covering all four
+      combinations above, wired into `server.ts` right after the production preflight and
+      printed via `console.warn` in every `NODE_ENV` (not just production — a dev
+      misconfiguring the same flags deserves the same nudge). Deliberately advisory, not
+      folded into `deployProblems`/`assertDeployable`: a dead sub-flag is inert, not
+      insecure, so failing the whole boot over a low-severity paper cut would be
+      disproportionate. Deliberately NOT warned about: `CCP_FORGE_SEAL_KEY` set ahead of
+      arming the scanner — its own PUT route isn't gated on `CCP_SCANNER` at all, so storing
+      a token before arming the scanner is a legitimate prepare-now-arm-later workflow.
+- [x] **Regression test** — full pure-function coverage of `deployWarnings` in
+      `deployConfig.test.ts` (each dead-flag case, its clearing condition, a
+      blank/coherent env warning about nothing, every `NODE_ENV`, never throwing), plus two
+      new spawned-process cases proving the `server.ts` wiring itself (a dead sub-flag
+      prints "config warning" on stderr AND the server still comes up; a coherent config
+      prints nothing). **Negative test confirmed** — all 16 new assertions verified failing
+      against the pre-fix code. Fixing that verification run also surfaced and fixed a real
+      test-harness bug: `PORT=0` does not pick a random port in this app (`Number(env.PORT)
+      || 8801` treats `0` as falsy), so two spawned test servers reusing it raced for the
+      same port; the harness now gives each spawn its own explicit port.
+- [x] **Failure is loud** — each warning names the exact flag(s) involved and the fix
+      (set the missing flag, or unset the dead one).
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1461 passed).
+
+## DATA-10
+
+*Backup/restore covers only the store JSON; the on-disk project-data/drift root it
+references is out of scope, with no consistency check.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `backup.ts`/`restore.ts` only ever
+      touched the FileStore JSON snapshot; the project-data/drift directory tree the
+      snapshot's rows (`ProjectItem.dataActive`, `DriftPointerItem`) point into was never
+      captured or restored. Nothing at boot or in `/readyz` cross-checked that an active
+      version's files actually exist — serves fail closed to 404/`report:null`, so this
+      degrades rather than corrupts, but silently, behind a green readiness probe.
+- [x] **Cause, not symptom** — `backup.ts` now also copies the project-data root into a
+      companion `<out>.projects/` directory alongside the JSON snapshot, atomically (new
+      `copyTreeAtomic` in `store/snapshot.ts`, the same temp+fsync+rename discipline as the
+      existing `writeFileAtomic`, extended to a directory tree — shared by both scripts
+      rather than duplicated). `restore.ts` finds that directory by convention and REPLACES
+      the live project-data root wholesale (never merged), under the SAME DATA-9 writer
+      lock the JSON restore already takes. A backup with no companion directory (predates
+      this feature, or `--skip-project-data`) still installs the store and WARNS loudly
+      rather than refusing outright or silently leaving now-possibly-inconsistent served
+      files. `/readyz` gains a cheap, stat-only presence cross-check (new
+      `projectDataVersionExists`/`driftReportExists`): for every known project, a
+      `dataActive`/drift pointer whose referenced file is missing on disk is NOT ready, with
+      a specific reason — deliberately a stat, never a digest recompute, since this probe
+      runs on a tight timer.
+- [x] **Regression test** — `backupRestore.test.ts` gets 6 new cases (the round-trip
+      restoring both stores from one backup, wholesale-replace semantics, the
+      no-companion-directory warn-don't-fail path at both backup and restore time,
+      `--skip-project-data` on both ends, an empty-but-present root still getting copied);
+      `readyz.test.ts` gets 5 new cases covering both cross-checks, missing and present.
+      **Negative test confirmed** — the 7 assertions that could actually distinguish old
+      from new behavior verified failing against the pre-fix code.
+- [x] **Failure is loud** — a missing companion backup at restore time is a `console.error`
+      WARNING naming the exact path checked; a missing active file at readiness time is a
+      specific, per-project `/readyz` reason.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1458 passed).
+
+**Residue:** the readiness cross-check is deliberately existence-only, never a digest
+comparison — re-hashing every active project's whole served bundle on every `/readyz` poll
+would reintroduce the same steady per-probe CPU tax ARCH-9 already flags for the
+audit-chain re-verification this same probe does. A digest-level check (catching a
+file that exists but is byte-different from what the row recorded — e.g. restored from a
+different backup generation than the store JSON) is a real, narrower gap left
+deliberately unclosed. **R-53.**
+
+## ARCH-9
+
+*Single-process, single-file scaling ceiling with in-process singletons the planned
+DynamoDB path would silently break.*
+
+- [x] **Defect reproduced first** — confirmed at HEAD: `FileStore`'s own single-writer
+      lock (CONC-7/DATA-9) already structurally refuses a second process against the same
+      data file today, but four OTHER in-process singletons have no such protection and
+      never appeared in one place a deployer would see: the known-projects routing cache
+      (`projects.ts`), the upload-lane rate-limit buckets (`middleware/rateLimit.ts`), the
+      drift-check/drift-generation in-flight guards (`domain/driftCheck.ts`,
+      `domain/driftProposals.ts`'s `genState`), and the scheduler tick reentrancy flag
+      (`domain/apply/loop.ts`). The store seam's own doc comment says a DynamoDB
+      implementation is planned behind the SAME `ConfigStore` interface, and DynamoDB is
+      explicitly multi-writer-safe at the row level — so it would not carry the FileStore
+      lock's protection over automatically, and nothing said what would then start silently
+      diverging.
+- [x] **Cause, not symptom** — a new "Scaling & the single-process invariant" section in
+      `ccp/api/README.md` names each of the five (the lock included, for contrast), cites
+      exactly where it lives, states what breaks under a second process today (nothing, for
+      the lock; everything, for the other four, once anything besides the lock is what's
+      preventing a second process) and what each would need before that's safe.
+      Audit-chain archival — the finding's OTHER recommendation — is recorded as a
+      documented prerequisite for that future migration, not implemented here (see Residue).
+      `/readyz` gains `storeItemCount` — the total row count the store holds, via a new
+      optional `ConfigStore.approxItemCount()` (O(1) in `MemoryStore`, inherited by
+      `FileStore`; optional exactly like the existing `durabilityFault()`, so a future
+      DynamoDB store can leave it unimplemented and answer from CloudWatch metrics
+      instead) — purely informational, never folded into `reasons`/`ready`.
+- [x] **Regression test** — new describe block in `readyz.test.ts`:
+      `approxItemCount` tracks puts/deletes exactly (including a same-key overwrite NOT
+      counting as a new row), `storeItemCount` grows as the store grows via a real `/readyz`
+      round-trip, and is `null` (never thrown, never a fault) for a store that doesn't
+      implement it. **Negative test confirmed** — all 3 new assertions verified failing
+      against the pre-fix code.
+- [x] **Failure is loud** — n/a; `storeItemCount` is informational telemetry by design,
+      never a readiness reason.
+- [x] **Evidence in the status line** — `cd ccp/api && npx tsc --noEmit` clean; full suite
+      `npx vitest run` (102 files, 1461 passed).
+
+**Residue:** audit-chain archival/compaction (so `storeItemCount` stops growing unbounded —
+month-partitioned keys already anticipate this) is real design work belonging to whichever
+change actually introduces a second process or the DynamoDB backend, recorded as a known
+prerequisite rather than guessed at here. **R-54.**
+
+## TEST-7
+
+*The SPA has no DOM/interaction testing; ~25 test files pin UI by source-string
+inspection.*
+
+- [x] **Defect reproduced first** — confirmed the finding's own cited example
+      (`fullCoverage.test.ts:141-153`, since renamed to
+      `provisionTileCompleteness.test.ts` by TEST-5): two tests asserting
+      `expect(src).toContain('provisionPathFor(primaryType)')`-style source-text matches
+      against `ServiceCard.tsx`. Demonstrated the weakness directly: deliberately broke
+      `ServiceCard`'s op-less wiring (always resolving to the resource-console path) while
+      leaving both matched strings intact elsewhere in the file — the old-style check would
+      have passed vacuously against a real regression.
+- [x] **Cause, not symptom, on the recorded-decision half** — the recommendation offers two
+      paths (introduce jsdom+RTL, or a written decision plus converting what can be
+      converted); introducing jsdom silently, mid-batch, would reverse a decision already
+      stated repeatedly elsewhere in the code (`azureCatalogFlow.test.ts`, `routeConfig.tsx`'s
+      own doc comment, several `*.test.tsx` files) without the scoped review
+      TRIAGE.md's own note says it needs. `standalone.test.ts` — the file R-22/TEST-7
+      already cite as this repo's testing-philosophy anchor — gets a full written record:
+      the two-layer strategy already in place, exactly what `renderToStaticMarkup` cannot
+      reach and why, the three reasons against introducing jsdom+RTL in this pass, and a
+      standing requirement that every remaining source-pinned test name, in its own
+      comment, why it can't be converted without either jsdom or a component-splitting
+      refactor.
+- [x] **Cause, not symptom, on the conversion half** — `ServiceCard`'s two source-pinning
+      tests in `provisionTileCompleteness.test.ts` converted to real `renderToStaticMarkup`
+      assertions against the actual rendered `<a href>`/CTA text (plus a third new case, a
+      with-ops control, the old test never had). `ServiceConsole`'s sibling test in the same
+      file stays source-pinned — genuinely unreachable via SSR, since its op-less branch
+      sits behind its own `useEffect`-driven fetch and there is no pure prop-driven view to
+      render instead — now carrying the file-specific "why this one can't move" comment the
+      new standing requirement asks for, as the worked example for future conversions.
+- [x] **Regression test** — `provisionTileCompleteness.test.ts`'s 3 new `ServiceCard`
+      cases ARE the regression test for this fix. **Negative test confirmed** — verified
+      above (the deliberately-broken `ServiceCard` reproduction): the new tests failed
+      correctly against the injected bug; restored and re-verified green.
+- [x] **Failure is loud** — n/a; this is a testing-infrastructure finding, not a runtime
+      behavior change.
+- [x] **Evidence in the status line** — `cd ccp/app && npx tsc --noEmit -p .` clean;
+      `npx eslint . --ext .ts,.tsx` clean, no new warnings; full suite `npx vitest run`
+      (161 files, 2831 passed).
+
+**Residue:** ~19 of the ~25 originally-cited source-pinned test files remain unconverted,
+and most predate the new standing "say why" requirement so do not yet carry the
+per-file justification comment it asks for — only the one file touched this session
+(`provisionTileCompleteness.test.ts`) does. Retiring the rest file-by-file, and
+back-filling the justification comment on the files staying source-pinned for a real
+structural reason, is real ongoing work this fix starts but does not finish. Separately,
+R-51 (TEST-5's function-coverage-floor residue, previously "Tracked by: TEST-7") is now
+**untracked**, not resolved — TEST-7 closing here is a documented decision plus a partial
+conversion, not the DOM/interaction-testing lane that would actually move the coverage
+floor; RESIDUE.md's R-51 entry is updated in the same commit to say so, rather than left
+pointing at a closed finding. **R-55.**
